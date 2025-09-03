@@ -101,7 +101,6 @@ if "numba" in globals() and numba is not None:
             
         return labels, profit_pcts
 
-
 @dataclass
 class RegimeTripleBarrierConfig:
     """Configuration for regime-specific triple barrier parameters."""
@@ -147,7 +146,6 @@ class RegimeTripleBarrierConfig:
             self.regime_id_to_name = {}
         if self.regime_name_to_id is None:
             self.regime_name_to_id = {}
-
 
 class RegimeAwareTripleBarrierLabeling:
     """
@@ -260,11 +258,7 @@ class RegimeAwareTripleBarrierLabeling:
             "position_size": self.config.regime_position_sizes.get(regime_name, 0.1),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="regime_aware_triple_barrier_labeling.vectorized"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("RegimeAwareTripleBarrier.apply_vectorized", log_args=False)
     def apply_regime_aware_triple_barrier_labeling(
@@ -652,7 +646,6 @@ class RegimeAwareTripleBarrierLabeling:
         
         return performance_summary
 
-
 # Utility functions for integration
 def create_regime_aware_labeler_from_optimization_results(
     optimization_results: Dict[str, Any]
@@ -684,7 +677,6 @@ def create_regime_aware_labeler_from_optimization_results(
     
     return RegimeAwareTripleBarrierLabeling(config)
 
-
 def apply_regime_aware_triple_barrier_labeling(
     data: pd.DataFrame,
     optimization_results: Optional[Dict[str, Any]] = None,
@@ -708,7 +700,6 @@ def apply_regime_aware_triple_barrier_labeling(
         labeler = RegimeAwareTripleBarrierLabeling(binary_classification=binary_classification)
     
     return labeler.apply_regime_aware_triple_barrier_labeling(data, regime_column)
-
 
 def apply_regime_aware_triple_barrier_labeling_with_barriers(
     data: pd.DataFrame,
@@ -794,6 +785,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
         # Log error and return original data with error indicator
         import logging
 import copy
+from src.core.decorators import handles_errors
 
         logger = logging.getLogger(__name__)
         logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")

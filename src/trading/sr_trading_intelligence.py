@@ -19,11 +19,10 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.tactician.sr_levels_manager import SRLevelsManager, SRLevel
 
 logger = system_logger.getChild("SRTradingIntelligence")
-
 
 class SRTradingIntelligence:
     """
@@ -575,7 +574,6 @@ class SRTradingIntelligence:
             
         except Exception as e:
             self.logger.error(f"❌ Error during shutdown: {e}")
-
 
 async def create_sr_trading_intelligence(config: Dict[str, Any]) -> SRTradingIntelligence:
     """Factory function to create and initialize SR Trading Intelligence."""

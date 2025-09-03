@@ -8,11 +8,7 @@ Defines strategies for multiple positions, take profit, stop loss, and position 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import (
-import asyncio
-
-    handle_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import copy
@@ -54,11 +50,7 @@ class PositionDivisionStrategy:
         self.position_history: List[Dict[str, Any]] = []
         self.strategy_performance: Dict[str, Any] = {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="position division strategy initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """
         Initialize the position division strategy.
@@ -116,11 +108,7 @@ class PositionDivisionStrategy:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position division calculation"
-    )
+    @handles_errors(fallback=None)
     async def calculate_position_division(
         self,
         total_capital: float,
@@ -285,11 +273,7 @@ class PositionDivisionStrategy:
                 "stop_loss": [self.stop_loss_pct] * self.max_positions
             }
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="position management"
-    )
+    @handles_errors(fallback=False)
     async def add_position(
         self,
         position_id: str,
@@ -325,11 +309,7 @@ class PositionDivisionStrategy:
             self.logger.error(failed(f"❌ Error adding position: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="position closure"
-    )
+    @handles_errors(fallback=False)
     async def close_position(
         self,
         position_id: str,

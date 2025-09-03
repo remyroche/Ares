@@ -27,12 +27,11 @@ import asyncio
     IStateManager,
     MarketData,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
     failed,
     initialization_error,
 )
-
 
 class DIAnalyst(AnalystBase, IAnalyst):
     """
@@ -136,11 +135,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         )
         self.logger.debug("Event subscriptions set up")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="market data analysis",
-    )
+    @handles_errors(fallback=None)
     async def analyze_market_data(
         self,
         market_data: MarketData,

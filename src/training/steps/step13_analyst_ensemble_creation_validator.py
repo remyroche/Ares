@@ -4,13 +4,12 @@ import json
 import os
 from typing import Any
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing, success, warning
 import os.path
 
 logger = system_logger
-
 
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
@@ -20,7 +19,7 @@ class Step7AnalystEnsembleCreationValidator:
         self.logger = logger
         self.validation_results = {}
 
-    @handle_errors
+    @handles_errors
     def validate(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], ) -> bool:
         """Validate Step 7: Analyst Ensemble Creation.
@@ -186,7 +185,6 @@ class Step7AnalystEnsembleCreationValidator:
     def print(self, message: str) -> None:
         """Print validation message."""
         self.logger.info(message)
-
 
 def step7_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any], ) -> bool:
     """Step 7: Analyst Ensemble Creation Validator.

@@ -39,7 +39,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3ParameterOptimization")
 
-
 class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
@@ -62,11 +61,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"❌ Failed to initialize parameter optimization components: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="parameter_optimization_initialization"
-    )
+    @handles_errors(fallback=False)
     @secure_step_execution
     async def initialize(self) -> bool:
         """Initialize the parameter optimization step."""
@@ -87,11 +82,7 @@ class ParameterOptimizationStep:
     @monitor_step_execution
     @secure_step_execution
     @validate_pipeline_step
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="parameter_optimization_execution"
-    )
+    @handles_errors(fallback=False)
     async def execute(self) -> bool:
         """Execute the parameter optimization step."""
         try:
@@ -135,8 +126,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to execute parameter optimization: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_validate_data"
     )
@@ -196,11 +186,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to load and validate data: {e}")
             return {"success": False, "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="prepare_features_for_optimization"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     @monitor_feature_engineering()
     @validate_data_structure
     async def _prepare_features_for_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -250,11 +236,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to prepare features: {e}")
             return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="optimize_hmm_parameters"
-    )
+    @handles_errors
     @resource_monitor
     @secure_data_processing
     async def _optimize_hmm_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -305,11 +287,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to optimize HMM parameters: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="optimize_clustering_parameters"
-    )
+    @handles_errors
     @resource_monitor
     @secure_data_processing
     async def _optimize_clustering_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -358,11 +336,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to optimize clustering parameters: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="optimize_feature_parameters"
-    )
+    @handles_errors
     @resource_monitor
     @secure_data_processing
     async def _optimize_feature_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -421,11 +395,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to optimize feature parameters: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="combine_optimization_results"
-    )
+    @handles_errors
     @secure_data_processing
     async def _combine_optimization_results(self, results: List[dict[str, Any]]) -> dict[str, Any]:
         """Combine all optimization results."""
@@ -490,11 +460,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to combine optimization results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="save_optimization_results"
-    )
+    @handles_errors(fallback=False)
     @secure_data_processing
     async def _save_optimization_results(self, optimization_results: dict[str, Any]) -> bool:
         """Save optimization results."""
@@ -518,11 +484,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to save optimization results: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="generate_optimization_reports"
-    )
+    @handles_errors(fallback=False)
     @secure_data_processing
     async def _generate_optimization_reports(self, optimization_results: dict[str, Any]) -> bool:
         """Generate optimization reports."""
@@ -569,11 +531,7 @@ class ParameterOptimizationStep:
             return False
 
     # Helper methods for technical indicators
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_rsi"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
@@ -583,11 +541,7 @@ class ParameterOptimizationStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_macd"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD."""
         ema_fast = prices.ewm(span=fast).mean()
@@ -595,11 +549,7 @@ class ParameterOptimizationStep:
         macd = ema_fast - ema_slow
         return macd
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_atr"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_atr(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range."""
         high = df["high"]
@@ -614,11 +564,7 @@ class ParameterOptimizationStep:
         atr = tr.rolling(window=window).mean()
         return atr
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="parameter_optimization_cleanup"
-    )
+    @handles_errors(fallback=False)
     @secure_step_execution
     async def cleanup(self) -> bool:
         """Clean up resources after optimization."""
@@ -631,12 +577,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to cleanup parameter optimization: {e}")
             return False
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step3_parameter_optimization"
-)
+@handles_errors(fallback=False)
 @secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the parameter optimization step."""
@@ -668,10 +609,10 @@ async def run_step(config: dict[str, Any]) -> bool:
         logger.error(f"Failed to run parameter optimization step: {e}")
         return False
 
-
 if __name__ == "__main__":
     # Test the step
     import asyncio
+from src.core.decorators import handles_errors
     
     # Load test configuration
     test_config = {

@@ -132,7 +132,7 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -527,11 +527,7 @@ class EnhancedHMMBasedTrainingStep:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, MemoryError),
-        default_return=None,
-        context="enhanced_data_preparation"
-    )
+    @handles_errors(fallback=None)
     async def prepare_enhanced_data(
         self,
         data: pd.DataFrame,
@@ -639,11 +635,7 @@ class EnhancedHMMBasedTrainingStep:
         
         return prepared_data
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="enhanced_model_training"
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def train_enhanced_model(
         self,
@@ -853,11 +845,7 @@ class EnhancedHMMBasedTrainingStep:
             self.logger.exception(f"❌ Failed to train single-output model: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="enhanced_regime_specific_training"
-    )
+    @handles_errors(fallback=None)
     async def train_enhanced_regime_specific_models(
         self,
         timeframe: str,
@@ -1040,6 +1028,7 @@ class EnhancedHMMBasedTrainingStep:
                     import joblib
 import copy
 import os.path
+from src.core.decorators import handles_errors
 
                     model = joblib.load(model_path)
                     scaler = joblib.load(scaler_path)
@@ -1076,7 +1065,6 @@ import os.path
         except Exception as e:
             self.logger.warning(f"⚠️ Feature selection fallback for regime {regime}: {e}")
             return features_df
-
 
 async def run_enhanced_step(
     symbol: str = "ETHUSDT",

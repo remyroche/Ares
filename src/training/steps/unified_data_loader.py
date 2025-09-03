@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    from src.utils.error_handler import handle_errors
+    from src.core.decorators import handles_errors
     from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
@@ -66,7 +66,6 @@ except ImportError:
 
     import logging
     system_logger = logging.getLogger(__name__)
-
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
@@ -373,11 +372,7 @@ import os.path
         """
         return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="unified_data_loader.get_data_info",
-    )
+    @handles_errors(fallback=None)
     async def get_data_info(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
     ) -> Optional[dict[str, Any]]:
@@ -442,7 +437,6 @@ import os.path
             self.logger.exception(f"❌ Failed to get data info: {e}")
             return None
 
-
 # Global instance for easy access
 _unified_data_loader = None
 
@@ -460,13 +454,8 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
         _unified_data_loader = UnifiedDataLoader(config)
     return _unified_data_loader
 
-
 # Convenience functions for backward compatibility
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="load_unified_data",
-)
+@handles_errors(fallback=None)
 async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
 ) -> Optional[pd.DataFrame]:
     """Load unified data with global loader instance.
@@ -494,12 +483,7 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
         columns=columns
     )
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="get_unified_data_info",
-)
+@handles_errors(fallback=None)
 async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
 ) -> Optional[dict[str, Any]]:
     """Get information about unified data with global loader instance.

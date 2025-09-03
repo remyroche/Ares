@@ -19,10 +19,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class ConfigurationSecurityManager:
     """Manages secure configuration operations."""
@@ -99,7 +98,7 @@ class ConfigurationSecurityManager:
         self.backup_dir = Path("data_cache/config_backups")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration loading")
+    @handles_errors(fallback=None)
     def load_secure_configuration(self, file_path: str, config_format: str = "auto") -> Optional[Dict[str, Any]]:
         """Load configuration from file with security validation.
 
@@ -368,7 +367,7 @@ import copy
         except Exception as e:
             self.logger.error(f"Failed to create configuration backup: {e}")
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration value access")
+    @handles_errors(fallback=None)
     def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
         """Get configuration value by dot-notation path.
 
@@ -401,7 +400,7 @@ import copy
             self.logger.error(f"Failed to get config value for {key_path}: {e}")
             return default
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration value setting")
+    @handles_errors(fallback=None)
     def set_config_value(self, config: Dict[str, Any], key_path: str, value: Any) -> Optional[Dict[str, Any]]:
         """Set configuration value by dot-notation path.
 
@@ -540,7 +539,6 @@ import copy
         except Exception as e:
             self.logger.error(f"Failed to generate configuration security report: {e}")
             return {"error": str(e)}
-
 
 # Global configuration security manager instance
 configuration_security_manager = ConfigurationSecurityManager()

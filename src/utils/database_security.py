@@ -21,10 +21,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class DatabaseType:
     """Database type enumeration."""
@@ -34,7 +33,6 @@ class DatabaseType:
     SQLITE = "sqlite"
     MONGODB = "mongodb"
     REDIS = "redis"
-
 
 class DatabaseSecurityManager:
     """Manages database security and secure connections."""
@@ -368,7 +366,7 @@ import copy
         except ImportError:
             raise Exception("redis not installed for Redis connections")
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="secure query execution")
+    @handles_errors(fallback=None)
     def execute_secure_query(
         self, connection: Any, query: str, parameters: Optional[List[Any]] = None
     ) -> Optional[List[Dict[str, Any]]]:
@@ -653,7 +651,6 @@ import copy
         except Exception as e:
             self.logger.error(f"Failed to generate database security report: {e}")
             return {"error": str(e)}
-
 
 # Global database security manager instance
 database_security_manager = DatabaseSecurityManager()

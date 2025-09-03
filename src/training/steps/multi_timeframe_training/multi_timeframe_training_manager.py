@@ -11,12 +11,7 @@ from typing import Any
 # from src.analyst.multi_timeframe_regime_integration import (
 #     MultiTimeframeRegimeIntegration,
 # )
-from src.utils.error_handler import (
-import asyncio
-
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 # Import StepDependencyValidator for step dependency validation
@@ -28,7 +23,6 @@ import copy
     invalid,
     validation_error,
 )
-
 
 class MultiTimeframeTrainingManager:
     """Multi-timeframe training manager with comprehensive error handling and type safety."""
@@ -78,7 +72,7 @@ class MultiTimeframeTrainingManager:
         # Initialize StepDependencyValidator for step dependency validation
         self.step_dependency_validator = step_dependency_validator
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (
                 False,
@@ -130,11 +124,7 @@ class MultiTimeframeTrainingManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe training configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_multi_timeframe_training_configuration(self) -> None:
         """Load multi-timeframe training configuration."""
         try:
@@ -175,11 +165,7 @@ class MultiTimeframeTrainingManager:
                 f"Error loading multi-timeframe training configuration: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate multi-timeframe training configuration.
 
@@ -222,11 +208,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe training modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_multi_timeframe_training_modules(self) -> None:
         """Initialize multi-timeframe training modules."""
         try:
@@ -255,11 +237,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing multi-timeframe training modules: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe analysis initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_timeframe_analysis(self) -> None:
         """Initialize timeframe analysis module."""
         try:
@@ -282,11 +260,7 @@ class MultiTimeframeTrainingManager:
             # Re-raise the exception to prevent silent failures
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="cross timeframe features initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_cross_timeframe_features(self) -> None:
         """Initialize cross timeframe features module."""
         try:
@@ -309,11 +283,7 @@ class MultiTimeframeTrainingManager:
             # Re-raise the exception to prevent silent failures
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe ensemble initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_timeframe_ensemble(self) -> None:
         """Initialize timeframe ensemble module."""
         try:
@@ -336,11 +306,7 @@ class MultiTimeframeTrainingManager:
             # Re-raise the exception to prevent silent failures
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe optimization initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_timeframe_optimization(self) -> None:
         """Initialize timeframe optimization module."""
         try:
@@ -454,7 +420,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error generating multi-timeframe features: {e}"))
             return {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid multi-timeframe training parameters"),
             AttributeError: (False, "Missing multi-timeframe training components"),
@@ -534,11 +500,7 @@ class MultiTimeframeTrainingManager:
             self.is_training = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="multi-timeframe training inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_multi_timeframe_training_inputs(
         self, multi_timeframe_training_input: dict[str, Any], ) -> bool:
         """Validate multi-timeframe training inputs.
@@ -584,11 +546,7 @@ class MultiTimeframeTrainingManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe analysis",
-    )
+    @handles_errors(fallback=None)
     async def _perform_timeframe_analysis(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
         """Perform timeframe analysis.
@@ -633,11 +591,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error performing timeframe analysis: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="cross timeframe features",
-    )
+    @handles_errors(fallback=None)
     async def _perform_cross_timeframe_features(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
         """Perform cross timeframe features.
@@ -691,11 +645,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error performing cross timeframe features: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe ensemble",
-    )
+    @handles_errors(fallback=None)
     async def _perform_timeframe_ensemble(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
         """Perform timeframe ensemble.
@@ -740,11 +690,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error performing timeframe ensemble: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe optimization",
-    )
+    @handles_errors(fallback=None)
     async def _perform_timeframe_optimization(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
         """Perform timeframe optimization.
@@ -1048,11 +994,7 @@ class MultiTimeframeTrainingManager:
             )
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe training results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_multi_timeframe_training_results(self) -> None:
         """Store multi-timeframe training results."""
         try:
@@ -1080,11 +1022,7 @@ class MultiTimeframeTrainingManager:
                 f"Error storing multi-timeframe training results: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe training results getting",
-    )
+    @handles_errors(fallback=None)
     def get_multi_timeframe_training_results(
         self, multi_timeframe_training_type: str | None = None
     ) -> dict[str, Any]:
@@ -1110,11 +1048,7 @@ class MultiTimeframeTrainingManager:
             )
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe training history getting",
-    )
+    @handles_errors(fallback=None)
     def get_multi_timeframe_training_history(
         self, limit: int | None = None
     ) -> list[dict[str, Any]]:
@@ -1165,11 +1099,7 @@ class MultiTimeframeTrainingManager:
             ),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="multi-timeframe training manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the multi-timeframe training manager."""
         self.logger.info("🛑 Stopping Multi-Timeframe Training Manager...")
@@ -1228,16 +1158,10 @@ class MultiTimeframeTrainingManager:
             self.logger.exception(f"🚨 Error validating dependencies for {step_name}: {e}")
             return False
 
-
 # Global multi-timeframe training manager instance
 multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="multi-timeframe training manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None = None) -> MultiTimeframeTrainingManager | None:
     """Setup global multi-timeframe training manager.
 

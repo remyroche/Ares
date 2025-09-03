@@ -11,7 +11,7 @@ from typing import Any
 from src.core.dependency_injection import DependencyContainer
 from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
 import asyncio
 
@@ -21,7 +21,6 @@ import asyncio
     missing,
     warning,
 )
-
 
 class DITrainingManager(InjectableBase):
     """Dependency injection-aware training manager.
@@ -193,11 +192,7 @@ import os.path
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="training execution",
-    )
+    @handles_errors(fallback=False)
     async def run_training_pipeline(
         self,
         symbol: str,

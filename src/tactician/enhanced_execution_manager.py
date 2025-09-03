@@ -14,7 +14,6 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import get_logger
 
-
 class EnhancedExecutionManager:
     """Enhanced execution manager for Tactician with high precision triple barrier completion.
     
@@ -41,6 +40,7 @@ class EnhancedExecutionManager:
         """Load configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+from src.core.decorators import handles_errors
         
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
@@ -81,8 +81,7 @@ class EnhancedExecutionManager:
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
         self.logger.info(f"   Position Size Multiplier: {self.position_size_multiplier}")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.validate_analyst_signal"
     )
@@ -185,8 +184,7 @@ class EnhancedExecutionManager:
             return False
         return analyst_direction == tactician_direction
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.calculate_execution_parameters"
     )
@@ -357,8 +355,7 @@ class EnhancedExecutionManager:
             self.logger.warning(f"⚠️ Error calculating precision score: {e}")
             return combined_confidence
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "reason": "error"},
         context="enhanced_execution_manager.execute_trade"
     )

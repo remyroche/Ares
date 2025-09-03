@@ -105,7 +105,6 @@ warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step10_UnifiedRegimeIntelligence")
 
-
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi-timeframe HMM state encoder using attention mechanisms."""
 
@@ -236,7 +235,6 @@ class MultiTimeframeHMMEncoder(nn.Module):
             "hidden_states": transformed,
         }
 
-
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
 
@@ -339,11 +337,7 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
             return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="unified regime intelligence initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
@@ -375,11 +369,7 @@ class UnifiedRegimeIntelligenceStep:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="unified regime intelligence training",
-    )
+    @handles_errors(fallback=False)
     async def train(self, data: dict[str, pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
@@ -1720,11 +1710,7 @@ class UnifiedRegimeIntelligenceStep:
                 "confidence": confidence_score,
             }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="unified prediction with S/R integration",
-    )
+    @handles_errors
     async def predict_with_sr_integration(
         self, hmm_states: dict[str, np.ndarray], market_features: np.ndarray, market_data: pd.DataFrame, current_price: float, ) -> dict[str, Any]:
         """Make unified predictions with S/R level integration.
@@ -1948,7 +1934,6 @@ class UnifiedRegimeIntelligenceStep:
                 "risk_level": "MEDIUM",
             }
 
-
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
@@ -1972,6 +1957,7 @@ import copy
 import numpy as np
 import os.path
 import pandas as pd
+from src.core.decorators import handles_errors
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -1980,7 +1966,6 @@ import pandas as pd
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
-
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step5_5_unified_regime_intelligence")

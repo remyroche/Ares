@@ -24,7 +24,7 @@ import pandas as pd
 
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger, dependency_status
 
 # Preference order for selecting analyst ensembles
@@ -567,7 +567,6 @@ class RegimeAwareTacticianLabeler:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
@@ -584,17 +583,12 @@ class TacticianLabelingStep:
         self.config = config
         self.logger = system_logger
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tactician labeling step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the tactician labeling step."""
         self.logger.info("🚀 Initializing Tactician Labeling Step...")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician labeling step execution",
     )
@@ -921,7 +915,6 @@ class TacticianLabelingStep:
 
         return labeled_file_parquet, signals_file_parquet
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.centralized_decorators import (
     artifact_versioning,
@@ -951,7 +944,6 @@ import copy
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
-
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1054,7 +1046,6 @@ async def run_step(
 
     except Exception:  # pragma: no cover - defensive
         return False
-
 
 if __name__ == "__main__":
     # Test the step

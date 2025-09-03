@@ -13,10 +13,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
-
 
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"
@@ -25,17 +24,14 @@ class ReportType(Enum):
     EXECUTIVE_SUMMARY = "executive_summary"
     CONTINUOUS_IMPROVEMENT = "continuous_improvement"
 
-
 class ReportSchedule(Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 
-
 class ReportFormat(Enum):
     JSON = "json"
     HTML = "html"
-
 
 @dataclass
 class ReportConfig:
@@ -44,7 +40,6 @@ class ReportConfig:
     format: ReportFormat
     recipients: List[str]
     enabled: bool = True
-
 
 @dataclass
 class ReportHistory:
@@ -55,7 +50,6 @@ class ReportHistory:
     recipients: List[str]
     file_path: str
     status: str
-
 
 class ReportScheduler:
     """Automated report scheduler."""
@@ -69,7 +63,7 @@ class ReportScheduler:
         self.reports_dir = Path("reports")
         self.reports_dir.mkdir(exist_ok=True)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid scheduler configuration"),
             AttributeError: (False, "Missing scheduler parameters"),

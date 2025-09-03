@@ -16,7 +16,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import get_logger
 from src.utils.warning_symbols import error, warning
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-
+from src.core.decorators import handles_errors
 
 class TacticianEnhancedPredictionIntegrator:
     """
@@ -93,11 +93,7 @@ class TacticianEnhancedPredictionIntegrator:
         
         return models
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating tactician enhanced predictions",
-    )
+    @handles_errors
     @with_tracing_span("Tactician.generateEnhancedPredictions")
     async def generate_tactician_predictions(
         self,
@@ -486,11 +482,7 @@ class TacticianEnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error determining optimal timeframe: {e}"))
             return self.primary_timeframe
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="validating tactician predictions",
-    )
+    @handles_errors
     async def validate_tactician_predictions(
         self,
         tactician_predictions: dict[str, Any],

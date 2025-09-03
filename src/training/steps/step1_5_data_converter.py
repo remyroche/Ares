@@ -129,7 +129,6 @@ if download_all_data_with_consolidation is None:
     def download_all_data_with_consolidation(*_args, **_kwargs):
         raise RuntimeError("download_all_data_with_consolidation not available")
 
-
 # ----------------------------------------------------------------------------
 # Column Verification and Calculation Utilities
 # ----------------------------------------------------------------------------
@@ -389,7 +388,6 @@ class ColumnVerifier:
         
         return calculated
 
-
 # ----------------------------------------------------------------------------
 # Utilities: Timing and Memory trackers (lightweight but featureful)
 # ----------------------------------------------------------------------------
@@ -445,9 +443,7 @@ class TimingTracker:
 					print(f"    └─ {cp_name}: {cp_dur:.2f}s")
 		print("=" * 60)
 
-
 timing_tracker = TimingTracker()
-
 
 class MemoryTracker:
 	@staticmethod
@@ -470,7 +466,6 @@ class MemoryTracker:
 		print(
 			f"💾 [MEMORY] {context}: RSS={mem['rss_mb']:.1f}MB, VMS={mem['vms_mb']:.1f}MB, {mem['percent']:.1f}%"
 		)
-
 
 # ----------------------------------------------------------------------------
 # ParquetDatasetManager - high-level parquet IO with optional pyarrow
@@ -591,7 +586,7 @@ class ParquetDatasetManager:
 						self.logger.debug(f"Schema conversion skipped for column: {col}")
 		return df
 
-	@handle_file_operations(context="write_partitioned_dataset")
+	@handles_errors(context="write_partitioned_dataset")
 	def write_partitioned_dataset(
 		self,
 		df: pd.DataFrame,
@@ -725,7 +720,7 @@ class ParquetDatasetManager:
 			with contextlib.suppress(Exception):
 				self.update_manifest(base_dir)
 
-	@handle_file_operations(context="scan_dataset")
+	@handles_errors(context="scan_dataset")
 	def scan_dataset(
 		self,
 		base_dir: str,
@@ -818,7 +813,7 @@ class ParquetDatasetManager:
 			return None
 		return None
 
-	@handle_file_operations(context="write_flat_parquet")
+	@handles_errors(context="write_flat_parquet")
 	def write_flat_parquet(
 		self,
 		df: pd.DataFrame,
@@ -847,7 +842,7 @@ class ParquetDatasetManager:
 			write_statistics=write_statistics,
 		)
 
-	@handle_file_operations(context="update_manifest")
+	@handles_errors(context="update_manifest")
 	def update_manifest(self, base_dir: str, ts_column: str = "timestamp") -> None:
 		try:
 			if not os.path.exists(base_dir):
@@ -902,7 +897,6 @@ class ParquetDatasetManager:
 			return None
 		return None
 
-
 # ----------------------------------------------------------------------------
 # UnifiedDataConverter - convert and unify datasets
 # ----------------------------------------------------------------------------
@@ -938,7 +932,7 @@ class UnifiedDataConverter:
 		self.logger.info(f"📁 Unified data directory: {self.unified_dir}")
 		self.logger.info(f"📁 Backup directory: {self.backup_dir}")
 
-	@handle_errors(exceptions=(Exception,), default_return=False, context="unified data conversion")
+	@handles_errors(fallback=False)
 	async def execute(
 		self,
 		symbol: str,
@@ -1235,7 +1229,7 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Incremental processing failed: {e}")
 			return False
 
-	@handle_file_operations(context="load_aggtrades_for_date")
+	@handles_errors(context="load_aggtrades_for_date")
 	@validate_aggtrades_data(context="daily_load")
 	@format_aggtrades_data(context="daily_load")
 	@log_step_metrics(context="aggtrades_daily_load")
@@ -1268,7 +1262,7 @@ class UnifiedDataConverter:
 			self.logger.warning(f"⚠️ Failed to load aggtrades for {target_date}: {e}")
 			return None
 
-	@handle_file_operations(context="load_futures_for_date")
+	@handles_errors(context="load_futures_for_date")
 	@validate_futures_data(context="daily_load")
 	@format_futures_data(context="daily_load")
 	@log_step_metrics(context="futures_daily_load")
@@ -1674,7 +1668,7 @@ class UnifiedDataConverter:
 	@resource_monitor
 	@memory_efficient
 	@quality_gate
-	@handle_errors(exceptions=(Exception,), default_return=None, context="deprecated aggtrades to klines conversion")
+	@handles_errors(fallback=None)
 	async def _create_klines_from_aggtrades(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
 		import warnings
 		warnings.warn(
@@ -1768,18 +1762,17 @@ class UnifiedDataConverter:
 			self.logger.warning("⚠️ Continuing with original data without column enhancements")
 			return unified
 
-
 # ----------------------------------------------------------------------------
 # Public entry point
 # ----------------------------------------------------------------------------
-@handle_errors(exceptions=(Exception,), default_return=False, context="step1_5_data_converter")
+@handles_errors(fallback=False)
 @secure_data_processing
 @prevent_data_leakage
 @resource_monitor
 @memory_efficient
 @quality_gate
 @circuit_breaker_protection
-@handle_errors(exceptions=(Exception,), default_return=False, context="step1_5_data_converter main execution")
+@handles_errors(fallback=False)
 async def run_step(
 	symbol: str,
 	exchange: str,
@@ -1872,7 +1865,6 @@ async def run_step(
 		system_logger.exception(f"❌ Step 1.5 failed: {e}")
 		return False
 
-
 if __name__ == "__main__":
 	import argparse
 
@@ -1906,5 +1898,6 @@ if __name__ == "__main__":
 		import gc
 import copy
 import os.path
+from src.core.decorators import handles_errors
 
 gc.collect()

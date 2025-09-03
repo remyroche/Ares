@@ -10,7 +10,7 @@ from typing import Any
 import time
 
 from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import error, failed
 import numpy as np
 import pandas as pd
@@ -44,11 +44,7 @@ class LiveWaveletIntegration:
         self.min_confidence = config.get("min_wavelet_confidence", 0.6)
         self.max_signal_age = config.get("max_signal_age", 60)  # seconds
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="live wavelet integration initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the live wavelet integration."""
         try:
@@ -86,11 +82,7 @@ class LiveWaveletIntegration:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="wavelet signal processing",
-    )
+    @handles_errors(fallback=None)
     async def process_market_data(
         self, market_data: dict[str, Any],
     ) -> dict[str, Any] | None:

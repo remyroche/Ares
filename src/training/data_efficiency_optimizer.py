@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.sqlite_manager import SQLiteManager
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -23,7 +23,6 @@ from src.utils.warning_symbols import (
     validation_error,
     warning,
 )
-
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data).
@@ -70,11 +69,7 @@ class DataEfficiencyOptimizer:
             f"DataEfficiencyOptimizer initialized for {exchange} {symbol} {timeframe}",
         )
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="database initialization",
-    )
+    @handles_errors(fallback=None)
     def _init_database(self) -> None:
         """Initialize SQLite database with optimized tables for large datasets."""
         with self.engine.connect() as conn:
@@ -181,11 +176,7 @@ class DataEfficiencyOptimizer:
 
             conn.commit()
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=0.0,
-        context="memory usage calculation",
-    )
+    @handles_errors(fallback=0.0)
     def get_memory_usage(self) -> Number:
         """Get current memory usage as a percentage."""
         process = psutil.Process()
@@ -193,20 +184,12 @@ class DataEfficiencyOptimizer:
         self.logger.debug(f"Current memory usage: {memory_percent:.2f}%")
         return memory_percent
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=False,
-        context="memory cleanup check",
-    )
+    @handles_errors(fallback=False)
     def should_cleanup_memory(self) -> bool:
         """Check if memory cleanup is needed."""
         return self.get_memory_usage() > (self.memory_threshold * 100)
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="memory cleanup",
-    )
+    @handles_errors(fallback=None)
     def cleanup_memory(self) -> None:
         """Force garbage collection and memory cleanup."""
         self.logger.info("Performing memory cleanup...")
@@ -214,11 +197,7 @@ class DataEfficiencyOptimizer:
         time.sleep(0.1)  # Allow time for cleanup
         self.logger.info(f"Memory usage after cleanup: {self.get_memory_usage():.2f}%")
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError, KeyError),
-        default_return={},
-        context="data loading with caching",
-    )
+    @handles_errors
     async def load_data_with_caching(
         self,
         lookback_days: int,

@@ -17,15 +17,10 @@ from src.training.steps.backtesting_with_cached_features import (
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
-
-@handle_errors(
-    exceptions=(ValueError, RuntimeError, FileNotFoundError),
-    default_return={},
-    context="configuration loading",
-)
+@handles_errors
 async def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     try:
@@ -34,12 +29,7 @@ async def load_config(config_path: str) -> dict:
     except Exception:
         return {}
 
-
-@handle_errors(
-    exceptions=(ValueError, RuntimeError),
-    default_return=pd.DataFrame(),
-    context="sample data creation",
-)
+@handles_errors(fallback=pd.DataFrame())
 async def create_sample_data() -> pd.DataFrame:
     """Create sample price data for demonstration."""
     try:
@@ -78,12 +68,7 @@ async def create_sample_data() -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
-
-@handle_errors(
-    exceptions=(ValueError, RuntimeError, FileNotFoundError),
-    default_return=False,
-    context="feature precomputation",
-)
+@handles_errors(fallback=False)
 async def step1_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
@@ -127,7 +112,6 @@ async def step1_precompute_features(config: dict) -> bool | None:
 
     except Exception:
         return False
-
 
 async def step2_run_backtests(config: dict) -> bool | None:
     """Step 2: Run backtests using cached features."""
@@ -185,7 +169,6 @@ async def step2_run_backtests(config: dict) -> bool | None:
     except Exception:
         return False
 
-
 async def step3_performance_comparison(config: dict) -> bool | None:
     """Step 3: Compare performance with and without caching."""
     try:
@@ -234,7 +217,6 @@ async def step3_performance_comparison(config: dict) -> bool | None:
     except Exception:
         return False
 
-
 async def step4_cache_management(config: dict) -> bool | None:
     """Step 4: Demonstrate cache management features."""
     try:
@@ -259,7 +241,6 @@ import copy
 
     except Exception:
         return False
-
 
 async def main() -> None:
     """Main workflow function."""
@@ -321,7 +302,6 @@ async def main() -> None:
 
     except Exception:
         system_logger.getChild("WaveletWorkflow").exception("Workflow failed")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

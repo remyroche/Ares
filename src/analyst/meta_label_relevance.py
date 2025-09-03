@@ -9,14 +9,11 @@ import os
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import logging
 
-
-@handle_errors(
-    exceptions=(Exception,), default_return={}, context="compute_mutual_information"
-)
+@handles_errors(fallback={})
 def compute_mutual_information(
     X: pd.DataFrame,
     y: pd.Series,
@@ -49,12 +46,7 @@ def compute_mutual_information(
         mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
     return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=0.0,
-    context="compute_mutual_information_pair",
-)
+@handles_errors(fallback=0.0)
 def compute_mutual_information_pair(
     Xi: pd.Series,
     Xj: pd.Series,
@@ -64,10 +56,7 @@ def compute_mutual_information_pair(
 ) -> float:
     raise NotImplementedError("Removed unused function: compute_mutual_information_pair")
 
-
-@handle_errors(
-    exceptions=(Exception,), default_return={}, context="compute_shap_importance"
-)
+@handles_errors(fallback={})
 def compute_shap_importance(
     X: pd.DataFrame,
     y: pd.Series,
@@ -115,9 +104,7 @@ import os.path
     mean_abs = _np.mean(magnitudes, axis=0)
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
 
-
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return={
         "sharpe_base": 0.0,
         "sharpe_gated": 0.0,
@@ -158,7 +145,6 @@ def evaluate_sharpe_lift(
         "coverage": float(g.mean()),
     }
 
-
 class MetaLabelRelevanceEvaluator:
     """Evaluate meta-label relevance with complementarity checks and persist active labels.
 
@@ -198,8 +184,7 @@ class MetaLabelRelevanceEvaluator:
                 ).astype(int)
         return pd.DataFrame(gating, index=df.index)
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"active_labels": [], "inactive_labels": []},
         context="evaluate_from_frame",
     )

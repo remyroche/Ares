@@ -34,14 +34,13 @@ import asyncio
 
     VectorizedAdvancedFeatureEngineering,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
-
 
 @dataclass
 class FeatureImportanceResult:
@@ -53,7 +52,6 @@ class FeatureImportanceResult:
     combined_score: float
     feature_type: str  # 'wavelet', 'technical', 'other'
     computation_cost: float  # Estimated computation time in ms
-
 
 class WaveletFeatureSelectionWorkflow:
     """Comprehensive workflow for wavelet feature selection using two-model strategy.
@@ -134,11 +132,7 @@ class WaveletFeatureSelectionWorkflow:
         self.discovery_model: Any | None = None
         self.production_model: Any | None = None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="wavelet feature selection workflow initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the wavelet feature selection workflow."""
         try:
@@ -175,11 +169,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(initialization_error(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="full wavelet analysis execution",
-    )
+    @handles_errors(fallback=None)
     async def run_full_wavelet_analysis(
         self,
         price_data: pd.DataFrame,
@@ -230,11 +220,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="discovery model training",
-    )
+    @handles_errors(fallback=None)
     async def train_discovery_model(
         self,
         features: dict[str, Any],
@@ -356,11 +342,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature importance analysis",
-    )
+    @handles_errors(fallback=None)
     async def perform_feature_selection(
         self,
         discovery_model_data: dict[str, Any],
@@ -481,11 +463,7 @@ class WaveletFeatureSelectionWorkflow:
             return 1.0  # Technical indicators are fast
         return 5.0  # Other features are moderate
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="winner feature identification",
-    )
+    @handles_errors(fallback=None)
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
         """Step 4: Identify the most important features for live trading.
 
@@ -545,11 +523,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="lean dataset creation",
-    )
+    @handles_errors(fallback=None)
     async def create_lean_dataset(
         self,
         winner_features: list[FeatureImportanceResult],
@@ -607,11 +581,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="production model training",
-    )
+    @handles_errors(fallback=None)
     async def train_production_model(
         self,
         lean_dataset: dict[str, Any],
@@ -719,11 +689,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="live configuration creation",
-    )
+    @handles_errors(fallback=None)
     async def create_live_configurations(
         self,
         winner_features: list[FeatureImportanceResult],

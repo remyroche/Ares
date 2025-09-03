@@ -35,7 +35,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger
 
-
 class ProbabilityTargetGenerator:
     """
     Generates probability targets for multi-output training.
@@ -59,7 +58,7 @@ class ProbabilityTargetGenerator:
         self.adverse_threshold = self.config.get('adverse_threshold', 0.01)
         self.avoidance_look_ahead = self.config.get('avoidance_look_ahead', 10)
     
-    @handle_errors(default_return=np.array([]), context="generate_triple_barrier_targets")
+    @handles_errors(fallback=np.array([]), context="generate_triple_barrier_targets")
     @comprehensive_validation()
     def generate_triple_barrier_targets(
         self, 
@@ -115,7 +114,7 @@ class ProbabilityTargetGenerator:
         
         return np.array(targets)
     
-    @handle_errors(default_return=np.array([]), context="generate_direction_targets")
+    @handles_errors(fallback=np.array([]), context="generate_direction_targets")
     @comprehensive_validation()
     def generate_direction_targets(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
@@ -144,7 +143,7 @@ class ProbabilityTargetGenerator:
         
         return np.array(targets)
     
-    @handle_errors(default_return=np.array([]), context="generate_magnitude_targets")
+    @handles_errors(fallback=np.array([]), context="generate_magnitude_targets")
     @comprehensive_validation()
     def generate_magnitude_targets(
         self, 
@@ -186,7 +185,7 @@ class ProbabilityTargetGenerator:
         
         return np.array(targets)
     
-    @handle_errors(default_return=np.array([]), context="generate_barrier_avoidance_targets")
+    @handles_errors(fallback=np.array([]), context="generate_barrier_avoidance_targets")
     @comprehensive_validation()
     def generate_barrier_avoidance_targets(
         self, 
@@ -228,7 +227,7 @@ class ProbabilityTargetGenerator:
         
         return np.array(targets)
     
-    @handle_errors(default_return={}, context="generate_all_targets")
+    @handles_errors(fallback={})
     @comprehensive_validation()
     def generate_all_targets(
         self, 
@@ -268,7 +267,6 @@ class ProbabilityTargetGenerator:
         
         self.logger.info(f"Generated targets for {len(X)} samples")
         return targets
-
 
 class MultiOutputModel:
     """
@@ -469,7 +467,7 @@ class MultiOutputModel:
         self.logger.info(f"Successfully trained {len(trained_models)} out of 4 models")
         return trained_models
     
-    @handle_errors(default_return=None, context="optimize_ensemble_weights")
+    @handles_errors(fallback=None)
     def _optimize_ensemble_weights(
         self, 
         models: Dict[str, Any], 
@@ -533,7 +531,7 @@ class MultiOutputModel:
                 initial_weights
             ))
     
-    @handle_errors(default_return={}, context="predict_probabilities")
+    @handles_errors(fallback={})
     def predict_probabilities(
         self, 
         X_test: np.ndarray, 
@@ -597,13 +595,13 @@ class MultiOutputModel:
         
         return probabilities
 
-
 class MultiOutputProbabilityTrainer:
     """
     Main class for multi-output probability training.
     
     This class coordinates the entire multi-output training process,
     from target generation to model training and prediction.
+from src.core.decorators import handles_errors
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -652,7 +650,7 @@ class MultiOutputProbabilityTrainer:
         else:
             self.logger.warning(f"No specific model configuration for timeframe {self.timeframe}, using defaults")
     
-    @handle_errors(default_return={}, context="prepare_multi_output_targets")
+    @handles_errors(fallback={})
     @comprehensive_validation()
     def prepare_multi_output_targets(
         self, 
@@ -710,7 +708,7 @@ class MultiOutputProbabilityTrainer:
         
         return self.trained_models
     
-    @handle_errors(default_return={}, context="predict_probabilities")
+    @handles_errors(fallback={})
     def predict_probabilities(
         self, 
         X_test: np.ndarray, 

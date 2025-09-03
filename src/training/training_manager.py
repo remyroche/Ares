@@ -7,12 +7,8 @@ import asyncio
 
 warnings.filterwarnings("ignore")
 
-
 # Import the new RegularizationManager
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -22,7 +18,6 @@ from src.utils.warning_symbols import (
     missing,
     validation_error,
 )
-
 
 class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
@@ -61,7 +56,7 @@ class TrainingManager:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid training manager configuration"),
             AttributeError: (False, "Missing required training parameters"),
@@ -100,11 +95,7 @@ class TrainingManager:
             self.print(failed("❌ Training Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_training_configuration(self) -> None:
         """Load training configuration."""
         try:
@@ -131,11 +122,7 @@ class TrainingManager:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate training configuration.
 
@@ -175,11 +162,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_training_modules(self) -> None:
         """Initialize training modules."""
         try:
@@ -223,11 +206,7 @@ import copy
                 f"Error initializing feature integration manager: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model training initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_model_training(self) -> None:
         """Initialize model training module."""
         try:
@@ -246,11 +225,7 @@ import copy
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="hyperparameter optimization initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_hyperparameter_optimization(self) -> None:
         """Initialize hyperparameter optimization module."""
         try:
@@ -269,11 +244,7 @@ import copy
                 f"Error initializing hyperparameter optimization: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model evaluation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_model_evaluation(self) -> None:
         """Initialize model evaluation module."""
         try:
@@ -292,11 +263,7 @@ import copy
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model persistence initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_model_persistence(self) -> None:
         """Initialize model persistence module."""
         try:
@@ -315,7 +282,7 @@ import copy
                 initialization_error("Error initializing model persistence: {e}"),
             )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid training parameters"),
             AttributeError: (False, "Missing training components"),
@@ -375,11 +342,7 @@ import copy
         self.logger.info("✅ Training execution completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="training inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_training_inputs(self, training_input: dict[str, Any]) -> bool:
         """Validate training inputs.
 
@@ -408,11 +371,7 @@ import copy
 
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model training",
-    )
+    @handles_errors(fallback=None)
     async def _perform_model_training(
         self,
         training_input: dict[str, Any],
@@ -464,11 +423,7 @@ import copy
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="hyperparameter optimization",
-    )
+    @handles_errors(fallback=None)
     async def _perform_hyperparameter_optimization(
         self,
         training_input: dict[str, Any],
@@ -530,11 +485,7 @@ import copy
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model evaluation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_model_evaluation(
         self,
         training_input: dict[str, Any],
@@ -584,11 +535,7 @@ import copy
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model persistence",
-    )
+    @handles_errors(fallback=None)
     async def _perform_model_persistence(
         self,
         training_input: dict[str, Any],
@@ -967,11 +914,7 @@ import copy
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_training_results(self) -> None:
         """Store training results."""
         try:
@@ -992,11 +935,7 @@ import copy
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training results getting",
-    )
+    @handles_errors(fallback=None)
     def get_training_results(
         self,
         training_type: str | None = None,
@@ -1021,11 +960,7 @@ import copy
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training history getting",
-    )
+    @handles_errors(fallback=None)
     def get_training_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get training history.
 
@@ -1074,11 +1009,7 @@ import copy
             "training_history_count": len(self.training_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="training manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the training manager."""
         self.logger.info("🛑 Stopping Training Manager...")
@@ -1100,16 +1031,10 @@ import copy
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-
 # Global training manager instance
 training_manager: TrainingManager | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="training manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_training_manager(
     config: dict[str, Any] | None = None,
 ) -> TrainingManager | None:

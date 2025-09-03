@@ -46,10 +46,9 @@ except ImportError:
     print("Warning: sklearn not available, clustering optimization disabled")
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
-
 
 @dataclass
 class OptimizationResult:
@@ -128,7 +127,6 @@ class OptimizationResult:
                 "timestamp": datetime.now().isoformat(),
             }
         }
-
 
 class SRDetectionOptimizer:
     """
@@ -212,7 +210,7 @@ class SRDetectionOptimizer:
         self.validation_data: Optional[pd.DataFrame] = None
         self.multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
         
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid optimization configuration"),
             AttributeError: (False, "Missing required components"),
@@ -271,7 +269,7 @@ class SRDetectionOptimizer:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
     
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid data for optimization"),
             AttributeError: (None, "Optimizer not properly initialized"),
@@ -1036,7 +1034,6 @@ class SRDetectionOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to load optimization results: {e}")
             return False
-
 
 # Setup function for easy integration
 async def setup_sr_detection_optimizer(config: Dict[str, Any]) -> Optional[SRDetectionOptimizer]:

@@ -14,11 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
@@ -27,7 +23,6 @@ from src.utils.warning_symbols import (
     missing,
     warning,
 )
-
 
 class StateManager:
     """Enhanced state manager with comprehensive error handling and type safety."""
@@ -57,7 +52,7 @@ class StateManager:
         self.auto_save_task: asyncio.Task | None = None
         self.is_running: bool = False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid state manager configuration"),
             AttributeError: (False, "Missing required state parameters"),
@@ -92,20 +87,12 @@ class StateManager:
         self.logger.info("✅ State Manager initialization completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="state configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_state_configuration(self) -> None:
         """Load state configuration."""
         # Configuration is already loaded in __init__
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate state manager configuration.
 
@@ -130,11 +117,7 @@ class StateManager:
             self.print(error(f"Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="existing state loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_existing_state(self) -> None:
         """Load existing state from file."""
         try:
@@ -148,11 +131,7 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error loading existing state: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="auto-save start",
-    )
+    @handles_errors(fallback=None)
     async def _start_auto_save(self) -> None:
         """Start auto-save functionality."""
         try:
@@ -172,11 +151,7 @@ class StateManager:
             except Exception as e:
                 self.logger.exception(f"Error in auto-save loop: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="state saving",
-    )
+    @handles_errors(fallback=False)
     async def save_state(self) -> bool:
         """Save current state to file.
 
@@ -198,11 +173,7 @@ class StateManager:
             self.logger.exception(f"Error saving state: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="state getting",
-    )
+    @handles_errors(fallback=None)
     def get_state(self, key: str, default: Any = None) -> Any:
         """Get state value.
 
@@ -219,11 +190,7 @@ class StateManager:
             self.logger.exception(f"Error getting state: {e}")
             return default
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="state setting",
-    )
+    @handles_errors(fallback=None)
     def set_state(self, key: str, value: Any) -> None:
         """Set state value.
 
@@ -237,11 +204,7 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error setting state: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="state clearing",
-    )
+    @handles_errors(fallback=None)
     def clear_state(self) -> None:
         """Clear all state."""
         try:
@@ -250,11 +213,7 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error clearing state: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="state manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the state manager."""
         self.logger.info("🛑 Stopping State Manager...")
@@ -281,16 +240,10 @@ class StateManager:
         """Print message to console."""
         print(message)
 
-
 # Global state manager instance
 state_manager: StateManager | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="state manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_state_manager(
     config: dict[str, Any] | None = None,
 ) -> StateManager | None:

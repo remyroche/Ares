@@ -92,7 +92,6 @@ else:
 
 logger = system_logger.getChild("Step4RegimeDataSplitting")
 
-
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
 
@@ -409,6 +408,7 @@ class RegimeDataSplittingStep:
             import json
 import numpy as np
 import pandas as pd
+from src.core.decorators import handles_errors
 
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -418,7 +418,6 @@ import pandas as pd
         except Exception as e:
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
-
 @with_tracing_span("execute_regime_data_splitting")
 @quality_gate(
     min_quality_score=0.8,
@@ -426,7 +425,7 @@ import pandas as pd
     required_grade="B"
 )
 @comprehensive_data_validation
-@handle_errors
+@handles_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -477,7 +476,6 @@ async def run_step(
     except Exception as e:
         logger.exception(f"❌ Error in Step 4: {e}")
         return False
-
 
 if __name__ == "__main__":
     # Test the step

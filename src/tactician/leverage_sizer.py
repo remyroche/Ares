@@ -14,6 +14,7 @@ from typing import Any
 from src.utils.logger import system_logger
 from copy import copy
 import asyncio
+from src.core.decorators import handles_errors
 
 
 class LeverageSizer:

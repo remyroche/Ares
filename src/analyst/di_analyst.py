@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.analyst.dual_model_system import DualModelSystem
+from src.training.dual_model_system import DualModelSystem
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer

@@ -302,22 +302,23 @@ class Analyst:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-
-self.liquidation_risk_model = await setup_liquidation_risk_model(
-self.config,
+            
+            self.liquidation_risk_model = await setup_liquidation_risk_model(
+                self.config,
             )
             if self.liquidation_risk_model:
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
             else:
                 self.logger.error(failed("❌ Failed to initialize Liquidation Risk Model"))
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Liquidation Risk Model: {e}"),
+        except ImportError as e:
+            self.logger.error(
+                failed(f"❌ Failed to import liquidation risk model: {e}")
+            )
+            self.liquidation_risk_model = None
+        except Exception as e:
+            self.logger.error(
+                initialization_error(f"Error initializing Liquidation Risk Model: {e}"),
             )
 
     @handles_errors(
@@ -459,6 +460,20 @@ self.config,
             # 5. Get enhanced predictions from supervisor if available
             enhanced_predictions = {}
             if self.enable_enhanced_predictions and hasattr(self, 'supervisor'):
+                # Extract required parameters from analysis_input
+                symbol = analysis_input.get("symbol", "UNKNOWN")
+                exchange = analysis_input.get("exchange", "UNKNOWN")
+                timeframe = analysis_input.get("timeframe", "1h")
+                
+                # Get regime info from regime classifier if available
+                regime_info = {}
+                if self.regime_classifier and features_df is not None:
+                    try:
+                        regime_info = await self.regime_classifier.analyze_regime(features_df)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to get regime info: {e}")
+                        regime_info = {"regime": "UNKNOWN", "confidence": 0.0}
+                
                 enhanced_predictions = await self.supervisor.get_analyst_predictions(
                     features_df, regime_info, symbol, exchange, timeframe
                 )

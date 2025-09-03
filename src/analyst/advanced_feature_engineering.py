@@ -1285,13 +1285,13 @@ class AdvancedFeatureEngineering:
 
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
-                from src.analyst.meta_labeling_system import MetaLabelingSystem
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-self.meta_labeling_system = MetaLabelingSystem(self.config)
-await self.meta_labeling_system.initialize()
+                try:
+                    from src.analyst.meta_labeling_system import MetaLabelingSystem
+                    self.meta_labeling_system = MetaLabelingSystem(self.config)
+                    await self.meta_labeling_system.initialize()
+                except Exception as e:
+                    self.logger.warning(f"Failed to initialize meta-labeling system: {e}")
+                    self.meta_labeling_system = None
 
             self.is_initialized = True
             self.logger.info("✅ Advanced feature engineering initialized successfully")

@@ -18,14 +18,14 @@ from sqlalchemy.orm import sessionmaker
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-from src.core.decorators import handles_errors
-from src.database.sqlite_manager import SQLiteManager
-import pickle
     error,
     failed,
     validation_error,
     warning,
 )
+from src.core.decorators import handles_errors
+from src.database.sqlite_manager import SQLiteManager
+import pickle
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."
@@ -93,7 +93,7 @@ class DataEfficiencyOptimizer:
                     data_type TEXT NOT NULL,  -- 'klines', 'agg_trades', 'futures'
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),""""
+            """)
             )
 
             # Create indexes for efficient querying
@@ -101,13 +101,13 @@ class DataEfficiencyOptimizer:
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_raw_data_timestamp
                 ON raw_data(timestamp)
-            """),"
+            """)
             )
             conn.execute(
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_raw_data_type
                 ON raw_data(data_type)
-            """),"
+            """)
             )
 
             # Feature cache table (legacy format)
@@ -121,7 +121,7 @@ class DataEfficiencyOptimizer:
                     feature_type TEXT,  -- 'technical', 'price', 'volume', 'regime'
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),"
+            """)
             )
 
             # Feature cache table (wide format)
@@ -135,7 +135,7 @@ class DataEfficiencyOptimizer:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(timestamp, feature_type)
                 )
-            """),"
+            """)
             )
 
             # Create indexes for feature cache
@@ -143,13 +143,13 @@ class DataEfficiencyOptimizer:
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_timestamp
                 ON feature_cache(timestamp)
-            """),"
+            """)
             )
             conn.execute(
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_name
                 ON feature_cache(feature_name)
-            """),"
+            """)
             )
 
             # Create indexes for wide format feature cache
@@ -157,13 +157,13 @@ class DataEfficiencyOptimizer:
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_timestamp
                 ON feature_cache_wide(timestamp)
-            """),"
+            """)
             )
             conn.execute(
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_type
                 ON feature_cache_wide(feature_type)
-            """),"
+            """)
             )
 
             # Processing checkpoints
@@ -177,7 +177,7 @@ class DataEfficiencyOptimizer:
                     metadata TEXT,  -- JSON string with additional info
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),"
+            """)
             )
 
             conn.commit()
@@ -719,7 +719,7 @@ class DataEfficiencyOptimizer:
                     VALUES (:timestamp, :feature_type, :feature_data)
                     ON CONFLICT(timestamp, feature_type)
                     DO UPDATE SET feature_data = :feature_data
-                """),"
+                """),
                     {
                         "timestamp": timestamp_str,
                         "feature_type": feature_type,
@@ -756,7 +756,7 @@ class DataEfficiencyOptimizer:
                 SELECT timestamp, feature_type, feature_data
                 FROM feature_cache_wide
                 WHERE timestamp BETWEEN :start_date AND :end_date
-            """)"
+            """)
 
             # SQLAlchemy can handle datetime objects directly
             params = {"start_date": start_date, "end_date": end_date}
@@ -822,7 +822,7 @@ class DataEfficiencyOptimizer:
                 SELECT timestamp, feature_name, feature_value
                 FROM feature_cache
                 WHERE timestamp BETWEEN :start_date AND :end_date
-            """)"
+            """)
 
             if feature_names:
                 query = text("""
@@ -830,7 +830,7 @@ class DataEfficiencyOptimizer:
                     FROM feature_cache
                     WHERE timestamp BETWEEN :start_date AND :end_date
                     AND feature_name IN :feature_names
-                """)"
+                """)
                 params["feature_names"] = tuple(feature_names)
 
             result = session.execute(query, params)
@@ -866,7 +866,7 @@ class DataEfficiencyOptimizer:
                 text("""
                 INSERT INTO processing_checkpoints (checkpoint_name, timestamp, status, metadata)
                 VALUES (:checkpoint_name, :timestamp, 'completed', :metadata)
-            """),"
+            """),
                 {
                     "checkpoint_name": checkpoint_name,
                     "timestamp": datetime.now(),
@@ -887,7 +887,7 @@ class DataEfficiencyOptimizer:
                 WHERE checkpoint_name = :checkpoint_name
                 ORDER BY timestamp DESC
                 LIMIT 1
-            """),"
+            """),
                 {"checkpoint_name": checkpoint_name},
             )
 
@@ -964,7 +964,7 @@ class DataEfficiencyOptimizer:
                 SELECT feature_type, COUNT(*) as count
                 FROM feature_cache
                 GROUP BY feature_type
-            """),"
+            """)
             ).fetchall()
 
             # Feature cache stats (wide format)
@@ -976,7 +976,7 @@ class DataEfficiencyOptimizer:
                 SELECT feature_type, COUNT(*) as count
                 FROM feature_cache_wide
                 GROUP BY feature_type
-            """),"
+            """)
             ).fetchall()
 
             # Checkpoint stats
@@ -1013,13 +1013,8 @@ class DataEfficiencyOptimizer:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
 
             # Load pickle data
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import asyncio
-import copy
-
-with open(pickle_file_path, "rb") as f:
-    data = pickle.load(f)
+            with open(pickle_file_path, "rb") as f:
+                data = pickle.load(f)
 
             if not isinstance(data, dict):
                 self.print(error("Pickle file does not contain a dictionary"))
@@ -1069,7 +1064,7 @@ with open(pickle_file_path, "rb") as f:
                 text("""
                 DELETE FROM raw_data
                 WHERE timestamp < :cutoff_date
-            """),"
+            """),
                 {"cutoff_date": cutoff_date},
             ).rowcount
 
@@ -1078,7 +1073,7 @@ with open(pickle_file_path, "rb") as f:
                 text("""
                 DELETE FROM feature_cache
                 WHERE timestamp < :cutoff_date
-            """),"
+            """),
                 {"cutoff_date": cutoff_date},
             ).rowcount
 
@@ -1087,7 +1082,7 @@ with open(pickle_file_path, "rb") as f:
                 text("""
                 DELETE FROM feature_cache_wide
                 WHERE timestamp < :cutoff_date
-            """),"
+            """),
                 {"cutoff_date": cutoff_date},
             ).rowcount
 

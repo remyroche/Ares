@@ -1347,52 +1347,46 @@ class EnhancedFeatureSelector:
             from sklearn.model_selection import TimeSeriesSplit
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
+        feature_stability = dict.fromkeys(features_df.columns, 0)
+        n_folds = 5
 
-feature_stability = dict.fromkeys(features_df.columns, 0)
-n_folds = 5
+        # Time series cross-validation for stability analysis
+        tscv = TimeSeriesSplit(n_splits=n_folds)
 
-# Time series cross-validation for stability analysis
-            tscv = TimeSeriesSplit(n_splits=n_folds)
+        for _fold_idx, (train_idx, _val_idx) in enumerate(tscv.split(features_df)):
+            X_train = features_df.iloc[train_idx]
+            y_train = target.iloc[train_idx]
 
-            for _fold_idx, (train_idx, _val_idx) in enumerate(tscv.split(features_df)):
-                X_train = features_df.iloc[train_idx]
-                y_train = target.iloc[train_idx]
+            # Run feature selection on this fold
+            fold_features = self._select_random_forest_features(X_train, y_train, target_features)
 
-                # Run feature selection on this fold
-                fold_features = self._select_random_forest_features(X_train, y_train, target_features)
+            # Count how many times each feature is selected
+            for feature in fold_features:
+                if feature in feature_stability:
+                    feature_stability[feature] += 1
 
-                # Count how many times each feature is selected
-                for feature in fold_features:
-                    if feature in feature_stability:
-                        feature_stability[feature] += 1
+        # Select features that are stable across folds
+        stable_features = [
+            feature for feature, count in feature_stability.items()
+            if count >= n_folds * 0.6  # Feature must be selected in at least 60% of folds
+        ]
 
-            # Select features that are stable across folds
-            stable_features = [
-                feature for feature, count in feature_stability.items()
-                if count >= n_folds * 0.6  # Feature must be selected in at least 60% of folds
-            ]
+        # If not enough stable features, add top features by stability score
+        if len(stable_features) < target_features:
+            sorted_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)
+            additional_features = [
+                feature for feature, count in sorted_by_stability
+                if feature not in stable_features
+            ][:target_features - len(stable_features)]
+            stable_features.extend(additional_features)
 
-            # If not enough stable features, add top features by stability score
-            if len(stable_features) < target_features:
-                sorted_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)
-                additional_features = [
-                    feature for feature, count in sorted_by_stability
-                    if feature not in stable_features
-                ][:target_features - len(stable_features)]
-                stable_features.extend(additional_features)
+        # Limit to target number of features
+        stable_features = stable_features[:target_features]
 
-            # Limit to target number of features
-            stable_features = stable_features[:target_features]
+        self.logger.info(f"📊 Feature stability analysis: {len(stable_features)} stable features selected")
+        self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)[:10])}")
 
-            self.logger.info(f"📊 Feature stability analysis: {len(stable_features)} stable features selected")
-            self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)[:10])}")
-
-            return stable_features
-
-        except Exception as e:
-            self.logger.exception(f"❌ Feature stability analysis failed: {e}")
-            return features_df.columns[:target_features].tolist()
+        return stable_features
 
     def _remove_correlated_features(self, features_df: pd.DataFrame, threshold: float) -> list[str]:
         """Remove highly correlated features using vectorized operations."""

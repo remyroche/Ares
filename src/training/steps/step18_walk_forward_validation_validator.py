@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 from src.core.decorators import handles_errors
+from src.utils.common_operations import safe_json_load
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -186,8 +187,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         metrics: dict[str, Any] = {}
         if os.path.exists(performance_file):
-            with open(performance_file, "r", encoding="utf-8") as f:
-                performance = json.load(f)
+            performance = safe_json_load(performance_file)
 
             # Check overall performance metrics
             if "overall_accuracy" in performance:
@@ -274,8 +274,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         metrics: dict[str, Any] = {}
         if os.path.exists(metadata_file):
-            with open(metadata_file, "r", encoding="utf-8") as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_file)
 
             # Check number of folds
             if "fold_count" in metadata:
@@ -349,8 +348,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         metrics: dict[str, Any] = {}
         if os.path.exists(results_file):
-            with open(results_file, "r", encoding="utf-8") as f:
-                results = json.load(f)
+            results = safe_json_load(results_file)
 
             # Check for consistent model performance
             if "model_performance" in results:

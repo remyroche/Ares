@@ -1,9 +1,9 @@
-"""
+""""
 Enhanced Step1_5 Data Converter
 
 This module provides an improved implementation of Step1_5 data converter
 with enhanced error handling, memory optimization, and data quality validation.
-"""
+""""
 
 import asyncio
 import json
@@ -151,7 +151,7 @@ class OptimizedUnifiedDataProcessor:
         elif source_name == 'aggtrades':
             # Transform aggtrades to OHLCV
             if 'price' in chunk.columns and 'quantity' in chunk.columns:
-                # Simple aggregation - in practice, you'd want more sophisticated aggregation
+                # Simple aggregation - in practice, you'd want more sophisticated aggregation'
                 unified_chunk['open'] = chunk['price']
                 unified_chunk['high'] = chunk['price']
                 unified_chunk['low'] = chunk['price']
@@ -178,12 +178,12 @@ class OptimizedUnifiedDataProcessor:
 
 
 class EnhancedStep1_5DataConverter:
-    """
+    """"
     Enhanced Step1_5 Data Converter
     
     This class provides an improved implementation of Step1_5 data converter
     with enhanced error handling, memory optimization, and data quality validation.
-    """
+    """"
     
     def __init__(self, config: Optional[Step1_5Config] = None):
         self.config = config or Step1_5Config()
@@ -222,7 +222,7 @@ class EnhancedStep1_5DataConverter:
             self.logger.debug(f"Initialized directory: {directory}")
     
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """
+        """"
         Execute the enhanced data conversion process.
         
         Args:
@@ -231,7 +231,7 @@ class EnhancedStep1_5DataConverter:
             
         Returns:
             Updated pipeline state with conversion results
-        """
+        """"
         start_time = time.time()
         self.logger.info("🔄 Starting enhanced Step1_5 data conversion...")
         
@@ -474,7 +474,7 @@ async def run_enhanced_step1_5(
     pipeline_state: Dict[str, Any],
     config: Optional[Step1_5Config] = None
 ) -> Dict[str, Any]:
-    """
+    """"
     Convenience function to run enhanced Step1_5 data conversion.
     
     Args:
@@ -484,7 +484,7 @@ async def run_enhanced_step1_5(
         
     Returns:
         Updated pipeline state
-    """
+    """"
     step1_5 = EnhancedStep1_5DataConverter(config)
     return await step1_5.execute(training_input, pipeline_state)
 

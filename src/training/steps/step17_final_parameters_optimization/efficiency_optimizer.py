@@ -1,10 +1,10 @@
 # src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py
 
-"""Efficiency Optimizer for Hyperparameter Optimization.
+"""Efficiency Optimizer for Hyperparameter Optimization."
 
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
-"""
+""""
 
 import asyncio
 import multiprocessing as mp
@@ -102,7 +102,7 @@ class EfficiencyOptimizer:
     async def optimize_trial_efficiency(
         self, objective_function, search_space: dict[str, Any], n_trials: int, timeout_seconds: int = 3600
     ) -> dict[str, Any]:
-        """Run efficient hyperparameter optimization.
+        """Run efficient hyperparameter optimization."
 
         Args:
             objective_function: Function to optimize
@@ -113,7 +113,7 @@ class EfficiencyOptimizer:
         Returns:
             Optimization results with efficiency metrics
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info(f"Starting efficient optimization with {n_trials} trials")

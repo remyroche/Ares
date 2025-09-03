@@ -1,6 +1,6 @@
-"""
+""""
 Lifecycle manager for pipeline components (minimal scaffold).
-"""
+""""
 
 from __future__ import annotations
 

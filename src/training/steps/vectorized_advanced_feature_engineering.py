@@ -18,6 +18,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.utils.common_operations import (
+    generate_hash, generate_cache_key as common_generate_cache_key,
+    ensure_directory, safe_json_dump, safe_json_load,
+    safe_read_parquet, safe_to_parquet, list_parquet_files,
+    safe_copy
+)
+
 from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
 from src.utils.centralized_decorators import (
     ValidationLevel,
@@ -294,9 +301,8 @@ class WaveletFeatureCache:
     def _hash_dataframe(self, df: pd.DataFrame) -> str:
         """Generate hash for DataFrame content."""
         try:
-            # Convert DataFrame to bytes for hashing
-            df_bytes = df.to_string().encode()
-            return hashlib.md5(df_bytes).hexdigest()
+            # Use common_operations generate_hash for consistency
+            return generate_hash(df, algorithm="md5")
 
         except Exception as e:
             self.logger.exception(f"🚨 Error hashing DataFrame: {e}")
@@ -384,8 +390,7 @@ class WaveletFeatureCache:
 
             # Try to read metadata
             try:
-                with open(metadata_file) as f:
-                    metadata = json.load(f)
+                metadata = safe_json_load(metadata_file)
 
                 # Validate metadata structure
                 required_keys = [
@@ -459,8 +464,8 @@ class WaveletFeatureCache:
 
             # Save features based on format
             if self.cache_format == "parquet":
-                features_df.to_parquet(
-                    features_file, compression=self.compression, index=True
+                safe_to_parquet(
+                    features_df, features_file, compression=self.compression, index=True
                 )
             elif self.cache_format == "feather":
                 features_df.to_feather(features_file)
@@ -468,8 +473,7 @@ class WaveletFeatureCache:
                 features_df.to_hdf(features_file, key="wavelet_features", mode="w")
 
             # Save metadata
-            with open(metadata_file, "w") as f:
-                json.dump(cache_metadata, f, indent=2)
+            safe_json_dump(cache_metadata, metadata_file, indent=2)
 
             self.logger.info(
                 f"💾 Cached {len(features)} wavelet features to {features_file}",
@@ -496,13 +500,13 @@ class WaveletFeatureCache:
 
             # Load features based on format
             if self.cache_format == "parquet":
-                features_df = pd.read_parquet(features_file)
+                features_df = safe_read_parquet(features_file)
             elif self.cache_format == "feather":
                 features_df = pd.read_feather(features_file)
             elif self.cache_format == "h5":
                 features_df = pd.read_hdf(features_file, key="wavelet_features")
             else:
-                features_df = pd.read_parquet(features_file)
+                features_df = safe_read_parquet(features_file)
 
             # Convert DataFrame back to features dictionary
             features = self._dataframe_to_features(features_df)
@@ -4796,7 +4800,7 @@ class VectorizedAdvancedFeatureEngineering:
                 hmm_files = glob.glob("data/hmm_regimes/*_composite_clusters.parquet")
                 if hmm_files:
                     # Load the most recent HMM data
-                    hmm_data = pd.read_parquet(hmm_files[-1])
+                    hmm_data = safe_read_parquet(hmm_files[-1])
                     if "composite_cluster_id" in hmm_data.columns:
                         # Align HMM data with price data
                         if len(hmm_data) == len(price_data):

@@ -20,14 +20,14 @@ import asyncio
 )
 
 class EnhancedOptimizationOrchestrator:
-    """Orchestrates multiple advanced hyperparameter optimization techniques.
+    """Orchestrates multiple advanced hyperparameter optimization techniques."
 
     Combines:
     - Multi-objective optimization
     - Bayesian optimization with advanced sampling
     - Adaptive optimization based on market regimes
     - Performance tracking and analysis
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -71,7 +71,7 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
         optimization_type: str = "comprehensive",
     ) -> dict[str, Any]:
-        """Run comprehensive hyperparameter optimization using multiple techniques.
+        """Run comprehensive hyperparameter optimization using multiple techniques."
 
         Args:
             market_data: Historical market data for optimization
@@ -82,7 +82,7 @@ class EnhancedOptimizationOrchestrator:
                 - "adaptive": Only adaptive optimization
                 - "quick": Quick optimization with reduced trials
 
-        """
+        """"
         self.logger.info(f"Starting {optimization_type} optimization...")
 
         results = {

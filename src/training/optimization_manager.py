@@ -14,17 +14,17 @@ import copy
 )
 
 class OptimizationManager:
-    """Optimization manager responsible for hyperparameter optimization and model tuning.
+    """Optimization manager responsible for hyperparameter optimization and model tuning."
     This module handles all optimization-related operations for trained models.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize optimization manager.
+        """Initialize optimization manager."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("OptimizationManager")
 
@@ -64,12 +64,12 @@ class OptimizationManager:
         context="optimization manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize optimization manager.
+        """Initialize optimization manager."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Optimization Manager...")
 
@@ -90,12 +90,12 @@ class OptimizationManager:
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate optimization manager configuration.
+        """Validate optimization manager configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate optimization manager specific settings
             if not any(
@@ -152,7 +152,7 @@ class OptimizationManager:
         model_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Optimize trained models.
+        """Optimize trained models."
 
         Args:
             model_results: Results from model training
@@ -161,7 +161,7 @@ class OptimizationManager:
         Returns:
             dict: Optimization results
 
-        """
+        """"
         try:
             self.logger.info("🔧 Starting model optimization...")
             self.is_optimizing = True
@@ -221,7 +221,7 @@ class OptimizationManager:
         model_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> bool:
-        """Validate optimization input parameters.
+        """Validate optimization input parameters."
 
         Args:
             model_results: Results from model training
@@ -230,7 +230,7 @@ class OptimizationManager:
         Returns:
             bool: True if inputs are valid, False otherwise
 
-        """
+        """"
         try:
             # Validate model results
             if not model_results:
@@ -261,7 +261,7 @@ class OptimizationManager:
         model_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Perform hyperparameter optimization.
+        """Perform hyperparameter optimization."
 
         Args:
             model_results: Results from model training
@@ -270,7 +270,7 @@ class OptimizationManager:
         Returns:
             dict: Hyperparameter optimization results
 
-        """
+        """"
         try:
             self.logger.info("🔧 Performing hyperparameter optimization...")
 
@@ -332,7 +332,7 @@ class OptimizationManager:
         timeframe: str,
         model_type: str,
     ) -> dict[str, Any] | None:
-        """Optimize hyperparameters for a single model.
+        """Optimize hyperparameters for a single model."
 
         Args:
             model_result: Model training result
@@ -342,7 +342,7 @@ class OptimizationManager:
         Returns:
             dict: Optimized model result
 
-        """
+        """"
         try:
             self.logger.info(
                 f"🔧 Optimizing hyperparameters for {model_type} {timeframe} model...",
@@ -376,7 +376,7 @@ class OptimizationManager:
         model_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Perform feature selection optimization.
+        """Perform feature selection optimization."
 
         Args:
             model_results: Results from model training
@@ -385,7 +385,7 @@ class OptimizationManager:
         Returns:
             dict: Feature selection optimization results
 
-        """
+        """"
         try:
             self.logger.info("🔧 Performing feature selection optimization...")
 
@@ -423,7 +423,7 @@ class OptimizationManager:
         model_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Perform ensemble optimization.
+        """Perform ensemble optimization."
 
         Args:
             model_results: Results from model training
@@ -432,7 +432,7 @@ class OptimizationManager:
         Returns:
             dict: Ensemble optimization results
 
-        """
+        """"
         try:
             self.logger.info("🔧 Performing ensemble optimization...")
 
@@ -481,7 +481,7 @@ class OptimizationManager:
         self,
         analyst_models: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Optimize analyst model ensembles.
+        """Optimize analyst model ensembles."
 
         Args:
             analyst_models: Analyst model results
@@ -489,7 +489,7 @@ class OptimizationManager:
         Returns:
             dict: Optimized analyst ensemble results
 
-        """
+        """"
         try:
             self.logger.info("🔧 Optimizing analyst ensembles...")
 
@@ -518,7 +518,7 @@ class OptimizationManager:
         self,
         tactician_models: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Optimize tactician model ensembles.
+        """Optimize tactician model ensembles."
 
         Args:
             tactician_models: Tactician model results
@@ -526,7 +526,7 @@ class OptimizationManager:
         Returns:
             dict: Optimized tactician ensemble results
 
-        """
+        """"
         try:
             self.logger.info("🔧 Optimizing tactician ensembles...")
 
@@ -554,12 +554,12 @@ class OptimizationManager:
         self,
         optimization_results: dict[str, Any],
     ) -> None:
-        """Store optimization results.
+        """Store optimization results."
 
         Args:
             optimization_results: Optimization results to store
 
-        """
+        """"
         try:
             self.logger.info("📁 Storing optimization results...")
 
@@ -573,12 +573,12 @@ class OptimizationManager:
             self.print(failed(f"❌ Failed to store optimization results: {e}"))
 
     def get_optimization_status(self) -> dict[str, Any]:
-        """Get current optimization status.
+        """Get current optimization status."
 
         Returns:
             dict: Optimization status information
 
-        """
+        """"
         return {
             "is_optimizing": self.is_optimizing,
             "has_optimization_results": bool(self.optimization_results),
@@ -588,12 +588,12 @@ class OptimizationManager:
         }
 
     def get_optimization_results(self) -> dict[str, Any]:
-        """Get the latest optimization results.
+        """Get the latest optimization results."
 
         Returns:
             dict: Optimization results
 
-        """
+        """"
         return self.optimization_results.copy()
 
     @handles_errors(fallback=None)
@@ -610,7 +610,7 @@ class OptimizationManager:
 async def setup_optimization_manager(
     config: dict[str, Any] | None = None,
 ) -> OptimizationManager | None:
-    """Setup and return a configured OptimizationManager instance.
+    """Setup and return a configured OptimizationManager instance."
 
     Args:
         config: Configuration dictionary
@@ -618,7 +618,7 @@ async def setup_optimization_manager(
     Returns:
         OptimizationManager: Configured optimization manager instance
 
-    """
+    """"
     try:
         manager = OptimizationManager(config or {})
         if await manager.initialize():

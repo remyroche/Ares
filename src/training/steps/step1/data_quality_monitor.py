@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Data Quality Monitor for Real-time Monitoring and Alerting.
+"""Data Quality Monitor for Real-time Monitoring and Alerting."
 
 This module provides real-time monitoring of data quality metrics and alerting
 capabilities for the enhanced data quality system.
-"""
+""""
 
 import asyncio
 import json
@@ -109,7 +109,7 @@ class DataQualityMonitor:
         timeframes: List[str],
         interval_seconds: int = 300
     ) -> bool:
-        """Start real-time monitoring of data quality.
+        """Start real-time monitoring of data quality."
         
         Args:
             symbols: List of symbols to monitor
@@ -119,7 +119,7 @@ class DataQualityMonitor:
             
         Returns:
             bool: True if monitoring started successfully
-        """
+        """"
         try:
             self.monitoring_active = True
             self.monitoring_interval = interval_seconds
@@ -144,21 +144,21 @@ class DataQualityMonitor:
 
     @with_tracing_span("add_alert_callback")
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
-        """Add a callback function to be called when alerts are generated.
+        """Add a callback function to be called when alerts are generated."
         
         Args:
             callback: Function to call with alert data
-        """
+        """"
         self.alert_callbacks.append(callback)
         logger.info(f"✅ Added alert callback: {callback.__name__}")
 
     @with_tracing_span("set_quality_thresholds")
     def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
-        """Set quality monitoring thresholds.
+        """Set quality monitoring thresholds."
         
         Args:
             thresholds: Dictionary of threshold values
-        """
+        """"
         self.quality_thresholds.update(thresholds)
         logger.info("✅ Updated quality monitoring thresholds")
 
@@ -208,11 +208,13 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
 from src.core.decorators import handles_errors
             
-            manager = EnhancedDataQualityManager(str(self.data_cache_path))
+manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
             # Run quality check
             quality_results = await manager.comprehensive_quality_check(
@@ -220,7 +222,7 @@ from src.core.decorators import handles_errors
                 exchange=exchange,
                 timeframe=timeframe,
                 check_gaps=True,
-                fill_gaps=False,  # Don't auto-fill during monitoring
+                fill_gaps=False,  # Don't auto-fill during monitoring'
                 validate_format=True
             )
             
@@ -437,7 +439,7 @@ from src.core.decorators import handles_errors
         end_time: Optional[datetime] = None,
         limit: int = 100
     ) -> List[DataQualityAlert]:
-        """Get filtered alerts.
+        """Get filtered alerts."
         
         Args:
             symbol: Filter by symbol
@@ -450,7 +452,7 @@ from src.core.decorators import handles_errors
             
         Returns:
             List of filtered alerts
-        """
+        """"
         filtered_alerts = []
         
         for alert in self.alerts:
@@ -477,14 +479,14 @@ from src.core.decorators import handles_errors
 
     @with_tracing_span("acknowledge_alert")
     def acknowledge_alert(self, alert_index: int) -> bool:
-        """Acknowledge an alert by index.
+        """Acknowledge an alert by index."
         
         Args:
             alert_index: Index of alert to acknowledge
             
         Returns:
             bool: True if alert was acknowledged
-        """
+        """"
         try:
             if 0 <= alert_index < len(self.alerts):
                 self.alerts[alert_index].acknowledged = True
@@ -497,14 +499,14 @@ from src.core.decorators import handles_errors
 
     @with_tracing_span("resolve_alert")
     def resolve_alert(self, alert_index: int) -> bool:
-        """Mark an alert as resolved.
+        """Mark an alert as resolved."
         
         Args:
             alert_index: Index of alert to resolve
             
         Returns:
             bool: True if alert was resolved
-        """
+        """"
         try:
             if 0 <= alert_index < len(self.alerts):
                 self.alerts[alert_index].resolved = True

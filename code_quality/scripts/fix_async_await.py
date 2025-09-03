@@ -238,7 +238,9 @@ def main():
     
     # Save report
     if not args.fix:
-        report_file = '/workspace/code_quality/async_fixes_report.json'
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_file = f'/workspace/code_quality/reports/async_fixes_report_{timestamp}.json'
         with open(report_file, 'w') as f:
             json.dump(result, f, indent=2)
         print(f"\nReport saved to: {report_file}")

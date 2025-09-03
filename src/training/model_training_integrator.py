@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Model Training Integrator for Ares Trading System.
+"""Model Training Integrator for Ares Trading System."
 Enables full functionality with trained models.
-"""
+""""
 
 import json
 import os

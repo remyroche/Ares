@@ -1,9 +1,9 @@
 # src/training/steps/fractional_feature_selector.py
 
-"""Fractional Feature Selector: Intelligent feature selection for Step 7.
+"""Fractional Feature Selector: Intelligent feature selection for Step 7."
 Implements feature selection based on fractional label alignment, multicollinearity reduction,
 and feature importance ranking.
-"""
+""""
 
 import time
 from pathlib import Path
@@ -32,11 +32,11 @@ class FractionalFeatureSelector:
     """Intelligent feature selector for Step 7 with fractional label alignment."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize fractional feature selector.
+        """Initialize fractional feature selector."
         
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config or {}
         
         # Selection parameters
@@ -81,7 +81,7 @@ class FractionalFeatureSelector:
         labels: pd.Series, 
         hmm_regime: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Select optimal features for given labels and HMM regime.
+        """Select optimal features for given labels and HMM regime."
         
         Args:
             features: Input features DataFrame
@@ -90,7 +90,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Dictionary with selected features and selection metrics
-        """
+        """"
         start_time = time.time()
         
         try:
@@ -157,7 +157,7 @@ class FractionalFeatureSelector:
             raise
     
     def _align_data(self, features: pd.DataFrame, labels: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
-        """Align features and labels data.
+        """Align features and labels data."
         
         Args:
             features: Features DataFrame
@@ -165,7 +165,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Tuple of aligned features and labels
-        """
+        """"
         # Find common index
         common_index = features.index.intersection(labels.index)
         
@@ -186,7 +186,7 @@ class FractionalFeatureSelector:
         return aligned_features, aligned_labels
     
     def _calculate_correlation_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
-        """Calculate correlation-based feature scores.
+        """Calculate correlation-based feature scores."
         
         Args:
             features: Features DataFrame
@@ -194,7 +194,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with correlation scores
-        """
+        """"
         try:
             # Calculate absolute correlations
             correlations = []
@@ -217,7 +217,7 @@ class FractionalFeatureSelector:
             return pd.Series(0.5, index=features.columns)
     
     def _calculate_importance_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
-        """Calculate feature importance scores using multiple methods.
+        """Calculate feature importance scores using multiple methods."
         
         Args:
             features: Features DataFrame
@@ -225,7 +225,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with importance scores
-        """
+        """"
         try:
             # Use multiple importance methods
             importance_scores = {}
@@ -271,14 +271,14 @@ class FractionalFeatureSelector:
             return pd.Series(0.5, index=features.columns)
     
     def _calculate_stability_scores(self, features: pd.DataFrame) -> pd.Series:
-        """Calculate feature stability scores.
+        """Calculate feature stability scores."
         
         Args:
             features: Features DataFrame
             
         Returns:
             Series with stability scores
-        """
+        """"
         try:
             stability_scores = []
             
@@ -313,14 +313,14 @@ class FractionalFeatureSelector:
             return pd.Series(0.5, index=features.columns)
     
     def _calculate_diversity_scores(self, features: pd.DataFrame) -> pd.Series:
-        """Calculate feature diversity scores.
+        """Calculate feature diversity scores."
         
         Args:
             features: Features DataFrame
             
         Returns:
             Series with diversity scores
-        """
+        """"
         try:
             diversity_scores = []
             
@@ -356,7 +356,7 @@ class FractionalFeatureSelector:
             return pd.Series(0.5, index=features.columns)
     
     def _calculate_label_alignment_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
-        """Calculate label alignment scores for fractional labels.
+        """Calculate label alignment scores for fractional labels."
         
         Args:
             features: Features DataFrame
@@ -364,7 +364,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with label alignment scores
-        """
+        """"
         try:
             alignment_scores = []
             
@@ -406,14 +406,14 @@ class FractionalFeatureSelector:
             return pd.Series(0.5, index=features.columns)
     
     def _combine_selection_scores(self, selection_scores: Dict[str, pd.Series]) -> pd.Series:
-        """Combine individual selection scores.
+        """Combine individual selection scores."
         
         Args:
             selection_scores: Dictionary of selection scores
             
         Returns:
             Combined scores Series
-        """
+        """"
         try:
             combined_scores = pd.Series(0.0, index=list(selection_scores.values())[0].index)
             
@@ -435,7 +435,7 @@ class FractionalFeatureSelector:
             return pd.Series(0.5, index=list(selection_scores.values())[0].index)
     
     def _reduce_multicollinearity(self, features: pd.DataFrame, scores: pd.Series) -> pd.DataFrame:
-        """Reduce multicollinearity in features.
+        """Reduce multicollinearity in features."
         
         Args:
             features: Features DataFrame
@@ -443,7 +443,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Features DataFrame with reduced multicollinearity
-        """
+        """"
         try:
             # Calculate correlation matrix
             corr_matrix = features.corr().abs()
@@ -480,7 +480,7 @@ class FractionalFeatureSelector:
             return features
     
     def _select_final_features(self, features: pd.DataFrame, scores: pd.Series) -> pd.DataFrame:
-        """Select final features based on scores and constraints.
+        """Select final features based on scores and constraints."
         
         Args:
             features: Features DataFrame
@@ -488,7 +488,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Selected features DataFrame
-        """
+        """"
         try:
             # Align scores with features
             aligned_scores = scores[features.columns]
@@ -521,7 +521,7 @@ class FractionalFeatureSelector:
         labels: pd.Series, 
         hmm_regime: Optional[str]
     ) -> Dict[str, Any]:
-        """Calculate selection performance metrics.
+        """Calculate selection performance metrics."
         
         Args:
             original_features: Original features DataFrame
@@ -531,7 +531,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Dictionary with selection metrics
-        """
+        """"
         try:
             metrics = {
                 'original_feature_count': len(original_features.columns),
@@ -586,7 +586,7 @@ class FractionalFeatureSelector:
         hmm_regime: Optional[str], 
         processing_time: float
     ):
-        """Track feature selection history.
+        """Track feature selection history."
         
         Args:
             original_features: Original features DataFrame
@@ -594,7 +594,7 @@ class FractionalFeatureSelector:
             metrics: Selection metrics
             hmm_regime: HMM regime label
             processing_time: Processing time
-        """
+        """"
         try:
             history_entry = {
                 'timestamp': pd.Timestamp.now(),
@@ -613,11 +613,11 @@ class FractionalFeatureSelector:
             self.logger.warning(f"Error tracking selection history: {e}")
     
     def get_selection_summary(self) -> Dict[str, Any]:
-        """Get summary of feature selection performance.
+        """Get summary of feature selection performance."
         
         Returns:
             Dictionary with selection summary
-        """
+        """"
         if not self.selection_history:
             return {'message': 'No selection history available'}
         
@@ -663,14 +663,14 @@ class FractionalFeatureSelector:
             return {'error': str(e)}
     
     def export_selection_report(self, output_dir: str = "data/fractional_performance/feature_selection") -> str:
-        """Export feature selection report to file.
+        """Export feature selection report to file."
         
         Args:
             output_dir: Output directory for the report
             
         Returns:
             Path to the exported report
-        """
+        """"
         try:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -681,9 +681,11 @@ class FractionalFeatureSelector:
             # Export to JSON
             report_file = output_path / "feature_selection_performance.json"
             import json
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import datetime as datetime
 
-            with open(report_file, 'w') as f:
+with open(report_file, 'w') as f:
                 json.dump(summary, f, indent=2, default=str)
             
             # Export detailed history
@@ -710,7 +712,7 @@ def get_fractional_feature_selector_config(
     alignment_window: int = 100,
     alignment_threshold: float = 0.1
 ) -> Dict[str, Any]:
-    """Get configuration for fractional feature selector.
+    """Get configuration for fractional feature selector."
     
     Args:
         min_features: Minimum number of features to select
@@ -725,7 +727,7 @@ def get_fractional_feature_selector_config(
         
     Returns:
         Configuration dictionary
-    """
+    """"
     if selection_methods is None:
         selection_methods = ['correlation', 'importance', 'stability', 'diversity', 'label_alignment']
     

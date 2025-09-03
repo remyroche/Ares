@@ -1,8 +1,8 @@
 # src/training/optimization/computational_optimization_manager.py
 
-"""Computational Optimization Manager for Enhanced Training Pipeline.
+"""Computational Optimization Manager for Enhanced Training Pipeline."
 Implements all optimization strategies from computational_optimization_strategies.md.
-"""
+""""
 
 import contextlib
 import gc
@@ -716,7 +716,7 @@ class SurrogateOptimizer:
         parameter_space: dict[str, Any] | None = None,
         constraints: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """
+        """"
         Advanced surrogate optimization with multiple model types and adaptive sampling.
         
         Args:
@@ -727,7 +727,7 @@ class SurrogateOptimizer:
             
         Returns:
             Optimization results with detailed statistics
-        """
+        """"
         self.logger.info(f"🚀 Starting advanced surrogate optimization with {n_trials} trials")
         self.logger.info(f"📊 Surrogate model type: {self.surrogate_model_type}")
         

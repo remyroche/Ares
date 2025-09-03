@@ -1,6 +1,6 @@
 # src/training/steps/step14_tactician_labeling.py
 
-"""Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers.
+"""Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."
 
 This step applies regime-aware triple barrier labeling for Tactician multi-outcome predictions
 with regime-specific barrier calculation, precision thresholds, and quality filters.
@@ -10,7 +10,7 @@ Enhanced for high precision completion of Analyst signals with:
 - Per-regime precision thresholds
 - Regime-specific quality filters
 - Regime-aware multi-outcome prediction structure
-"""
+""""
 
 import asyncio
 import contextlib
@@ -568,7 +568,7 @@ class RegimeAwareTacticianLabeler:
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
 class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""
+    """Step 8: Tactician Model Labeling using Analyst's model."""'
 
     
 
@@ -778,7 +778,7 @@ class TacticianLabelingStep:
             if not regime_mask.any():
                 continue
 
-            # Ensure the model's expected features are present
+            # Ensure the model's expected features are present'
             if hasattr(ensemble, "feature_names_in_"):
                 features_for_model = [
                     f
@@ -802,12 +802,12 @@ class TacticianLabelingStep:
         return data_with_features, all_signals
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
-        """Placeholder for your market regime detection logic.
+        """Placeholder for your market regime detection logic."
         This should be consistent with the logic from step4_regime_specific_training.
-        """
+        """"
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
-        # It is NOT used by the Tactician's labeler.
+        # It is NOT used by the Tactician's labeler.'
         vol_percentile = data["volatility"].rank(pct=True)
         bins = [0, 0.33, 0.66, 1.0]
         labels = ["SIDEWAYS", "BULL", "BEAR"]
@@ -818,7 +818,7 @@ class TacticianLabelingStep:
         """Calculate all necessary features for both Analyst and Tactician."""
         data = data.copy()
         data["returns"] = data["close"].pct_change()
-        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.
+        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.'
         data["volatility"] = (
             data["returns"].rolling(window=60).std().bfill()
         )  # 1-hour volatility
@@ -1013,7 +1013,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the tactician labeling step.
+    """Run the tactician labeling step."
 
     Args:
         symbol: Trading symbol
@@ -1023,7 +1023,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """
+    """"
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

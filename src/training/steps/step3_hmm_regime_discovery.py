@@ -3120,8 +3120,7 @@ async def run_step(
             import json
             
             # Create optimization directory
-            optimization_dir = Path(data_dir) / "optimization_results"
-            optimization_dir.mkdir(exist_ok=True)
+            optimization_dir = ensure_directory(Path(data_dir) / "optimization_results")
             
             # Save results
             results_file = optimization_dir / f"{exchange}_{symbol}_{timeframe}_optimization_results.json"
@@ -3132,8 +3131,7 @@ async def run_step(
             optimization_results['exchange'] = exchange
             optimization_results['timeframe'] = timeframe
             
-            with open(results_file, 'w') as f:
-                json.dump(optimization_results, f, indent=2, default=str)
+            safe_json_dump(optimization_results, results_file, indent=2, default=str)
             
             self.logger.info(f"💾 Optimization results saved to: {results_file}")
             
@@ -3146,8 +3144,7 @@ async def run_step(
         
         try:
             # Create optimization directory
-            optimization_dir = Path(data_dir) / "optimization_results"
-            optimization_dir.mkdir(exist_ok=True)
+            optimization_dir = ensure_directory(Path(data_dir) / "optimization_results")
             
             # Generate report
             report_file = optimization_dir / f"{exchange}_{symbol}_{timeframe}_optimization_report.md"

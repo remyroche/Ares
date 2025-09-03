@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""
+""""
 Paper Trading Integration Module
 
 Integrates the `PaperTrader` with the `PaperTradingReporter` and provides
 helper methods to execute trades and generate reports in real time.
-"""
+""""
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -35,17 +35,17 @@ if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted mo
     from src.reports.paper_trading_reporter import PaperTradingReporter
 
 class PaperTradingIntegration:
-    """
+    """"
     Integration module for paper trading with enhanced reporting.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize paper trading integration.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config
         self.logger = system_logger.getChild("PaperTradingIntegration")
 
@@ -79,12 +79,12 @@ class PaperTradingIntegration:
         context="integration initialization",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize paper trading integration with enhanced reporting.
 
         Returns:
             bool: True if initialization successful = False otherwise
-        """
+        """"
         try:
             self.logger.info("Initializing Paper Trading Integration...")
 
@@ -98,9 +98,11 @@ class PaperTradingIntegration:
             if self.enable_detailed_reporting:
                 try:
                     from src.reports.paper_trading_reporter import (
+                except Exception as e:
+                    pass  # TODO: Handle exception properly
 import os.path
 
-                        setup_paper_trading_reporter as _setup_reporter,
+setup_paper_trading_reporter as _setup_reporter,
                     )
 
                     self.reporter = await _setup_reporter(self.config)
@@ -140,7 +142,7 @@ import os.path
                 self.logger.error(initialization_error("Paper trader not initialized"))
                 return False
 
-            # If reporter failed to initialize, degrade gracefully (don't block integration)
+            # If reporter failed to initialize, degrade gracefully (don't block integration)'
             if self.enable_detailed_reporting and not self.reporter:
                 self.logger.warning(
                     warning(
@@ -175,7 +177,7 @@ import os.path
         timestamp: datetime,
         trade_metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """
+        """"
         Execute trade with integrated reporting.
 
         Args:
@@ -188,7 +190,7 @@ import os.path
 
         Returns:
             bool: True if successful = False otherwise
-        """
+        """"
         try:
             if not self.is_initialized or not self.paper_trader:
                 self.logger.error(initialization_error("Integration not initialized"))
@@ -447,7 +449,7 @@ import os.path
 async def setup_paper_trading_integration(
     config: dict[str, Any] | None = None,
 ) -> PaperTradingIntegration | None:
-    """
+    """"
     Setup paper trading integration.
 
     Args:
@@ -455,7 +457,7 @@ async def setup_paper_trading_integration(
 
     Returns:
         PaperTradingIntegration: Configured integration instance
-    """
+    """"
     try:
         if config is None:
             config = {}

@@ -64,7 +64,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_artifact_with_standardized_name
 )
 
-# Suppress Optuna's verbose logging to keep the output clean
+# Suppress Optuna's verbose logging to keep the output clean'
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Required modules for this step
@@ -85,26 +85,26 @@ REQUIRED_MODULES = [
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 class AnalystCreationStep:
-    """Step 11: Analyst Creation - Creates base analyst models for each regime.
+    """Step 11: Analyst Creation - Creates base analyst models for each regime."
 
     This step creates the initial analyst models for each regime using the
     regime-specific data and features. It focuses on creating robust base models
     that will be enhanced in subsequent steps.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the AnalystCreationStep.
+        """Initializes the AnalystCreationStep."
 
         Args:
             config (Dict[str, Any]): Configuration dictionary for the step.
-        """
+        """"
         self.config = config
         self.standards = pipeline_standards
         self.logger = system_logger
         self._validate_environment()
         
         # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
-        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
+        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.'
         # Fallback to 'cpu' if MPS is not available or hangs.
         self.device = self._safe_get_device()
         self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
@@ -145,10 +145,12 @@ class AnalystCreationStep:
             # Use threading with timeout to prevent hanging
             import queue
             import threading
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
 
-            result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
+result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
                 try:
@@ -192,7 +194,7 @@ import os.path
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Executes the analyst model creation pipeline for each regime.
+        """Executes the analyst model creation pipeline for each regime."
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
@@ -200,7 +202,7 @@ import os.path
 
         Returns:
             Dict[str, Any]: A dictionary containing the results of the creation process.
-        """
+        """"
         self.logger.info(
             "🚀 Starting Step 11: Analyst Creation - Base Model Creation for Each Regime",
         )
@@ -377,7 +379,7 @@ import os.path
         try:
             # Separate features and labels
             feature_columns = [col for col in regime_data.columns 
-                             if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
+            if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
             
             X = regime_data[feature_columns]
             y = regime_data["label"] if "label" in regime_data.columns else pd.Series([0] * len(regime_data))
@@ -650,7 +652,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the analyst creation step.
+    """Run the analyst creation step."
 
     Args:
         symbol: Trading symbol (e.g., "ETHUSDT")
@@ -662,7 +664,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """
+    """"
     logger = system_logger.getChild("Step11AnalystCreation")
     
     logger.info("=" * 80)

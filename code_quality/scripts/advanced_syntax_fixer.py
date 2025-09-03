@@ -301,7 +301,9 @@ def main():
     result = fixer.fix_all_syntax_errors(dry_run=not args.fix)
     
     # Save report
-    report_file = '/workspace/code_quality/reports/syntax_fixes_report.json'
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_file = f'/workspace/code_quality/reports/syntax_fixes_report_{timestamp}.json'
     Path(report_file).parent.mkdir(exist_ok=True)
     
     with open(report_file, 'w') as f:

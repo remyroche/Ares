@@ -1,10 +1,10 @@
 # src/training/di_training_manager.py
 
-"""Dependency injection-aware training manager.
+"""Dependency injection-aware training manager."
 
 This module provides a training manager that uses proper dependency injection
 patterns for managing the training pipeline and its components.
-"""
+""""
 
 from typing import Any
 
@@ -23,11 +23,11 @@ import asyncio
 )
 
 class DITrainingManager(InjectableBase):
-    """Dependency injection-aware training manager.
+    """Dependency injection-aware training manager."
 
     This training manager uses proper dependency injection patterns
     for creating and managing training pipeline components.
-    """
+    """"
 
     def __init__(
         self,
@@ -106,9 +106,11 @@ class DITrainingManager(InjectableBase):
             else:
                 # Fallback to manual creation
                 from src.training.core.pipeline_base import TrainingPipeline
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import os.path
 
-                self.training_pipeline = TrainingPipeline(self.training_config)
+self.training_pipeline = TrainingPipeline(self.training_config)
 
             # Initialize training steps
             await self._initialize_training_steps()
@@ -199,7 +201,7 @@ import os.path
         exchange: str,
         training_type: str = "full",
     ) -> bool:
-        """Run the complete training pipeline.
+        """Run the complete training pipeline."
 
         Args:
             symbol: Trading symbol
@@ -209,7 +211,7 @@ import os.path
         Returns:
             True if training completed successfully
 
-        """
+        """"
         if self.is_training:
             self.print(warning("Training already in progress"))
             return False

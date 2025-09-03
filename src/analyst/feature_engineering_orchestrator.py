@@ -19,18 +19,18 @@ from src.utils.warning_symbols import (
 )
 
 class FeatureEngineeringOrchestrator:
-    """
+    """"
     Comprehensive feature engineering orchestrator that coordinates all feature generation components.
     Integrates advanced feature engineering and autoencoder feature generation.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]):
-        """
+        """"
         Initialize the feature engineering orchestrator.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("FeatureEngineeringOrchestrator")
@@ -83,7 +83,7 @@ class FeatureEngineeringOrchestrator:
         futures_df: pd.DataFrame = None,
         sr_levels: list = None,
     ) -> pd.DataFrame:
-        """
+        """"
         Orchestrate the generation of all features using multiple components.
 
         Args:
@@ -94,7 +94,7 @@ class FeatureEngineeringOrchestrator:
 
         Returns:
             DataFrame with all generated features
-        """
+        """"
         self.logger.info(
             "🎯 Starting comprehensive feature generation orchestration...",
         )
@@ -319,10 +319,12 @@ class FeatureEngineeringOrchestrator:
         """Calculate standard technical indicators using price differences."""
         try:
             import pandas_ta as ta
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
 
-            # Convert price data to differences for technical indicators
+# Convert price data to differences for technical indicators
             close_diff = df["close"].diff().fillna(0)
             high_diff = df["high"].diff().fillna(0)
             low_diff = df["low"].diff().fillna(0)
@@ -597,10 +599,10 @@ import os.path
 
 # Legacy FeatureEngineeringEngine class for backward compatibility
 class FeatureEngineeringEngine:
-    """
+    """"
     Legacy feature engineering engine for backward compatibility.
     Now delegates to the orchestrator.
-    """
+    """"
 
     def __init__(self, config):
         self.config = config.get("analyst", {}).get("feature_engineering", {})
@@ -634,9 +636,9 @@ class FeatureEngineeringEngine:
         futures_df: pd.DataFrame,
         sr_levels: list,
     ):
-        """
+        """"
         Generate all features using the orchestrator.
-        """
+        """"
         return await self.orchestrator.generate_all_features(
             klines_df,
             agg_trades_df,
@@ -658,7 +660,7 @@ class FeatureEngineeringEngine:
     def train_autoencoder(self, data: pd.DataFrame):
         """Train autoencoder model."""
         try:
-            # Delegate to orchestrator's autoencoder generator
+            # Delegate to orchestrator's autoencoder generator'
             return (
                 self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
             )

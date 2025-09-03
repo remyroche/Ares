@@ -355,7 +355,9 @@ def main():
                 print(f"    - {func['name']} (line {func['line']})")
         
         # Save report
-        report_path = '/workspace/code_quality/type_hints_report.json'
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = f'/workspace/code_quality/reports/type_hints_report_{timestamp}.json'
         with open(report_path, 'w') as f:
             json.dump(results, f, indent=2)
         print(f"\nFull report saved to: {report_path}")

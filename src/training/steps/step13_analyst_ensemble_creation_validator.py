@@ -8,6 +8,8 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing, success, warning
 import os.path
+from pathlib import Path
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger
 
@@ -121,8 +123,7 @@ class Step7AnalystEnsembleCreationValidator:
                 return False
 
             # Load and validate summary
-            with open(summary_file) as f:
-                summary = json.load(f)
+            summary = safe_json_load(summary_file)
 
             # Check required fields
             required_fields = [

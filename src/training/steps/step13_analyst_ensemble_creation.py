@@ -55,7 +55,7 @@ class AnalystEnsembleCreationStep:
     def execute(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:
-        """Execute Step 7: Create analyst ensemble models.
+        """Execute Step 7: Create analyst ensemble models."
 
         Args:
             symbol: Trading symbol
@@ -66,7 +66,7 @@ class AnalystEnsembleCreationStep:
         Returns:
             bool: True if successful
 
-        """
+        """"
         logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
 
         try:
@@ -150,11 +150,13 @@ class AnalystEnsembleCreationStep:
             # Apply optimized feature selection for ensemble creation
             try:
                 from src.training.optimized_feature_selection_manager import (
+            except Exception as e:
+                pass  # TODO: Handle exception properly
 import copy
 import datetime as datetime
 import os.path
 
-                    OptimizedFeatureSelectionManager,
+OptimizedFeatureSelectionManager,
                 )
 
                 optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)
@@ -343,7 +345,7 @@ def step7_analyst_ensemble_creation(
     training_input: dict[str, Any],
     config: dict[str, Any],
 ) -> bool:
-    """Step 7: Analyst Ensemble Creation.
+    """Step 7: Analyst Ensemble Creation."
 
     Args:
         symbol: Trading symbol
@@ -355,6 +357,6 @@ def step7_analyst_ensemble_creation(
     Returns:
         bool: True if successful
 
-    """
+    """"
     step = AnalystEnsembleCreationStep(config)
     return step.execute(symbol, exchange, data_dir, training_input)

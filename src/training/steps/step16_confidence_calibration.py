@@ -72,7 +72,7 @@ class RegimeAwareConfidenceCalibrationStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """Execute regime-aware confidence calibration.
+        """Execute regime-aware confidence calibration."
 
         Args:
             training_input: Training input parameters
@@ -80,7 +80,7 @@ class RegimeAwareConfidenceCalibrationStep:
 
         Returns:
             Dict containing regime-specific calibration results
-        """
+        """"
         try:
             self.logger.info("🔄 Executing Regime-Aware Confidence Calibration...")
             self.logger.info(f"📊 Regime configuration: {self.regime_config}")
@@ -738,9 +738,9 @@ class RegimeAwareConfidenceCalibrationStep:
     def _calculate_base_metrics(
         self, model: Any, X_val: pd.DataFrame, y_val: pd.Series,
     ) -> dict[str, float]:
-        """Helper to calculate baseline accuracy and F1 score for a model/ensemble.
+        """Helper to calculate baseline accuracy and F1 score for a model/ensemble."
         Returns {} if metrics cannot be computed.
-        """
+        """"
         try:
             if not hasattr(model, "predict"):
                 return {}
@@ -1056,7 +1056,7 @@ async def _apply_regime_calibration(
         
         # Prepare features and labels for calibration
         feature_columns = [col for col in validation_data.columns 
-                         if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
+        if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
         
         X_val = validation_data[feature_columns].fillna(0)
         y_val = validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
@@ -1100,7 +1100,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the confidence calibration step.
+    """Run the confidence calibration step."
 
     Args:
         symbol: Trading symbol
@@ -1110,7 +1110,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """
+    """"
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

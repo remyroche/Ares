@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Validator for Step 2: Data Reading.
+"""Validator for Step 2: Data Reading."
 
 This module validates the data reading step outputs with comprehensive quality checks.
-"""
+""""
 
 import asyncio
 import sys
@@ -24,6 +24,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
     quality_gate,
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step2DataReadingValidator")
 
@@ -43,7 +44,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 2: Data Reading.
+    """Run validation for Step 2: Data Reading."
 
     Args:
         training_input: Training input parameters
@@ -51,7 +52,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """
+    """"
     logger.info("🔍 Validating Step 2: Data Reading")
     
     try:
@@ -89,10 +90,12 @@ async def run_validator(
         try:
             import pandas as pd
             import json
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import numpy as np
 from src.core.decorators import handles_errors
             
-            # Read the most recent data file
+# Read the most recent data file
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
             data = pd.read_parquet(latest_file)
             
@@ -174,7 +177,7 @@ from src.core.decorators import handles_errors
             ohlc_errors = 0
             for idx, row in data.iterrows():
                 if not (row['low'] <= row['open'] <= row['high'] and 
-                       row['low'] <= row['close'] <= row['high']):
+                row['low'] <= row['close'] <= row['high']):
                     ohlc_errors += 1
             
             if ohlc_errors > 0:
@@ -198,8 +201,7 @@ from src.core.decorators import handles_errors
             validation_metadata = {}
             if validation_report_path.exists():
                 try:
-                    with open(validation_report_path, 'r') as f:
-                        validation_metadata = json.load(f)
+                    validation_metadata = safe_json_load(validation_report_path)
                     logger.info("✅ Validation report found and loaded")
                 except Exception as e:
                     logger.warning(f"⚠️ Error reading validation report: {e}")

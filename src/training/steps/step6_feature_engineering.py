@@ -20,6 +20,9 @@ project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -1184,8 +1187,7 @@ async def _save_feature_artifacts(
 ) -> bool:
     """Save feature artifacts."""
     try:
-        output_dir = Path("data/training")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = ensure_directory("data/training")
         
         # Save feature files
         train_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_features_train.parquet"
@@ -1196,8 +1198,7 @@ async def _save_feature_artifacts(
         features_result["features_val"].to_parquet(val_file_path)
         
         # Save metadata
-        with open(metadata_file_path, "w") as f:
-            json.dump(features_result["metadata"], f, indent=2, default=str)
+        safe_json_dump(features_result["metadata"], metadata_file_path, indent=2, default=str)
         
         # Log artifacts to MLflow with standardized naming
         try:

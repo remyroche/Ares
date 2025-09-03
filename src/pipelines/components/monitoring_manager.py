@@ -3,6 +3,8 @@ Monitoring manager for pipeline components (minimal scaffold).
 """
 from __future__ import annotations
 
+from typing import Any
+
 from src.core.decorators import (
     cached,
     compose,
@@ -10,14 +12,11 @@ from src.core.decorators import (
     log_execution_time,
     performance_monitor,
     traced,
-    validates
+    validates,
 )
-
 from src.core.domain import PerformanceLevel
-
-from typing import Any
-
 from src.utils.logger import system_logger
+
 
 class MonitoringManager:
     def __init__(self, config: dict[str, Any]) -> None:

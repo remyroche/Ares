@@ -21,7 +21,6 @@ from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import Base
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
-
 class RegularizationManager:
     """Manages the L1-L2 regularization configuration for the Ares Trading Bot's'"
     machine learning models. It extracts, applies, and validates regularization

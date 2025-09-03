@@ -1,5 +1,7 @@
 # src/training/enhanced_optimization_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any
 
@@ -9,13 +11,12 @@ import pandas as pd
 from src.training.adaptive_optimizer import AdaptiveOptimizer
 from src.training.bayesian_optimizer import AdvancedBayesianOptimizer
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
 )
-
 
 class EnhancedOptimizationOrchestrator:
     """Orchestrates multiple advanced hyperparameter optimization techniques."
@@ -62,7 +63,7 @@ class EnhancedOptimizationOrchestrator:
             self.adaptive_optimizer = AdaptiveOptimizer(opt_config)
             self.logger.info("Adaptive optimizer initialized")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="enhanced optimization orchestration",
@@ -401,7 +402,7 @@ class EnhancedOptimizationOrchestrator:
 
         return trends
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="scheduled optimization",

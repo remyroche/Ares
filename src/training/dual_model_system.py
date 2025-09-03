@@ -1,5 +1,20 @@
 # src/training/dual_model_system.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 import contextlib
 import os
 from datetime import datetime
@@ -10,30 +25,16 @@ import pandas as pd
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.utils.confidence import aggregate_directional_confidences
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
+
 from src.utils.warning_symbols import (
     error,
     execution_error,
     initialization_error,
 )
-
 
 class DualModelSystem:
     """Dual Model System for trading decisions."
@@ -129,7 +130,7 @@ class DualModelSystem:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid dual model system configuration"),
             AttributeError: (False, "Missing required dual model parameters"),
@@ -175,7 +176,7 @@ class DualModelSystem:
             self.logger.exception("❌ Dual Model System initialization failed")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="dual model configuration loading",
@@ -233,7 +234,7 @@ class DualModelSystem:
             error_msg = f"Error loading dual model configuration: {e}"
             self.logger.exception(error_msg)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -287,7 +288,7 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ML confidence predictor initialization",
@@ -394,7 +395,7 @@ class DualModelSystem:
                 initialization_error(f"Error initializing ML Confidence Predictor: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analyst model initialization",
@@ -422,7 +423,7 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactician model initialization",
@@ -450,7 +451,7 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["models", "data_cache"],
         min_memory_gb=8.0,
         min_disk_gb=5.0,
@@ -472,32 +473,32 @@ class DualModelSystem:
         feature_leakage_detection=True,
         lookahead_bias_prevention=True,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=16.0,
         cpu_threshold_percent=80.0,
         disk_threshold_gb=10.0,
         monitor_interval=30.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=10000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=30,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=3,
         recovery_timeout=120.0,
         expected_exception=Exception,
         monitor_interval=30.0,
     )
-    @validate_step_output(
+    @validates(
         required_files=["models/*.pkl"],
         data_quality_checks={
             "min_rows": 1,
@@ -514,7 +515,7 @@ class DualModelSystem:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"decision_quality_score": 0.7},
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid market data for decision making"),
             AttributeError: (None, "Models not properly initialized"),
@@ -1654,7 +1655,7 @@ class DualModelSystem:
             "description": "Dual model system for trading decisions",
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="dual model system cleanup",
@@ -1682,12 +1683,10 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-
 # Global dual model system instance
 dual_model_system: DualModelSystem | None = None
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="dual model system setup",

@@ -35,7 +35,6 @@ except ImportError:
     # Fallback for testing
     pass
 
-
 @dataclass
 class ModelOptimizationTarget:
     """Defines what aspects of a model to optimize."""
@@ -46,7 +45,6 @@ class ModelOptimizationTarget:
     hyperparameter_ranges: dict[str, tuple]  # Parameter search spaces
     calibration_methods: list[str]  # Available calibration methods
     uncertainty_methods: list[str]  # Uncertainty estimation methods
-
 
 class ProbabilisticModelIntegrator:
     """
@@ -512,7 +510,6 @@ class ProbabilisticModelIntegrator:
         optimizer = self.optimizers[model_type]
         optimizer.plot_optimization_results(save_path)
 
-
 # Example usage
 async def main():
     """Example usage of the ProbabilisticModelIntegrator."""
@@ -554,7 +551,6 @@ async def main():
     print("✅ Optimization completed!")
     print(f"Results: {results}")
     print(f"Status: {status}")
-
 
 if __name__ == "__main__":
     # Run example

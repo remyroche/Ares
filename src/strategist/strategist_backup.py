@@ -6,6 +6,10 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 # src/strategist/strategist.py
 
 from datetime import datetime
@@ -13,10 +17,13 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+<<<<<<< HEAD
+=======
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
+>>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -125,7 +132,7 @@ class Strategist:
             self.logger.exception(failed(f"❌ Strategist initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="strategy components initialization",
@@ -146,7 +153,7 @@ class Strategist:
             self.logger.exception(f"Error initializing strategy components: {e}")
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=False,
         context="configuration validation",
@@ -235,7 +242,7 @@ class Strategist:
             self.logger.exception(f"Error generating strategy: {e}")
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=False,
         context="market data validation",
@@ -266,7 +273,7 @@ class Strategist:
             self.logger.exception(f"Error validating market data: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return={},
         context="market indicators extraction",
@@ -307,7 +314,7 @@ class Strategist:
             self.logger.exception(f"Error extracting market indicators: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=0.0,
         context="RSI calculation",
@@ -326,7 +333,7 @@ class Strategist:
             self.logger.exception(f"Error calculating RSI: {e}")
             return 50.0
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return={},
         context="base strategy generation",
@@ -366,7 +373,7 @@ class Strategist:
             self.logger.exception(f"Error generating base strategy: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return={},
         context="analysis results integration",
@@ -415,7 +422,7 @@ class Strategist:
             self.logger.exception(f"Error integrating analysis results: {e}")
             return strategy
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return={},
         context="risk management application",
@@ -455,7 +462,7 @@ class Strategist:
     # Position sizing is handled by the Tactician component
     # This method has been removed to avoid overlap with Tactician responsibilities
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=None,
         context="strategy results storage",
@@ -516,7 +523,7 @@ class Strategist:
             history = history[-limit:]
         return history
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="strategist stop",

@@ -1,3 +1,7 @@
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 import asyncio
 import time
 from collections import defaultdict
@@ -6,7 +10,6 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 import pandas as pd
 from src.utils.warning_symbols import (
@@ -33,7 +36,7 @@ class CircuitBreaker:
         self.last_failure_time = None
         self.state = "CLOSED"  # CLOSED = OPEN, HALF_OPEN
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError, AttributeError, RuntimeError),
         default_return=None,
     )
@@ -72,7 +75,7 @@ class OnlineLearningManager:
         self.min_weight: float = config.get("min_weight", 0.1)
         self.max_weight: float = config.get("max_weight", 0.8)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
         default_return=None,
     )
@@ -93,7 +96,7 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error updating model performance: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
         default_return=None,
     )
@@ -221,7 +224,7 @@ class Supervisor:
             self.print(failed("❌ Supervisor initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="supervisor configuration loading",
@@ -240,7 +243,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error loading supervisor configuration: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -265,7 +268,7 @@ class Supervisor:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="component initialization",
@@ -294,7 +297,7 @@ class Supervisor:
         except Exception:
             self.print(initialization_error("Error initializing components: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="circuit breakers setup",
@@ -319,7 +322,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error setting up circuit breakers: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="online learning setup",
@@ -335,7 +338,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error setting up online learning: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="component monitors setup",
@@ -352,7 +355,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error setting up component monitors: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="enhanced prediction service initialization",
@@ -376,12 +379,12 @@ class Supervisor:
             self.logger.error(f"❌ Error initializing Enhanced Prediction Service: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="getting analyst predictions",
     )
-    @with_tracing_span("get_analyst_predictions")
+    @traced("get_analyst_predictions")
     async def get_analyst_predictions(
         self,
         market_data: pd.DataFrame,
@@ -435,12 +438,12 @@ class Supervisor:
             self.logger.error(error(f"❌ Error getting analyst predictions: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="getting tactician predictions",
     )
-    @with_tracing_span("get_tactician_predictions")
+    @traced("get_tactician_predictions")
     async def get_tactician_predictions(
         self,
         market_data: pd.DataFrame,
@@ -496,12 +499,12 @@ class Supervisor:
             self.logger.error(error(f"❌ Error getting tactician predictions: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="analyst deciding position entry",
     )
-    @with_tracing_span("analyst_decide_position_entry")
+    @traced("analyst_decide_position_entry")
     async def _analyst_decide_position_entry(
         self,
         market_data: pd.DataFrame,
@@ -594,12 +597,12 @@ class Supervisor:
             self.logger.error(error(f"❌ Error determining trade direction: {e}"))
             return "neutral"
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="tactician calculating execution parameters",
     )
-    @with_tracing_span("tactician_calculate_execution_parameters")
+    @traced("tactician_calculate_execution_parameters")
     async def _tactician_calculate_execution_parameters(
         self,
         market_data: pd.DataFrame,
@@ -741,7 +744,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         else:
             return "wait_for_confirmation"
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="integrating analyst ML profit predictions",
@@ -803,7 +806,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error integrating analyst ML profit predictions: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="integrating tactician ML profit predictions",
@@ -863,7 +866,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error integrating tactician ML profit predictions: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="generating enhanced analyst signals",
@@ -929,7 +932,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error generating enhanced analyst signals: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="generating enhanced tactician signals",
@@ -1011,7 +1014,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error generating enhanced tactician signals: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="generating position decision signals",
@@ -1110,7 +1113,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error generating position decision signals: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="generating leverage inputs",
@@ -1199,7 +1202,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error generating leverage inputs: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="calculating analyst risk metrics",
@@ -1297,7 +1300,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             await asyncio.sleep(self.supervision_interval)
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="supervision step",
@@ -1324,7 +1327,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         # Check for recovery needs
         await self._check_recovery_needs()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="system health monitoring",
@@ -1452,7 +1455,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
                     f"{component} features: {feature_percentage:.1f}% ({active_features}/{total_features} active)",
                 )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="component features monitoring",
@@ -1472,7 +1475,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error monitoring component features: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="component health check",
@@ -1494,7 +1497,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="component coordination",
@@ -1519,7 +1522,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error coordinating components: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="analyst strategist coordination",
@@ -1548,7 +1551,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error coordinating Analyst-Strategist: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="strategist tactician coordination",
@@ -1586,7 +1589,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error coordinating Strategist-Tactician: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="training manager coordination",
@@ -1617,7 +1620,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error coordinating Training Manager: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="online learning update",
@@ -1681,7 +1684,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error updating online learning: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="recovery trigger",
@@ -1718,7 +1721,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error triggering recovery for {component}: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="recovery attempt",
@@ -1746,7 +1749,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(error("Error attempting recovery for {component}: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="database recovery",
@@ -1763,7 +1766,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Database recovery failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="exchange recovery",
@@ -1780,7 +1783,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Exchange recovery failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="analyst recovery",
@@ -1797,7 +1800,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Analyst recovery failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="strategist recovery",
@@ -1814,7 +1817,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Strategist recovery failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="tactician recovery",
@@ -1831,7 +1834,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Tactician recovery failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="enhanced training manager recovery",
@@ -1848,7 +1851,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Enhanced training manager recovery failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="generic recovery",
@@ -1864,7 +1867,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.print(failed("Generic recovery failed for {component}: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="recovery needs check",
@@ -1879,7 +1882,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error checking recovery needs: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="supervision results update",
@@ -1911,7 +1914,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         except Exception:
             self.print(error("Error updating supervision results: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="supervisor stop",
@@ -1961,7 +1964,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         """Get component monitors status."""
         return self.component_monitors.copy()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="portfolio guards enforcement",
@@ -2015,7 +2018,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
 supervisor: Supervisor | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="supervisor setup",

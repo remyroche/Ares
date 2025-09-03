@@ -5,10 +5,13 @@ Exchange Volume Adapter for Model Transfer Learning
 This module handles the adaptation of models trained on high-volume exchanges
 (Binance) to work effectively on lower-volume exchanges (MEXC = Gate.io).
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -112,7 +115,7 @@ class ExchangeVolumeAdapter:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="adapter configuration loading",
@@ -132,7 +135,7 @@ class ExchangeVolumeAdapter:
         except Exception as e:
             self.logger.exception(f"Error loading adapter configuration: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -155,7 +158,7 @@ class ExchangeVolumeAdapter:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="volume metrics initialization",
@@ -368,7 +371,7 @@ class ExchangeVolumeAdapter:
             self.print(execution_error(f"Error checking trade execution: {e}"))
             return (False, f"Error: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(KeyError, ValueError),
         default_return=1.0,
         context="adaptation factor retrieval",
@@ -476,7 +479,7 @@ class ExchangeVolumeAdapter:
             self.print(error("Error during cleanup: {e}"))
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="exchange volume adapter setup",

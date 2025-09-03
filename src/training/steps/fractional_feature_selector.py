@@ -1,5 +1,7 @@
 # src/training/steps/fractional_feature_selector.py
 
+from src.core.decorators import handles_errors
+
 """Fractional Feature Selector: Intelligent feature selection for Step 7."
 Implements feature selection based on fractional label alignment, multicollinearity reduction,
 and feature importance ranking.
@@ -21,10 +23,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection,
+    validate_feature_engineering_with_lookahead_bias_detection
 )
 
 
@@ -72,7 +73,7 @@ class FractionalFeatureSelector:
         
         self.logger.info("✅ Fractional Feature Selector initialized successfully")
     
-    @handle_errors("Fractional feature selection")
+    @handles_errors("Fractional feature selection")
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     def select_features(

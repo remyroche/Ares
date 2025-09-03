@@ -1,13 +1,20 @@
 # src/tactician/ml_target_validator.py
 
+from src.core.decorators import handles_errors
+
+from src.core.domain import validate_data_quality
+
 """
 ML Target Validator for validating machine learning targets and predictions.
 """
 from datetime import datetime
 from typing import Any
 
+<<<<<<< HEAD
+=======
 from src.utils.centralized_decorators import validate_data_quality
 from src.utils.error_handler import handle_errors
+>>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -15,6 +22,10 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 
+<<<<<<< HEAD
+import copy
+=======
+>>>>>>> origin/main
 
 class MLTargetValidator:
     """
@@ -46,7 +57,7 @@ class MLTargetValidator:
         self.min_target_value = self.validator_config.get("min_target_value", -1.0)
         self.max_target_value = self.validator_config.get("max_target_value", 1.0)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="ML target validator initialization",
@@ -123,7 +134,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML target validation",
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="target validation",
@@ -226,7 +237,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML prediction validation",
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="prediction validation",

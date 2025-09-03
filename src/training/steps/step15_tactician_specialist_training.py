@@ -1,5 +1,25 @@
 # src/training/steps/step15_tactician_specialist_training.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    artifact_versioning,
+    artifact_write_lock,
+    deterministic_seed,
+    idempotent_step,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing,
+    time_budget_watchdog
+)
+
 """Step 15: Tactician Specialist Training with Standardized Data Quality Management."
 
 This step performs tactician specialist model training with S/R level integration
@@ -177,7 +197,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="tactician specialist training step initialization",
@@ -368,7 +388,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         )
         return 1
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician specialist training step execution",
@@ -1131,25 +1151,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 
-import numpy as np
-import pandas as pd
-
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
 )
 
 
@@ -1197,7 +1198,7 @@ from src.utils.training_pipeline_decorators import (
     output_validation=True,
     validation_level=ValidationLevel.WARNING,
 )
-@validate_step_prerequisites(
+@validates(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,
     min_disk_gb=5.0,
@@ -1217,29 +1218,29 @@ from src.utils.training_pipeline_decorators import (
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
     monitor_interval=60.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=300.0,
     expected_exception=Exception,
     monitor_interval=60.0,
 )
-@validate_step_output(
+@validates(
     required_files=["models/{exchange}_{symbol}_tactician_specialist.pkl"],
     data_quality_checks={
         "min_rows": 100,

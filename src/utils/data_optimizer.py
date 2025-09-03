@@ -14,10 +14,12 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.centralized_decorators import guard_dataframe_nulls
-from src.core.decorators import traced as with_tracing_span
+from src.core.decorators import (
+    handles_errors,
+    traced as with_tracing_span,
+    validates
+)
 from src.utils.comprehensive_logger import get_component_logger
-from src.core.decorators import handles_errors
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, initialization_error, missing
 import asyncio
@@ -125,7 +127,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._apply_auto_optimization", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="auto optimization")
     async def _apply_auto_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply automatic optimization based on data characteristics."""
@@ -143,7 +145,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._optimize_memory_usage", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="memory optimization")
     async def _optimize_memory_usage(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
@@ -166,7 +168,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._optimize_data_types", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="dtype optimization")
     async def _optimize_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for memory efficiency."""
@@ -221,7 +223,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._remove_unnecessary_columns", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="remove unnecessary columns")
     async def _remove_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Remove unnecessary columns from DataFrame."""
@@ -241,7 +243,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._optimize_index", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="index optimization")
     async def _optimize_index(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame index."""
@@ -251,7 +253,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._optimize_for_speed", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="speed optimization")
     async def _optimize_for_speed(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for processing speed."""
@@ -262,7 +264,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._optimize_for_vectorization", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="vectorization optimization")
     async def _optimize_for_vectorization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Ensure columns are numeric where appropriate to enable vectorized ops."""
@@ -290,7 +292,7 @@ def regime_columns() -> list[str]:
         return df
 
     @with_tracing_span("DataOptimizer._optimize_balanced", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors, default_return=lambda self, df: df, context="balanced optimization")
     async def _optimize_balanced(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply balanced optimization strategy."""
@@ -328,7 +330,7 @@ def regime_columns() -> list[str]:
         }
 
     @with_tracing_span("DataOptimizer.optimize_market_data", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     @handles_errors
         default_return=lambda self, market_data: market_data,
         context="market data optimization",

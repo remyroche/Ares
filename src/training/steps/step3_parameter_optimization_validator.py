@@ -4,6 +4,11 @@
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
 """
+from src.core.domain import (
+    smart_validation_cache,
+    validate_step3_comprehensive
+)
+
 import json
 import os
 from pathlib import Path
@@ -13,10 +18,6 @@ import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
-from src.utils.enhanced_validation_decorators import (
-    validate_step3_comprehensive,
-    smart_validation_cache
-)
 from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step3ParameterOptimizationValidator")
@@ -351,7 +352,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate optimization metrics: {error_context}")
             return False
 
-    def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 3 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -397,7 +398,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         return validation_result
 
-    def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 3 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,

@@ -1,5 +1,7 @@
 # src/training/data_efficiency_optimizer.py
 
+from src.core.decorators import handles_errors
+
 import gc
 import os
 import time
@@ -15,7 +17,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.sqlite_manager import SQLiteManager
-from src.utils.error_handler import handle_errors, handle_specific_errors
+
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -23,7 +25,6 @@ from src.utils.warning_symbols import (
     validation_error,
     warning,
 )
-
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."
@@ -69,7 +70,7 @@ class DataEfficiencyOptimizer:
             f"DataEfficiencyOptimizer initialized for {exchange} {symbol} {timeframe}",
         )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=None,
         context="database initialization",
@@ -180,7 +181,7 @@ class DataEfficiencyOptimizer:
 
             conn.commit()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=0.0,
         context="memory usage calculation",
@@ -192,7 +193,7 @@ class DataEfficiencyOptimizer:
         self.logger.debug(f"Current memory usage: {memory_percent:.2f}%")
         return memory_percent
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=False,
         context="memory cleanup check",
@@ -201,7 +202,7 @@ class DataEfficiencyOptimizer:
         """Check if memory cleanup is needed."""
         return self.get_memory_usage() > (self.memory_threshold * 100)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=None,
         context="memory cleanup",
@@ -213,7 +214,7 @@ class DataEfficiencyOptimizer:
         time.sleep(0.1)  # Allow time for cleanup
         self.logger.info(f"Memory usage after cleanup: {self.get_memory_usage():.2f}%")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError, KeyError),
         default_return={},
         context="data loading with caching",

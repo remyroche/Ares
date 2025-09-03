@@ -195,7 +195,7 @@ class HMMRegimeDiscoveryStep:
         data_validation=True,
         resource_cleanup=True
     )
-    @with_tracing_span("execute_hmm_regime_discovery")
+    @traced("execute_hmm_regime_discovery")
     @quality_gate(
         min_quality_score=0.7,
         max_correlation=0.95,
@@ -533,7 +533,7 @@ class HMMRegimeDiscoveryStep:
                 for to_regime, prob in to_regimes.items():
                     self.logger.info(f"     → {to_regime}: {prob:.3f}")
 
-    @with_tracing_span("ensure_data_quality")
+    @traced("ensure_data_quality")
     @secure_data_processing
     @handles_errors(fallback=False)
     async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
@@ -593,7 +593,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error ensuring data quality: {e}")
             return False
 
-    @with_tracing_span("fix_missing_data")
+    @traced("fix_missing_data")
     @handles_errors
         default_return={"success": False, "error": "Data fix failed"},
         context="fix_missing_data"
@@ -668,8 +668,8 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error fixing missing data: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("load_and_prepare_data")
-    @memory_efficient
+    @traced("load_and_prepare_data")
+    @cached
     @comprehensive_data_validation
     @handles_errors
         default_return={"success": False, "error": "Data loading failed"},
@@ -772,7 +772,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error loading and preparing data: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("prepare_hmm_features")
+    @traced("prepare_hmm_features")
     @validate_data_structure
     @monitor_feature_engineering()
     @handles_errors(fallback=pd.DataFrame())
@@ -1110,8 +1110,8 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             self.logger.warning(f"Could not log feature categories: {e}")
 
-    @with_tracing_span("perform_hmm_regime_discovery")
-    @resource_monitor
+    @traced("perform_hmm_regime_discovery")
+    @log_execution_time
     @handles_errors
         default_return={"success": False, "error": "HMM regime discovery failed"},
         context="perform_hmm_regime_discovery"
@@ -1163,7 +1163,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("perform_hmmlearn_regime_discovery")
+    @traced("perform_hmmlearn_regime_discovery")
     @handles_errors
         default_return={"success": False, "error": "HMMLearn regime discovery failed"},
         context="perform_hmmlearn_regime_discovery"
@@ -1328,7 +1328,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in composite HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("perform_simple_regime_discovery")
+    @traced("perform_simple_regime_discovery")
     @handles_errors
         default_return={"success": False, "error": "Simple regime discovery failed"},
         context="perform_simple_regime_discovery"

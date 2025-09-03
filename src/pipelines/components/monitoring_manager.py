@@ -1,25 +1,34 @@
 """
 Monitoring manager for pipeline components (minimal scaffold).
 """
+from src.core.decorators import (
+    handles_errors,
+    log_execution_time
+)
+
+from src.core.domain import PerformanceLevel
+
 from __future__ import annotations
 
 from typing import Any
 
+<<<<<<< HEAD
+=======
 from src.utils.centralized_decorators import (
     PerformanceLevel,
     handle_specific_errors,
     performance_monitor,
 )
+>>>>>>> origin/main
 from src.utils.logger import system_logger
-
 
 class MonitoringManager:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("MonitoringManager")
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid monitoring manager configuration"),
             AttributeError: (False, "Missing monitoring manager parameters"),

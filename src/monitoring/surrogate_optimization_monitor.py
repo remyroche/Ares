@@ -10,16 +10,10 @@ This module provides comprehensive monitoring capabilities for surrogate optimiz
 - Dashboard integration
 """
 
-import os
-import os.path
-import queue
-import threading
-import time
-from dataclasses import asdict, dataclass
-from datetime import datetime
+from src.core.decorators import handles_errors
+from dataclasses import asdict
 from typing import Any
-
-import matplotlib.pyplot as plt
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -27,6 +21,7 @@ import seaborn as sns
 # Utilities
 from src.utils.logger import system_logger
 
+import os.path
 
 @dataclass
 class OptimizationMetrics:
@@ -43,7 +38,6 @@ class OptimizationMetrics:
     memory_usage: float
     cpu_usage: float
 
-
 @dataclass
 class PerformanceAlert:
     """Data class for performance alerts."""
@@ -52,7 +46,6 @@ class PerformanceAlert:
     severity: str
     message: str
     metrics: dict[str, Any]
-
 
 class SurrogateOptimizationMonitor:
     """Comprehensive monitoring system for surrogate optimization."""

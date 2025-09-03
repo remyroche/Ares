@@ -29,7 +29,6 @@ from src.utils.enhanced_mlflow_integration import (
 )
 from src.utils.logger import system_logger
 
-
 class ComprehensivePipelineExecutor:
     """
     Comprehensive pipeline executor with integrated data quality management.
@@ -437,7 +436,6 @@ class ComprehensivePipelineExecutor:
 
         print("="*100)
 
-
 async def main():
     """Main execution function."""
     # Example configuration
@@ -481,7 +479,6 @@ async def main():
         print(f"❌ Pipeline execution failed: {e}")
         import traceback
         traceback.print_exc()
-
 
 if __name__ == "__main__":
     asyncio.run( main())

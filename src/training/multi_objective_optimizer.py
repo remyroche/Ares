@@ -1,5 +1,7 @@
 # src/training/multi_objective_optimizer.py
 
+from src.core.decorators import handles_errors
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,9 +10,7 @@ import optuna
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class OptimizationMetrics:
@@ -25,7 +25,6 @@ class OptimizationMetrics:
     sortino_ratio: float
     var_95: float  # Value at Risk 95%
     cvar_95: float  # Conditional Value at Risk 95%
-
 
 class MultiObjectiveOptimizer:
     """Advanced multi-objective hyperparameter optimizer using Pareto optimization."
@@ -68,7 +67,7 @@ config["market_data"],
                 config.get("computational_optimization", {}),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="multi-objective optimization",
@@ -248,7 +247,7 @@ config["market_data"],
 
         return trades
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="multi-objective study execution",

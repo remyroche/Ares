@@ -1,5 +1,19 @@
 # src/training/steps/vectorized_advanced_feature_engineering.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 """Vectorized Advanced Feature Engineering for enhanced financial performance.
 Implements sophisticated market microstructure features, regime detection,
 and adaptive indicators for improved prediction accuracy with vectorized operations.
@@ -18,18 +32,15 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 
-# Import fractional differentiation
-from src.training.steps.fractional_differentiation import (
-    FractionalFeatureGenerator,
-)
-from src.utils.centralized_decorators import (
+from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
+from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
     ValidationLevel,
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
     validate_klines_data_quality,
     validate_multi_timeframe_data_quality,
     validate_ohlcv_data_quality,
-    validate_wavelet_data_quality,
+    validate_wavelet_data_quality
 )
 from src.utils.common_operations import (
     generate_hash,
@@ -53,17 +64,6 @@ from src.utils.parallel_processing_optimizer import (
 )
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
 
 # Feature Engineering Optimization Configuration
 FEATURE_OPTIMIZATION_CONFIG = {
@@ -2208,7 +2208,7 @@ class VectorizedAdvancedFeatureEngineering:
 
     @handles_errors(fallback=None)
     # Temporarily disabled decorators for debugging
-    # @validate_step_prerequisites(
+    # @validates(
     #     required_directories=["data_cache", "data/feature_cache"],
     #     min_memory_gb=16.0,
     #     min_disk_gb=10.0,
@@ -2231,33 +2231,33 @@ class VectorizedAdvancedFeatureEngineering:
     #     cross_validation_isolation=True,
     #     lookahead_bias_prevention=True
     # )
-    # @resource_monitor(
+    # @log_execution_time(
     #     memory_threshold_gb=32.0,
     #     cpu_threshold_percent=90.0,
     #     disk_threshold_gb=20.0,
     #     monitor_interval=60.0,
     #     auto_cleanup=True
     # )
-    # @memory_efficient(
+    # @cached(
     #     chunk_size=5000,
     #     streaming_processing=True,
     #     memory_pool=True,
     #     cleanup_frequency=20
     # )
-    # @debug_training_step(
+    # @log_call(
     #     log_intermediate_results=True,
     #     save_debug_artifacts=True,
     #     performance_profiling=True,
     #     error_context_preservation=True
     # )
-    # @circuit_breaker_protection(
+    # @circuit_breaker(
     #     failure_threshold=3,
     #     recovery_timeout=600.0,
     #     expected_exception=Exception,
     #     monitor_interval=60.0
     # )
     # Temporarily disabled decorators for debugging
-    # @validate_step_output(
+    # @validates(
     #     required_files=["data/feature_cache/*.parquet"],
     #     data_quality_checks={
     #         "min_rows": 100,
@@ -5053,7 +5053,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error generating explicit meta-labels: {e}")
             return {}
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["data_cache", "data/feature_cache"],
         min_memory_gb=8.0,
         min_disk_gb=5.0,
@@ -5076,32 +5076,32 @@ class VectorizedAdvancedFeatureEngineering:
         cross_validation_isolation=True,
         lookahead_bias_prevention=True,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=16.0,
         cpu_threshold_percent=90.0,
         disk_threshold_gb=10.0,
         monitor_interval=30.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=5000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=20,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=3,
         recovery_timeout=300.0,
         expected_exception=Exception,
         monitor_interval=60.0,
     )
-    @validate_step_output(
+    @validates(
         required_files=["data/feature_cache/*.parquet"],
         data_quality_checks={
             "min_rows": 50,
@@ -5433,7 +5433,7 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
     @handles_errors(fallback=pd.Series())
-    @memory_efficient(
+    @cached(
         chunk_size=1000,
         streaming_processing=False,
         memory_pool=True,
@@ -5475,13 +5475,13 @@ class VectorizedAdvancedFeatureEngineering:
             return series.fillna(0)
 
     @handles_errors
-    @memory_efficient(
+    @cached(
         chunk_size=2000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=15,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=False,
         performance_profiling=True,
@@ -5652,13 +5652,13 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
     @handles_errors
-    @memory_efficient(
+    @cached(
         chunk_size=2000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=15,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=False,
         performance_profiling=True,

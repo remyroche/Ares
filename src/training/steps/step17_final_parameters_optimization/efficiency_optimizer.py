@@ -1,5 +1,7 @@
 # src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py
 
+from src.core.decorators import handles_errors
+
 """Efficiency Optimizer for Hyperparameter Optimization."
 
 This module implements various computational efficiency improvements to speed up
@@ -16,7 +18,6 @@ from typing import Any
 
 import numpy as np
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
@@ -82,7 +83,7 @@ class EfficiencyOptimizer:
             f"Efficiency optimizer initialized with {self.max_workers} workers",
         )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="efficiency optimizer initialization",
@@ -100,7 +101,7 @@ class EfficiencyOptimizer:
 
         self.logger.info("✅ Efficiency optimizer initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Optimization failed"},
         context="efficiency optimizer trial optimization",

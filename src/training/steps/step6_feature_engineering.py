@@ -121,7 +121,7 @@ else:
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 
-@validate_step_prerequisites(
+@validates(
     required_directories=["data/training", "data/hmm_regimes"],
     min_memory_gb=2.0,
     min_disk_gb=1.0,
@@ -146,14 +146,14 @@ else:
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=8.0,
     cpu_threshold_percent=80.0,
     disk_threshold_gb=5.0,
     monitor_interval=10.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=5,
 )
 @quality_gate(
@@ -162,14 +162,14 @@ else:
     model_quality_threshold=0.7,
     validation_checks=["data_integrity", "feature_quality", "feature_stability"],
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     max_execution_time=7200,  # 2 hours
     max_memory_usage_gb=16.0,
     max_cpu_usage_percent=90.0,
     error_threshold=3,
     recovery_timeout=600,
 )
-@debug_training_step(
+@log_call(
     enable_debug_logging=True,
     save_intermediate_results=True,
     enable_profiling=True,
@@ -181,7 +181,7 @@ else:
     track_feature_stability=True,
     save_feature_analysis=True,
 )
-@validate_step_output(
+@validates(
     output_validation_rules={
         # Align with regime-specific outputs under data/training/regime_features
         "required_files": ["regime_features"],  # presence of regime_features directory
@@ -192,7 +192,7 @@ else:
     validation_timeout=600,
 )
 @with_enhanced_mlflow_logging("step6_feature_engineering")
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=False,
     context="step6_feature_engineering",
@@ -261,7 +261,7 @@ async def run_step(
             logger.error("❌ Failed to load unified data")
             return False
 
-        # Note: Data validation is now handled by decorators (@validate_step_prerequisites, @secure_data_processing)
+        # Note: Data validation is now handled by decorators (@validates, @secure_data_processing)
         logger.info("✅ Data validation passed (handled by decorators)")
 
         # 2) Load regime information from step03

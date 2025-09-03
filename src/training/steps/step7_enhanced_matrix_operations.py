@@ -139,11 +139,11 @@ class Step7EnhancedMatrixOperations:
 
     @secure_data_processing(encryption_level="high", data_validation=True)
     @prevent_data_leakage(validate_inputs=True, sanitize_outputs=True)
-    @resource_monitor(cpu_threshold_percent=90.0, memory_threshold_gb=16.0)
-    @memory_efficient(chunk_size=5000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True, save_debug_artifacts=True)
-    @circuit_breaker_protection(failure_threshold=3, recovery_timeout=300.0)
-    @validate_step_output(
+    @log_execution_time(cpu_threshold_percent=90.0, memory_threshold_gb=16.0)
+    @cached(chunk_size=5000, streaming_processing=True)
+    @log_call(log_intermediate_results=True, save_debug_artifacts=True)
+    @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
+    @validates(
         required_files=["matrix_operations_config.json"],
         data_quality_checks={"min_operations": 1}
     )
@@ -152,7 +152,7 @@ class Step7EnhancedMatrixOperations:
         data_quality_metrics={"completeness": 0.95}
     )
     @with_enhanced_mlflow_logging("step7_enhanced_matrix_operations")
-    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=False)
+    @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -934,7 +934,6 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             return {"error": str(e)}
-
 
 
     def _analyze_sr_optimization_parameters(self, optimization_df: pd.DataFrame) -> dict[str, Any]:

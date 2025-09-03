@@ -141,14 +141,14 @@ class DataReadingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @with_tracing_span("read_unified_data")
+    @traced("read_unified_data")
     @quality_gate(
         min_quality_score=0.8,
         max_correlation=0.95,
         required_grade="B"
     )
     @comprehensive_data_validation
-    @memory_efficient
+    @cached
     async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Read unified data from step1_5 output with standardized validation."""
         step_start = time.time()
@@ -208,7 +208,7 @@ class DataReadingStep:
             self.logger.exception(f"❌ Error reading unified data: {e}")
             return None
 
-    @with_tracing_span("validate_data_quality")
+    @traced("validate_data_quality")
     @comprehensive_data_validation
     async def validate_data_quality(self, data: pd.DataFrame, symbol: str, exchange: str) -> Dict[str, Any]:
         """Validate data quality and structure using standardized validation."""
@@ -257,7 +257,7 @@ class DataReadingStep:
         
         return validation_results
 
-    @with_tracing_span("save_validation_report")
+    @traced("save_validation_report")
     async def save_validation_report(self, validation_results: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> bool:
         """Save validation report to file."""
         step_start = time.time()
@@ -301,9 +301,9 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             return False
 
     @with_enhanced_mlflow_logging("step2_data_reading")
-    @with_tracing_span("execute_data_reading_step")
-    @handle_errors
-    @resource_monitor
+    @traced("execute_data_reading_step")
+    @handles_errors
+    @log_execution_time
     async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
         """Execute the complete data reading step."""
         self.logger.info("🚀 Starting Step 2: Data Reading and Validation")

@@ -2409,7 +2409,7 @@ class AutoencoderFeatureGenerator:
         self.logger = system_logger.getChild("AutoencoderFeatureGenerator")
 
     @comprehensive_data_validation
-    @with_tracing_span("autoencoder_feature_generation")
+    @traced("autoencoder_feature_generation")
     def generate_features(
         self,
         features_df: pd.DataFrame,

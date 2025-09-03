@@ -1,5 +1,7 @@
 # src/analyst/meta_label_relevance.py
 
+from src.core.decorators import handles_errors
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,12 +11,11 @@ import os
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import logging
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,), default_return={}, context="compute_mutual_information"
 )
 def compute_mutual_information(
@@ -50,7 +51,7 @@ def compute_mutual_information(
     return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=0.0,
     context="compute_mutual_information_pair",
@@ -65,7 +66,7 @@ def compute_mutual_information_pair(
     raise NotImplementedError("Removed unused function: compute_mutual_information_pair")
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,), default_return={}, context="compute_shap_importance"
 )
 def compute_shap_importance(
@@ -116,7 +117,7 @@ import os.path
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return={
         "sharpe_base": 0.0,
@@ -197,7 +198,7 @@ class MetaLabelRelevanceEvaluator:
                 ).astype(int)
         return pd.DataFrame(gating, index=df.index)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"active_labels": [], "inactive_labels": []},
         context="evaluate_from_frame",

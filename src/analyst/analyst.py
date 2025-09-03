@@ -1,5 +1,9 @@
 # src/analyst/analyst.py
 
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 from datetime import datetime
 import logging
 import asyncio
@@ -14,10 +18,6 @@ from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrche
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
 # Import dual model system and other components
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -179,7 +179,7 @@ class Analyst:
         self.logger.info("✅ Analyst initialization completed successfully")
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analyst configuration loading",
@@ -191,7 +191,7 @@ class Analyst:
         # Additional configuration can be loaded here
         self.logger.info("Analyst configuration loaded successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -210,7 +210,7 @@ class Analyst:
             self.logger.exception("Configuration validation failed")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analyst modules initialization",
@@ -227,7 +227,7 @@ class Analyst:
 
         self.logger.info("Analyst modules initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="technical analysis initialization",
@@ -238,7 +238,7 @@ class Analyst:
         # Technical analysis initialization logic here
         self.logger.info("Technical analysis initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk analysis initialization",
@@ -249,7 +249,7 @@ class Analyst:
         # Risk analysis initialization logic here
         self.logger.info("Risk analysis initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="dual model system initialization",
@@ -270,7 +270,7 @@ class Analyst:
                 initialization_error("Error initializing Dual Model System: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="market health analyzer initialization",
@@ -293,7 +293,7 @@ class Analyst:
                 initialization_error("Error initializing Market Health Analyzer: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="liquidation risk model initialization",
@@ -320,7 +320,7 @@ self.config,
                 initialization_error("Error initializing Liquidation Risk Model: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature engineering orchestrator initialization",
@@ -341,7 +341,7 @@ self.config,
 
     # Legacy S/R analyzer initialization method removed
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ML confidence predictor initialization",
@@ -352,7 +352,7 @@ self.config,
         # ML confidence predictor initialization logic here
         self.logger.info("ML Confidence Predictor initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="regime classifier initialization",
@@ -490,7 +490,7 @@ self.config,
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="ML predictions",
@@ -513,7 +513,7 @@ self.config,
             "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="analysis inputs validation",
@@ -543,7 +543,7 @@ self.config,
             self.logger.exception("Analysis inputs validation failed")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="technical analysis",
@@ -581,7 +581,7 @@ self.config,
         return technical_results
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("price_analysis")
+    @traced("price_analysis")
     def _perform_price_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
         """Perform price analysis."""
         try:
@@ -608,7 +608,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("volume_analysis")
+    @traced("volume_analysis")
     def _perform_volume_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -637,7 +637,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("indicator_analysis")
+    @traced("indicator_analysis")
     def _perform_indicator_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -671,7 +671,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("pattern_analysis")
+    @traced("pattern_analysis")
     def _perform_pattern_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -690,7 +690,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("volatility_analysis")
+    @traced("volatility_analysis")
     def _perform_volatility_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -717,7 +717,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("correlation_analysis")
+    @traced("correlation_analysis")
     def _perform_correlation_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -736,7 +736,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("drawdown_analysis")
+    @traced("drawdown_analysis")
     def _perform_drawdown_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -761,7 +761,7 @@ self.config,
             return {}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("risk_scoring")
+    @traced("risk_scoring")
     def _perform_risk_scoring(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
         """Perform risk scoring."""
         try:
@@ -777,7 +777,7 @@ self.config,
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ML predictions",
@@ -822,12 +822,12 @@ self.config,
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="SR analysis",
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="regime classification",
@@ -893,7 +893,7 @@ self.config,
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analysis results storage",
@@ -915,7 +915,7 @@ self.config,
             self.logger.error("Error storing analysis results: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analysis results getting",
@@ -940,7 +940,7 @@ self.config,
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analysis history getting",
@@ -983,7 +983,7 @@ self.config,
     # Enhanced predictions are now handled by the supervisor
     # No local methods needed
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="analyst cleanup",
@@ -1012,8 +1012,7 @@ self.config,
             self.logger.error("❌ Error stopping Analyst: {e}")
 
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="analyst setup",

@@ -12,8 +12,6 @@ import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    with_tracing_span,
 )
 from src.utils.logger import get_logger
 

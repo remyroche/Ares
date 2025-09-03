@@ -18,11 +18,11 @@ from typing import Any, Dict, List
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     comprehensive_data_validation,
     handle_errors,
     quality_gate,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import system_logger
 

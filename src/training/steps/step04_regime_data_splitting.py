@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.core.decorators import handles_errors, traced
+from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time, monitor_feature_engineering
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -68,6 +68,9 @@ if centralized_decorators is None:
     with_tracing_span = create_fallback_decorator()
     quality_gate = create_fallback_decorator()
     monitor_feature_engineering = create_fallback_decorator()
+    validates = create_fallback_decorator()
+    cached = create_fallback_decorator()
+    log_execution_time = create_fallback_decorator()
 else:
     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
@@ -78,6 +81,9 @@ else:
     with_tracing_span = centralized_decorators.with_tracing_span
     quality_gate = centralized_decorators.quality_gate
     monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+    validates = centralized_decorators.validates
+    cached = centralized_decorators.cached
+    log_execution_time = centralized_decorators.log_execution_time
 
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
@@ -244,7 +250,7 @@ class RegimeDataSplittingStep:
                 on='timestamp', 
                 how='inner'
             )
-            # Retention check: ensure we didn't lose too many rows during merge'
+            # Retention check: ensure we didn't lose too many rows during merge
             try:
                 retention_ratio = (len(merged_data) / max(len(unified_df), 1)) if len(unified_df) else 0.0
                 self.logger.info(f"📈 Merge retention ratio: {retention_ratio:.3f}")
@@ -403,15 +409,9 @@ class RegimeDataSplittingStep:
             }
             
             metadata_file = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
-            import json
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import numpy as np
-import pandas as pd
-
-safe_json_dump(metadata, metadata_file, indent=2)
+            safe_json_dump(metadata, metadata_file, indent=2)
             
-self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
+            self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
             
         except Exception as e:
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
@@ -419,17 +419,15 @@ self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
 
 @traced(span_name="execute_regime_data_splitting")
 # @quality_gate - removed, handled by validates
-    min_quality_score=0.8,
-    max_correlation=0.95,
-    required_grade="B"
-)
+# min_quality_score=0.8,
+# max_correlation=0.95,
+# required_grade="B"
 @validates()
 @handles_errors
 @cached
 @log_execution_time
 # @secure_data_processing - removed, handled by validates
-@validates()
-@monitor_feature_engineering()
+@monitor_feature_engineering
 async def run_step(
     symbol: str,
     exchange: str,

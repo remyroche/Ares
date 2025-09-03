@@ -35,6 +35,7 @@ from src.core.domain import (
     with_tracing_span,
     validate_pipeline_step
 )
+from src.core.decorators import validates
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3ParameterOptimization")
@@ -126,7 +127,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to execute parameter optimization: {e}")
             return False
 
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_validate_data"
     )
@@ -612,7 +613,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
-from src.core.decorators import handles_errors
+    from src.core.decorators import handles_errors
     
     # Load test configuration
     test_config = {
@@ -630,5 +631,5 @@ from src.core.decorators import handles_errors
     }
     
     # Run the step
-    success = asyncio.run( run_step(test_config))
+    success = asyncio.run(run_step(test_config))
     print(f"Step execution {'successful' if success else 'failed'}")

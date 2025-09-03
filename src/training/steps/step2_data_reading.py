@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Step 2: Data Reading and Validation.
+"""Step 2: Data Reading and Validation."
 
 This module handles reading the unified data from step1_5 and performs comprehensive
 data quality validation before proceeding to HMM regime discovery.
-"""
+""""
 
 import asyncio
 import os
@@ -267,9 +267,11 @@ class DataReadingStep:
         try:
             import json
             from datetime import datetime
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import pandas as pd
             
-            # Create reports directory
+# Create reports directory
             reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Create report filename
@@ -502,7 +504,7 @@ import pandas as pd
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 2 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
 
 async def run_step_enhanced(

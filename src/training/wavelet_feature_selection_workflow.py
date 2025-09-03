@@ -1,4 +1,4 @@
-"""Wavelet Feature Selection Workflow.
+"""Wavelet Feature Selection Workflow."
 
 This module implements a comprehensive workflow using the two-model strategy:
 1. Discovery Model: Trained on full feature set to identify winning features
@@ -12,7 +12,7 @@ The workflow:
 5. Create lean dataset with only winning features
 6. Train Production Model on lean dataset
 7. Create optimized live trading configurations
-"""
+""""
 
 import pickle
 import time
@@ -56,7 +56,7 @@ class FeatureImportanceResult:
 
 
 class WaveletFeatureSelectionWorkflow:
-    """Comprehensive workflow for wavelet feature selection using two-model strategy.
+    """Comprehensive workflow for wavelet feature selection using two-model strategy."
 
     This workflow:
     1. Runs full wavelet analysis with all features
@@ -66,7 +66,7 @@ class WaveletFeatureSelectionWorkflow:
     5. Creates lean dataset with only winning features
     6. Trains Production Model on lean dataset
     7. Creates optimized live trading configurations
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -185,7 +185,7 @@ class WaveletFeatureSelectionWorkflow:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> dict[str, Any] | None:
-        """Step 1: Run full, extensive wavelet analysis as in backtesting/training.
+        """Step 1: Run full, extensive wavelet analysis as in backtesting/training."
 
         Args:
             price_data: OHLCV price data
@@ -194,7 +194,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing all wavelet features
 
-        """
+        """"
         try:
             self.logger.info("📊 Step 1: Running full wavelet analysis...")
             start_time = time.time()
@@ -240,7 +240,7 @@ class WaveletFeatureSelectionWorkflow:
         features: dict[str, Any],
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """Step 2: Train Discovery Model using the rich feature set.
+        """Step 2: Train Discovery Model using the rich feature set."
 
         Args:
             features: All engineered features
@@ -249,7 +249,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing trained discovery model and performance metrics
 
-        """
+        """"
         try:
             self.logger.info("🔍 Step 2: Training Discovery Model...")
 
@@ -365,7 +365,7 @@ class WaveletFeatureSelectionWorkflow:
         self,
         discovery_model_data: dict[str, Any],
     ) -> list[FeatureImportanceResult] | None:
-        """Step 3: Perform feature selection using permutation importance and SHAP.
+        """Step 3: Perform feature selection using permutation importance and SHAP."
 
         Args:
             discovery_model_data: Results from discovery model training
@@ -373,7 +373,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             List of feature importance results
 
-        """
+        """"
         try:
             self.logger.info("🔍 Step 3: Performing feature selection...")
 
@@ -487,12 +487,12 @@ class WaveletFeatureSelectionWorkflow:
         context="winner feature identification",
     )
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
-        """Step 4: Identify the most important features for live trading.
+        """Step 4: Identify the most important features for live trading."
 
         Returns:
             List of winner features optimized for live trading
 
-        """
+        """"
         try:
             self.logger.info("🏆 Step 4: Identifying winner features...")
 
@@ -556,7 +556,7 @@ class WaveletFeatureSelectionWorkflow:
         original_features: dict[str, Any],
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """Step 5: Create lean dataset with only winning features.
+        """Step 5: Create lean dataset with only winning features."
 
         Args:
             winner_features: List of identified winner features
@@ -566,7 +566,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing lean dataset
 
-        """
+        """"
         try:
             self.logger.info("📊 Step 5: Creating lean dataset...")
 
@@ -616,7 +616,7 @@ class WaveletFeatureSelectionWorkflow:
         self,
         lean_dataset: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Step 6: Train Production Model on lean dataset.
+        """Step 6: Train Production Model on lean dataset."
 
         Args:
             lean_dataset: Lean dataset with only winning features
@@ -624,7 +624,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing trained production model and performance metrics
 
-        """
+        """"
         try:
             self.logger.info("🚀 Step 6: Training Production Model...")
 
@@ -729,7 +729,7 @@ class WaveletFeatureSelectionWorkflow:
         winner_features: list[FeatureImportanceResult],
         production_model_data: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Step 7: Create optimized live trading configurations.
+        """Step 7: Create optimized live trading configurations."
 
         Args:
             winner_features: List of identified winner features
@@ -738,7 +738,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing optimized configurations
 
-        """
+        """"
         try:
             self.logger.info("⚡ Step 7: Creating live configurations...")
 
@@ -932,7 +932,7 @@ class WaveletFeatureSelectionWorkflow:
         volume_data: pd.DataFrame,
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """Run the complete wavelet feature selection workflow using two-model strategy.
+        """Run the complete wavelet feature selection workflow using two-model strategy."
 
         Args:
             price_data: OHLCV price data
@@ -942,7 +942,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Complete workflow results
 
-        """
+        """"
         try:
             self.logger.info(
                 "🚀 Starting complete wavelet feature selection workflow...",

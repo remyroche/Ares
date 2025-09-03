@@ -293,7 +293,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             original_metrics: dict[str, Any] = {}
             if os.path.exists(original_history_file):
                 original_data = safe_json_load(original_history_file)
-                    original_metrics = original_data.get("metrics", {})
+                original_metrics = original_data.get("metrics", {})
 
             # Load enhanced HMM models summary produced by Step 6
             summary_file = (

@@ -24,7 +24,7 @@ from src.utils.logger import system_logger
 
 
 class OptimizedFeatureSelectionManager:
-    """Optimized Feature Selection Manager for ML Training Steps.
+    """Optimized Feature Selection Manager for ML Training Steps."
 
     Key improvements:
     1. Matrix-based VIF calculation (O(n²) instead of O(n³))
@@ -32,7 +32,7 @@ class OptimizedFeatureSelectionManager:
     3. Balanced feature mix (50-100 features) across categories
     4. Model-specific optimization for different architectures
     5. Computational efficiency with vectorized operations
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -111,7 +111,7 @@ class OptimizedFeatureSelectionManager:
         step_name: str = "step02",
         **kwargs,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Optimized feature selection with computational efficiency and balanced feature mix.
+        """Optimized feature selection with computational efficiency and balanced feature mix."
 
         Args:
             features_df: Input features DataFrame
@@ -123,7 +123,7 @@ class OptimizedFeatureSelectionManager:
         Returns:
             Tuple of (selected_features_df, selection_metadata)
 
-        """
+        """"
         start_time = time.time()
         self.logger.info(f"🚀 Starting optimized feature selection for {model_type} in {step_name}")
 
@@ -301,7 +301,7 @@ class OptimizedFeatureSelectionManager:
         from statsmodels.stats.outliers_influence import variance_inflation_factor
 import copy
 
-        vif_scores = []
+vif_scores = []
         for i, _col in enumerate(features_df.columns):
             try:
                 vif = variance_inflation_factor(features_df.values, i)
@@ -443,7 +443,7 @@ import copy
                     top_features = importance_scores.nlargest(min(target_per_category, len(category_features))).index.tolist()
                     selected_features.extend(top_features)
 
-        # If we don't have enough features, add from other categories
+        # If we don't have enough features, add from other categories'
         if len(selected_features) < target_features:
             remaining_features = [f for f in features_df.columns if f not in selected_features]
             if remaining_features:
@@ -456,7 +456,7 @@ import copy
                 additional_features = importance_scores.nlargest(target_features - len(selected_features)).index.tolist()
                 selected_features.extend(additional_features)
 
-        # Ensure we don't exceed target
+        # Ensure we don't exceed target'
         selected_features = selected_features[:target_features]
         features_df = features_df[selected_features]
 
@@ -464,7 +464,7 @@ import copy
             "selected_features": len(selected_features),
             "target_features": target_features,
             "category_distribution": {cat: len([f for f in selected_features if f in features])
-                                    for cat, features in feature_categories.items()},
+            for cat, features in feature_categories.items()},
             "features_after_stage": len(features_df.columns),
         }
 
@@ -778,7 +778,7 @@ import copy
             self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
     def apply_vectorized_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Apply vectorized operations for efficient feature processing.
+        """Apply vectorized operations for efficient feature processing."
 
         Args:
             features_df: Input features DataFrame
@@ -786,7 +786,7 @@ import copy
         Returns:
             Processed features DataFrame with vectorized operations
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying vectorized operations for feature processing...")
@@ -859,7 +859,7 @@ import copy
             return features_df
 
     def apply_matrix_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Apply efficient matrix operations for feature processing.
+        """Apply efficient matrix operations for feature processing."
 
         Args:
             features_df: Input features DataFrame
@@ -867,7 +867,7 @@ import copy
         Returns:
             Processed features DataFrame with matrix operations
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying matrix operations for feature processing...")

@@ -1,10 +1,10 @@
-"""Performance Monitor Module.
+"""Performance Monitor Module."
 
 This module provides comprehensive performance monitoring for trading models,
 including real-time tracking, drift detection, statistical analysis, and
 performance metrics calculation. It integrates with the model behavior tracker
 to provide holistic performance insights.
-"""
+""""
 
 import asyncio
 import json
@@ -28,9 +28,9 @@ import os.path
 )
 
 class PerformanceMonitor:
-    """
+    """"
     Enhanced Performance Monitor component with DI = type hints, and robust error handling.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
@@ -264,7 +264,7 @@ class PerformanceMonitor:
         return self.drift_alerts.copy()
 
     def detect_concept_drift(self, model_name: str, current_performance: float) -> bool:
-        """
+        """"
         Detect concept drift for a specific model.
 
         Args:
@@ -273,7 +273,7 @@ class PerformanceMonitor:
 
         Returns:
             bool: True if concept drift is detected
-        """
+        """"
         try:
             if model_name not in self.model_performance_history:
                 self.model_performance_history[model_name] = []

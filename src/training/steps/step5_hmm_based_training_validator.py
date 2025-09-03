@@ -41,7 +41,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """Validate the HMM-based training step.
+        """Validate the HMM-based training step."
 
         Args:
             training_input: Training input parameters
@@ -49,7 +49,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
-        """
+        """"
         self.logger.info("🔍 Validating Step 5 HMM-based training...")
 
         # Extract parameters
@@ -215,7 +215,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """Validate that all expected HMM model files exist.
+        """Validate that all expected HMM model files exist."
 
         Args:
             symbol: Trading symbol
@@ -224,7 +224,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if all files exist
-        """
+        """"
         try:
             # Expected HMM model file patterns - updated to match artifacts
             expected_files: list[str] = []
@@ -272,7 +272,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """Validate HMM model performance metrics.
+        """Validate HMM model performance metrics."
 
         Args:
             symbol: Trading symbol
@@ -281,7 +281,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if performance is acceptable
-        """
+        """"
         try:
             # Load training history - use composite meta file if present
             history_file = f"{data_dir}/{exchange}_{symbol}_hmm_composite_meta_1m.json"
@@ -363,7 +363,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """Validate HMM training metrics and convergence.
+        """Validate HMM training metrics and convergence."
 
         Args:
             symbol: Trading symbol
@@ -372,7 +372,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if training metrics are acceptable
-        """
+        """"
         try:
             history_file = (
                 f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
@@ -561,7 +561,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                         )
                         return False
                 except Exception:  # pragma: no cover - defensive
-                    # If file size can't be determined, proceed as existence is
+                    # If file size can't be determined, proceed as existence is'
                     # validated
                     pass
 
@@ -582,7 +582,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         model_name: str,
         is_loss: bool = False,
     ) -> tuple[bool, dict[str, Any]]:
-        """Validate a performance metric against a threshold.
+        """Validate a performance metric against a threshold."
 
         Args:
             metric_value: The metric value to validate
@@ -593,7 +593,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             Tuple[bool, Dict[str, Any]]: (passed, metrics)
-        """
+        """"
         try:
             # For loss metrics, lower is better; for accuracy-like metrics,
             # higher is better
@@ -634,14 +634,14 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
             return False, {"error": str(e)}
 
     def _unwrap_estimator(self, artifact: Any) -> Any:
-        """Unwrap a potentially wrapped model artifact to get the estimator.
+        """Unwrap a potentially wrapped model artifact to get the estimator."
 
         Supports:
         - Dicts with keys 'model' / 'estimator' / 'clf' / 'pipeline'
         - Objects with 'best_estimator_'
         - First element of tuple/list
         - Returns original if it already has a callable predict
-        """
+        """"
         try:
             # If already looks like an estimator
             if callable(getattr(artifact, "predict", None)):
@@ -682,7 +682,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the step5_hmm_based_training validator.
+    """Run the step5_hmm_based_training validator."
 
     Args:
         training_input: Training input parameters
@@ -690,7 +690,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """
+    """"
     validator = Step5HMMBasedTrainingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
 

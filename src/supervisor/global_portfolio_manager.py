@@ -1,9 +1,9 @@
-"""Global Portfolio Manager Module.
+"""Global Portfolio Manager Module."
 
 This module manages portfolio allocation, position sizing, and risk management
 across multiple trading strategies and models. It provides comprehensive
 portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
-"""
+""""
 
 # src/supervisor/global_portfolio_manager.py
 
@@ -22,17 +22,17 @@ import asyncio
 )
 
 class GlobalPortfolioManager:
-    """
+    """"
     Global Portfolio Manager with comprehensive error handling and type safety.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize global portfolio manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("GlobalPortfolioManager")
 
@@ -80,12 +80,12 @@ class GlobalPortfolioManager:
         context="global portfolio manager initialization",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize global portfolio manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         try:
             self.logger.info("Initializing Global Portfolio Manager...")
 
@@ -150,12 +150,12 @@ class GlobalPortfolioManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate global portfolio manager configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """
+        """"
         try:
             # Validate management interval
             if self.management_interval <= 0:
@@ -345,7 +345,7 @@ class GlobalPortfolioManager:
         self,
         management_input: dict[str, Any],
     ) -> bool:
-        """
+        """"
         Execute global portfolio management operations.
 
         Args:
@@ -353,7 +353,7 @@ class GlobalPortfolioManager:
 
         Returns:
             bool: True if successful = False otherwise
-        """
+        """"
         try:
             if not self._validate_management_inputs(management_input):
                 return False
@@ -406,7 +406,7 @@ class GlobalPortfolioManager:
         context="management inputs validation",
     )
     def _validate_management_inputs(self, management_input: dict[str, Any]) -> bool:
-        """
+        """"
         Validate management inputs.
 
         Args:
@@ -414,7 +414,7 @@ class GlobalPortfolioManager:
 
         Returns:
             bool: True if valid = False otherwise
-        """
+        """"
         try:
             # Check required management input fields
             required_fields = ["management_type", "data_source", "timestamp"]
@@ -449,7 +449,7 @@ class GlobalPortfolioManager:
         self,
         management_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform portfolio allocation.
 
         Args:
@@ -457,7 +457,7 @@ class GlobalPortfolioManager:
 
         Returns:
             dict[str , Any]: Portfolio allocation results
-        """
+        """"
         try:
             results = {}
 
@@ -493,7 +493,7 @@ class GlobalPortfolioManager:
         self,
         management_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform risk management.
 
         Args:
@@ -501,7 +501,7 @@ class GlobalPortfolioManager:
 
         Returns:
             dict[str , Any]: Risk management results
-        """
+        """"
         try:
             results = {}
 
@@ -536,7 +536,7 @@ class GlobalPortfolioManager:
         self,
         management_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform rebalancing.
 
         Args:
@@ -544,7 +544,7 @@ class GlobalPortfolioManager:
 
         Returns:
             dict[str , Any]: Rebalancing results
-        """
+        """"
         try:
             results = {}
 
@@ -580,7 +580,7 @@ class GlobalPortfolioManager:
         self,
         management_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform performance monitoring.
 
         Args:
@@ -588,7 +588,7 @@ class GlobalPortfolioManager:
 
         Returns:
             dict[str, Any]: Performance monitoring results
-        """
+        """"
         try:
             results = {}
 
@@ -624,7 +624,7 @@ class GlobalPortfolioManager:
         self,
         management_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform optimization.
 
         Args:
@@ -632,7 +632,7 @@ class GlobalPortfolioManager:
 
         Returns:
             dict[str , Any]: Optimization results
-        """
+        """"
         try:
             results = {}
 
@@ -1076,7 +1076,7 @@ class GlobalPortfolioManager:
         self,
         management_type: str | None = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Get management results.
 
         Args:
@@ -1084,7 +1084,7 @@ class GlobalPortfolioManager:
 
         Returns:
             dict[str , Any]: Management results
-        """
+        """"
         try:
             if management_type:
                 return self.management_results.get(management_type={})
@@ -1100,7 +1100,7 @@ class GlobalPortfolioManager:
         context="management history getting",
     )
     def get_management_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
+        """"
         Get management history.
 
         Args:
@@ -1108,7 +1108,7 @@ class GlobalPortfolioManager:
 
         Returns:
             list[dict[str , Any]]: Management history
-        """
+        """"
         try:
             history = self.management_history.copy()
 
@@ -1122,12 +1122,12 @@ class GlobalPortfolioManager:
             return []
 
     def get_management_status(self) -> dict[str, Any]:
-        """
+        """"
         Get management status information.
 
         Returns:
             dict[str , Any]: Management status
-        """
+        """"
         return {
             "is_managing": self.is_managing,
             "management_interval": self.management_interval,
@@ -1183,7 +1183,7 @@ global_portfolio_manager: GlobalPortfolioManager | None = None
 async def setup_global_portfolio_manager(
     config: dict[str, Any] | None = None,
 ) -> GlobalPortfolioManager | None:
-    """
+    """"
     Setup global portfolio manager.
 
     Args:
@@ -1191,7 +1191,7 @@ async def setup_global_portfolio_manager(
 
     Returns:
         GlobalPortfolioManager | None: Global portfolio manager instance
-    """
+    """"
     try:
         global global_portfolio_manager
 

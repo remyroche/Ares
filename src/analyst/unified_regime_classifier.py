@@ -16,14 +16,12 @@ from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 import logging
-from src.utils.warning_symbols import (
+from src.utils.warning_symbols import warning
 import os
 import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 import numpy as _np
 import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 import asyncio
-    warning,
-)
 from src.core.decorators import (
     validates as comprehensive_data_validation,
     validates as validate_data_quality,
@@ -41,12 +39,12 @@ class UnifiedRegimeClassifier:
     3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
     """
     def __init__(
-        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         config: dict[str, Any],
         exchange: str = "UNKNOWN",
         symbol: str = "UNKNOWN",
     ):
+        self.logger = logging.getLogger(self.__class__.__name__)
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
         self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
@@ -1501,16 +1499,11 @@ class UnifiedRegimeClassifier:
         """
         if self.sr_predictor and self.enable_sr_integration:
             # Use enhanced classification if SRBreakoutPredictor is available
-import copy
-import os.path
-
-try:
-    # Create event loop if none exists
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 
                 return loop.run_until_complete(self._classify_enhanced_location(features_df))
             except Exception as e:

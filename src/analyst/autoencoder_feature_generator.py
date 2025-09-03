@@ -1921,9 +1921,8 @@ class AutoencoderFeatureAnalyzer:
                 # Use a simple model for permutation importance
                 from sklearn.linear_model import LogisticRegression
 
-
-perm_model = LogisticRegression(random_state=42, max_iter=1000)
-perm_model.fit(X_train, y_train)
+                perm_model = LogisticRegression(random_state=42, max_iter=1000)
+                perm_model.fit(X_train, y_train)
 
                 # Compute permutation importance
                 perm_importance = permutation_importance(

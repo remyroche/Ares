@@ -22,6 +22,19 @@
     "min_regime_samples": 100,
     "enable_shap": true,
     "enable_lime": true,
-    "n_lime_samples": 10
+    "n_lime_samples": 10,
+    "enable_redundancy_analysis": true,
+    "min_redundancy_correlation": 0.7,
+    "redundancy_groups_per_concept": 2,
+    "feature_concept_patterns": {
+      "momentum": ["rsi", "macd", "momentum", "roc"],
+      "volatility": ["bb_", "atr", "volatility", "std"],
+      "volume": ["volume", "vwap", "obv", "mfi"],
+      "trend": ["ema", "sma", "trend", "adx"],
+      "microstructure": ["spread", "imbalance", "flow", "tick"],
+      "regime": ["regime", "cluster", "state"],
+      "sr_features": ["support", "resistance", "pivot", "level"]
+    },
+    "n_jobs": -1
   }
 }

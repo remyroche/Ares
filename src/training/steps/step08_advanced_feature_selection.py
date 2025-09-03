@@ -26,6 +26,22 @@ from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 import lightgbm as lgb
 
+# Computational optimization imports
+try:
+    import numba
+    from numba import jit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    warnings.warn("Numba not available - computations will be slower")
+
+try:
+    from joblib import Parallel, delayed
+    JOBLIB_AVAILABLE = True
+except ImportError:
+    JOBLIB_AVAILABLE = False
+    warnings.warn("Joblib not available - parallel processing disabled")
+
 # Import if available
 try:
     import shap
@@ -53,6 +69,85 @@ from src.core.decorators import handles_errors
 from src.utils.common_operations import ensure_directory, safe_json_dump
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import pipeline_standards
+
+
+# Numba-optimized functions for performance
+if NUMBA_AVAILABLE:
+    @jit(nopython=True, parallel=True)
+    def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
+        """Compute correlation matrix using Numba for speed."""
+        n_features = X.shape[1]
+        corr_matrix = np.zeros((n_features, n_features))
+        
+        # Standardize features
+        X_std = np.zeros_like(X)
+        for i in prange(n_features):
+            mean = np.mean(X[:, i])
+            std = np.std(X[:, i])
+            if std > 0:
+                X_std[:, i] = (X[:, i] - mean) / std
+            else:
+                X_std[:, i] = 0
+        
+        # Compute correlations
+        n_samples = X.shape[0]
+        for i in prange(n_features):
+            for j in range(i, n_features):
+                if i == j:
+                    corr_matrix[i, j] = 1.0
+                else:
+                    corr = np.sum(X_std[:, i] * X_std[:, j]) / (n_samples - 1)
+                    corr_matrix[i, j] = corr
+                    corr_matrix[j, i] = corr
+        
+        return corr_matrix
+
+    @jit(nopython=True)
+    def fast_mutual_info_discrete(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Fast mutual information calculation for discrete targets."""
+        n_features = X.shape[1]
+        mi_scores = np.zeros(n_features)
+        
+        for i in range(n_features):
+            # Simple binning-based MI approximation
+            x_bins = np.percentile(X[:, i], np.linspace(0, 100, 11))
+            x_discrete = np.searchsorted(x_bins[1:-1], X[:, i])
+            
+            # Calculate MI using histogram method
+            mi_scores[i] = _calculate_mi_discrete(x_discrete, y)
+        
+        return mi_scores
+    
+    @jit(nopython=True)
+    def _calculate_mi_discrete(x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate MI between two discrete variables."""
+        # Implementation of discrete MI calculation
+        xy_counts = np.zeros((10, 2))  # Assuming 10 bins for x, 2 classes for y
+        
+        for i in range(len(x)):
+            if y[i] < 2:  # Binary classification
+                xy_counts[min(x[i], 9), int(y[i])] += 1
+        
+        # Calculate probabilities and MI
+        n = len(x)
+        mi = 0.0
+        for i in range(10):
+            for j in range(2):
+                pxy = xy_counts[i, j] / n
+                if pxy > 0:
+                    px = np.sum(xy_counts[i, :]) / n
+                    py = np.sum(xy_counts[:, j]) / n
+                    if px > 0 and py > 0:
+                        mi += pxy * np.log(pxy / (px * py))
+        
+        return mi
+else:
+    # Fallback implementations
+    def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
+        return np.corrcoef(X.T)
+    
+    def fast_mutual_info_discrete(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        return mutual_info_classif(X, y, random_state=42)
 
 
 class Step08AdvancedFeatureSelection:
@@ -101,12 +196,21 @@ class Step08AdvancedFeatureSelection:
         self.enable_lime = self.step_config.get("enable_lime", True) and LIME_AVAILABLE
         self.n_lime_samples = self.step_config.get("n_lime_samples", 10)
         
+        # Parallel processing configuration
+        self.n_jobs = self.step_config.get("n_jobs", -1)
+        self.use_parallel = JOBLIB_AVAILABLE and self.n_jobs != 1
+        
         self.logger.info("🚀 Step 8 Advanced Feature Selection initialized")
         self.logger.info(f"   Phase 1 target: {self.phase1_target_features} features")
         self.logger.info(f"   Phase 2 targets: {self.phase2_targets}")
-        self.logger.info(f"   Boruta available: {BORUTA_AVAILABLE}")
-        self.logger.info(f"   SHAP available: {SHAP_AVAILABLE}")
-        self.logger.info(f"   LIME available: {LIME_AVAILABLE}")
+        self.logger.info(f"   Computational optimizations:")
+        self.logger.info(f"     - Numba: {NUMBA_AVAILABLE}")
+        self.logger.info(f"     - Joblib: {JOBLIB_AVAILABLE}")
+        self.logger.info(f"     - Parallel jobs: {self.n_jobs}")
+        self.logger.info(f"   Feature selection methods:")
+        self.logger.info(f"     - Boruta: {BORUTA_AVAILABLE}")
+        self.logger.info(f"     - SHAP: {SHAP_AVAILABLE}")
+        self.logger.info(f"     - LIME: {LIME_AVAILABLE}")
     
     @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(
@@ -323,7 +427,7 @@ class Step08AdvancedFeatureSelection:
     
     def _mrmr_selection(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> List[str]:
         """
-        Minimum Redundancy Maximum Relevance feature selection.
+        Optimized Minimum Redundancy Maximum Relevance feature selection.
         
         Args:
             X: Feature dataframe
@@ -333,41 +437,52 @@ class Step08AdvancedFeatureSelection:
         Returns:
             List of selected feature names
         """
-        selected_features = []
-        remaining_features = list(X.columns)
+        # Convert to numpy for faster computation
+        X_values = X.values
+        y_values = y.values
+        feature_names = X.columns.tolist()
+        n_total_features = len(feature_names)
+        
+        # Pre-compute all relevance scores (MI with target)
+        if NUMBA_AVAILABLE and y.dtype == int:
+            relevance_scores = fast_mutual_info_discrete(X_values, y_values)
+        else:
+            relevance_scores = mutual_info_classif(X, y, random_state=42)
+        
+        # Pre-compute correlation matrix for redundancy
+        if NUMBA_AVAILABLE:
+            corr_matrix = np.abs(fast_correlation_matrix(X_values))
+        else:
+            corr_matrix = np.abs(X.corr().values)
+        
+        # Initialize selection
+        selected_indices = []
+        remaining_indices = list(range(n_total_features))
         
         # First feature: highest MI with target
-        mi_scores = mutual_info_classif(X, y, random_state=42)
-        first_feature_idx = np.argmax(mi_scores)
-        selected_features.append(X.columns[first_feature_idx])
-        remaining_features.remove(X.columns[first_feature_idx])
+        first_idx = np.argmax(relevance_scores)
+        selected_indices.append(first_idx)
+        remaining_indices.remove(first_idx)
         
-        # Iteratively add features
-        while len(selected_features) < n_features and remaining_features:
-            scores = {}
+        # Vectorized selection of remaining features
+        while len(selected_indices) < n_features and remaining_indices:
+            # Calculate redundancy for all remaining features at once
+            redundancy_matrix = corr_matrix[np.ix_(remaining_indices, selected_indices)]
+            redundancy_scores = np.mean(redundancy_matrix, axis=1)
             
-            for feature in remaining_features:
-                # Relevance: MI with target
-                relevance = mutual_info_classif(
-                    X[[feature]], y, random_state=42
-                )[0]
-                
-                # Redundancy: average MI with selected features
-                redundancy = 0
-                for selected in selected_features:
-                    # Use correlation as proxy for MI between features (faster)
-                    redundancy += abs(X[feature].corr(X[selected]))
-                redundancy /= len(selected_features)
-                
-                # mRMR score
-                scores[feature] = relevance - redundancy
+            # Calculate mRMR scores
+            remaining_relevance = relevance_scores[remaining_indices]
+            mrmr_scores = remaining_relevance - redundancy_scores
             
-            # Select feature with highest score
-            best_feature = max(scores, key=scores.get)
-            selected_features.append(best_feature)
-            remaining_features.remove(best_feature)
+            # Select best feature
+            best_idx_in_remaining = np.argmax(mrmr_scores)
+            best_idx = remaining_indices[best_idx_in_remaining]
+            
+            selected_indices.append(best_idx)
+            remaining_indices.remove(best_idx)
         
-        return selected_features
+        # Convert indices back to feature names
+        return [feature_names[idx] for idx in selected_indices]
     
     def _time_series_rf_selection(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> List[str]:
         """
@@ -415,7 +530,7 @@ class Step08AdvancedFeatureSelection:
         candidate_features: List[str]
     ) -> List[str]:
         """
-        Validate features perform well in each regime.
+        Optimized regime validation using parallel processing.
         
         Args:
             X: Feature dataframe
@@ -426,32 +541,51 @@ class Step08AdvancedFeatureSelection:
         Returns:
             List of regime-validated features
         """
-        regime_scores = {feature: [] for feature in candidate_features}
+        unique_regimes = np.unique(regime_labels)
+        valid_regimes = [r for r in unique_regimes 
+                        if (regime_labels == r).sum() >= self.min_regime_samples]
         
-        for regime in np.unique(regime_labels):
-            regime_mask = regime_labels == regime
-            if regime_mask.sum() < self.min_regime_samples:
-                continue
+        if not valid_regimes:
+            return candidate_features  # Return all if no valid regimes
+        
+        # Prepare data for parallel processing
+        X_values = X[candidate_features].values
+        y_values = y.values
+        
+        def evaluate_regime(regime):
+            """Evaluate features for a single regime."""
+            regime_mask = (regime_labels == regime).values
+            X_regime = X_values[regime_mask]
+            y_regime = y_values[regime_mask]
             
-            X_regime = X[regime_mask]
-            y_regime = y[regime_mask]
+            # Calculate MI scores for all features at once
+            if NUMBA_AVAILABLE and y.dtype == int:
+                mi_scores = fast_mutual_info_discrete(X_regime, y_regime)
+            else:
+                mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
             
-            # Evaluate each feature in this regime
-            for feature in candidate_features:
-                if feature in X_regime.columns:
-                    # Simple univariate test
-                    mi_score = mutual_info_classif(
-                        X_regime[[feature]], y_regime, random_state=42
-                    )[0]
-                    regime_scores[feature].append(mi_score)
+            return mi_scores
+        
+        # Parallel evaluation of regimes
+        if JOBLIB_AVAILABLE and len(valid_regimes) > 1:
+            regime_scores_list = Parallel(n_jobs=-1)(
+                delayed(evaluate_regime)(regime) for regime in valid_regimes
+            )
+        else:
+            regime_scores_list = [evaluate_regime(regime) for regime in valid_regimes]
+        
+        # Aggregate scores across regimes
+        regime_scores_matrix = np.array(regime_scores_list)
+        mean_scores = np.mean(regime_scores_matrix, axis=0)
+        min_scores = np.min(regime_scores_matrix, axis=0)
         
         # Select features that perform well across regimes
-        validated_features = []
-        for feature, scores in regime_scores.items():
-            if scores and np.mean(scores) > 0.01:  # Threshold for relevance
-                validated_features.append(feature)
+        # Use both mean and minimum score criteria
+        validated_indices = np.where(
+            (mean_scores > 0.01) & (min_scores > 0.005)
+        )[0]
         
-        return validated_features
+        return [candidate_features[idx] for idx in validated_indices]
     
     async def phase2_boruta_multi_target(
         self, 
@@ -853,7 +987,7 @@ class Step08AdvancedFeatureSelection:
     
     def _analyze_feature_redundancy(self, X: pd.DataFrame) -> dict[str, List[str]]:
         """
-        Analyze feature redundancy to identify groups of correlated features.
+        Optimized feature redundancy analysis using vectorized operations.
         
         Args:
             X: Feature dataframe
@@ -862,42 +996,52 @@ class Step08AdvancedFeatureSelection:
             Dictionary mapping group names to feature lists
         """
         redundancy_groups = {}
+        n_features = len(X.columns)
         
-        # 1. Correlation-based redundancy
-        corr_matrix = X.corr().abs()
+        # 1. Vectorized correlation calculation
+        if NUMBA_AVAILABLE:
+            corr_matrix = np.abs(fast_correlation_matrix(X.values))
+        else:
+            corr_matrix = X.corr().abs().values
         
-        # Find highly correlated feature pairs
-        high_corr_pairs = []
-        for i in range(len(X.columns)):
-            for j in range(i + 1, len(X.columns)):
-                if corr_matrix.iloc[i, j] >= self.min_redundancy_correlation:
-                    high_corr_pairs.append((X.columns[i], X.columns[j], corr_matrix.iloc[i, j]))
+        # Find high correlation pairs using vectorized operations
+        # Create upper triangular mask
+        triu_indices = np.triu_indices(n_features, k=1)
+        high_corr_mask = corr_matrix[triu_indices] >= self.min_redundancy_correlation
         
-        # Group correlated features using connected components
-        from collections import defaultdict
-        feature_graph = defaultdict(set)
-        for f1, f2, _ in high_corr_pairs:
-            feature_graph[f1].add(f2)
-            feature_graph[f2].add(f1)
+        # Get indices of highly correlated pairs
+        high_corr_i = triu_indices[0][high_corr_mask]
+        high_corr_j = triu_indices[1][high_corr_mask]
         
-        # Find connected components
-        visited = set()
-        corr_group_id = 0
-        for feature in feature_graph:
-            if feature not in visited:
-                # BFS to find connected component
-                component = set()
-                queue = [feature]
-                while queue:
-                    current = queue.pop(0)
-                    if current not in visited:
-                        visited.add(current)
-                        component.add(current)
-                        queue.extend(feature_graph[current] - visited)
-                
-                if len(component) > 1:
-                    redundancy_groups[f'corr_group_{corr_group_id}'] = list(component)
-                    corr_group_id += 1
+        if len(high_corr_i) > 0:
+            # Build adjacency matrix for connected components
+            adjacency = np.zeros((n_features, n_features), dtype=bool)
+            adjacency[high_corr_i, high_corr_j] = True
+            adjacency[high_corr_j, high_corr_i] = True
+            
+            # Find connected components using matrix operations
+            visited = np.zeros(n_features, dtype=bool)
+            corr_group_id = 0
+            
+            for start_idx in range(n_features):
+                if not visited[start_idx] and np.any(adjacency[start_idx]):
+                    # Find all connected features using matrix powers
+                    component_mask = np.zeros(n_features, dtype=bool)
+                    component_mask[start_idx] = True
+                    
+                    # Iteratively expand component
+                    prev_size = 0
+                    while np.sum(component_mask) > prev_size:
+                        prev_size = np.sum(component_mask)
+                        # Add all neighbors of current component
+                        component_mask |= np.any(adjacency[component_mask], axis=0)
+                    
+                    visited |= component_mask
+                    component_features = [X.columns[i] for i in np.where(component_mask)[0]]
+                    
+                    if len(component_features) > 1:
+                        redundancy_groups[f'corr_group_{corr_group_id}'] = component_features
+                        corr_group_id += 1
         
         # 2. Concept-based redundancy
         for concept, patterns in self.feature_concept_patterns.items():

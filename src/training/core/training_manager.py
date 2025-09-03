@@ -4,8 +4,6 @@ This module provides the main training manager that coordinates
 the training pipeline execution.
 """
 
-import asyncio
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from src.core.decorators import handles_errors

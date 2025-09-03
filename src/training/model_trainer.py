@@ -319,13 +319,6 @@ class RayModelTrainer:
                 do_hpo = use_hpo
                 if do_hpo:
                     try:
-from src.utils.mlflow_utils import log_params_with_metadata
-from src.utils.mlflow_utils import log_metrics_with_metadata, log_artifacts_with_metadata
-import os
-import pandas as pd
-import copy
-import numpy as np
-import os.path
                         from src.training.steps.validation.step17_final_parameters_optimization.optimized_optuna_optimization import (
                             AdvancedOptunaManager,
                         )

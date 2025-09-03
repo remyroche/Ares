@@ -22,8 +22,6 @@ import talib
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-
 # Simple logger setup
 logger = logging.getLogger(__name__)
 

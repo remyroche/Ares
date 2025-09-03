@@ -13,7 +13,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from src.utils.logger import system_logger
 

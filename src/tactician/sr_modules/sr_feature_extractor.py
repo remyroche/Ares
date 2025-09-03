@@ -1,6 +1,6 @@
 """Support/Resistance Feature Extractor Module."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd

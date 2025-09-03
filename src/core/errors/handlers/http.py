@@ -9,7 +9,6 @@ AppError instances and convert them to appropriate responses.
 
 import json
 import logging
-from typing import A, Callableny
 
 from ..base import AppError
 from ..mapping import error_mapper

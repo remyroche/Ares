@@ -32,8 +32,6 @@ warnings.filterwarnings("ignore")
 # Optimization libraries
 try:
     import optuna
-    from optuna.pruners import MedianPruner
-    from optuna.samplers import TPESampler
 
     OPTUNA_AVAILABLE = True
 except ImportError:
@@ -41,8 +39,6 @@ except ImportError:
     print("Warning: optuna not available, using basic optimization")
 
 try:
-    from sklearn.cluster import DBSCAN
-    from sklearn.metrics import silhouette_score
     from sklearn.model_selection import TimeSeriesSplit
 
     SKLEARN_AVAILABLE = True
@@ -50,7 +46,6 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     print("Warning: sklearn not available, clustering optimization disabled")
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 

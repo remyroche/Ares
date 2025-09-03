@@ -1,6 +1,5 @@
 # src/tactician/sr_data_integration.py
 
-from src.core.decorators import handles_errors
 
 """
 S/R Data Integration Module
@@ -11,17 +10,14 @@ It ensures the S/R system uses the same data sources and configurations as the
 main trading system.
 """
 
-import asyncio
-import os
 import sys
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 warnings.filterwarnings('ignore')
 
-import numpy as np
 import pandas as pd
 
 # Add the project root to the Python path
@@ -34,10 +30,6 @@ except Exception as e:
     pass  # TODO: Handle exception
  
     from src.config.training_modes import (
-        BLANK_TRAINING_LOOKBACK_DAYS,
-        FULL_TRAINING_LOOKBACK_DAYS,
-        LIGHT_TRAINING_LOOKBACK_DAYS,
-        SHORT_BLANK_LOOKBACK_DAYS,
         TRAINING_MODES,
     )
     from src.training.steps.data_downloader import download_all_data_with_consolidation

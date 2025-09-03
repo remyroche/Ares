@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-
 # src/training/steps/sr_outcome_model_trainer.py
 
 
@@ -28,9 +26,6 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
-from src.core.domain import (
-    validate_feature_engineering_with_lookahead_bias_detection as validate_feature_engineering_with_lookahead_bias_detection_3,
-)
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 

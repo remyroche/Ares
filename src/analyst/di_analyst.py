@@ -8,7 +8,6 @@ Dependency injection-aware Analyst implementation.
 This module provides an Analyst implementation that properly supports
 dependency injection patterns and modern architectural practices.
 """
-import asyncio
 import logging
 from datetime import datetime
 from typing import Any

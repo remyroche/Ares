@@ -14,7 +14,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
 from src.analyst.regime_runtime import get_current_regime_info
-    )
+)
     async def get_current_regime_info(
         self, exchange: str, symbol: str, timeframe: str,
     ) -> dict[str, Any] | None:

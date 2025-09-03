@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import datetime as datetime
-from typing import A, Callableny, Number
+from typing import Number
 
 import numpy as np
 import optuna
 import pandas as pd
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 
 # src/training/bayesian_optimizer.py

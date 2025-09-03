@@ -12,7 +12,6 @@ import random
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import A, Callableny
 
 from src.core.errors.base import ServiceUnavailableError
 from src.core.errors.base import TimeoutError as AppTimeoutError

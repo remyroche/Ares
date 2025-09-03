@@ -6,15 +6,11 @@ using the abstract architecture.
 """
 from datetime import datetime
 from typing import List
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
-from .modular_components import (
-    BaseExchangeDataSource,
-    ExchangeDataSourceFactory,
-    ModelTrainerFactory
-)
-
+from .modular_components import BaseExchangeDataSource, ExchangeDataSourceFactory, ModelTrainerFactory
 
 # ============================================================================
 # Example 1: Adding a new exchange (e.g., FTX, Bybit, etc.)
@@ -113,8 +109,9 @@ class DeribitDataSource(BaseExchangeDataSource):
 # Example 2: Adding a new ML model type
 # ============================================================================
 
-from .modular_components import BaseModelTrainer, IModel
 from typing import Optional
+
+from .modular_components import BaseModelTrainer, IModel
 
 
 class CatBoostModel(IModel):
@@ -162,7 +159,7 @@ class CatBoostTrainer(BaseModelTrainer):
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Optional[Tuple[pd.DataFrame, pd.Series]] = None) -> IModel:
         """Train CatBoost model."""
         from catboost import CatBoostClassifier
-        
+
         # Create model
         self.model = CatBoostClassifier(**self.hyperparameters)
         

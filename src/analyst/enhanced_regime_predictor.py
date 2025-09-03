@@ -11,17 +11,16 @@ This module provides advanced regime change prediction capabilities by integrati
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from scipy.stats import expon, gamma, weibull_min
 from sklearn.cluster import DBSCAN
-from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from src.core.decorators import handles_errors
-from src.core.domain import handle_errors, with_tracing_span
+from src.core.domain import with_tracing_span
 from src.utils.logger import system_logger
 
 

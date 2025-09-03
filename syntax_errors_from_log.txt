@@ -1,0 +1,178 @@
+Error parsing src/launcher/enhanced_trading_launcher.py: unexpected indent (<unknown>, line 124)
+Error parsing src/interfaces/enhanced_event_bus.py: invalid syntax. Perhaps you forgot a comma? (<unknown>, line 106)
+Error parsing src/supervisor/system_coordinator_backup.py: unexpected indent (<unknown>, line 630)
+Error parsing src/pipelines/live_trading_pipeline.py: '(' was never closed (<unknown>, line 27)
+Error parsing src/pipelines/improved_pipeline_executor.py: unexpected indent (<unknown>, line 160)
+Error parsing src/pipelines/components/lifecycle_manager.py: unexpected indent (<unknown>, line 18)
+Error parsing src/pipelines/components/data_manager.py: unexpected indent (<unknown>, line 22)
+Error parsing src/integration/paper_trading_integration.py: invalid syntax (<unknown>, line 15)
+Error parsing src/tactician/position_division_strategy.py: unmatched ')' (<unknown>, line 14)
+Error parsing src/tactician/tactician.py: unexpected indent (<unknown>, line 109)
+Error parsing src/tactician/enhanced_execution_manager.py: unexpected indent (<unknown>, line 47)
+Error parsing src/training/model_trainer.py: expected an indented block after 'try' statement on line 321 (<unknown>, line 322)
+Error parsing src/training/enhanced_training_manager.py: expected an indented block after 'try' statement on line 2541 (<unknown>, line 2542)
+Error parsing src/training/multi_output_probability_trainer.py: unindent does not match any outer indentation level (<unknown>, line 130)
+Error parsing src/training/feature_integration.py: expected 'except' or 'finally' block (<unknown>, line 67)
+Error parsing src/training/enhanced_matrix_operations.py: unexpected indent (<unknown>, line 1549)
+Error parsing src/training/enhanced_lm_optimizer.py: unexpected indent (<unknown>, line 1356)
+Error parsing src/training/enhanced_training_manager_optimized.py: expected an indented block after 'if' statement on line 431 (<unknown>, line 432)
+Error parsing src/training/multi_objective_optimizer.py: unexpected indent (<unknown>, line 70)
+Error parsing src/training/optimized_feature_selection_manager.py: invalid syntax (<unknown>, line 308)
+Error parsing src/training/multi_output_model_trainer.py: expected an indented block after 'try' statement on line 53 (<unknown>, line 54)
+Error parsing src/training/calibration_manager.py: unexpected indent (<unknown>, line 134)
+Error parsing src/training/training_orchestrator.py: unexpected indent (<unknown>, line 419)
+Error parsing src/training/factory.py: unexpected indent (<unknown>, line 186)
+Error parsing src/training/training_manager.py: unexpected indent (<unknown>, line 205)
+Error parsing src/training/enhanced_coarse_optimizer.py: unexpected indent (<unknown>, line 468)
+Error parsing src/training/di_training_manager.py: unexpected indent (<unknown>, line 116)
+Error parsing src/training/data_efficiency_optimizer.py: unterminated string literal (detected at line 228) (<unknown>, line 228)
+Error parsing src/training/data_manager.py: unterminated string literal (detected at line 729) (<unknown>, line 729)
+Error parsing src/training/wavelet_caching_workflow.py: expected 'except' or 'finally' block (<unknown>, line 240)
+Error parsing src/training/optimization/computational_optimization_manager.py: unexpected indent (<unknown>, line 1747)
+Error parsing src/training/steps/fractional_feature_selector.py: unexpected indent (<unknown>, line 693)
+Error parsing src/training/steps/step14_tactician_labeling_validator.py: expected an indented block after 'try' statement on line 188 (<unknown>, line 189)
+Error parsing src/training/steps/step10_unified_regime_intelligence.py: unmatched ')' (<unknown>, line 1977)
+Error parsing src/training/steps/step18_walk_forward_validation_validator.py: invalid syntax (<unknown>, line 11)
+Error parsing src/training/steps/step14_tactician_labeling.py: invalid syntax (<unknown>, line 626)
+Error parsing src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py: unexpected indent (<unknown>, line 41)
+Error parsing src/training/steps/step09_hmm_based_training_validator.py: unexpected indent (<unknown>, line 32)
+Error parsing src/training/steps/step03_parameter_optimization_validator.py: invalid syntax (<unknown>, line 10)
+Error parsing src/training/steps/enhanced_step1_data_collection.py: expected an indented block after 'try' statement on line 25 (<unknown>, line 26)
+Error parsing src/training/steps/step19_monte_carlo_validation_validator.py: invalid syntax (<unknown>, line 120)
+Error parsing src/training/steps/step02_5_sr_optimization_validator.py: unexpected indent (<unknown>, line 94)
+Error parsing src/training/steps/step04_5_triple_barrier_method_validator.py: unexpected indent (<unknown>, line 32)
+Error parsing src/training/steps/step16_confidence_calibration.py: unexpected indent (<unknown>, line 857)
+Error parsing src/training/steps/step04_regime_data_splitting_validator.py: invalid syntax (<unknown>, line 9)
+Error parsing src/training/steps/step21_saving.py: unexpected indent (<unknown>, line 248)
+Error parsing src/training/steps/step05_labeling.py: expected an indented block after 'try' statement on line 154 (<unknown>, line 156)
+Error parsing src/training/steps/combined_fractional_system.py: unexpected indent (<unknown>, line 466)
+Error parsing src/training/steps/step10_unified_regime_intelligence_validator.py: unindent does not match any outer indentation level (<unknown>, line 548)
+Error parsing src/training/steps/step03_5_final_regime_clustering_validator.py: unexpected indent (<unknown>, line 447)
+Error parsing src/training/steps/precompute_wavelet_features.py: unexpected indent (<unknown>, line 168)
+Error parsing src/training/steps/step02_5_sr_optimization.py: unexpected indent (<unknown>, line 1516)
+Error parsing src/training/steps/step02_data_reading_validator.py: unexpected indent (<unknown>, line 35)
+Error parsing src/training/steps/step07_enhanced_matrix_operations.py: unexpected indent (<unknown>, line 1699)
+Error parsing src/training/steps/step19_monte_carlo_validation.py: unmatched ')' (<unknown>, line 243)
+Error parsing src/training/steps/step03_hmm_regime_discovery.py: unexpected indent (<unknown>, line 584)
+Error parsing src/training/steps/unified_data_loader.py: unexpected indent (<unknown>, line 34)
+Error parsing src/training/steps/step03_parameter_optimization.py: unexpected indent (<unknown>, line 130)
+Error parsing src/training/steps/step11_analyst_creation.py: unindent does not match any outer indentation level (<unknown>, line 163)
+Error parsing src/training/steps/step09_hmm_based_training.py: unexpected indent (<unknown>, line 1053)
+Error parsing src/training/steps/step06_feature_engineering_validator.py: invalid syntax (<unknown>, line 6)
+Error parsing src/training/steps/step04_regime_data_splitting.py: unexpected indent (<unknown>, line 416)
+Error parsing src/training/steps/step09_5_hmm_lm_generalist_training.py: unexpected indent (<unknown>, line 124)
+Error parsing src/training/steps/integrated_data_quality_pipeline.py: unexpected indent (<unknown>, line 54)
+Error parsing src/training/steps/enhanced_step1_5_data_converter.py: expected an indented block after 'try' statement on line 26 (<unknown>, line 27)
+Error parsing src/training/steps/step17_final_parameters_optimization.py: unexpected indent (<unknown>, line 66)
+Error parsing src/training/steps/step03_5_final_regime_clustering.py: unexpected indent (<unknown>, line 881)
+Error parsing src/training/steps/step12_analyst_enhancement.py: unmatched ')' (<unknown>, line 3623)
+Error parsing src/training/steps/raw_data_quality_checker.py: expected an indented block after 'if' statement on line 542 (<unknown>, line 544)
+Error parsing src/training/steps/step18_walk_forward_validation.py: unmatched ')' (<unknown>, line 196)
+Error parsing src/training/steps/step15_tactician_specialist_training.py: unmatched ')' (<unknown>, line 1154)
+Error parsing src/training/steps/step05_labeling_validator.py: invalid syntax (<unknown>, line 9)
+Error parsing src/training/steps/fractional_differentiation.py: unmatched ')' (<unknown>, line 15)
+Error parsing src/training/steps/step13_analyst_ensemble_creation.py: expected an indented block after 'try' statement on line 153 (<unknown>, line 154)
+Error parsing src/training/steps/step04_5_triple_barrier_method.py: unmatched ')' (<unknown>, line 340)
+Error parsing src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py: unexpected indent (<unknown>, line 47)
+Error parsing src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py: unexpected unindent (<unknown>, line 85)
+Error parsing src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py: unexpected indent (<unknown>, line 42)
+Error parsing src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py: unexpected indent (<unknown>, line 33)
+Error parsing src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py: unexpected indent (<unknown>, line 776)
+Error parsing src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py: unexpected indent (<unknown>, line 522)
+Error parsing src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py: unexpected indent (<unknown>, line 39)
+Error parsing src/training/steps/step1/missing_data_downloader_and_gap_filler.py: Syntax error after auto-fixing
+Error parsing src/training/steps/step1/data_quality_dashboard.py: unmatched ')' (<unknown>, line 22)
+Error parsing src/training/steps/step1/comprehensive_gap_filler.py: unexpected indent (<unknown>, line 940)
+Error parsing src/training/steps/step1/data_resampler.py: unindent does not match any outer indentation level (<unknown>, line 816)
+Error parsing src/training/steps/step1/data_gap_detector.py: expected an indented block after 'try' statement on line 37 (<unknown>, line 38)
+Error parsing src/training/steps/step1/data_quality_monitor.py: unexpected indent (<unknown>, line 226)
+Error parsing src/training/steps/step1/enhanced_data_quality_manager.py: unexpected indent (<unknown>, line 73)
+Error parsing src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py: unexpected indent (<unknown>, line 468)
+Error parsing src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py: unexpected indent (<unknown>, line 802)
+Error parsing src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py: unmatched ')' (<unknown>, line 15)
+Error parsing src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py: unexpected indent (<unknown>, line 706)
+Error parsing src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py: unexpected indent (<unknown>, line 301)
+Error parsing src/training/steps/data_preparation_components/training_validation_config.py: unexpected indent (<unknown>, line 394)
+Error parsing src/training/core/checkpoint_manager.py: invalid syntax (<unknown>, line 357)
+Error parsing src/training/core/pipeline_orchestrator.py: invalid syntax (<unknown>, line 63)
+Error parsing src/exchange/binance.py: unexpected indent (<unknown>, line 14)
+Error parsing src/utils/vif_calculator.py: unexpected indent (<unknown>, line 73)
+Error parsing src/utils/model_performance_monitor.py: expected 'except' or 'finally' block (<unknown>, line 388)
+Error parsing src/utils/enhanced_memory_management.py: invalid syntax (<unknown>, line 40)
+Error parsing src/utils/data_optimizer.py: unmatched ')' (<unknown>, line 98)
+Error parsing src/utils/configuration_security.py: invalid syntax (<unknown>, line 102)
+Error parsing src/utils/enhanced_missing_value_handler.py: invalid syntax (<unknown>, line 81)
+Error parsing src/utils/data_formatting_framework.py: unexpected indent (<unknown>, line 401)
+Error parsing src/utils/quality_alert_system.py: expected 'except' or 'finally' block (<unknown>, line 260)
+Error parsing src/utils/base_validator.py: unexpected indent (<unknown>, line 310)
+Error parsing src/utils/model_manager.py: invalid syntax (<unknown>, line 205)
+Error parsing src/utils/database_security.py: unexpected indent (<unknown>, line 358)
+Error parsing src/strategist/strategist_backup.py: invalid syntax. Perhaps you forgot a comma? (<unknown>, line 59)
+Error parsing src/analyst/autoencoder_feature_generator.py: expected 'except' or 'finally' block (<unknown>, line 1925)
+Error parsing src/analyst/enhanced_prediction_integrator.py: unexpected indent (<unknown>, line 10)
+Error parsing src/analyst/liquidation_risk_model.py: invalid syntax (<unknown>, line 3)
+Error parsing src/analyst/regime_expert_orchestrator.py: unexpected indent (<unknown>, line 17)
+Error parsing src/analyst/meta_label_relevance.py: unexpected indent (<unknown>, line 114)
+Error parsing src/analyst/ml_confidence_predictor.py: unmatched ')' (<unknown>, line 1640)
+Error parsing src/analyst/unified_regime_classifier.py: invalid syntax (<unknown>, line 20)
+Error parsing src/analyst/predictive_ensembles/multi_timeframe_ensemble.py: invalid syntax (<unknown>, line 40)
+Error parsing src/database/precomputed_features_manager.py: invalid syntax (<unknown>, line 24)
+Error parsing src/database/migration_utils.py: unexpected indent (<unknown>, line 412)
+Warning: 7 files have syntax errors after fixing:
+  - src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py
+  - src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py
+  - src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py
+  - src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py
+  - src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py
+  - src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py
+  - src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py
+Warning: 7 files have syntax errors after fixing:
+  - src/training/steps/step1/missing_data_downloader_and_gap_filler.py
+  - src/training/steps/step1/data_quality_dashboard.py
+  - src/training/steps/step1/comprehensive_gap_filler.py
+  - src/training/steps/step1/data_resampler.py
+  - src/training/steps/step1/data_gap_detector.py
+  - src/training/steps/step1/data_quality_monitor.py
+  - src/training/steps/step1/enhanced_data_quality_manager.py
+Warning: 4 files have syntax errors after fixing:
+  - src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py
+  - src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py
+  - src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py
+  - src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py
+Warning: 1 files have syntax errors after fixing:
+  - src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py
+Warning: 1 files have syntax errors after fixing:
+  - src/training/steps/data_preparation_components/training_validation_config.py
+Warning: 1 files have syntax errors after fixing:
+  - src/exchange/binance.py
+Warning: 2 files have syntax errors after fixing:
+  - src/training/core/checkpoint_manager.py
+  - src/training/core/pipeline_orchestrator.py
+Warning: 11 files have syntax errors after fixing:
+  - src/utils/vif_calculator.py
+  - src/utils/model_performance_monitor.py
+  - src/utils/enhanced_memory_management.py
+  - src/utils/data_optimizer.py
+  - src/utils/configuration_security.py
+  - src/utils/enhanced_missing_value_handler.py
+  - src/utils/data_formatting_framework.py
+  - src/utils/quality_alert_system.py
+  - src/utils/base_validator.py
+  - src/utils/model_manager.py
+  - src/utils/database_security.py
+Warning: 1 files have syntax errors after fixing:
+  - src/strategist/strategist_backup.py
+Warning: 8 files have syntax errors after fixing:
+  - src/analyst/autoencoder_feature_generator.py
+  - src/analyst/enhanced_prediction_integrator.py
+  - src/analyst/liquidation_risk_model.py
+  - src/analyst/regime_expert_orchestrator.py
+  - src/analyst/meta_label_relevance.py
+  - src/analyst/ml_confidence_predictor.py
+  - src/analyst/unified_regime_classifier.py
+  - src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
+Warning: 1 files have syntax errors after fixing:
+  - src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
+Warning: 2 files have syntax errors after fixing:
+  - src/database/precomputed_features_manager.py
+  - src/database/migration_utils.py

@@ -9,7 +9,7 @@ Critical path type validators for trading system safety.
 import logging
 from datetime import datetime
 from functools import wraps
-from typing import A, Callableny, TypeVar
+from typing import TypeVar
 
 from src.custom_types import (
     OrderRequest,
@@ -23,8 +23,6 @@ from src.custom_types.validation import (
     validate_market_data,
     validate_model_input,
 )
-from src.utils.structured_logging import get_correlation_id as get_correlation_id_src_utils_structured_logging
-from src.utils.warning_symbols import error as error_src_utils_warning_symbols
 from src.utils.warning_symbols import failed
 
 logger = logging.getLogger(__name__)

@@ -13,7 +13,6 @@ from typing import Any
 from exchange.factory import ExchangeFactory
 from src.analyst.analyst import Analyst
 from src.components.modular_analyst import ModularAnalyst
-from src.components.modular_strategist import ModularStrategist as ModularStrategist_2
 from src.components.modular_tactician import ModularTactician
 from src.core.dependency_injection import DependencyContainer, ServiceLifetime
 from src.interfaces.base_interfaces import (
@@ -23,10 +22,7 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
 )
-from src.interfaces.event_bus import EventBus as EventBus_src_interfaces_event_bus
-from src.strategist.strategist import Strategist as Strategist_src_strategist_strategist
 from src.supervisor.supervisor import Supervisor
-from src.tactician.tactician import Tactician as Tactician_src_tactician_tactician
 from src.training.training_manager import TrainingManager
 from src.utils.logger import system_logger
 

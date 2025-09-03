@@ -18,8 +18,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-
 from .logger import system_logger
 
 
@@ -561,7 +559,7 @@ class EnhancedOutlierHandler:
         outliers = []
 
         try:
-            from scipy.stats import chi2
+            pass
 
             # For single column, use modified Z-score approach
             median = data[column].median()

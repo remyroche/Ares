@@ -11,7 +11,6 @@ from urllib.parse import urlencode
 
 import aiohttp
 
-    handle_network_operations,
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,

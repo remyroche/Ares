@@ -8,9 +8,8 @@ import optuna
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class OptimizationMetrics:
@@ -25,7 +24,6 @@ class OptimizationMetrics:
     sortino_ratio: float
     var_95: float  # Value at Risk 95%
     cvar_95: float  # Conditional Value at Risk 95%
-
 
 class MultiObjectiveOptimizer:
     """Advanced multi-objective hyperparameter optimizer using Pareto optimization."
@@ -69,11 +67,8 @@ self.optimized_backtester = OptimizedBacktester(
                 config.get("computational_optimization", {}),
             )
 
-            @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="multi-objective optimization",
-    )
+
+    @handles_errors(fallback=None)
     def objective(self, trial: optuna.trial.Trial) -> tuple[float, float, float]:
         """Multi-objective function returning (sharpe_ratio, win_rate, profit_factor)."""
         # Suggest hyperparameters
@@ -249,11 +244,7 @@ self.optimized_backtester = OptimizedBacktester(
 
         return trades
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="multi-objective study execution",
-    )
+    @handles_errors(fallback=None)
     def run_optimization(self, n_trials: int = 500) -> dict[str, Any]:
         """Run multi-objective optimization study."""
         self.logger.info(

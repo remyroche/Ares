@@ -29,10 +29,7 @@ from src.utils.decorators import (
 
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import log_training_metadata_to_mlflow
 
@@ -64,7 +61,6 @@ from src.utils.warning_symbols import (
 #     get_trade_tracker
 # )
 
-
 @dataclass
 class ModelConfig:
     """Configuration for model training."""
@@ -78,7 +74,6 @@ class ModelConfig:
     n_estimators: int = 100
     max_depth: int = 10
 
-
 @dataclass
 class TrainingData:
     """Container for training data."""
@@ -88,7 +83,6 @@ class TrainingData:
     timeframe: str
     model_type: str
     data_info: dict[str, Any]
-
 
 class RayModelTrainer:
     """Ray-based model trainer for distributed model training and data processing."
@@ -143,7 +137,7 @@ class RayModelTrainer:
         # Initialize Ray
         self._initialize_ray()
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid Ray configuration"),
             RuntimeError: (False, "Ray initialization failed"),
@@ -174,7 +168,7 @@ class RayModelTrainer:
             self.logger.error(f"❌ Ray initialization failed: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model trainer configuration"),
             AttributeError: (False, "Missing required model trainer parameters"),
@@ -208,11 +202,7 @@ class RayModelTrainer:
             self.logger.error(f"❌ Ray Model Trainer initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate model trainer configuration."
 
@@ -248,11 +238,7 @@ class RayModelTrainer:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model storage initialization",
-    )
+    @handles_errors(fallback=None)
     def _initialize_model_storage(self) -> None:
         """Initialize model storage and metadata."""
         try:
@@ -463,11 +449,7 @@ class RayModelTrainer:
             self.is_training = False
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="training input validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
         """Validate training input parameters."
 
@@ -499,11 +481,7 @@ class RayModelTrainer:
 
     @guard_dataframe_nulls(mode="warn", arg_index=2)
     @with_tracing_span("RayModelTrainer._prepare_training_data", log_args=False)
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training data preparation",
-    )
+    @handles_errors(fallback=None)
     def _prepare_training_data(
         self,
         training_input: dict[str, Any],
@@ -815,11 +793,7 @@ if os.path.exists(labeled_path):
         except Exception as e:
             self.logger.error(f"❌ Failed to store model: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trained models storage",
-    )
+    @handles_errors(fallback=None)
     def _store_trained_models(self, training_results: dict[str, Any]) -> None:
         """Store all trained models metadata."
 
@@ -984,11 +958,7 @@ if os.path.exists(labeled_path):
             )
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="model trainer cleanup",
-    )
+    @handles_errors(fallback=None)
     def stop(self) -> None:
         """Stop the model trainer and cleanup resources."""
         try:
@@ -1004,14 +974,9 @@ if os.path.exists(labeled_path):
         except Exception as e:
             self.logger.error(f"❌ Failed to stop Ray Model Trainer: {e}")
 
-
 @validate_call_or_runtime_types
 @with_tracing_span("setup_model_trainer", log_args=False)
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="model trainer setup",
-)
+@handles_errors(fallback=None)
 
 def setup_model_trainer(
     config: dict[str, Any] | None = None,
@@ -1033,7 +998,6 @@ def setup_model_trainer(
     except Exception as e:
         system_logger.exception(f"Failed to setup Ray model trainer: {e}")
         return None
-
 
 # Example usage and testing
 if __name__ == "__main__":

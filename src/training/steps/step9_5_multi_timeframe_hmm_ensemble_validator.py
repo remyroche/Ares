@@ -14,11 +14,10 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.validator_base import BaseValidator
 import asyncio
 from src.utils.common_operations import safe_json_load
-
 
 class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
     """Validator for Step 9.5: Multi-Timeframe HMM Ensemble Training."""
@@ -33,8 +32,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         self.logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
         self.step_name = "step9_5_multi_timeframe_hmm_ensemble"
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"validation_passed": False, "error": "Unknown error"},
         context="multi-timeframe HMM ensemble validation",
     )
@@ -196,8 +194,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                 "checks_failed": 1,
             }
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"validation_passed": False, "error": "Unknown error"},
         context="multi-timeframe HMM ensemble data validation",
     )
@@ -307,8 +304,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                 "checks_failed": 1,
             }
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"validation_passed": False, "error": "Unknown error"},
         context="multi-timeframe HMM ensemble performance validation",
     )

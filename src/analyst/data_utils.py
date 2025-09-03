@@ -7,15 +7,10 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks  # For volume profile peaks
 
-from src.utils.error_handler import (
-import logging
-import asyncio
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     critical,
     error,
@@ -26,7 +21,6 @@ import copy
     validation_error,
     warning,
 )
-
 
 class DataUtils:
     """
@@ -68,7 +62,7 @@ class DataUtils:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid data utils configuration"),
             AttributeError: (False, "Missing required data utils parameters"),
@@ -104,15 +98,11 @@ class DataUtils:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(failed("❌ Data Utils initialization failed: {e}"))
+            self.logger.error(failed(f"❌ Data Utils initialization failed: {e}"))
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data utils configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_data_utils_configuration(self) -> None:
         """Load data utils configuration."""
         try:
@@ -138,14 +128,9 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error loading data utils configuration: {e}")
+            self.logger.error(f"Error loading data utils configuration: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate data utils configuration.
@@ -184,15 +169,11 @@ class DataUtils:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error validating configuration: {e}")
+            self.logger.error(f"Error validating configuration: {e}")
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data utils modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_utils_modules(self) -> None:
         """Initialize data utils modules."""
         try:
@@ -217,14 +198,10 @@ class DataUtils:
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing data utils modules: {e}"),
+                initialization_error(f"Error initializing data utils modules: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data cleaning initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_cleaning(self) -> None:
         """Initialize data cleaning module."""
         try:
@@ -240,14 +217,9 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing data cleaning: {e}")
+            self.logger.error(initialization_f"Error initializing data cleaning: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data validation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_validation(self) -> None:
         """Initialize data validation module."""
         try:
@@ -263,14 +235,9 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error initializing data validation: {e}")
+            self.logger.error(validation_f"Error initializing data validation: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data transformation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_transformation(self) -> None:
         """Initialize data transformation module."""
         try:
@@ -287,14 +254,10 @@ class DataUtils:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing data transformation: {e}"),
+                initialization_error(f"Error initializing data transformation: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data aggregation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_aggregation(self) -> None:
         """Initialize data aggregation module."""
         try:
@@ -310,10 +273,9 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing data aggregation: {e}")
+            self.logger.error(initialization_f"Error initializing data aggregation: {e}")
 
-
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid processing parameters"),
             AttributeError: (False, "Missing processing components"),
@@ -374,16 +336,12 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error executing data processing: {e}")
+            self.logger.error(f"Error executing data processing: {e}")
 
             self.is_processing = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="processing inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_processing_inputs(self, processing_input: dict[str, Any]) -> bool:
         """
         Validate processing inputs.
@@ -419,15 +377,11 @@ class DataUtils:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error validating processing inputs: {e}")
+            self.logger.error(f"Error validating processing inputs: {e}")
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data cleaning",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_cleaning(
         self,
         processing_input: dict[str, Any],
@@ -473,15 +427,11 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing data cleaning: {e}")
+            self.logger.error(f"Error performing data cleaning: {e}")
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data validation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_validation(
         self,
         processing_input: dict[str, Any],
@@ -527,15 +477,11 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing data validation: {e}")
+            self.logger.error(validation_f"Error performing data validation: {e}")
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data transformation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_transformation(
         self,
         processing_input: dict[str, Any],
@@ -584,15 +530,11 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing data transformation: {e}")
+            self.logger.error(f"Error performing data transformation: {e}")
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data aggregation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_aggregation(
         self,
         processing_input: dict[str, Any],
@@ -638,7 +580,7 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing data aggregation: {e}")
+            self.logger.error(f"Error performing data aggregation: {e}")
 
             return {}
 
@@ -659,7 +601,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing outlier removal: {e}")
+            self.logger.error(f"Error performing outlier removal: {e}")
 
             return {}
 
@@ -679,7 +621,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(missing("Error performing missing data handling: {e}"))
+            self.logger.error(missing(f"Error performing missing data handling: {e}"))
 
             return {}
 
@@ -699,7 +641,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing duplicate removal: {e}")
+            self.logger.error(f"Error performing duplicate removal: {e}")
 
             return {}
 
@@ -719,7 +661,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing data normalization: {e}")
+            self.logger.error(f"Error performing data normalization: {e}")
 
             return {}
 
@@ -740,7 +682,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing data type validation: {e}")
+            self.logger.error(validation_f"Error performing data type validation: {e}")
 
             return {}
 
@@ -760,7 +702,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing range validation: {e}")
+            self.logger.error(validation_f"Error performing range validation: {e}")
 
             return {}
 
@@ -780,7 +722,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing format validation: {e}")
+            self.logger.error(validation_f"Error performing format validation: {e}")
 
             return {}
 
@@ -800,7 +742,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing consistency validation: {e}")
+            self.logger.error(validation_f"Error performing consistency validation: {e}")
 
             return {}
 
@@ -821,7 +763,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing feature scaling: {e}")
+            self.logger.error(f"Error performing feature scaling: {e}")
 
             return {}
 
@@ -841,7 +783,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing feature encoding: {e}")
+            self.logger.error(f"Error performing feature encoding: {e}")
 
             return {}
 
@@ -861,7 +803,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing feature selection: {e}")
+            self.logger.error(f"Error performing feature selection: {e}")
 
             return {}
 
@@ -881,7 +823,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing dimensionality reduction: {e}")
+            self.logger.error(f"Error performing dimensionality reduction: {e}")
 
             return {}
 
@@ -902,7 +844,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing time aggregation: {e}")
+            self.logger.error(f"Error performing time aggregation: {e}")
 
             return {}
 
@@ -922,7 +864,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing group aggregation: {e}")
+            self.logger.error(f"Error performing group aggregation: {e}")
 
             return {}
 
@@ -942,7 +884,7 @@ class DataUtils:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing statistical aggregation: {e}")
+            self.logger.error(f"Error performing statistical aggregation: {e}")
 
             return {}
 
@@ -962,15 +904,11 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing custom aggregation: {e}")
+            self.logger.error(f"Error performing custom aggregation: {e}")
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="processing results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_processing_results(self) -> None:
         """Store processing results."""
         try:
@@ -988,14 +926,9 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error storing processing results: {e}")
+            self.logger.error(f"Error storing processing results: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="processing results getting",
-    )
+    @handles_errors(fallback=None)
     def get_processing_results(
         self,
         processing_type: str | None = None,
@@ -1016,15 +949,11 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting processing results: {e}")
+            self.logger.error(f"Error getting processing results: {e}")
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="processing history getting",
-    )
+    @handles_errors(fallback=None)
     def get_processing_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get processing history.
@@ -1045,7 +974,7 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting processing history: {e}")
+            self.logger.error(f"Error getting processing history: {e}")
 
             return []
 
@@ -1073,11 +1002,7 @@ class DataUtils:
             "processing_history_count": len(self.processing_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="data utils cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the data utils."""
         self.logger.info("🛑 Stopping Data Utils...")
@@ -1096,19 +1021,12 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error stopping data utils: {e}")
-
-
+            self.logger.error(f"Error stopping data utils: {e}")
 
 # Global data utils instance
 data_utils: DataUtils | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="data utils setup",
-)
+@handles_errors(fallback=None)
 async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | None:
     """
     Setup global data utils.
@@ -1146,7 +1064,6 @@ async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | 
     except Exception as e:
         print(f"Error setting up data utils: {e}")
         return None
-
 
 def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate klines data quality."""
@@ -1193,11 +1110,10 @@ def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
 
     return True, "Data quality validation passed"
 
-
 def load_klines_data(filename):
     """Loads k-line data from a CSV file with strict quality validation."""
     if not os.path.exists(filename):
-        print(missing("CRITICAL: K-lines data file not found at {filename}"))
+        print(missing(f"CRITICAL: K-lines data file not found at {filename}"))
         return pd.DataFrame()
 
     try:
@@ -1270,14 +1186,14 @@ def load_klines_data(filename):
             if col in df.columns:
                 zero_count = (df[col] == 0).sum()
                 if zero_count > 0:
-                    print(critical("CRITICAL: Found {zero_count} zero values in {col}"))
+                    print(critical(f"CRITICAL: Found {zero_count} zero values in {col}"))
                     print("Please fix the data quality issues before proceeding.")
                     return pd.DataFrame()
 
         # Check for invalid OHLC relationships - FAIL FAST if found
         if (df["high"] < df["low"]).any():
             invalid_count = (df["high"] < df["low"]).sum()
-            print(invalid("CRITICAL: Found {invalid_count} rows where high < low"))
+            print(invalid(f"CRITICAL: Found {invalid_count} rows where high < low"))
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1309,22 +1225,18 @@ def load_klines_data(filename):
     except (KeyError, IndexError, ValueError) as e:
         self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
         print(
-            critical("CRITICAL ERROR: Error loading klines data from {filename}: {e}"),
+            critical(f"CRITICAL ERROR: Error loading klines data from {filename}: {e}"),
         )
         return pd.DataFrame()
-
 
 def load_agg_trades_data(filename):
     raise NotImplementedError("Removed unused function: load_agg_trades_data")
 
-
 def load_futures_data(filename):
     raise NotImplementedError("Removed unused function: load_futures_data")
 
-
 def simulate_order_book_data(current_price):
     raise NotImplementedError("Removed unused function: simulate_order_book_data")
-
 
 def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     """Get standardized column names for OHLCV data."""
@@ -1333,7 +1245,6 @@ def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     low_col = "Low" if "Low" in klines_df.columns else "low"
     volume_col = "Volume" if "Volume" in klines_df.columns else "volume"
     return close_col, high_col, low_col, volume_col
-
 
 def _calculate_price_range(
     klines_df: pd.DataFrame,
@@ -1358,7 +1269,6 @@ def _calculate_price_range(
 
     return min_price, max_price
 
-
 def _filter_reasonable_data(
     klines_df: pd.DataFrame,
     min_price: float,
@@ -1378,7 +1288,6 @@ def _filter_reasonable_data(
     ]
 
     return reasonable_data if len(reasonable_data) > 0 else klines_df
-
 
 def _create_volume_profile(
     klines_df: pd.DataFrame,
@@ -1412,7 +1321,6 @@ def _create_volume_profile(
     volume_profile = volume_profile_series.rename(index=bin_midpoints_map)
     return volume_profile.fillna(0)  # Fill bins with no volume as 0
 
-
 def _detect_peaks_with_prominence(
     volume_profile: pd.Series,
 ) -> list[tuple[float, float]]:
@@ -1435,7 +1343,6 @@ def _detect_peaks_with_prominence(
         hvn_strengths[level] = strength
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
-
 
 def _detect_peaks_with_percentiles(
     volume_profile: pd.Series,
@@ -1483,7 +1390,6 @@ def _detect_peaks_with_percentiles(
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
 
-
 def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]:
     """Detect local maxima using multiple window sizes."""
     hvn_levels = []
@@ -1521,7 +1427,6 @@ def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
 
-
 def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
     """Add levels based on volume distribution."""
     hvn_levels = []
@@ -1541,7 +1446,6 @@ def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, 
             hvn_strengths[level] = strength
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
-
 
 def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
     """Add levels at regular intervals across the price range."""
@@ -1563,7 +1467,6 @@ def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, floa
             hvn_strengths[closest_level] = strength
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
-
 
 def _ensure_minimum_levels(
     volume_profile: pd.Series,
@@ -1591,7 +1494,6 @@ def _ensure_minimum_levels(
             all_levels.append((level, strength))
 
     return all_levels
-
 
 def _consolidate_hvn_results(
     all_levels: list[tuple[float, float]],
@@ -1621,14 +1523,11 @@ def _consolidate_hvn_results(
     hvn_results.sort(key=lambda x: x["strength"], reverse=True)
     return hvn_results
 
-
 def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
     raise NotImplementedError("Removed unused function: calculate_volume_profile")
 
-
 def create_dummy_data(filename, data_type, num_records=1000, start_date="2023-01-01"):
     raise NotImplementedError("Removed unused function: create_dummy_data")
-
 
 def create_ethusdt_1h_csv():
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""
@@ -1637,7 +1536,7 @@ def create_ethusdt_1h_csv():
     klines_file = "data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.csv"
 
     if not os.path.exists(klines_file):
-        print(missing("Klines file not found: {klines_file}"))
+        print(missing(f"Klines file not found: {klines_file}"))
         return False
 
     print(f"📖 Reading klines data from: {klines_file}")
@@ -1653,7 +1552,7 @@ def create_ethusdt_1h_csv():
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
-            print(missing("Missing required columns: {missing_columns}"))
+            print(missing(f"Missing required columns: {missing_columns}"))
             return False
 
         # Convert timestamp to datetime if it's not already'
@@ -1708,5 +1607,5 @@ def create_ethusdt_1h_csv():
 
     except (ValueError, TypeError) as e:
         self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-        print(warning("Error creating ETHUSDT_1h.csv: {e}"))
+        print(warning(f"Error creating ETHUSDT_1h.csv: {e}"))
         return False

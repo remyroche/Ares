@@ -28,8 +28,7 @@ from scipy.stats import pearsonr
 from scipy.spatial.distance import pdist, squareform
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-
+from src.core.decorators import handles_errors
 
 class DiverseLookbackOptimizer:
     """
@@ -77,7 +76,7 @@ class DiverseLookbackOptimizer:
         
         self.logger.info("🎯 Diverse Lookback Optimizer initialized")
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def find_diverse_lookback_periods(
         self,
         data: pd.DataFrame,

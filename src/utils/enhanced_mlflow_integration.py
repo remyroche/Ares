@@ -29,7 +29,7 @@ import mlflow
 import pandas as pd
 
 from src.config import ARES_VERSION
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import (
 import asyncio
@@ -43,7 +43,6 @@ import asyncio
     validate_run_metadata,
 )
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 
 def with_enhanced_mlflow_logging(step_name: str):
     """Decorator to automatically add enhanced MLflow logging to pipeline steps."
@@ -180,7 +179,6 @@ def with_enhanced_mlflow_logging(step_name: str):
 
     return decorator
 
-
 def log_step_artifact(
     config: Dict[str, Any],
     step_name: str,
@@ -233,7 +231,6 @@ def log_step_artifact(
     except Exception as e:
         system_logger.error(f"Failed to log artifact '{artifact_path}' for step {step_name}: {e}")
 
-
 def generate_standardized_artifact_name(
     exchange: str,
     token: str,
@@ -277,7 +274,6 @@ def generate_standardized_artifact_name(
         artifact_name += extension
 
     return artifact_name
-
 
 def log_step_dataframe(
     config: Dict[str, Any],
@@ -335,7 +331,6 @@ def log_step_dataframe(
     except Exception as e:
         system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
 
-
 def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[str, str]:
     """Create standardized folder structure for all pipeline artifacts."
 
@@ -362,7 +357,6 @@ def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[st
         os.makedirs(folder_path, exist_ok=True)
 
     return folders
-
 
 def get_standardized_artifact_path(
     artifact_type: str, step_name: str, artifact_name: str, base_dir: str = "artifacts"
@@ -394,7 +388,6 @@ def get_standardized_artifact_path(
 
     folder = type_to_folder.get(artifact_type, "base")
     return f"{folders[folder]}/{step_name}/{artifact_name}"
-
 
 def log_step_dataframe_with_standardized_name(
     config: Dict[str, Any],
@@ -440,7 +433,6 @@ def log_step_dataframe_with_standardized_name(
     )
 
     return artifact_name
-
 
 def log_step_artifact_with_standardized_name(
     config: Dict[str, Any],
@@ -489,7 +481,6 @@ def log_step_artifact_with_standardized_name(
     )
 
     return artifact_name
-
 
 def log_step_report(
     config: Dict[str, Any],
@@ -564,7 +555,6 @@ def log_step_report(
         system_logger.error(f"Failed to log report for step {step_name}: {e}")
         return ""
 
-
 def log_step_model(
     config: Dict[str, Any],
     step_name: str,
@@ -614,7 +604,6 @@ def log_step_model(
     except Exception as e:
         system_logger.error(f"Failed to log model '{model_name}' for step {step_name}: {e}")
 
-
 def log_step_metrics(
     config: Dict[str, Any],
     step_name: str,
@@ -657,7 +646,6 @@ def log_step_metrics(
 
     except Exception as e:
         system_logger.error(f"Failed to log metrics for step {step_name}: {e}")
-
 
 class EnhancedMLflowManager:
     """Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
@@ -1026,8 +1014,7 @@ class EnhancedMLflowManager:
             self.logger.info(f"✅ Ended MLflow run: {self.current_run_id}")
             self.current_run_id = None
 
-
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_step_metadata")
+@handles_errors(fallback=None)
 def log_step_metadata(
     config: Dict[str, Any],
     step_name: str,
@@ -1065,8 +1052,7 @@ def log_step_metadata(
     except Exception as e:
         system_logger.error(f"Failed to log step metadata for {step_name}: {e}")
 
-
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_model_performance")
+@handles_errors(fallback=None)
 def log_model_performance(
     config: Dict[str, Any],
     model_name: str,
@@ -1106,8 +1092,7 @@ def log_model_performance(
     except Exception as e:
         system_logger.error(f"Failed to log model performance for {model_name}: {e}")
 
-
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion")
+@handles_errors(fallback=None)
 def log_pipeline_completion(
     config: Dict[str, Any],
     pipeline_results: Dict[str, Any],
@@ -1143,7 +1128,6 @@ def log_pipeline_completion(
 
     except Exception as e:
         system_logger.error(f"Failed to log pipeline completion: {e}")
-
 
 def create_detailed_step_report(
     step_name: str,

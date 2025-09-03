@@ -95,7 +95,6 @@ if warning_symbols is None:
 else:
     error = warning_symbols.error
 
-
 class RegimeAwareTacticianSpecialistTrainingStep:
     """Step 15: Regime-Aware Tactician Specialist Models Training with Standardized Data Quality Management."""
 
@@ -176,11 +175,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tactician specialist training step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the tactician specialist training step."""
         self.logger.info("Initializing Tactician Specialist Training Step...")
@@ -367,8 +362,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         )
         return 1
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician specialist training step execution",
     )
@@ -1122,7 +1116,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             self.logger.exception(error(f"Error training Random Forest: {e}"))
             raise
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -1145,6 +1138,7 @@ from src.utils.enhanced_mlflow_integration import (
 import copy
 import numpy as np
 import pandas as pd
+from src.core.decorators import handles_errors
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -1153,7 +1147,6 @@ import pandas as pd
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
-
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)

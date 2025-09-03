@@ -20,6 +20,7 @@ from sklearn.metrics import log_loss, accuracy_score
 import logging
 import talib
 import asyncio
+from src.core.decorators import handles_errors
 
 # Simple logger setup
 logger = logging.getLogger(__name__)
@@ -34,7 +35,6 @@ def handle_errors(func):
             logger.error(f"Error in {func.__name__}: {e}")
             return None
     return wrapper
-
 
 class EnhancedScenarioBasedPredictor:
     """
@@ -423,7 +423,7 @@ class EnhancedScenarioBasedPredictor:
             self.logger.error(f"❌ Comprehensive feature extraction failed: {e}")
             return np.array([0.5] * 150)
 
-    @handle_errors
+    @handles_errors
     def prepare_scenario_targets(
         self,
         X: np.ndarray,
@@ -543,7 +543,7 @@ class EnhancedScenarioBasedPredictor:
             self.logger.error(f"❌ Scenario trigger check failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def train_model(
         self,
         X_train: np.ndarray,
@@ -616,7 +616,7 @@ class EnhancedScenarioBasedPredictor:
             self.logger.error(f"❌ Enhanced model training failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def predict_scenarios(
         self,
         X: np.ndarray,

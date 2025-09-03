@@ -35,7 +35,7 @@ try:
         LIGHT_TRAINING_LOOKBACK_DAYS,
     )
     from src.utils.logger import system_logger
-    from src.utils.error_handler import handle_errors, handle_specific_errors
+    from src.core.decorators import handles_errors
 except ImportError as e:
     print(f"Warning: Could not import config modules: {e}")
     # Fallback imports
@@ -58,7 +58,6 @@ except ImportError as e:
     print(f"Warning: Data downloader not available: {e}")
     DATA_DOWNLOADER_AVAILABLE = False
     download_all_data_with_consolidation = None
-
 
 class SRDataIntegration:
     """
@@ -639,7 +638,6 @@ class SRDataIntegration:
         except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Cache cleanup failed: {e}")
-
 
 # Convenience function for easy integration
 async def create_sr_data_integration(

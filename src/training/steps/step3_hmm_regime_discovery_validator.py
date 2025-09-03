@@ -13,15 +13,14 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
 from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
-
-@handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError), default_return=False)
+@handles_errors(fallback=False)
 async def run_validator(
 	training_input: Dict[str, Any],
 	pipeline_state: Dict[str, Any],
@@ -180,7 +179,6 @@ async def run_validator(
 			"validation_results": {},
 			"validation_time": time.time() - start_time,
 		}
-
 
 # Legacy function for backward compatibility
 async def run_step_validator(

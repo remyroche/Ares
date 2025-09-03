@@ -121,7 +121,6 @@ else:
     log_step_report = enhanced_mlflow.log_step_report
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
-
 @validate_step_prerequisites(
     required_directories=["data/training", "data/hmm_regimes"],
     min_memory_gb=2.0,
@@ -193,11 +192,7 @@ else:
     validation_timeout=600,
 )
 @with_enhanced_mlflow_logging("step6_feature_engineering")
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step6_feature_engineering",
-)
+@handles_errors(fallback=False)
 async def run_step(
     symbol: str,
     exchange: str,
@@ -325,7 +320,6 @@ async def run_step(
         logger.exception(f"❌ Unexpected error in Step 6: {e}")
         return False
 
-
 def _monitor_feature_generation(features: pd.DataFrame) -> dict:
     """Monitor feature generation process."""
     stats = {
@@ -339,7 +333,6 @@ def _monitor_feature_generation(features: pd.DataFrame) -> dict:
     
     system_logger.info(f"📊 Feature Generation Stats: {stats}")
     return stats
-
 
 def _categorize_features(feature_columns: List[str]) -> dict:
     """Categorize features by type."""
@@ -380,7 +373,6 @@ def _categorize_features(feature_columns: List[str]) -> dict:
     
     return {k: len(v) for k, v in categories.items()}
 
-
 async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
     """Load unified data from step1_5."""
     try:
@@ -402,7 +394,6 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
     except Exception as e:
         system_logger.error(f"Failed to load unified data: {e}")
         return None
-
 
 async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
     """Load unified regime data with labels from step04/step08."""
@@ -436,7 +427,6 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
         system_logger.error(f"Failed to load regime data: {e}")
         return None
 
-
 async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
     """Load labeled data from step05."""
     try:
@@ -453,7 +443,6 @@ async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.D
     except Exception as e:
         system_logger.error(f"Failed to load labeled data: {e}")
         return None
-
 
 async def _create_comprehensive_features(
     unified_data: pd.DataFrame,
@@ -602,7 +591,6 @@ async def _create_comprehensive_features(
         system_logger.error(f"Failed to create comprehensive features: {e}")
         return None
 
-
 def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
     """Create basic features."""
     features = data.copy()
@@ -653,7 +641,6 @@ def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
     
     return features
 
-
 def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10]) -> pd.DataFrame:
     """Create lagged versions of important features."""
     important_features = ["returns", "volume_ratio", "volatility", "rsi"]
@@ -671,7 +658,6 @@ def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10
     
     system_logger.info(f"✅ Created {len(important_features) * len(lags)} lagged features")
     return features
-
 
 def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
     """Create advanced rolling window features."""
@@ -717,7 +703,6 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
     system_logger.info(f"✅ Created {len(windows) * 7 + (len(windows) * 6 if 'vwap_returns' in features.columns else 0) + (3 * 5 if 'vwap_momentum_20' in features.columns else 0)} rolling window features")
     return features
 
-
 def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
     """Add regime-aware features."""
     if "regime" not in data.columns:
@@ -742,7 +727,6 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
                 features[f"regime_{regime}_vwap_momentum_mean"] = features["vwap_momentum_20"].where(regime_mask).rolling(20).mean()
     
     return features
-
 
 def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> pd.DataFrame:
     """Enhance features with HMM feature enhancer."""
@@ -772,7 +756,6 @@ def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> 
     except Exception as e:
         system_logger.error(f"Failed to enhance HMM features: {e}")
         return features
-
 
 def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
     """Add technical indicators."""
@@ -831,7 +814,6 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
     
     return features
 
-
 def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
     """Add statistical features."""
     # Rolling statistics
@@ -867,7 +849,6 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
         features["vwap_momentum_zscore"] = (features["vwap_momentum_20"] - features["vwap_momentum_20"].rolling(20).mean()) / features["vwap_momentum_20"].rolling(20).std()
     
     return features
-
 
 async def _add_sr_features(
     features: pd.DataFrame, 
@@ -1054,6 +1035,7 @@ async def _add_sr_optimization_features(
 import copy
 import numpy as np
 import pandas as pd
+from src.core.decorators import handles_errors
         
 # Initialize SR detection optimizer
 optimizer = await setup_sr_detection_optimizer(config)
@@ -1104,7 +1086,6 @@ optimizer = await setup_sr_detection_optimizer(config)
         system_logger.warning(f"SR optimization feature integration failed: {e}")
         return features
 
-
 async def _enhanced_integration_with_vectorized_features(
     features: pd.DataFrame, 
     feature_engineer: VectorizedAdvancedFeatureEngineering,
@@ -1150,7 +1131,6 @@ async def _enhanced_integration_with_vectorized_features(
         system_logger.warning(f"Vectorized feature integration failed: {e}")
         return features
 
-
 def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     """Validate and clean features."""
     # Remove constant features
@@ -1178,7 +1158,6 @@ def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     
     system_logger.info(f"✅ Feature validation and cleaning completed. Final shape: {features.shape}")
     return features
-
 
 async def _save_feature_artifacts(
     features_result: Dict[str, Any], 
@@ -1319,7 +1298,6 @@ async def _save_feature_artifacts(
         system_logger.error(f"Failed to save feature artifacts: {e}")
         return False
 
-
 def _check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> bool:
     """Check if feature artifacts already exist."""
     try:
@@ -1333,7 +1311,6 @@ def _check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) ->
         
     except Exception:
         return False
-
 
 # Export the main function for external use
 __all__ = ["run_step"]

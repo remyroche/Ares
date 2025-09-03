@@ -11,12 +11,11 @@ from src.supervisor.ab_tester import ABTester
 from src.supervisor.monitoring import Monitoring
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.supervisor.risk_allocator import RiskAllocator
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
 import copy
-
 
 class Supervisor:
     """
@@ -125,11 +124,7 @@ class Supervisor:
         self.analysis_queue = asyncio.Queue(maxsize=100)
         self.signal_queue = asyncio.Queue(maxsize=50)
 
-    @handle_errors(
-        exceptions=(Exception, asyncio.CancelledError),
-        default_return=None,
-        context="supervisor start",
-    )
+    @handles_errors(fallback=None)
     async def start(self):
         """
         Starts all bot components and the main processing loop.
@@ -187,11 +182,7 @@ class Supervisor:
                 "All components have been shut down and state has been saved.",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError, KeyError),
-        default_return=None,
-        context="exchange state synchronization",
-    )
+    @handles_errors(fallback=None)
     async def _synchronize_exchange_state(self):
         """
         Fetches the current account equity and open positions from the exchange
@@ -280,7 +271,6 @@ class Supervisor:
         except Exception as e:
             self.logger.error(f"Failed to synchronize state with exchange: {e}", exc_info=True)
 
-
 class MainSupervisor:
     """
     Main Supervisor Entrypoint with DI, type hints, and robust error handling.
@@ -296,7 +286,7 @@ class MainSupervisor:
         self.run_interval: int = self.supervisor_config.get("run_interval", 60)
         self.max_history: int = self.supervisor_config.get("max_history", 100)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid main supervisor configuration"),
             AttributeError: (False, "Missing required main supervisor parameters"),
@@ -318,11 +308,7 @@ class MainSupervisor:
             self.logger.error(f"❌ Main Supervisor initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervisor configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_supervisor_configuration(self) -> None:
         try:
             self.supervisor_config.setdefault("run_interval", 60)
@@ -333,11 +319,7 @@ class MainSupervisor:
         except Exception as e:
             self.logger.error(f"Error loading supervisor configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         try:
             if self.run_interval <= 0:
@@ -352,7 +334,7 @@ class MainSupervisor:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Supervisor run failed"),
         },
@@ -372,11 +354,7 @@ class MainSupervisor:
             self.is_running = False
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="supervise step",
-    )
+    @handles_errors(fallback=None)
     async def _supervise(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -388,11 +366,7 @@ class MainSupervisor:
         except Exception as e:
             self.logger.error(f"Error in supervise step: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="main supervisor stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Main Supervisor...")
         try:
@@ -411,15 +385,9 @@ class MainSupervisor:
             history = history[-limit:]
         return history
 
-
 main_supervisor: MainSupervisor | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="main supervisor setup",
-)
+@handles_errors(fallback=None)
 async def setup_main_supervisor(
     config: dict[str, Any] | None = None,
 ) -> MainSupervisor | None:

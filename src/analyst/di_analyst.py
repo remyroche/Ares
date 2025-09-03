@@ -17,9 +17,9 @@ from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrche
 from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
-from src.interfaces.base_interfaces import (
 import logging
 import asyncio
+from src.interfaces.base_interfaces import (
     AnalysisResult,
     IAnalyst,
     IEventBus,
@@ -27,12 +27,11 @@ import asyncio
     IStateManager,
     MarketData,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
     failed,
     initialization_error,
 )
-
 
 class DIAnalyst(AnalystBase, IAnalyst):
     """
@@ -90,7 +89,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             return True
 
         except Exception:
-            self.print(failed("Failed to initialize analyst: {e}"))
+            self.print(failed(f"Failed to initialize analyst: {e}"))
             return False
 
     async def _initialize_analysis_components(self) -> None:
@@ -136,11 +135,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         )
         self.logger.debug("Event subscriptions set up")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="market data analysis",
-    )
+    @handles_errors(fallback=None)
     async def analyze_market_data(
         self,
         market_data: MarketData,
@@ -173,7 +168,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             return analysis_result
 
         except Exception:
-            self.print(failed("Analysis failed: {e}"))
+            self.print(failed(f"Analysis failed: {e}"))
             return None
         finally:
             self.is_analyzing = False
@@ -244,7 +239,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             )
 
         except Exception:
-            self.print(failed("Comprehensive analysis failed: {e}"))
+            self.print(failed(f"Comprehensive analysis failed: {e}"))
             return None
 
     async def _store_analysis_result(self, analysis_result: AnalysisResult) -> None:
@@ -263,7 +258,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                     -self.max_analysis_history :
                 ]
         except Exception:
-            self.print(failed("Failed to store analysis result: {e}"))
+            self.print(failed(f"Failed to store analysis result: {e}"))
 
     async def get_historical_analysis(
         self,
@@ -299,7 +294,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             return filtered_results
 
         except Exception:
-            self.print(failed("Failed to get historical analysis: {e}"))
+            self.print(failed(f"Failed to get historical analysis: {e}"))
             return []
 
     async def train_models(self, training_data: pd.DataFrame) -> bool:
@@ -323,7 +318,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             return success
 
         except Exception:
-            self.print(failed("Model training failed: {e}"))
+            self.print(failed(f"Model training failed: {e}"))
             return False
 
     async def load_models(self, model_path: str) -> bool:
@@ -347,7 +342,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             return success
 
         except Exception:
-            self.print(failed("Model loading failed: {e}"))
+            self.print(failed(f"Model loading failed: {e}"))
             return False
 
     async def _start_component(self) -> None:

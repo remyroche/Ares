@@ -159,6 +159,42 @@ class ReportAggregator:
                 else:
                     self.file_issues[file_path]['function_issues'].append(issue)
                     
+    def add_enhanced_validation_results(self, results: Dict[str, Any]):
+        """Add enhanced validation results (argument and data access validation)."""
+        for issue in results.get('issues', []):
+            file_path = self._normalize_path(issue['file_path'])
+            
+            # Categorize enhanced validation issues
+            if 'argument' in issue['issue_type'] or 'parameter' in issue['issue_type']:
+                self.file_issues[file_path]['function_issues'].append({
+                    'type': issue['issue_type'],
+                    'line': issue['line_number'],
+                    'message': issue['message'],
+                    'severity': issue['severity'],
+                    'suggestion': issue.get('suggestion', ''),
+                    'source': 'enhanced_validator'
+                })
+            elif 'access' in issue['issue_type'] or 'null' in issue['issue_type'] or 'none' in issue['issue_type'].lower():
+                # Data access issues
+                self.file_issues[file_path]['security_issues'].append({
+                    'type': issue['issue_type'],
+                    'line': issue['line_number'],
+                    'message': issue['message'],
+                    'severity': issue['severity'],
+                    'suggestion': issue.get('suggestion', ''),
+                    'source': 'enhanced_validator'
+                })
+            else:
+                # Other issues
+                self.file_issues[file_path]['syntax_errors'].append({
+                    'type': issue['issue_type'],
+                    'line': issue['line_number'],
+                    'message': issue['message'],
+                    'severity': issue['severity'],
+                    'suggestion': issue.get('suggestion', ''),
+                    'source': 'enhanced_validator'
+                })
+                    
     def _normalize_path(self, path: Any) -> str:
         """Normalize file path for consistency."""
         if isinstance(path, dict):

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 # Import essential decorators
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 # Import Numba for performance optimization
@@ -92,7 +92,6 @@ else:
         rolling_min = series.rolling(window=window, min_periods=1).min().values
         return rolling_mean, rolling_std, rolling_max, rolling_min
 
-
 class ProfitBasedFeatureEngineering:
     """Comprehensive profit-based feature engineering system."
     
@@ -156,11 +155,7 @@ class ProfitBasedFeatureEngineering:
         else:
             self.logger.info("🐍 Using Python vectorized operations")
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, MemoryError),
-        default_return=pd.DataFrame(),
-        context="profit_feature_engineering.apply_all_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def apply_all_features(
         self,
         data: pd.DataFrame,
@@ -251,11 +246,7 @@ class ProfitBasedFeatureEngineering:
         
         return result_data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="basic_profit_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic profit features."
         
@@ -274,11 +265,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="categorical_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply categorical profit features."
         
@@ -311,11 +298,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="risk_reward_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk-reward features."
         
@@ -354,11 +337,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="momentum_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply momentum features."
         
@@ -393,11 +372,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="volatility_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volatility features."
         
@@ -437,11 +412,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="volume_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volume-based profit features."
         
@@ -478,11 +449,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=pd.DataFrame(),
-        context="rolling_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply rolling profit features."
         
@@ -663,8 +630,7 @@ class ProfitBasedFeatureEngineering:
         
         return selected
 
-
-@handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
+@handles_errors(fallback={})
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
     """Benchmark profit-based feature engineering performance."
     
@@ -695,7 +661,6 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]
         "numba_features": numba_features,
         "python_features": python_features
     }
-
 
 if __name__ == "__main__":
     # Example usage

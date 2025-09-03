@@ -1,0 +1,189 @@
+{
+  "total_modules": 26,
+  "total_imports": 33,
+  "circular_imports": {
+    "count": 0,
+    "cycles": []
+  },
+  "import_depths": {
+    "max_depth": 2,
+    "average_depth": 0.43243243243243246,
+    "deep_modules": []
+  },
+  "highly_imported": [
+    {
+      "module": "src.utils.logger",
+      "imported_by_count": 10,
+      "imported_by": [
+        "predictive_ensembles.ensemble_orchestrator",
+        "regime_runtime",
+        "enhanced_regime_predictor",
+        "regime_expert_orchestrator",
+        "order_book_analyzer"
+      ]
+    },
+    {
+      "module": "src.utils.error_handler",
+      "imported_by_count": 6,
+      "imported_by": [
+        "regime_expert_orchestrator",
+        "dynamic_regime_mapper",
+        "liquidation_risk_model",
+        "multi_timeframe_feature_engineering",
+        "predictive_ensembles.regime_ensembles.base_ensemble"
+      ]
+    },
+    {
+      "module": "src.utils.warning_symbols",
+      "imported_by_count": 3,
+      "imported_by": [
+        "predictive_ensembles.regime_ensembles.volatile_regime_ensemble",
+        "enhanced_prediction_integrator",
+        "multi_timeframe_feature_engineering"
+      ]
+    },
+    {
+      "module": "src.utils.centralized_decorators_simple",
+      "imported_by_count": 2,
+      "imported_by": [
+        "liquidation_risk_model",
+        "order_book_analyzer"
+      ]
+    },
+    {
+      "module": "src.utils.centralized_decorators",
+      "imported_by_count": 2,
+      "imported_by": [
+        "enhanced_regime_predictor",
+        "enhanced_prediction_integrator"
+      ]
+    },
+    {
+      "module": "src.config",
+      "imported_by_count": 2,
+      "imported_by": [
+        "predictive_ensembles.ensemble_orchestrator",
+        "multi_timeframe_feature_engineering"
+      ]
+    },
+    {
+      "module": "src.analyst.regime_runtime",
+      "imported_by_count": 2,
+      "imported_by": [
+        "regime_expert_orchestrator",
+        "decision_aggregator"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.ensemble_orchestrator",
+      "imported_by_count": 1,
+      "imported_by": [
+        "predictive_ensembles"
+      ]
+    },
+    {
+      "module": "src.utils.hmm_composite_manager",
+      "imported_by_count": 1,
+      "imported_by": [
+        "regime_runtime"
+      ]
+    },
+    {
+      "module": "src.analyst.feature_engineering_orchestrator",
+      "imported_by_count": 1,
+      "imported_by": [
+        "multi_timeframe_feature_engineering"
+      ]
+    }
+  ],
+  "highly_importing": [
+    {
+      "module": "multi_timeframe_feature_engineering",
+      "imports_count": 5,
+      "imports": [
+        "src.config",
+        "src.utils.error_handler",
+        "src.analyst.feature_engineering_orchestrator",
+        "src.utils.logger",
+        "src.utils.warning_symbols"
+      ]
+    },
+    {
+      "module": "enhanced_prediction_integrator",
+      "imports_count": 4,
+      "imports": [
+        "src.utils.error_handler",
+        "src.utils.logger",
+        "src.utils.warning_symbols",
+        "src.utils.centralized_decorators"
+      ]
+    },
+    {
+      "module": "regime_expert_orchestrator",
+      "imports_count": 4,
+      "imports": [
+        "src.analyst.regime_runtime",
+        "src.utils.error_handler",
+        "src.utils.logger",
+        "src.analyst.predictive_ensembles.ensemble_orchestrator"
+      ]
+    },
+    {
+      "module": "liquidation_risk_model",
+      "imports_count": 3,
+      "imports": [
+        "src.utils.centralized_decorators_simple",
+        "src.utils.error_handler",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "order_book_analyzer",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.centralized_decorators_simple",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "regime_runtime",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.logger",
+        "src.utils.hmm_composite_manager"
+      ]
+    },
+    {
+      "module": "dynamic_regime_mapper",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.error_handler",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "enhanced_regime_predictor",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.logger",
+        "src.utils.centralized_decorators"
+      ]
+    },
+    {
+      "module": "decision_aggregator",
+      "imports_count": 2,
+      "imports": [
+        "src.analyst.regime_runtime",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.ensemble_orchestrator",
+      "imports_count": 2,
+      "imports": [
+        "src.config",
+        "src.utils.logger"
+      ]
+    }
+  ]
+}

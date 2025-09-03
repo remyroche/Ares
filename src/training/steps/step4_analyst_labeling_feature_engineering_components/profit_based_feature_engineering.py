@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Profit-Based Feature Engineering System."
+"""Profit-Based Feature Engineering System.
 
 This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
@@ -94,7 +94,8 @@ else:
 
 
 class ProfitBasedFeatureEngineering:
-    """Comprehensive profit-based feature engineering system."
+    """
+    Comprehensive profit-based feature engineering system.
     
     This class provides extensive feature engineering capabilities based on profit
     percentage data from triple barrier labeling. It includes multiple feature
@@ -108,7 +109,7 @@ class ProfitBasedFeatureEngineering:
         use_numba: bool = True,
         memory_efficient: bool = True,
     ) -> None:
-        """Initialize the profit-based feature engineering system."
+        """Initialize the profit-based feature engineering system.
         
         Args:
             profit_column: Name of the profit percentage column
@@ -165,7 +166,7 @@ class ProfitBasedFeatureEngineering:
         data: pd.DataFrame,
         feature_categories: Optional[List[str]] = None
     ) -> pd.DataFrame:
-        """Apply all profit-based feature engineering categories."
+        """Apply all profit-based feature engineering categories.
         
         Args:
             data: Input DataFrame with profit percentage data
@@ -256,9 +257,9 @@ class ProfitBasedFeatureEngineering:
         context="basic_profit_features"
     )
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply basic profit features."
+        """Apply basic profit features.
         
-        Features: profit, profit², profit³, profit_abs
+        Features: profit, profit^2, profit^3, profit_abs
         """
         profit_pcts = data[self.profit_column].values
         
@@ -279,7 +280,7 @@ class ProfitBasedFeatureEngineering:
         context="categorical_features"
     )
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply categorical profit features."
+        """Apply categorical profit features.
         
         Features: profit_bins, profit_sign, profit_magnitude
         """
@@ -316,7 +317,7 @@ class ProfitBasedFeatureEngineering:
         context="risk_reward_features"
     )
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply risk-reward features."
+        """Apply risk-reward features.
         
         Features: profit_sharpe, profit_sortino, profit_risk_adjusted
         """
@@ -346,7 +347,7 @@ class ProfitBasedFeatureEngineering:
         )
         data[f"{self.profit_column}_sortino"] = pd.Series(sortino_ratio, index=data.index).fillna(0.0)
         
-        # Kelly criterion removed - it's for position sizing, not ML features'
+        # Kelly criterion removed - it is for position sizing, not ML features
         
         # Risk-adjusted return
         data[f"{self.profit_column}_risk_adjusted"] = profit_pcts / (1 + rolling_std)
@@ -359,7 +360,7 @@ class ProfitBasedFeatureEngineering:
         context="momentum_features"
     )
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply momentum features."
+        """Apply momentum features.
         
         Features: profit_momentum, profit_acceleration
         """
@@ -398,7 +399,7 @@ class ProfitBasedFeatureEngineering:
         context="volatility_features"
     )
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply volatility features."
+        """Apply volatility features.
         
         Features: profit_volatility, profit_volatility_ratio
         """
@@ -442,7 +443,7 @@ class ProfitBasedFeatureEngineering:
         context="volume_features"
     )
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply volume-based profit features."
+        """Apply volume-based profit features.
         
         Features: profit_volume_weighted, profit_volume_correlation
         """
@@ -483,7 +484,7 @@ class ProfitBasedFeatureEngineering:
         context="rolling_features"
     )
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply rolling profit features."
+        """Apply rolling profit features.
         
         Features: profit_rolling_mean, profit_rolling_std, profit_rolling_max
         """
@@ -529,7 +530,7 @@ class ProfitBasedFeatureEngineering:
         return data
 
     def get_feature_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Get summary of profit-based features."
+        """Get summary of profit-based features.
         
         Args:
             data: DataFrame with profit-based features
@@ -579,7 +580,7 @@ class ProfitBasedFeatureEngineering:
         threshold: float = 0.01,
         max_features: Optional[int] = None
     ) -> List[str]:
-        """Select important profit-based features."
+        """Select important profit-based features.
         
         Args:
             data: DataFrame with profit-based features
@@ -665,7 +666,7 @@ class ProfitBasedFeatureEngineering:
 
 @handles_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
-    """Benchmark profit-based feature engineering performance."
+    """Benchmark profit-based feature engineering performance.
     
     Args:
         data: Input DataFrame with profit percentage data
@@ -700,12 +701,12 @@ if __name__ == "__main__":
     # Example usage
     import numpy as np
     import pandas as pd
-import copy
+    import copy
     
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame({
-    'open': np.random.uniform(100, 110, 1000),
+        'open': np.random.uniform(100, 110, 1000),
         'high': np.random.uniform(105, 115, 1000),
         'low': np.random.uniform(95, 105, 1000),
         'close': np.random.uniform(100, 110, 1000),

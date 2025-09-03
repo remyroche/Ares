@@ -1,9 +1,10 @@
 # src/analyst/analyst.py
 
+import copy
 from datetime import datetime
-from typing import (
 import logging
 import asyncio
+from typing import (
     TYPE_CHECKING,
     Any,
 )
@@ -240,7 +241,7 @@ class Analyst:
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Dual Model System: {e}"),
+                initialization_error(f"Error initializing Dual Model System: {e}"),
             )
 
     @handles_errors(fallback=None)
@@ -259,7 +260,7 @@ class Analyst:
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Market Health Analyzer: {e}"),
+                initialization_error(f"Error initializing Market Health Analyzer: {e}"),
             )
 
     @handles_errors(fallback=None)
@@ -267,12 +268,9 @@ class Analyst:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import numpy as np
+            import numpy as np
 
-self.liquidation_risk_model = await setup_liquidation_risk_model(
+            self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,
             )
             if self.liquidation_risk_model:
@@ -282,7 +280,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Liquidation Risk Model: {e}"),
+                initialization_error(f"Error initializing Liquidation Risk Model: {e}"),
             )
 
     @handles_errors(fallback=None)
@@ -439,7 +437,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         except Exception:
             self.is_analyzing = False
-            self.logger.error(failed("❌ Analysis failed: {e}"))
+            self.logger.error(failed(f"❌ Analysis failed: {e}"))
 
             return False
 
@@ -544,7 +542,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing price analysis: {e}")
+            self.logger.error(f"Error performing price analysis: {e}")
 
             return {}
 
@@ -573,7 +571,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing volume analysis: {e}")
+            self.logger.error(f"Error performing volume analysis: {e}")
 
             return {}
 
@@ -607,7 +605,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing indicator analysis: {e}")
+            self.logger.error(f"Error performing indicator analysis: {e}")
 
             return {}
 
@@ -626,7 +624,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing pattern analysis: {e}")
+            self.logger.error(f"Error performing pattern analysis: {e}")
 
             return {}
 
@@ -653,7 +651,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing volatility analysis: {e}")
+            self.logger.error(f"Error performing volatility analysis: {e}")
 
             return {}
 
@@ -672,7 +670,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing correlation analysis: {e}")
+            self.logger.error(f"Error performing correlation analysis: {e}")
 
             return {}
 
@@ -697,7 +695,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing drawdown analysis: {e}")
+            self.logger.error(f"Error performing drawdown analysis: {e}")
 
             return {}
 
@@ -714,7 +712,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing risk scoring: {e}")
+            self.logger.error(f"Error performing risk scoring: {e}")
 
             return {}
 
@@ -755,7 +753,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return ml_results
 
         except Exception:
-            self.logger.error("Error performing ML predictions: {e}")
+            self.logger.error(f"Error performing ML predictions: {e}")
 
             return {}
 
@@ -818,7 +816,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return regime_results
 
         except Exception:
-            self.logger.error("Error performing regime classification: {e}")
+            self.logger.error(f"Error performing regime classification: {e}")
 
             return {}
 
@@ -837,7 +835,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
             self.logger.info("Analysis results stored successfully")
         except Exception:
-            self.logger.error("Error storing analysis results: {e}")
+            self.logger.error(f"Error storing analysis results: {e}")
 
     @handles_errors(fallback=None)
     def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
@@ -856,7 +854,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return self.analysis_results.get(analysis_type, {})
 
         except Exception:
-            self.logger.error("Error getting analysis results: {e}")
+            self.logger.error(f"Error getting analysis results: {e}")
 
             return {}
 
@@ -877,7 +875,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return self.analysis_history[-limit:]
 
         except Exception:
-            self.logger.error("Error getting analysis history: {e}")
+            self.logger.error(f"Error getting analysis history: {e}")
 
             return []
 
@@ -921,7 +919,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
             self.logger.info("✅ Analyst stopped successfully")
         except Exception:
-            self.logger.error("❌ Error stopping Analyst: {e}")
+            self.logger.error(f"❌ Error stopping Analyst: {e}")
 
 @handles_errors(fallback=None)
 async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:

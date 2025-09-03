@@ -1,5 +1,6 @@
 # src/analyst/feature_engineering_orchestrator.py
 
+import copy
 import os
 from typing import Any
 
@@ -188,7 +189,7 @@ class FeatureEngineeringOrchestrator:
             return features_df
 
         except Exception:
-            self.logger.error("❌ Error in feature generation orchestration: {e}")
+            self.logger.error(f"❌ Error in feature generation orchestration: {e}")
 
             return klines_df.copy()
 
@@ -235,7 +236,7 @@ class FeatureEngineeringOrchestrator:
             return self._calculate_ml_enhanced_features(features_df)
 
         except Exception:
-            self.logger.error("Error generating legacy features: {e}")
+            self.logger.error(f"Error generating legacy features: {e}")
 
             return features_df
 
@@ -269,7 +270,7 @@ class FeatureEngineeringOrchestrator:
             return pd.DataFrame([multi_timeframe_features])
 
         except Exception:
-            self.logger.error("Error calculating multi-timeframe features: {e}")
+            self.logger.error(f"Error calculating multi-timeframe features: {e}")
 
             return pd.DataFrame()
 
@@ -307,7 +308,7 @@ class FeatureEngineeringOrchestrator:
             return pd.DataFrame([all_labels])
 
         except Exception:
-            self.logger.error("Error calculating meta-labeling features: {e}")
+            self.logger.error(f"Error calculating meta-labeling features: {e}")
 
             return pd.DataFrame()
 
@@ -319,9 +320,7 @@ class FeatureEngineeringOrchestrator:
         """Calculate standard technical indicators using price differences."""
         try:
             import pandas_ta as ta
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
+
 import os.path
 
 # Convert price data to differences for technical indicators
@@ -372,7 +371,7 @@ import os.path
             return df
 
         except Exception:
-            self.logger.error("Error calculating standard indicators: {e}")
+            self.logger.error(f"Error calculating standard indicators: {e}")
 
             return df
 
@@ -408,7 +407,7 @@ import os.path
             return df
 
         except Exception:
-            self.logger.error("Error calculating time features: {e}")
+            self.logger.error(f"Error calculating time features: {e}")
 
             return df
 
@@ -525,7 +524,7 @@ import os.path
             return df
 
         except Exception:
-            self.logger.error("Error calculating ML enhanced features: {e}")
+            self.logger.error(f"Error calculating ML enhanced features: {e}")
 
             return df
 
@@ -553,7 +552,7 @@ import os.path
             return df
 
         except Exception:
-            self.logger.error("Error in feature cleanup: {e}")
+            self.logger.error(f"Error in feature cleanup: {e}")
 
             return df
 
@@ -572,7 +571,7 @@ import os.path
                 "config": self.orchestrator_config,
             }
         except Exception:
-            self.logger.error("Error getting orchestrator info: {e}")
+            self.logger.error(f"Error getting orchestrator info: {e}")
 
             return {}
 
@@ -593,7 +592,7 @@ import os.path
                 "orchestrator_config": self.orchestrator_config,
             }
         except Exception:
-            self.logger.error("Error getting feature summary: {e}")
+            self.logger.error(f"Error getting feature summary: {e}")
 
             return {}
 
@@ -605,7 +604,7 @@ class FeatureEngineeringEngine:
     """"
 
     def __init__(self, config):
-        self.config = config.get("analyst", {}).get("feature_engineering", {})
+        self.config = config.get("analystf", {}).get("feature_engineering", {})
         self.logger = system_logger.getChild("FeatureEngineeringEngine")
         self.orchestrator = FeatureEngineeringOrchestrator(config)
         self.autoencoder_model = None
@@ -652,7 +651,7 @@ class FeatureEngineeringEngine:
         try:
             return pywt.wavedec(data, wavelet, level=level)
         except Exception:
-            self.logger.error("Error applying wavelet transforms: {e}")
+            self.logger.error(f"Error applying wavelet transforms: {e}")
 
             return None
 
@@ -665,7 +664,7 @@ class FeatureEngineeringEngine:
                 self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
             )
         except Exception:
-            self.logger.error("Error training autoencoder: {e}")
+            self.logger.error(f"Error training autoencoder: {e}")
 
             return False
 
@@ -678,7 +677,7 @@ class FeatureEngineeringEngine:
         try:
             return self.orchestrator.autoencoder_generator.generate_features(data)
         except Exception:
-            self.logger.error("Error applying autoencoders: {e}")
+            self.logger.error(f"Error applying autoencoders: {e}")
 
             return data
 
@@ -689,6 +688,6 @@ class FeatureEngineeringEngine:
             # This is handled by the orchestrator now
             return True
         except Exception:
-            self.logger.error("Error loading autoencoder: {e}")
+            self.logger.error(f"Error loading autoencoder: {e}")
 
             return False

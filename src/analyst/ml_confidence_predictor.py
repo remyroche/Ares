@@ -8,9 +8,9 @@ import numpy as np
 import pandas as pd
 
 # Import enhanced order manager for tactician order management
-from src.tactician.enhanced_order_manager import (
 import logging
 import asyncio
+from src.tactician.enhanced_order_manager import (
     OrderSide,
 )
 from src.core.decorators import handles_errors
@@ -586,7 +586,7 @@ class MLConfidencePredictor:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating ensemble predictions: {e}")
+            self.logger.error(f"Error generating ensemble predictions: {e}")
 
             return {}
 
@@ -717,7 +717,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error("Error getting enhanced training model info: {e}")
+            self.logger.error(f"Error getting enhanced training model info: {e}")
 
             return {"error": str(e)}
 
@@ -746,7 +746,7 @@ class MLConfidencePredictor:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating tactician meta-labels: {e}")
+            self.logger.error(f"Error generating tactician meta-labels: {e}")
 
             return {}
 
@@ -903,7 +903,7 @@ class MLConfidencePredictor:
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing meta-labeling system: {e}")
+                initialization_error(f"Error initializing meta-labeling system: {e}")
             )
             # Continue without meta-labeling system if not available
             self.meta_labeling_system = None
@@ -949,7 +949,7 @@ class MLConfidencePredictor:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating analyst meta-labels: {e}")
+            self.logger.error(f"Error generating analyst meta-labels: {e}")
 
             return {}
 
@@ -987,7 +987,7 @@ class MLConfidencePredictor:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating tactician meta-labels: {e}")
+            self.logger.error(f"Error generating tactician meta-labels: {e}")
 
             return {}
 
@@ -1018,7 +1018,7 @@ class MLConfidencePredictor:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error loading trained models: {e}")
+            self.logger.error(f"Error loading trained models: {e}")
 
             raise
 
@@ -1090,7 +1090,7 @@ class MLConfidencePredictor:
                 self.logger.debug("No ensemble models available")
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.warning("Could not load ensemble models: {e}")
+            self.logger.warning(f"Could not load ensemble models: {e}")
 
     def _load_calibrated_models(self) -> None:
         """Load calibrated models from enhanced training manager."""
@@ -1121,7 +1121,7 @@ class MLConfidencePredictor:
                 self.logger.debug("No regime models available")
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.warning("Could not load regime models: {e}")
+            self.logger.warning(f"Could not load regime models: {e}")
 
     def _load_multi_timeframe_models(self) -> None:
         """Load multi-timeframe models from enhanced training manager."""
@@ -1142,7 +1142,7 @@ class MLConfidencePredictor:
                 self.logger.debug("No multi-timeframe models available")
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.warning("Could not load multi-timeframe models: {e}")
+            self.logger.warning(f"Could not load multi-timeframe models: {e}")
 
     def _load_label_expert_models(self) -> None:
         """Load label-level expert ensembles, calibrators, and reliability scores if provided by the training manager."""
@@ -1286,7 +1286,7 @@ class MLConfidencePredictor:
                 self.logger.info("✅ Loaded existing confidence predictor model")
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-                self.logger.error(failed("Failed to load existing model: {e}"))
+                self.logger.error(failed(f"Failed to load existing model: {e}"))
 
                 self.model = None
                 self.is_trained = False
@@ -1308,7 +1308,7 @@ class MLConfidencePredictor:
 
             for param in required_params:
                 if param not in self.predictor_config:
-                    self.logger.debug(missing("Missing required parameter: {param}"))
+                    self.logger.debug(missing(f"Missing required parameter: {param}"))
 
                     return False
 
@@ -1322,7 +1322,7 @@ class MLConfidencePredictor:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Configuration validation error: {e}")
+            self.logger.error(validation_f"Configuration validation error: {e}")
 
             return False
 
@@ -1520,7 +1520,7 @@ class MLConfidencePredictor:
 
         except (ValueError, TypeError, IndexError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error assessing ensemble risk: {e}")
+            self.logger.error(f"Error assessing ensemble risk: {e}")
 
             return {
                 "risk_level": "UNKNOWN",
@@ -1584,7 +1584,7 @@ class MLConfidencePredictor:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error in directional prediction: {str(e}"))
+            self.logger.error(f"Error in directional prediction: {str(e}"))
 
             return None
 
@@ -1812,7 +1812,7 @@ class MLConfidencePredictor:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating directional confidence: {str(e}"))
+            self.logger.error(f"Error calculating directional confidence: {str(e}"))
 
             return 0.0
 
@@ -2051,7 +2051,7 @@ class MLConfidencePredictor:
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing enhanced order manager: {e}")
+                initialization_error(f"Error initializing enhanced order manager: {e}")
             )
             self.enhanced_order_manager = None
             self.async_order_executor = None
@@ -2123,7 +2123,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error("Error executing CHASE_MICRO_BREAKOUT: {e}")
+            self.logger.error(f"Error executing CHASE_MICRO_BREAKOUT: {e}")
 
             return {"success": False, "error": str(e), "order_id": None}
 
@@ -2192,7 +2192,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error("Error executing LIMIT_ORDER_RETURN: {e}")
+            self.logger.error(f"Error executing LIMIT_ORDER_RETURN: {e}")
 
             return {"success": False, "error": str(e), "order_id": None}
 
@@ -2224,7 +2224,7 @@ class MLConfidencePredictor:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting order status: {e}")
+            self.logger.error(f"Error getting order status: {e}")
 
             return None
 
@@ -2257,7 +2257,7 @@ class MLConfidencePredictor:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting strategy orders: {e}")
+            self.logger.error(f"Error getting strategy orders: {e}")
 
             return []
 
@@ -2271,7 +2271,7 @@ class MLConfidencePredictor:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting order manager performance: {e}")
+            self.logger.error(f"Error getting order manager performance: {e}")
 
             return {}
 
@@ -2311,17 +2311,14 @@ class MLConfidencePredictor:
                 }
 
             # Import required components
-            from src.tactician.async_order_executor import (
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
+            import copy
 import os.path
-
-ExecutionRequest,
-                ExecutionStrategy,
-                OrderSide,
-                OrderType,
-            )
+from src.tactician.async_order_executor import  (
+    ExecutionRequest,
+    ExecutionStrategy,
+    OrderSide,
+    OrderType
+)
 
             # Convert side string to OrderSide enum
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
@@ -2374,7 +2371,7 @@ ExecutionRequest,
             }
 
         except Exception as e:
-            self.logger.error("Error executing order with strategy: {e}")
+            self.logger.error(f"Error executing order with strategy: {e}")
 
             return {"success": False, "error": str(e), "execution_id": None}
 
@@ -2400,7 +2397,7 @@ ExecutionRequest,
             return {"error": "Execution not found"}
 
         except Exception as e:
-            self.logger.error(execution_"Error getting execution status: {e}")
+            self.logger.error(execution_f"Error getting execution status: {e}")
 
             return {"error": str(e)}
 
@@ -2413,7 +2410,7 @@ ExecutionRequest,
             return self.async_order_executor.get_performance_metrics()
 
         except Exception as e:
-            self.logger.error(execution_"Error getting execution performance: {e}")
+            self.logger.error(execution_f"Error getting execution performance: {e}")
 
             return {"error": str(e)}
 
@@ -2513,7 +2510,7 @@ ExecutionRequest,
             return {"success": False, "error": "Training execution failed"}
 
         except Exception as e:
-            self.logger.error("Error triggering model training: {e}")
+            self.logger.error(f"Error triggering model training: {e}")
 
             return {"success": False, "error": str(e)}
 
@@ -2549,7 +2546,7 @@ ExecutionRequest,
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error checking training conditions: {e}")
+            self.logger.error(f"Error checking training conditions: {e}")
 
             return False
 
@@ -2574,7 +2571,7 @@ ExecutionRequest,
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating performance degradation: {e}")
+            self.logger.error(f"Error calculating performance degradation: {e}")
 
             return 0.0
 
@@ -2594,7 +2591,7 @@ ExecutionRequest,
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error updating model performance: {e}")
+            self.logger.error(f"Error updating model performance: {e}")
 
     def get_training_status(self) -> dict[str, Any]:
         """Get current training status and history."""
@@ -2615,7 +2612,7 @@ ExecutionRequest,
             }
 
         except Exception as e:
-            self.logger.error("Error getting training status: {e}")
+            self.logger.error(f"Error getting training status: {e}")
 
             return {"error": str(e)}
 
@@ -2628,7 +2625,7 @@ ExecutionRequest,
             self.logger.info("✅ ML Confidence Predictor stopped successfully")
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error stopping ML Confidence Predictor: {e}")
+            self.logger.error(f"Error stopping ML Confidence Predictor: {e}")
 
     def update_ensemble_weights(
         self,
@@ -2967,5 +2964,5 @@ async def setup_ml_confidence_predictor(
 
     except (AttributeError, TypeError) as e:
         self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-        system_logger.exception(failed("Failed to setup ML Confidence Predictor: {e}"))
+        system_logger.exception(failed(f"Failed to setup ML Confidence Predictor: {e}"))
         return None

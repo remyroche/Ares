@@ -1,5 +1,6 @@
 # src/analyst/autoencoder_feature_generator.py
 
+import copy
 import logging
 import os
 import time
@@ -1571,7 +1572,7 @@ class SequenceAwareAutoencoder:
             batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
             self.logger.info(f"📊 Trial batch size: {batch_size}")
         else:
-            batch_size = self.config.get("best_params", {}).get("batch_size", 32)
+            batch_size = self.config.get("best_paramsf", {}).get("batch_size", 32)
             self.logger.info(f"📊 Final training batch size: {batch_size}")
 
         epochs = self.config.get("autoencoder.epochs", 100)
@@ -1916,9 +1917,7 @@ class AutoencoderFeatureAnalyzer:
 
                 # Use a simple model for permutation importance
                 from sklearn.linear_model import LogisticRegression
-            except Exception as e:
-                pass  # TODO: Handle exception properly
-import copy
+
 import os.path
 
 perm_model = LogisticRegression(random_state=42, max_iter=1000)

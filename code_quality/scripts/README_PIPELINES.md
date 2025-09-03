@@ -1,6 +1,6 @@
-# Code Quality Scripts - Pipeline Organization
+# Code Quality Scripts - Tool Organization
 
-This directory contains code quality tools organized into category-based and unified pipelines.
+This directory contains individual code quality tools. The pipelines that orchestrate these tools have been moved to `code_quality/pipelines/` for better organization.
 
 ## Directory Structure
 
@@ -18,35 +18,9 @@ This directory contains code quality tools organized into category-based and uni
   - `simple_interaction_mapper.py` - Maps code interactions and dependencies
   - `extract_interactions.py` - Extracts interaction patterns from reports
 
-### Category-Based Pipelines
+## Pipelines
 
-1. **`pipeline_syntax_imports.py`** - Syntax and Import Pipeline
-   - Runs: syntax fixes, import fixes, circular import detection
-   - Usage: `python pipeline_syntax_imports.py --project-root /workspace/src`
-
-2. **`pipeline_async_types.py`** - Async and Type Hints Pipeline
-   - Runs: async/await fixes, type hint enhancements
-   - Usage: `python pipeline_async_types.py --project-root /workspace/src`
-
-3. **`pipeline_analysis.py`** - Code Analysis Pipeline
-   - Runs: function validation, interaction mapping, comprehensive review
-   - Usage: `python pipeline_analysis.py --project-root /workspace/src`
-
-### Unified Pipelines
-
-1. **`pipeline_unified_standalone.py`** - Standalone Version (No Imports)
-   - Runs all tools using subprocess calls
-   - Better for isolation and avoiding import conflicts
-   - Usage: `python pipeline_unified_standalone.py --project-root /workspace/src`
-   - Options:
-     - `--categories syntax_imports async_types` - Run specific categories
-     - `--tool syntax_fixer` - Run a single tool
-     - `--timeout 600` - Set timeout per tool
-
-2. **`pipeline_unified_integrated.py`** - Integrated Version (Direct Imports)
-   - Directly imports and uses code quality modules
-   - Better performance, tighter integration
-   - Usage: `python pipeline_unified_integrated.py --project-root /workspace/src`
+All pipelines have been moved to `code_quality/pipelines/`. See the [Pipelines README](../pipelines/README.md) for detailed information about available pipelines.
 
 ## Report Output
 
@@ -65,12 +39,14 @@ The following tools have overlapping functionality and should be replaced by the
 
 For a complete code quality check, run:
 ```bash
-cd /workspace/code_quality/scripts
+cd /workspace/code_quality/pipelines
 python pipeline_unified_standalone.py --project-root /workspace/src
 ```
 
 For specific fixes only:
 ```bash
+cd /workspace/code_quality/pipelines
+
 # Fix syntax and imports only
 python pipeline_syntax_imports.py --project-root /workspace/src
 

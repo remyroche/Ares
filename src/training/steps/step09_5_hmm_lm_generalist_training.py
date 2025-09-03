@@ -756,7 +756,7 @@ class HMMLMGeneralistTrainingStep:
             model_path = "models/hmm_lm_generalist_model.pth"
             torch.save(model.state_dict(), model_path)
 
-            return {
+            result = {
                 "model_path": model_path,
                 "vocabulary": self.regime_change_vocab,
                 "vocabulary_size": len(self.regime_change_vocab),
@@ -773,6 +773,34 @@ class HMMLMGeneralistTrainingStep:
                     "epochs": self.epochs,
                 },
             }
+
+            # Thin adapter: expose unified price action probabilities on validation sample
+            try:
+                trainer.model.eval()
+                sample_X = X_val[: min(len(X_val), 256)]
+                with torch.no_grad():
+                    outputs = trainer.model(sample_X)
+                    # If model provides a price direction head, map to unified schema
+                    if hasattr(trainer.model, "price_direction"):
+                        logits = trainer.model.price_direction(outputs)
+                        probs = F.softmax(logits, dim=-1)
+                        if probs.ndim == 2 and probs.shape[1] >= 2:
+                            direction_probability = float(torch.mean(probs[:, 1]).item())
+                            barrier_avoidance_probability = float(1.0 - float(torch.mean(probs[:, 0]).item()))
+                            magnitude_probability = float(torch.mean(torch.max(probs, dim=1).values).item())
+                            triple_barrier_probability = direction_probability
+                            probs_dict = {
+                                "triple_barrier_probability": max(0.0, min(1.0, triple_barrier_probability)),
+                                "direction_probability": max(0.0, min(1.0, direction_probability)),
+                                "magnitude_probability": max(0.0, min(1.0, magnitude_probability)),
+                                "barrier_avoidance_probability": max(0.0, min(1.0, barrier_avoidance_probability)),
+                            }
+                            from src.utils.common_operations import standardize_price_action_probabilities
+                            result["price_action_probabilities"] = standardize_price_action_probabilities(probs_dict)
+            except Exception:
+                pass
+
+            return result
 
         except Exception as e:  # noqa: BLE001
             self.logger.exception(f"❌ HMM-LM training failed: {e}")

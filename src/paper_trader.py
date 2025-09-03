@@ -10,13 +10,12 @@ from datetime import datetime
 # Removed trading_decorators imports - using core decorators instead
 from enum import Enum
 from typing import Any
+from copy import copy
+import asyncio
 
 import numpy as np
 
 from src.config.constants import (
-from copy import copy
-import asyncio
-
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,
     DEFAULT_MAX_POSITION_SIZE,

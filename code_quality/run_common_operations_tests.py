@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 def run_tests():
@@ -21,8 +21,9 @@ def run_tests():
     
     # Discover and run tests
     loader = unittest.TestLoader()
-    start_dir = 'tests'
-    suite = loader.discover(start_dir, pattern='test_common_operations.py')
+    # Use relative path from this file's location
+    start_dir = Path(__file__).parent / 'tests'
+    suite = loader.discover(str(start_dir), pattern='test_common_operations.py')
     
     # Run tests with verbosity
     runner = unittest.TextTestRunner(verbosity=2)

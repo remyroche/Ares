@@ -31,18 +31,23 @@ class PipelineOrchestrator:
         self.pipeline_config: dict[str, Any] = self.config.get(
             "pipeline_orchestrator",
             {},
+        )
         self.pipeline_interval: int = self.pipeline_config.get(
             "pipeline_interval",
             3600,
+        )
         self.max_pipeline_history: int = self.pipeline_config.get(
             "max_pipeline_history",
             100,
+        )
         self.enable_pipeline_execution: bool = self.pipeline_config.get(
             "enable_pipeline_execution",
             True,
+        )
         self.enable_pipeline_monitoring: bool = self.pipeline_config.get(
             "enable_pipeline_monitoring",
             True,
+        )
 
     @handles_errors(
         error_handlers={

@@ -2,8 +2,11 @@
 
 """Factory for creating optimized training components based on configuration."""
 
+import copy
 import os
 from typing import Any
+
+import psutil
 
 from src.config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
@@ -177,10 +180,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
 
     # Check system resources
     cpu_count = os.cpu_count()
-    import psutil
-import copy
-
-memory_gb = psutil.virtual_memory().total / (1024**3)
+    memory_gb = psutil.virtual_memory().total / (1024**3)
 
     # Memory recommendations
     if memory_gb < 8:

@@ -1,11 +1,13 @@
 # src/training/feature_integration.py
 
-from src.core.decorators import handles_errors
+"""Feature Integration Module for ML Training Pipeline.
 
-"""Feature Integration Module for ML Training Pipeline."
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
 """
+
+import asyncio
+import copy
 from typing import Any
 
 import numpy as np
@@ -13,13 +15,9 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import asyncio
-from src.utils.warning_symbols import (
-
-    error,
-    initialization_error,
-)
+from src.utils.warning_symbols import error, initialization_error
 
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
@@ -63,14 +61,9 @@ class FeatureIntegrationManager:
 
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
-                pass  # TODO: Add if block content
-import copy
                 from src.analyst.advanced_feature_engineering import (
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-AdvancedFeatureEngineering,
-)
+                    AdvancedFeatureEngineering,
+                )
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(
                     self.config,
@@ -111,7 +104,7 @@ AdvancedFeatureEngineering,
         """
         try:
             if not self.is_initialized:
-                self.print(
+                self.logger.error(
                     initialization_error("Feature integration manager not initialized"),
                 )
                 return historical_data
@@ -149,8 +142,8 @@ AdvancedFeatureEngineering,
             self.logger.info(f"✅ Integrated {len(selected_features.columns)} features")
             return selected_features
 
-        except Exception:
-            self.print(error("Error integrating features: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error integrating features: {e}"))
             return historical_data
 
     async def _add_advanced_features(
@@ -186,8 +179,8 @@ AdvancedFeatureEngineering,
 
             return features_df
 
-        except Exception:
-            self.print(error("Error adding advanced features: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error adding advanced features: {e}"))
             return pd.DataFrame()
 
     async def _add_liquidity_features(
@@ -219,7 +212,7 @@ AdvancedFeatureEngineering,
                 liquidity_features["amihud_illiquidity"].rolling(20).mean()
             )
 
-            # Kyle's lambda'
+            # Kyle's lambda
             liquidity_features["kyle_lambda"] = (
                 np.abs(price_changes).rolling(50).mean() / volume.rolling(50).mean()
             )
@@ -240,8 +233,8 @@ AdvancedFeatureEngineering,
             # Convert to DataFrame
             return pd.DataFrame(liquidity_features)
 
-        except Exception:
-            self.print(error("Error adding liquidity features: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error adding liquidity features: {e}"))
             return pd.DataFrame()
 
     def _select_optimal_features(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -373,6 +366,6 @@ AdvancedFeatureEngineering,
 
             return summary
 
-        except Exception:
-            self.print(error("Error getting liquidity feature summary: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error getting liquidity feature summary: {e}"))
             return {}

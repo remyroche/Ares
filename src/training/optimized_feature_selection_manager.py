@@ -298,14 +298,13 @@ class OptimizedFeatureSelectionManager:
     def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
-import copy
-
-vif_scores = []
-for i, _col in enumerate(features_df.columns):
-    try:
+        
+        vif_scores = []
+        for i, _col in enumerate(features_df.columns):
+            try:
                 vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)
-                except:
+            except:
                 vif_scores.append(1.0)
 
         return np.array(vif_scores)
@@ -442,7 +441,7 @@ for i, _col in enumerate(features_df.columns):
                     top_features = importance_scores.nlargest(min(target_per_category, len(category_features))).index.tolist()
                     selected_features.extend(top_features)
 
-        # If we don't have enough features, add from other categories'
+        # If we don't have enough features, add from other categories
         if len(selected_features) < target_features:
             remaining_features = [f for f in features_df.columns if f not in selected_features]
             if remaining_features:
@@ -455,15 +454,17 @@ for i, _col in enumerate(features_df.columns):
                 additional_features = importance_scores.nlargest(target_features - len(selected_features)).index.tolist()
                 selected_features.extend(additional_features)
 
-        # Ensure we don't exceed target'
+        # Ensure we don't exceed target
         selected_features = selected_features[:target_features]
         features_df = features_df[selected_features]
 
         metadata = {
             "selected_features": len(selected_features),
             "target_features": target_features,
-            "category_distribution": {cat: len([f for f in selected_features if f in features])
-            for cat, features in feature_categories.items()},
+            "category_distribution": {
+                cat: len([f for f in selected_features if f in features])
+                for cat, features in feature_categories.items()
+            },
             "features_after_stage": len(features_df.columns),
         }
 
@@ -878,7 +879,7 @@ for i, _col in enumerate(features_df.columns):
             X = features_df[numeric_cols].values
 
             # 1. Matrix-based correlation analysis
-            np.corrcoef(X.T)
+            corr_matrix = np.corrcoef(X.T)
 
             # 2. Matrix-based covariance analysis
             cov_matrix = np.cov(X.T)

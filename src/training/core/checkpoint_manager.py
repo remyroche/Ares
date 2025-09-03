@@ -1,28 +1,29 @@
-"""Checkpoint manager for the modular training pipeline."
+"""Checkpoint manager for the modular training pipeline.
 
 This module provides checkpointing functionality for pipeline stages,
 allowing for resuming from failures and maintaining state across
 pipeline executions.
 """
-from src.core.decorators import handles_errors, retry, timeout
 
 from datetime import datetime
 from typing import Any
+
+from src.core.decorators import handles_errors, retry, timeout
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     invalid
 )
 
+
 class CheckpointManager:
     """Checkpoint manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize checkpoint manager with enhanced type safety."
+        """Initialize checkpoint manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CheckpointManager")
@@ -64,11 +65,10 @@ class CheckpointManager:
         context="checkpoint manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize checkpoint manager with enhanced error handling."
+        """Initialize checkpoint manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-
         """
         self.logger.info("Initializing Checkpoint Manager...")
 
@@ -88,8 +88,9 @@ class CheckpointManager:
         )
         return True
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint configuration loading",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint configuration loading"
     )
     async def _load_checkpoint_configuration(self) -> None:
         """Load checkpoint configuration."""
@@ -115,15 +116,15 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint configuration loaded successfully")
 
-    @handles_errors(ValueError, AttributeError, fallback=False,
-        context="configuration validation",
+    @handles_errors(
+        ValueError, AttributeError, fallback=False,
+        context="configuration validation"
     )
     def _validate_configuration(self) -> bool:
-        """Validate checkpoint configuration."
+        """Validate checkpoint configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-
         """
         # Validate checkpoint interval
         if self.checkpoint_interval <= 0:
@@ -150,8 +151,9 @@ class CheckpointManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint modules initialization",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint modules initialization"
     )
     async def _initialize_checkpoint_modules(self) -> None:
         """Initialize checkpoint modules."""
@@ -173,8 +175,9 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint modules initialized successfully")
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint saving initialization",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint saving initialization"
     )
     async def _initialize_checkpoint_saving(self) -> None:
         """Initialize checkpoint saving module."""
@@ -188,8 +191,9 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint saving module initialized")
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint loading initialization",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint loading initialization"
     )
     async def _initialize_checkpoint_loading(self) -> None:
         """Initialize checkpoint loading module."""
@@ -203,8 +207,9 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint loading module initialized")
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint validation initialization",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint validation initialization"
     )
     async def _initialize_checkpoint_validation(self) -> None:
         """Initialize checkpoint validation module."""
@@ -218,8 +223,9 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint validation module initialized")
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint cleanup initialization",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint cleanup initialization"
     )
     async def _initialize_checkpoint_cleanup(self) -> None:
         """Initialize checkpoint cleanup module."""
@@ -243,14 +249,13 @@ class CheckpointManager:
         context="checkpoint execution",
     )
     async def execute_checkpoint(self, checkpoint_input: dict[str, Any]) -> bool:
-        """Execute checkpoint operations."
+        """Execute checkpoint operations.
 
         Args:
             checkpoint_input: Checkpoint input dictionary
 
         Returns:
             bool: True if successful, False otherwise
-
         """
         if not self._validate_checkpoint_inputs(checkpoint_input):
             return False
@@ -297,18 +302,18 @@ class CheckpointManager:
         finally:
             self.is_managing = False
 
-    @handles_errors(ValueError, AttributeError, fallback=False,
-        context="checkpoint inputs validation",
+    @handles_errors(
+        ValueError, AttributeError, fallback=False,
+        context="checkpoint inputs validation"
     )
     def _validate_checkpoint_inputs(self, checkpoint_input: dict[str, Any]) -> bool:
-        """Validate checkpoint inputs."
+        """Validate checkpoint inputs.
 
         Args:
             checkpoint_input: Checkpoint input dictionary
 
         Returns:
             bool: True if valid, False otherwise
-
         """
         # Check required checkpoint input fields
         required_fields = ["checkpoint_type", "checkpoint_name", "timestamp"]
@@ -330,21 +335,21 @@ class CheckpointManager:
 
         return True
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint saving",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint saving"
     )
     async def _perform_checkpoint_saving(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform checkpoint saving."
+        """Perform checkpoint saving.
 
         Args:
             checkpoint_input: Checkpoint input dictionary
 
         Returns:
             Dict[str, Any]: Checkpoint saving results
-
         """
         results: dict[str, Any] = {}
 
@@ -352,40 +357,44 @@ class CheckpointManager:
         if self.checkpoint_saving_components.get("checkpoint_creation", False):
             results["checkpoint_creation"] = self._perform_checkpoint_creation(
                 checkpoint_input,
+            )
 
         # Perform checkpoint serialization
         if self.checkpoint_saving_components.get("checkpoint_serialization", False):
             results["checkpoint_serialization"] = (
                 self._perform_checkpoint_serialization(checkpoint_input)
+            )
 
         # Perform checkpoint storage
         if self.checkpoint_saving_components.get("checkpoint_storage", False):
             results["checkpoint_storage"] = self._perform_checkpoint_storage(
                 checkpoint_input,
+            )
 
         # Perform checkpoint metadata
         if self.checkpoint_saving_components.get("checkpoint_metadata", False):
             results["checkpoint_metadata"] = self._perform_checkpoint_metadata(
                 checkpoint_input,
+            )
 
         self.logger.info("Checkpoint saving completed")
         return results
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint loading",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint loading"
     )
     async def _perform_checkpoint_loading(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform checkpoint loading."
+        """Perform checkpoint loading.
 
         Args:
             checkpoint_input: Checkpoint input dictionary
 
         Returns:
             Dict[str, Any]: Checkpoint loading results
-
         """
         results: dict[str, Any] = {}
 
@@ -393,6 +402,7 @@ class CheckpointManager:
         if self.checkpoint_loading_components.get("checkpoint_discovery", False):
             results["checkpoint_discovery"] = self._perform_checkpoint_discovery(
                 checkpoint_input,
+            )
 
         # Perform checkpoint deserialization
         if self.checkpoint_loading_components.get(
@@ -401,35 +411,38 @@ class CheckpointManager:
         ):
             results["checkpoint_deserialization"] = (
                 self._perform_checkpoint_deserialization(checkpoint_input)
+            )
 
         # Perform checkpoint restoration
         if self.checkpoint_loading_components.get("checkpoint_restoration", False):
             results["checkpoint_restoration"] = (
                 self._perform_checkpoint_restoration(checkpoint_input)
+            )
 
         # Perform checkpoint validation
         if self.checkpoint_loading_components.get("checkpoint_validation", False):
             results["checkpoint_validation"] = (
                 self._perform_checkpoint_validation_core(checkpoint_input)
+            )
 
         self.logger.info("Checkpoint loading completed")
         return results
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint validation",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint validation"
     )
     async def _perform_checkpoint_validation(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform checkpoint validation."
+        """Perform checkpoint validation.
 
         Args:
             checkpoint_input: Checkpoint input dictionary
 
         Returns:
             Dict[str, Any]: Checkpoint validation results
-
         """
         results: dict[str, Any] = {}
 
@@ -437,16 +450,19 @@ class CheckpointManager:
         if self.checkpoint_validation_components.get("integrity_validation", False):
             results["integrity_validation"] = self._perform_integrity_validation(
                 checkpoint_input,
+            )
 
         # Perform format validation
         if self.checkpoint_validation_components.get("format_validation", False):
             results["format_validation"] = self._perform_format_validation(
                 checkpoint_input,
+            )
 
         # Perform metadata validation
         if self.checkpoint_validation_components.get("metadata_validation", False):
             results["metadata_validation"] = self._perform_metadata_validation(
                 checkpoint_input,
+            )
 
         # Perform compatibility validation
         if self.checkpoint_validation_components.get(
@@ -455,25 +471,26 @@ class CheckpointManager:
         ):
             results["compatibility_validation"] = (
                 self._perform_compatibility_validation(checkpoint_input)
+            )
 
         self.logger.info("Checkpoint validation completed")
         return results
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint cleanup",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint cleanup"
     )
     async def _perform_checkpoint_cleanup(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform checkpoint cleanup."
+        """Perform checkpoint cleanup.
 
         Args:
             checkpoint_input: Checkpoint input dictionary
 
         Returns:
             Dict[str, Any]: Checkpoint cleanup results
-
         """
         results: dict[str, Any] = {}
 
@@ -481,21 +498,25 @@ class CheckpointManager:
         if self.checkpoint_cleanup_components.get("cleanup_scheduling", False):
             results["cleanup_scheduling"] = self._perform_cleanup_scheduling(
                 checkpoint_input,
+            )
 
         # Perform cleanup execution
         if self.checkpoint_cleanup_components.get("cleanup_execution", False):
             results["cleanup_execution"] = self._perform_cleanup_execution(
                 checkpoint_input,
+            )
 
         # Perform cleanup verification
         if self.checkpoint_cleanup_components.get("cleanup_verification", False):
             results["cleanup_verification"] = self._perform_cleanup_verification(
                 checkpoint_input,
+            )
 
         # Perform cleanup reporting
         if self.checkpoint_cleanup_components.get("cleanup_reporting", False):
             results["cleanup_reporting"] = self._perform_cleanup_reporting(
                 checkpoint_input,
+            )
 
         self.logger.info("Checkpoint cleanup completed")
         return results
@@ -712,8 +733,9 @@ class CheckpointManager:
             "training_time": datetime.now().isoformat(),
         }
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint results storage",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint results storage"
     )
     async def _store_checkpoint_results(self) -> None:
         """Store checkpoint results."""
@@ -729,41 +751,41 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint results stored successfully")
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint results getting",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint results getting"
     )
     def get_checkpoint_results(
         self,
         checkpoint_type: str | None = None,
     ) -> dict[str, Any]:
-        """Get checkpoint results."
+        """Get checkpoint results.
 
         Args:
             checkpoint_type: Optional checkpoint type filter
 
         Returns:
             Dict[str, Any]: Checkpoint results
-
         """
         if checkpoint_type:
             return self.checkpoint_results.get(checkpoint_type, {})
         return self.checkpoint_results.copy()
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="checkpoint history getting",
+    @handles_errors(
+        ValueError, AttributeError, fallback=None,
+        context="checkpoint history getting"
     )
     def get_checkpoint_history(
         self,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Get checkpoint history."
+        """Get checkpoint history.
 
         Args:
             limit: Optional limit on number of records
 
         Returns:
             List[Dict[str, Any]]: Checkpoint history
-
         """
         history = self.checkpoint_history.copy()
         if limit:
@@ -771,11 +793,10 @@ class CheckpointManager:
         return history
 
     def get_checkpoint_status(self) -> dict[str, Any]:
-        """Get checkpoint status information."
+        """Get checkpoint status information.
 
         Returns:
             Dict[str, Any]: Checkpoint status
-
         """
         return {
             "is_managing": self.is_managing,
@@ -794,8 +815,9 @@ class CheckpointManager:
             "checkpoint_history_count": len(self.checkpoint_history),
         }
 
-    @handles_errors(Exception, fallback=None,
-        context="checkpoint manager cleanup",
+    @handles_errors(
+        Exception, fallback=None,
+        context="checkpoint manager cleanup"
     )
     async def stop(self) -> None:
         """Stop the checkpoint manager."""
@@ -812,23 +834,25 @@ class CheckpointManager:
 
         self.logger.info("✅ Checkpoint Manager stopped successfully")
 
+
 # Global checkpoint manager instance
 checkpoint_manager: CheckpointManager | None = None
 
-@handles_errors(Exception, fallback=None,
-    context="checkpoint manager setup",
-    )
+
+@handles_errors(
+    Exception, fallback=None,
+    context="checkpoint manager setup"
+)
 async def setup_checkpoint_manager(
     config: dict[str, Any] | None = None,
 ) -> CheckpointManager | None:
-    """Setup global checkpoint manager."
+    """Setup global checkpoint manager.
 
     Args:
         config: Optional configuration dictionary
 
     Returns:
         Optional[CheckpointManager]: Global checkpoint manager instance
-
     """
     try:
         global checkpoint_manager

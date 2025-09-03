@@ -5,15 +5,6 @@ This module implements multi-output training for probability outputs, replacing
 the post-training calculation approach with direct training on probability targets.
 """
 
-from src.core.decorators import (
-    handles_errors,
-    log_execution_time
-)
-from src.core.domain import (
-    PerformanceLevel,
-    ValidationLevel,
-    comprehensive_validation
-)
 from typing import Any
 from datetime import datetime
 import numpy as np
@@ -23,19 +14,117 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils.class_weight import compute_class_weight
 
-from src.core.decorators import validates, log_execution_time
+from src.core.decorators import (
+    handles_errors,
+    log_execution_time,
+    validates
+)
+from src.core.domain import (
+    PerformanceLevel,
+    ValidationLevel,
+    comprehensive_validation
+)
 from src.utils.logger import system_logger
 
 # Import advanced neural network models
-from .advanced_neural_models import (
-    NEURAL_MODEL_CONFIGS,
-    NeuralNetworkWrapper,
-    create_neural_model,
-)
+try:
+    from .advanced_neural_models import (
+        NEURAL_MODEL_CONFIGS,
+        NeuralNetworkWrapper,
+        create_neural_model,
+    )
+except ImportError:
+    # Fallback if advanced neural models not available
+    NEURAL_MODEL_CONFIGS = {}
+    NeuralNetworkWrapper = None
+    create_neural_model = None
 
-from src.utils.logger import system_logger
-from catboost import CatBoostClassifier
-def fit(
+try:
+    from catboost import CatBoostClassifier
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CatBoostClassifier = None
+    CATBOOST_AVAILABLE = False
+
+
+class ProbabilityTargetGenerator:
+    """Generate probability targets for multi-output training."""
+    
+    def __init__(self, config: dict[str, Any] | None = None):
+        self.config = config or {}
+        self.logger = system_logger.getChild("ProbabilityTargetGenerator")
+        
+        # Default configuration
+        self.profit_target = self.config.get("profit_target", 0.02)
+        self.stop_loss = self.config.get("stop_loss", 0.01)
+        self.look_ahead_periods = self.config.get("look_ahead_periods", 20)
+        self.magnitude_threshold_factor = self.config.get("magnitude_threshold_factor", 0.8)
+        self.adverse_threshold = self.config.get("adverse_threshold", 0.01)
+        self.avoidance_look_ahead = self.config.get("avoidance_look_ahead", 10)
+    
+    def generate_all_targets(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        market_data: pd.DataFrame
+    ) -> dict[str, np.ndarray]:
+        """Generate all 4 probability targets."""
+        self.logger.info("Generating probability targets for multi-output training")
+        
+        targets = {
+            "triple_barrier": self._generate_triple_barrier_targets(X, y, market_data),
+            "direction": self._generate_direction_targets(X, y, market_data),
+            "magnitude": self._generate_magnitude_targets(X, y, market_data),
+            "barrier_avoidance": self._generate_barrier_avoidance_targets(X, y, market_data)
+        }
+        
+        return targets
+    
+    def _generate_triple_barrier_targets(self, X: np.ndarray, y: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Generate triple barrier probability targets."""
+        # Simplified implementation - in practice would use actual triple barrier logic
+        return (y > self.profit_target).astype(int)
+    
+    def _generate_direction_targets(self, X: np.ndarray, y: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Generate direction probability targets."""
+        return (y > 0).astype(int)
+    
+    def _generate_magnitude_targets(self, X: np.ndarray, y: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Generate magnitude probability targets."""
+        threshold = np.std(y) * self.magnitude_threshold_factor
+        return (np.abs(y) > threshold).astype(int)
+    
+    def _generate_barrier_avoidance_targets(self, X: np.ndarray, y: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Generate barrier avoidance probability targets."""
+        # Check if price avoids adverse movement
+        return (y > -self.adverse_threshold).astype(int)
+
+
+class MultiOutputModel:
+    """Multi-output model for probability predictions."""
+    
+    def __init__(self, config: dict[str, Any] | None = None):
+        self.config = config or {}
+        self.logger = system_logger.getChild("MultiOutputModel")
+        self.models = {}
+        self.calibrators = {}
+        self.ensemble_weights = {}
+        
+        # Initialize models for each output type
+        for output_type in ["triple_barrier", "direction", "magnitude", "barrier_avoidance"]:
+            self.models[output_type] = self._create_model(output_type)
+    
+    def _create_model(self, output_type: str):
+        """Create model for specific output type."""
+        # Default to RandomForest, can be extended based on config
+        return RandomForestClassifier(
+            n_estimators=100,
+            max_depth=10,
+            random_state=42,
+            n_jobs=-1
+        )
+    
+    def fit(
         self,
         X_train: np.ndarray,
         y_train_multi: dict[str, np.ndarray],
@@ -88,7 +177,7 @@ def fit(
             try:
                 if hasattr(model, "fit"):
                     # Check if it's a neural network (NeuralNetworkWrapper)
-                    if isinstance(model, NeuralNetworkWrapper):
+                    if NeuralNetworkWrapper and isinstance(model, NeuralNetworkWrapper):
                         # Neural networks handle their own training
                         model.fit(X_train, y_train_target)
                         trained_models[output_type] = model
@@ -150,6 +239,9 @@ def fit(
             total_loss = 0
 
             for i, output_type in enumerate(["triple_barrier", "direction", "magnitude", "barrier_avoidance"]):
+                if output_type not in models:
+                    continue
+                    
                 model = models[output_type]
                 y_true = y_val_multi[output_type]
 
@@ -222,7 +314,7 @@ def fit(
                 # Get probability predictions
                 if hasattr(model, "predict_proba"):
                     # Handle both traditional ML models and neural networks
-                    if isinstance(model, NeuralNetworkWrapper):
+                    if NeuralNetworkWrapper and isinstance(model, NeuralNetworkWrapper):
                         # Neural networks return probabilities directly
                         proba = model.predict_proba(X_test)
                     else:
@@ -255,18 +347,18 @@ def fit(
 
         return probabilities
 
+
 class MultiOutputProbabilityTrainer:
     """
     Main class for multi-output probability training.
 
     This class coordinates the entire multi-output training process,
     from target generation to model training and prediction.
-from src.core.decorators import handles_errors
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
-        self.logger = logger
+        self.logger = system_logger.getChild("MultiOutputProbabilityTrainer")
 
         # Initialize components
         self.target_generator = ProbabilityTargetGenerator(config)

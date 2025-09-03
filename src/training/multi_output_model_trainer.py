@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-Output Model Trainer for Direction and Profit Prediction."
+"""Multi-Output Model Trainer for Direction and Profit Prediction.
 
 This module provides intelligent multi-output prediction capabilities for both
 price direction and expected profit using the triple barrier method and
@@ -51,8 +51,7 @@ except ImportError:
 
 # Import existing model architectures from step06
 try:
-from .steps.step9_hmm_based_training import (
-from sklearn.metrics import (
+    from .steps.step9_hmm_based_training import (
         CNNModel, CNNTrainer,
         TCNModel, TCNTrainer,
         TransformerModel, TransformerTrainer
@@ -61,6 +60,8 @@ from sklearn.metrics import (
 except ImportError:
     EXISTING_MODELS_AVAILABLE = False
     CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
+
+from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score
 )
@@ -1362,7 +1363,7 @@ class MultiOutputModelTrainer:
             "profit_metrics": profit_metrics,
             "combined_metrics": combined_metrics,
             "feature_importance": {
-                "direction": {},  # Neural networks don't have direct feature importance'
+                "direction": {},  # Neural networks don't have direct feature importance
                 "profit": {}
             }
         }
@@ -1758,12 +1759,9 @@ class MultiOutputModelTrainer:
         # Handle class imbalance
         try:
             from sklearn.utils.class_weight import compute_class_weight
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-class_weights = compute_class_weight(
-'balanced',
+            
+            class_weights = compute_class_weight(
+                'balanced',
                 classes=np.unique(y_train), 
                 y=y_train
             )
@@ -2057,7 +2055,7 @@ def create_multi_output_trainer(
     use_profit_features: bool = True,
     **kwargs
 ) -> MultiOutputModelTrainer:
-    """Factory function to create a multi-output model trainer."
+    """Factory function to create a multi-output model trainer.
     
     Args:
         model_type: Type of model to use ("LightGBM", "RandomForest", "NeuralNetwork")

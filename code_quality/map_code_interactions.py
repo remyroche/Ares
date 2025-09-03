@@ -25,7 +25,7 @@ from analyzers.dependency_analyzer import DependencyAnalyzer as DependencyAnalyz
 from analyzers.import_analyzer import ImportAnalyzer as ImportAnalyzer_analyzers_import_analyzer
 from reporters.html_reporter import HTMLReporter
 
-from core.config import get_default_config as get_default_config_core_config
+from core.config import get_default_config
 
 
 class CodeInteractionMapper:
@@ -95,11 +95,12 @@ class CodeInteractionMapper:
         """Generate comprehensive interaction report."""
         print("\n[6/6] Generating interaction reports...")
 
-        # Create reports directory
-        reports_dir = self.project_root / "code_quality" / "interaction_reports"
-        reports_dir.mkdir(exist_ok=True)
-
+        # Create reports directory with datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        reports_dir = Path("code_quality/visualizers/reports") / f"report_{timestamp}"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"  - Output directory: {reports_dir}")
 
         # Save raw JSON data
         json_file = reports_dir / f"interactions_{timestamp}.json"
@@ -169,9 +170,11 @@ class CodeInteractionMapper:
             f.write(html_content)
         print(f"  - Saved HTML report: {html_file}")
 
-        # Generate visual diagrams (if graphviz available)
+        # Generate visual diagrams
         try:
-            self._generate_visual_diagrams(reports_dir, timestamp)
+            visual_files = self._generate_visual_diagrams(reports_dir, timestamp)
+            if visual_files:
+                print(f"  - Generated {len(visual_files)} visual diagrams")
         except Exception as e:
             print(f"  - Could not generate visual diagrams: {e}")
 
@@ -179,33 +182,83 @@ class CodeInteractionMapper:
             "json": str(json_file),
             "summary": str(summary_file),
             "html": str(html_file),
+            "report_dir": str(reports_dir),
+            "timestamp": timestamp
         }
 
     def _generate_visual_diagrams(self, output_dir: Path, timestamp: str):
-        """Generate visual diagrams of interactions."""
-        import subprocess
-
-        # Generate dependency graph
-        dot_file = output_dir / f"dependencies_{timestamp}.dot"
-        with open(dot_file, "w") as f:
-            f.write("digraph Dependencies {\n")
-            f.write("  rankdir=LR;\n")
-            f.write("  node [shape=box];\n")
-
-            deps = self.results.get("dependencies", {})
-            for module, info in deps.get("modules", {}).items():
-                f.writelines(f'  "{module}" -> "{dep}";\n' for dep in info.get("dependencies", []))
-
-            f.write("}\n")
-
-        # Convert to PNG if graphviz is available
-        try:
-            subprocess.run(["dot", "-Tpng", str(dot_file), "-o",
-                          str(output_dir / f"dependencies_{timestamp}.png")],
-                          check=True, capture_output=True)
-            print(f"  - Generated dependency diagram: dependencies_{timestamp}.png")
-        except:
-            pass
+        """Generate visual diagrams of interactions using the new visualization system."""
+        from visualizers import (
+            DependencyGraphVisualizer,
+            ComplexityHeatmapVisualizer,
+            InteractionNetworkVisualizer,
+            DashboardGenerator
+        )
+        
+        # Create visualizers
+        dep_viz = DependencyGraphVisualizer(str(output_dir))
+        complexity_viz = ComplexityHeatmapVisualizer(str(output_dir))
+        network_viz = InteractionNetworkVisualizer(str(output_dir))
+        dashboard_gen = DashboardGenerator(str(output_dir))
+        
+        generated_files = []
+        
+        # Generate dependency visualizations
+        if 'dependencies' in self.results:
+            deps = self.results['dependencies'].get('modules', {})
+            if deps:
+                # Main dependency graph
+                fig, metadata = dep_viz.create_dependency_graph(deps, "Module Dependencies")
+                files = dep_viz.save_figure(fig, f"dependencies_{timestamp}")
+                generated_files.extend(files)
+                
+                # Circular dependencies
+                circular = self.results['dependencies'].get('circular_imports', [])
+                if circular:
+                    fig = dep_viz.create_circular_dependency_visualization(circular)
+                    files = dep_viz.save_figure(fig, f"circular_deps_{timestamp}")
+                    generated_files.extend(files)
+                
+                print(f"  - Generated dependency visualizations")
+        
+        # Generate complexity visualizations
+        if 'complexity' in self.results:
+            complexity_data = self.results['complexity'].get('files', {})
+            if complexity_data:
+                # Complexity heatmap
+                fig, _ = complexity_viz.create_complexity_heatmap(complexity_data)
+                files = complexity_viz.save_figure(fig, f"complexity_heatmap_{timestamp}")
+                generated_files.extend(files)
+                
+                print(f"  - Generated complexity visualizations")
+        
+        # Generate function call network
+        if 'call_graph' in self.results:
+            call_graph = self.results['call_graph'].get('functions', {})
+            if call_graph:
+                # Function network
+                fig, _ = network_viz.create_function_call_network(call_graph)
+                files = network_viz.save_figure(fig, f"function_network_{timestamp}")
+                generated_files.extend(files)
+                
+                # Interactive network
+                html_file = network_viz.create_interactive_network(
+                    call_graph,
+                    title="Interactive Function Network"
+                )
+                generated_files.append(html_file)
+                
+                print(f"  - Generated function network visualizations")
+        
+        # Generate comprehensive dashboard
+        dashboard_file = dashboard_gen.generate_quality_dashboard(
+            self.results,
+            "Code Interaction Analysis Dashboard"
+        )
+        generated_files.append(dashboard_file)
+        print(f"  - Generated interactive dashboard: {Path(dashboard_file).name}")
+        
+        return generated_files
 
     def run(self):
         """Run the complete interaction mapping."""
@@ -225,9 +278,11 @@ class CodeInteractionMapper:
         print("\n" + "=" * 80)
         print("CODE INTERACTION MAPPING COMPLETE!")
         print("=" * 80)
-        print("\nGenerated reports:")
+        print(f"\nAll reports saved to: {report_files.get('report_dir', 'reports')}")
+        print("\nGenerated files:")
         for report_type, file_path in report_files.items():
-            print(f"  - {report_type.upper()}: {file_path}")
+            if report_type not in ['report_dir', 'timestamp']:
+                print(f"  - {report_type.upper()}: {Path(file_path).name}")
 
         return report_files
 

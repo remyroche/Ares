@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Quality Visualization</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .metric-card { 
+            background: #f0f0f0; 
+            padding: 15px; 
+            margin: 10px; 
+            border-radius: 8px;
+            display: inline-block;
+            width: 200px;
+        }
+        .metric-value { font-size: 36px; font-weight: bold; color: #333; }
+        .metric-label { color: #666; }
+        .module-list { margin: 20px 0; }
+        .module-item { 
+            background: #fff; 
+            border: 1px solid #ddd; 
+            padding: 10px; 
+            margin: 5px 0;
+        }
+        .complexity-bar {
+            height: 20px;
+            background: linear-gradient(to right, #4CAF50, #FFC107, #F44336);
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Code Quality Visualization Report</h1>
+        <p>Generated: 20250903_152336</p>
+        
+        <h2>Summary Metrics</h2>
+        <div>
+            <div class="metric-card">
+                <div class="metric-label">Total Modules</div>
+                <div class="metric-value">10</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Functions</div>
+                <div class="metric-value">97</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Lines</div>
+                <div class="metric-value">2709</div>
+            </div>
+        </div>
+        
+        <h2>Module Complexity</h2>
+        <table>
+            <tr>
+                <th>Module</th>
+                <th>Lines</th>
+                <th>Functions</th>
+                <th>Classes</th>
+                <th>Imports</th>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py</td>
+                <td>653</td>
+                <td>33</td>
+                <td>6</td>
+                <td>9</td>
+            </tr>
+            <tr>
+                <td>function_validator.py</td>
+                <td>535</td>
+                <td>24</td>
+                <td>6</td>
+                <td>11</td>
+            </tr>
+            <tr>
+                <td>run_real_subset_tests.py</td>
+                <td>352</td>
+                <td>24</td>
+                <td>8</td>
+                <td>11</td>
+            </tr>
+            <tr>
+                <td>integrated_validator.py</td>
+                <td>309</td>
+                <td>7</td>
+                <td>1</td>
+                <td>10</td>
+            </tr>
+            <tr>
+                <td>visualize_interactions.py</td>
+                <td>282</td>
+                <td>3</td>
+                <td>0</td>
+                <td>7</td>
+            </tr>
+            <tr>
+                <td>example_usage_extended.py</td>
+                <td>246</td>
+                <td>6</td>
+                <td>0</td>
+                <td>2</td>
+            </tr>
+            <tr>
+                <td>test_pipeline.py</td>
+                <td>119</td>
+                <td>2</td>
+                <td>0</td>
+                <td>8</td>
+            </tr>
+            <tr>
+                <td>run_tests_with_mocks.py</td>
+                <td>84</td>
+                <td>1</td>
+                <td>0</td>
+                <td>7</td>
+            </tr>
+            <tr>
+                <td>run_tests_simple.py</td>
+                <td>71</td>
+                <td>3</td>
+                <td>0</td>
+                <td>5</td>
+            </tr>
+            <tr>
+                <td>verify_test_setup.py</td>
+                <td>58</td>
+                <td>1</td>
+                <td>0</td>
+                <td>4</td>
+            </tr>
+        </table>
+        
+        <h2>Function Complexity</h2>
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Complexity</th>
+                <th>Lines</th>
+            </tr>
+            <tr>
+                <td>visualize_interactions.py::visualize_code_interactions</td>
+                <td>11</td>
+                <td>156</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_validate_function_call</td>
+                <td>8</td>
+                <td>50</td>
+            </tr>
+            <tr>
+                <td>example_usage_extended.py::example_error_reporting</td>
+                <td>6</td>
+                <td>54</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_add_issue</td>
+                <td>5</td>
+                <td>25</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_process_function</td>
+                <td>5</td>
+                <td>45</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_validate_subscript_access</td>
+                <td>5</td>
+                <td>39</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_track_null_checks</td>
+                <td>5</td>
+                <td>11</td>
+            </tr>
+            <tr>
+                <td>run_real_subset_tests.py::run_tests</td>
+                <td>4</td>
+                <td>70</td>
+            </tr>
+            <tr>
+                <td>integrated_validator.py::_generate_markdown_report</td>
+                <td>4</td>
+                <td>75</td>
+            </tr>
+            <tr>
+                <td>run_tests_simple.py::run_tests</td>
+                <td>4</td>
+                <td>28</td>
+            </tr>
+            <tr>
+                <td>function_validator.py::visit_FunctionDef</td>
+                <td>4</td>
+                <td>36</td>
+            </tr>
+            <tr>
+                <td>test_pipeline.py::test_pipeline</td>
+                <td>4</td>
+                <td>55</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::generate_report</td>
+                <td>3</td>
+                <td>46</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_find_python_files</td>
+                <td>3</td>
+                <td>21</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_validate_attribute_access</td>
+                <td>3</td>
+                <td>27</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_get_function_name</td>
+                <td>3</td>
+                <td>8</td>
+            </tr>
+            <tr>
+                <td>enhanced_validator.py::_is_safe_access</td>
+                <td>3</td>
+                <td>12</td>
+            </tr>
+            <tr>
+                <td>visualize_interactions.py::main</td>
+                <td>3</td>
+                <td>36</td>
+            </tr>
+            <tr>
+                <td>integrated_validator.py::main</td>
+                <td>3</td>
+                <td>33</td>
+            </tr>
+            <tr>
+                <td>integrated_validator.py::_generate_summary_report</td>
+                <td>3</td>
+                <td>47</td>
+            </tr>
+        </table>
+        
+        <h2>Import Dependencies</h2>
+        <div class="module-list">
+            <div class="module-item">
+                <strong>enhanced_validator.py</strong> imports: collections, logging, typing, os, json, dataclasses, argparse, pathlib, ast
+            </div>
+            <div class="module-item">
+                <strong>run_tests_with_mocks.py</strong> imports: tests, unittest.mock, types, unittest, sys, traceback, pathlib
+            </div>
+            <div class="module-item">
+                <strong>visualize_interactions.py</strong> imports: datetime, typing, json, sys, argparse, visualizers, pathlib
+            </div>
+            <div class="module-item">
+                <strong>run_real_subset_tests.py</strong> imports: src.utils.common_operations, unittest.mock, datetime, asyncio, types, shutil, pytest, unittest, sys, tempfile, pathlib
+            </div>
+            <div class="module-item">
+                <strong>integrated_validator.py</strong> imports: function_validator, collections, logging, datetime, typing, os, json, argparse, enhanced_validator, pathlib
+            </div>
+            <div class="module-item">
+                <strong>run_tests_simple.py</strong> imports: pandas, numpy, sys, subprocess, pathlib
+            </div>
+            <div class="module-item">
+                <strong>example_usage_extended.py</strong> imports: code_quality, tempfile
+            </div>
+            <div class="module-item">
+                <strong>function_validator.py</strong> imports: re, collections, logging, time, typing, os, json, dataclasses, argparse, pathlib, ast
+            </div>
+            <div class="module-item">
+                <strong>test_pipeline.py</strong> imports: datetime, map_code_interactions, json, sys, traceback, visualize_interactions, pathlib
+            </div>
+            <div class="module-item">
+                <strong>verify_test_setup.py</strong> imports: tests, sys, src.utils, pathlib
+            </div>
+        </div>
+    </div>
+</body>
+</html>

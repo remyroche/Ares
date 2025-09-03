@@ -10,7 +10,6 @@ This module provides advanced surrogate models including:
 - Transfer learning capabilities
 """
 
-<<<<<<< HEAD
 from src.core.decorators import handles_errors
 
 import numpy as np
@@ -18,14 +17,9 @@ import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional, Union
 from abc import ABC, abstractmethod
 import joblib
-=======
->>>>>>> origin/main
 import time
-from abc import ABC, abstractmethod
 from typing import Any
 
-import joblib
-import numpy as np
 
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor

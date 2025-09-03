@@ -1,13 +1,10 @@
 # src/training/steps/hmm_feature_enhancer.py
 
 
-<<<<<<< HEAD
 from src.core.decorators import (, traced
     traced,
     validates
 )
-=======
->>>>>>> origin/main
 
 import numpy as np
 import pandas as pd

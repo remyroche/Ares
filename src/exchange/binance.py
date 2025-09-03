@@ -1,10 +1,8 @@
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, retry, timeout
 
 from src.core.domain import (
-    handle_network_operations,
-    handle_specific_errors
+    handle_network_operations
 )
-
 import hashlib
 import hmac
 import time
@@ -13,23 +11,15 @@ from urllib.parse import urlencode
 
 import aiohttp
 
-<<<<<<< HEAD
-=======
-from src.utils.error_handler import (
-    handle_errors,
     handle_network_operations,
-    handle_specific_errors,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,
     error,
     failed,
     invalid,
-    missing,
+    missing
 )
-
 
 class BinanceExchange:
     """
@@ -62,7 +52,7 @@ class BinanceExchange:
         self.timeout: int = self.exchange_config.get("timeout", 30)
         self.max_retries: int = self.exchange_config.get("max_retries", 3)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid Binance exchange configuration"),
             AttributeError: (False, "Missing required exchange parameters"),
@@ -70,7 +60,6 @@ class BinanceExchange:
         },
         default_return=False,
         context="Binance exchange initialization",
-    )
     async def initialize(self) -> bool:
         """
         Initialize Binance exchange with enhanced error handling.
@@ -93,14 +82,10 @@ class BinanceExchange:
 
         self.logger.info(
             "✅ Binance Exchange initialization completed successfully",
-        )
         return True
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+    @handles_errors(ValueError, AttributeError, fallback=None,
         context="exchange configuration loading",
-    )
     async def _load_exchange_configuration(self) -> None:
         """Load exchange configuration."""
         # Set default exchange parameters
@@ -120,11 +105,8 @@ class BinanceExchange:
 
         self.logger.info("Exchange configuration loaded successfully")
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
+    @handles_errors(ValueError, AttributeError, fallback=False,
         context="configuration validation",
-    )
     def _validate_configuration(self) -> bool:
         """
         Validate exchange configuration.
@@ -150,10 +132,9 @@ class BinanceExchange:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=False,
-    )
     async def _initialize_connection(self) -> bool:
         """
         Initialize connection to Binance API.
@@ -165,7 +146,6 @@ class BinanceExchange:
             # Create session
             self.session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
-            )
 
             # Test connection
             server_time = await self._get_server_time()
@@ -173,7 +153,6 @@ class BinanceExchange:
                 self.is_connected = True
                 self.logger.info(
                     f"Connected to Binance API (Server time: {server_time})",
-                )
                 return True
             self.print(failed("Failed to connect to Binance API"))
             return False
@@ -182,10 +161,9 @@ class BinanceExchange:
             self.print(connection_error("Error initializing connection: {e}"))
             return False
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def _get_server_time(self) -> int | None:
         """
         Get server time from Binance.
@@ -241,10 +219,9 @@ class BinanceExchange:
             self.print(error("Error generating signature: {e}"))
             return ""
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_account_info(self) -> dict[str, Any] | None:
         """
         Get account information.
@@ -288,10 +265,9 @@ class BinanceExchange:
             self.print(error("Error getting account info: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_position_risk(
         self,
         symbol: str | None = None,
@@ -345,7 +321,7 @@ class BinanceExchange:
             self.print(error("Error getting position risk: {e}"))
             return None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid order parameters"),
             AttributeError: (False, "Missing order components"),
@@ -353,7 +329,6 @@ class BinanceExchange:
         },
         default_return=False,
         context="order creation",
-    )
     async def create_order(
         self,
         symbol: str,
@@ -444,7 +419,6 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(
                         f"Order created successfully: {data.get('orderId')}",
-                    )
                     return data
                 await response.json()
                 self.print(failed("Failed to create order: {error_data}"))
@@ -496,7 +470,7 @@ class BinanceExchange:
             self.print(connection_error("Network error calling {path}: {e}"))
             return None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid cancel parameters"),
             AttributeError: (False, "Missing cancel components"),
@@ -504,7 +478,6 @@ class BinanceExchange:
         },
         default_return=False,
         context="order cancellation",
-    )
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel an existing order."""
         result = await self._signed_request(
@@ -526,7 +499,6 @@ class BinanceExchange:
             method="GET",
             path="/api/v3/openOrders",
             params=params,
-        )
         return result if isinstance(result, list) else None
 
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
@@ -563,7 +535,7 @@ class BinanceExchange:
         except Exception:
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid status parameters"),
             AttributeError: (None, "Missing status components"),
@@ -571,7 +543,6 @@ class BinanceExchange:
         },
         default_return=None,
         context="order status",
-    )
     async def get_order_status(
         self,
         symbol: str,
@@ -582,12 +553,10 @@ class BinanceExchange:
             method="GET",
             path="/api/v3/order",
             params={"symbol": symbol, "orderId": order_id},
-        )
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_klines(
         self,
         symbol: str,
@@ -621,7 +590,6 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(
                         f"Klines retrieved successfully: {len(data)} records",
-                    )
                     return data
                 self.print(failed("Failed to get klines: {response.status}"))
                 return None
@@ -630,10 +598,9 @@ class BinanceExchange:
             self.print(error("Error getting klines: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_ticker(self, symbol: str) -> dict[str, Any] | None:
         """
         Get ticker information.
@@ -667,10 +634,9 @@ class BinanceExchange:
             self.print(error("Error getting ticker: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_order_book(
         self,
         symbol: str,
@@ -709,10 +675,9 @@ class BinanceExchange:
             self.print(error("Error getting order book: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_aggregate_trades(
         self,
         symbol: str,
@@ -745,17 +710,15 @@ class BinanceExchange:
                     return await response.json()
                 self.logger.error(
                     f"Failed to get aggregate trades: {response.status}",
-                )
                 return None
 
         except Exception:
             self.print(error("Error getting aggregate trades: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def get_historical_agg_trades_ccxt(
         self,
         symbol: str,
@@ -794,21 +757,18 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(
                         f"Aggregated trades retrieved successfully: {len(data)} records",
-                    )
                     return data
                 self.logger.error(
                     f"Failed to get aggregated trades: {response.status}",
-                )
                 return None
 
         except Exception:
             self.print(error("Error getting aggregated trades: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
-    )
     async def futures_funding_rate(
         self,
         symbol: str,
@@ -863,11 +823,8 @@ class BinanceExchange:
             "api_secret_configured": bool(self.api_secret),
         }
 
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
+    @handles_errors(Exception,, fallback=None,
         context="Binance exchange cleanup",
-    )
     async def stop(self) -> None:
         """Stop the Binance exchange."""
         self.logger.info("🛑 Stopping Binance Exchange...")
@@ -883,16 +840,11 @@ class BinanceExchange:
         except Exception:
             self.print(error("Error stopping Binance exchange: {e}"))
 
-
 # Global Binance exchange instance
 binance_exchange: BinanceExchange | None = None
 
-
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
+@handles_errors(Exception,, fallback=None,
     context="Binance exchange setup",
-)
 async def setup_binance_exchange(
     config: dict[str, Any] | None = None,
 ) -> BinanceExchange | None:

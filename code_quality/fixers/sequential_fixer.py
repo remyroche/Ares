@@ -11,7 +11,7 @@ from typing import Any
 
 from ..analyzers.import_analyzer import ImportAnalyzer
 from ..analyzers.linter_analyzer import LinterAnalyzer
-from ..analyzers.signature_analyzer import SignatureAnalyzer
+from ..analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer as SignatureAnalyzer
 from ..analyzers.syntax_validator import SyntaxValidator
 from ..core.config import CodeQualityConfig, get_default_config
 from ..fixers.auto_fixer import AutoFixer

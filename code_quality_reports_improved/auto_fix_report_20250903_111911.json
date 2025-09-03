@@ -1,0 +1,4850 @@
+{
+  "status": "success",
+  "total_files_processed": 40,
+  "successful_tools": [],
+  "failed_tools": [],
+  "directory_results": {
+    "src/config": {
+      "src/config/sr_optimization_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/sr_optimization_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/system.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/system.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/system.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/system.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/system.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/system.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/system.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/system.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/system.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/system.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/system.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/system.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/system.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/system.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/training_modes.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/training_modes.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/training_modes.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/training_modes.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/training_modes.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/training_modes.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/training_modes.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/training_modes.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/training_modes.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/training_modes.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/training_modes.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/training_modes.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/training_modes.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/training_modes.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/fractional_implementations_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/fractional_implementations_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/constants.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/constants.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/constants.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/constants.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/constants.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/constants.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/constants.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/constants.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/constants.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/constants.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/constants.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/constants.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/constants.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/constants.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/computational_optimization_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/computational_optimization_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/environment.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/environment.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/environment.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/environment.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/environment.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/environment.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/environment.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/environment.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/environment.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/environment.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/environment.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/environment.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/environment.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/environment.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/label_model_mapping.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/label_model_mapping.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/label_model_mapping.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/label_model_mapping.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/label_model_mapping.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/label_model_mapping.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/label_model_mapping.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/label_model_mapping.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/label_model_mapping.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/label_model_mapping.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/label_model_mapping.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/label_model_mapping.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/label_model_mapping.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/label_model_mapping.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_confidence.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_confidence.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_confidence.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_confidence.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_confidence.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_confidence.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_confidence.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_confidence.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_confidence.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_confidence.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_confidence.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_confidence.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_confidence.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_confidence.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/multi_timeframe_hmm_ensemble_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/multi_timeframe_hmm_ensemble_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/enhanced_feature_selection_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/enhanced_feature_selection_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/m1_gpu_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/m1_gpu_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_tpsl.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_tpsl.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_tpsl.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_tpsl.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_tpsl.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_tpsl.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_tpsl.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_tpsl.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_tpsl.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_tpsl.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_tpsl.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_tpsl.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_tpsl.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_tpsl.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_regime_transitions.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_regime_transitions.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_position_sizing.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_position_sizing.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_position_sizing.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_position_sizing.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_position_sizing.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_position_sizing.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_position_sizing.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_position_sizing.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_position_sizing.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_position_sizing.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_position_sizing.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_position_sizing.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_position_sizing.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_position_sizing.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_manager.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_manager.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_manager.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_manager.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_manager.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_manager.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_manager.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_manager.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_manager.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_manager.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_manager.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_manager.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_manager.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_manager.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/enhanced_multi_timeframe_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/enhanced_multi_timeframe_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/typed_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/typed_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/typed_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/typed_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/typed_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/typed_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/typed_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/typed_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/typed_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/typed_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/typed_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/typed_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/typed_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/typed_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_sr.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_sr.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_sr.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_sr.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_sr.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_sr.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_sr.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_sr.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_sr.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_sr.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_sr.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_sr.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_sr.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_sr.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/computational_optimization.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/computational_optimization.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/computational_optimization.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/computational_optimization.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/computational_optimization.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/computational_optimization.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/computational_optimization.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/computational_optimization.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/computational_optimization.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/computational_optimization.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/computational_optimization.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/computational_optimization.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/computational_optimization.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/computational_optimization.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/diverse_lookback_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/diverse_lookback_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/matrix_diverse_lookback_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/matrix_diverse_lookback_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/multi_output_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/multi_output_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/multi_output_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/multi_output_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/multi_output_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/multi_output_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/multi_output_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/multi_output_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/multi_output_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/multi_output_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/multi_output_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/multi_output_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/multi_output_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/multi_output_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_two_tier.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_two_tier.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_two_tier.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_two_tier.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_two_tier.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_two_tier.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_two_tier.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_two_tier.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_two_tier.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_two_tier.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_two_tier.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_two_tier.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_two_tier.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_two_tier.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_technical_indicators.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_technical_indicators.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/enhanced_reporting_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/enhanced_reporting_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_system_monitoring.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_system_monitoring.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/training.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/training.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/training.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/training.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/training.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/training.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/training.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/training.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/training.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/training.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/training.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/training.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/training.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/training.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/enhanced_matrix_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/enhanced_matrix_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/validation.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/validation.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/validation.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/validation.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/validation.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/validation.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/validation.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/validation.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/validation.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/validation.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/validation.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/validation.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/validation.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/validation.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/enhanced_prediction_service_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/enhanced_prediction_service_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_training_optimization.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_training_optimization.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_training_optimization.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_training_optimization.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_training_optimization.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_training_optimization.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_training_optimization.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_training_optimization.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_training_optimization.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_training_optimization.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_training_optimization.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_training_optimization.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_training_optimization.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_training_optimization.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/__init__.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/__init__.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/__init__.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/__init__.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/__init__.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/__init__.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/__init__.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/__init__.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/__init__.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/__init__.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/__init__.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/__init__.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/__init__.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/__init__.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/feature_engineering_optimization_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/feature_engineering_optimization_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_leverage.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_leverage.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_leverage.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_leverage.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_leverage.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_leverage.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_leverage.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_leverage.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_leverage.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_leverage.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_leverage.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_leverage.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_leverage.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_leverage.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/enhanced_feature_optimization_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/enhanced_feature_optimization_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/regime_specific_optimization_config.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/regime_specific_optimization_config.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/trading.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/trading.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/trading.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/trading.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/trading.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/trading.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/trading.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/trading.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/trading.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/trading.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/trading.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/trading.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/trading.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/trading.py",
+            "message": "already present"
+          }
+        ]
+      },
+      "src/config/config_ensemble.py": {
+        "success": true,
+        "fixers_used": [
+          "Black",
+          "isort",
+          "autopep8",
+          "yapf",
+          "docformatter",
+          "unify",
+          "Ruff",
+          "Pyupgrade",
+          "Flynt",
+          "Autoflake",
+          "Yesqa",
+          "ImportHygiene",
+          "FutureAnnotations"
+        ],
+        "results": [
+          {
+            "success": false,
+            "tool": "black",
+            "file": "src/config/config_ensemble.py",
+            "message": "Black failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named black\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "isort",
+            "file": "src/config/config_ensemble.py",
+            "message": "isort failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named isort\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "autopep8",
+            "file": "src/config/config_ensemble.py",
+            "message": "autopep8 failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named autopep8\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "yapf",
+            "file": "src/config/config_ensemble.py",
+            "message": "YAPF failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named yapf\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "docformatter",
+            "file": "src/config/config_ensemble.py",
+            "message": "docformatter failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named docformatter\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "unify",
+            "file": "src/config/config_ensemble.py",
+            "message": "unify failed with return code 1",
+            "stdout": "",
+            "stderr": "/usr/bin/python3: No module named unify\n",
+            "error": true
+          },
+          {
+            "success": false,
+            "tool": "ruff",
+            "file": "src/config/config_ensemble.py",
+            "message": "Ruff not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "pyupgrade",
+            "file": "src/config/config_ensemble.py",
+            "message": "pyupgrade not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "flynt",
+            "file": "src/config/config_ensemble.py",
+            "message": "flynt not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "autoflake",
+            "file": "src/config/config_ensemble.py",
+            "message": "autoflake not installed",
+            "skipped": true
+          },
+          {
+            "success": false,
+            "tool": "yesqa",
+            "file": "src/config/config_ensemble.py",
+            "message": "yesqa not installed",
+            "skipped": true
+          },
+          {
+            "success": true,
+            "tool": "import_hygiene",
+            "file": "src/config/config_ensemble.py",
+            "message": "no changes"
+          },
+          {
+            "success": true,
+            "tool": "future_annotations",
+            "file": "src/config/config_ensemble.py",
+            "message": "already present"
+          }
+        ]
+      }
+    }
+  }
+}

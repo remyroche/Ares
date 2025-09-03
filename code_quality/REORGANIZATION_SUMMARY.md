@@ -72,18 +72,27 @@ code_quality/
 ├── analyzers/          # Analysis modules
 ├── core/              # Core functionality
 ├── fixers/            # Fix modules
-├── plugins/           # Plugin system
-├── reporters/         # Report generators
-├── reports/           # All output reports (with datetime)
-├── scripts/           # All executable scripts and pipelines
+├── pipelines/         # Orchestration pipelines
 │   ├── pipeline_syntax_imports.py
+│   ├── pipeline_syntax_imports_enhanced.py
 │   ├── pipeline_async_types.py
 │   ├── pipeline_analysis.py
 │   ├── pipeline_unified_standalone.py
 │   ├── pipeline_unified_integrated.py
-│   ├── README_PIPELINES.md
-│   └── [individual tool scripts]
+│   ├── pipeline_unified_enhanced.py
+│   └── README.md
+├── plugins/           # Plugin system
+├── reporters/         # Report generators
+├── reports/           # All output reports (with datetime)
+├── scripts/           # Individual tool scripts
+│   ├── [syntax fixers]
+│   ├── [import fixers]
+│   ├── [async fixers]
+│   ├── [type hint tools]
+│   ├── [analysis tools]
+│   └── README_PIPELINES.md
 ├── utils/             # Utility modules
+│   └── report_aggregator.py
 └── [configuration and documentation files]
 ```
 

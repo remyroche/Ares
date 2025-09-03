@@ -122,12 +122,14 @@ A human-readable report with:
 
 ### Running Full Pipeline with Unified Reporting
 ```bash
-cd /workspace/code_quality/scripts
+cd /workspace/code_quality/pipelines
 python pipeline_unified_enhanced.py --project-root /workspace/src
 ```
 
 ### Running Category Pipeline with Reporting
 ```bash
+cd /workspace/code_quality/pipelines
+
 # Syntax and imports only
 python pipeline_syntax_imports_enhanced.py
 

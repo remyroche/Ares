@@ -5,7 +5,6 @@ Enhanced Trading Launcher
 Provides a comprehensive launcher for paper trading, live trading, and
 backtesting with integrated detailed reporting capabilities.
 """
-
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
@@ -20,7 +19,7 @@ except Exception:  # Fallback for environments without pandas
     pd = _PD()  # type: ignore
 
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
     execution_error,
@@ -41,7 +40,6 @@ class EnhancedTradingLauncher:
     """
     Enhanced trading launcher with comprehensive reporting integration.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize enhanced trading launcher.
@@ -76,7 +74,7 @@ class EnhancedTradingLauncher:
             True,
         )
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid launcher configuration"),
             AttributeError: (False, "Missing required launcher parameters"),
@@ -115,7 +113,11 @@ class EnhancedTradingLauncher:
             )
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """Validate launcher configuration."""
         try:
@@ -130,7 +132,11 @@ class EnhancedTradingLauncher:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="components initialization",
+    )
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def _initialize_components(self) -> None:
         """Initialize trading components."""
@@ -150,13 +156,13 @@ class EnhancedTradingLauncher:
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
+import os.path
                     from src.backtesting.enhanced_backtester import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly
-import os
 
 setup_enhanced_backtester as _setup_backtester,
-                    )
+)
                     self.enhanced_backtester = await _setup_backtester(self.config)
                 except Exception as e:
                     self.logger.error(failed(f"Backtester import/setup failed: {e}"))
@@ -169,7 +175,7 @@ setup_enhanced_backtester as _setup_backtester,
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing components: {e}"))
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid paper trading parameters"),
             AttributeError: (False, "Missing paper trading components"),
@@ -219,7 +225,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error launching paper trading: {e}"))
             return False
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid live trading parameters"),
             AttributeError: (False, "Missing live trading components"),
@@ -267,7 +273,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error launching live trading: {e}"))
             return False
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid backtest parameters"),
             AttributeError: (False, "Missing backtest components"),
@@ -328,7 +334,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error launching backtest: {e}"))
             return {}
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid trade parameters"),
             AttributeError: (False, "Missing trade components"),
@@ -462,7 +468,11 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error generating comprehensive report: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="basic report generation",
+    )
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def _generate_basic_report(
         self,
@@ -522,7 +532,11 @@ setup_enhanced_backtester as _setup_backtester,
             "enhanced_backtester_available": self.enhanced_backtester is not None,
         }
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="launcher cleanup",
+    )
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def stop(self) -> None:
         """Stop enhanced trading launcher."""
@@ -542,7 +556,11 @@ setup_enhanced_backtester as _setup_backtester,
         except Exception as e:
             self.logger.error(error(f"Error stopping launcher: {e}"))
 
-@handles_errors(fallback=None)
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="enhanced trading launcher setup",
+)
 async def setup_enhanced_trading_launcher(
     config: dict[str, Any] | None = None,
 ) -> EnhancedTradingLauncher | None:

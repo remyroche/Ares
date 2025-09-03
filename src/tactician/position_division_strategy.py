@@ -4,14 +4,17 @@
 Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
 """
-
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import asyncio
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import (
+
+    handle_errors,
+)
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     failed,
     warning,
@@ -27,7 +30,6 @@ class PositionDivisionStrategy:
     - Position closure logic
     - Risk management rules
     """
-
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize the position division strategy.
@@ -50,7 +52,11 @@ class PositionDivisionStrategy:
         self.position_history: List[Dict[str, Any]] = []
         self.strategy_performance: Dict[str, Any] = {}
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position division strategy initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the position division strategy.
@@ -108,7 +114,11 @@ class PositionDivisionStrategy:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position division calculation"
+    )
     async def calculate_position_division(
         self,
         total_capital: float,
@@ -273,7 +283,11 @@ class PositionDivisionStrategy:
                 "stop_loss": [self.stop_loss_pct] * self.max_positions
             }
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position management"
+    )
     async def add_position(
         self,
         position_id: str,
@@ -309,7 +323,11 @@ class PositionDivisionStrategy:
             self.logger.error(failed(f"❌ Error adding position: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position closure"
+    )
     async def close_position(
         self,
         position_id: str,

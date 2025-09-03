@@ -1,25 +1,25 @@
 """
 Base pipeline framework for Ares trading bot (minimal scaffold).
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import asyncio
 
 from src.utils.centralized_decorators import (
-import asyncio
 
     performance_monitor,
     PerformanceLevel,
     handle_errors,
+    handle_specific_errors,
     resource_monitor,
     memory_efficient,
     pipeline_checkpoint,
 )
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+
 
 @dataclass
 class PipelineConfig:
@@ -62,6 +62,7 @@ class PipelineConfig:
             errors.append("Timeout must be positive")
         return errors
 
+
 @dataclass
 class PipelineMetrics:
     start_time: Optional[datetime] = None
@@ -77,6 +78,7 @@ class PipelineMetrics:
         if self.start_time and self.end_time:
             self.duration_seconds = (self.end_time - self.start_time).total_seconds()
 
+
 class BasePipeline:
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -89,7 +91,7 @@ class BasePipeline:
     @resource_monitor()
     @memory_efficient()
     @pipeline_checkpoint(checkpoint_name="base_pipeline.initialize")
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid base pipeline configuration"),
             AttributeError: (False, "Missing required pipeline parameters"),
@@ -108,7 +110,7 @@ class BasePipeline:
     @resource_monitor()
     @memory_efficient()
     @pipeline_checkpoint(checkpoint_name="base_pipeline.shutdown")
-    @handles_errors(fallback=False)
+    @handle_errors(exceptions=(Exception,), default_return=False, context="base_pipeline.shutdown")
     async def shutdown(self) -> bool:
         self.logger.info("Shutting down BasePipeline ...")
         self.is_running = False

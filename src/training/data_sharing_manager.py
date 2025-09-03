@@ -8,12 +8,12 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
 import asyncio
+from src.utils.training_pipeline_decorators import (
 
     circuit_breaker_protection,
     debug_training_step,
@@ -26,13 +26,13 @@ import asyncio
     validate_step_prerequisites,
 )
 
+
 class DataSharingManager:
     """Manages data sharing between training steps to eliminate redundant data loading."
 
     This manager provides a centralized way to load and share data between steps,
     with intelligent caching and memory management.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("DataSharingManager")
@@ -224,7 +224,11 @@ class DataSharingManager:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"data_quality_score": 0.8},
     )
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="data sharing manager get unified data",
+    )
     async def get_unified_data(
         self,
         symbol: str,
@@ -432,8 +436,10 @@ class DataSharingManager:
         self.logger.info(f"   Memory saved: {stats['memory_saved_gb']:.2f}GB")
         self.logger.info(f"   Cached entries: {stats['cached_entries']}")
 
+
 # Global instance for easy access
 _data_sharing_manager: DataSharingManager | None = None
+
 
 def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     """Get or create the global data sharing manager instance."""
@@ -441,6 +447,7 @@ def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager(config)
     return _data_sharing_manager
+
 
 def reset_data_sharing_manager() -> None:
     """Reset the global data sharing manager instance."""

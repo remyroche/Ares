@@ -4,7 +4,6 @@
 Async Order Executor with Advanced Analytics and Dynamic Parameter Optimization
 Integrates with Enhanced Order Manager, Performance Reporter, and Optuna for optimization.
 """
-
 import asyncio
 import time
 from dataclasses import dataclass, field
@@ -24,10 +23,10 @@ from src.tactician.enhanced_order_manager import (
     OrderSide,
     OrderType,
 )
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     failed,
 )
@@ -97,7 +96,6 @@ class AsyncOrderExecutor:
     - Integration with Enhanced Order Manager
     - Advanced reporting and analytics
     """
-
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize the async order executor.
@@ -130,7 +128,11 @@ class AsyncOrderExecutor:
         self.total_volume_executed = 0.0
         self.total_slippage = 0.0
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="order executor initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the order executor.
@@ -182,7 +184,11 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="order execution"
+    )
     async def execute_order(self, request: ExecutionRequest) -> Optional[ExecutionResult]:
         """
         Execute an order using the specified strategy.

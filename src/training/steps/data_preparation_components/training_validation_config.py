@@ -1,7 +1,6 @@
 """Training validation configuration and rules."
 Defines error thresholds, validation criteria, and step progression rules.
 """
-
 import os
 from typing import Any
 
@@ -392,7 +391,7 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     import os as _os
 import os.path
 
-blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+    blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 
     # Debug logging
 

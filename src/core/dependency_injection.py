@@ -6,8 +6,8 @@ from typing import Any, TypeVar
 
 from dataclasses import dataclass
 import asyncio
-
 from src.interfaces import (
+
     IAnalyst,
     IStrategist,
     ISupervisor,
@@ -46,7 +46,6 @@ class DependencyContainer:
     """
     Enhanced dependency injection container with configuration management.
     """
-
     def __init__(self, config: dict[str, Any] | None = None):
         self._services: dict[Any, ServiceRegistration] = {}
         self._instances: dict[Any, Any] = {}

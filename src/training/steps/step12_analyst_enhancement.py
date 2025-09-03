@@ -45,7 +45,7 @@ import contextlib
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
@@ -75,12 +75,14 @@ REQUIRED_MODULES = [
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
+
 """
 Compatibility shim for NumPy RNG unpickling across versions.
 We avoid nested functions to keep the shim picklable.
 """
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
+
 
 def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwargs):  # type: ignore[override]
     """Module-level normalized ctor to avoid creating a closure (picklable)."""
@@ -117,6 +119,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwarg
             except Exception:
                 pass
             raise
+
 
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
@@ -155,7 +158,6 @@ class RegimeAwareAnalystEnhancementStep:
     4.  **Regime-Specific Final Retraining:** Trains new models using regime-specific optimal parameters
     5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning, and distillation
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """Initializes the RegimeAwareAnalystEnhancementStep."
 
@@ -266,13 +268,18 @@ class RegimeAwareAnalystEnhancementStep:
             self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
             return "cpu"
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst enhancement step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the analyst enhancement step."""
         self.logger.info("Initializing Analyst Enhancement Step...")
         self.logger.info("Analyst Enhancement Step initialized successfully.")
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="regime-aware analyst enhancement step execution",
     )
@@ -608,7 +615,38 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Try to load from unified data loader first (more efficient)
             try:
-                from src.config.constants import (
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
+import signal
+import warnings
+import sys
+from io import StringIO
+from sklearn.metrics import log_loss
+import platform
+from shap.explainers import TreeExplainer
+from sklearn.inspection import permutation_importance
+from shap.explainers import KernelExplainer
+from sklearn.inspection import permutation_importance
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import mutual_info_classif
+from src.utils.vif_calculator import calculate_vif_robust
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+from src.analyst.meta_label_relevance import compute_shap_importance
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+import optuna
+from catboost import CatBoostClassifier
+from sklearn.feature_selection import mutual_info_classif
+import optuna
+from sklearn.ensemble import RandomForestClassifier
+import optuna
+from sklearn.linear_model import LogisticRegression
+import optuna
+from sklearn.kernel_approximation import RBFSampler
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import LinearSVC
+from src.config.constants import (
+from src.utils.training_pipeline_decorators import (
                     BLANK_TRAINING_LOOKBACK_DAYS,
                 )
 
@@ -1362,15 +1400,13 @@ class RegimeAwareAnalystEnhancementStep:
             colsample_bytree=params.get("colsample_bytree", 0.8),
         )
         if model_name == "svm":
-            from sklearn.svm import SVC
 
         return SVC(**params, random_state=42, probability=True)
         if model_name == "neural_network":
-            from sklearn.neural_network import MLPClassifier
 
         return MLPClassifier(
         **params,
-                random_state=42,
+        random_state=42,
                 early_stopping=True,
                 validation_fraction=0.1,
             )
@@ -1525,8 +1561,6 @@ class RegimeAwareAnalystEnhancementStep:
                 if use_pruning:
                     fit_kwargs["callbacks"] = [pruning_callback]
                 # Suppress LightGBM training output
-                import signal
-                import warnings
 
                 # Log the selected parameters for visibility/troubleshooting
                 with contextlib.suppress(Exception):
@@ -1547,8 +1581,6 @@ class RegimeAwareAnalystEnhancementStep:
                 signal.alarm(300)  # 5 minutes timeout
 
                 # Suppress LightGBM output by redirecting stdout temporarily
-                import sys
-                from io import StringIO
 
                 try:
                     # Redirect stdout to suppress LightGBM output
@@ -1599,7 +1631,6 @@ class RegimeAwareAnalystEnhancementStep:
                         },
                     )
             if model_name == "lightgbm":
-                from sklearn.metrics import log_loss
 
                 # Ensure labels ordering covers all classes present
                 labels_sorted = sorted(pd.unique(pd.concat([y_train, y_val])))
@@ -1636,7 +1667,6 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
             try:
-                import platform
             except Exception:
                 platform = None
             try: is_macos = platform.system() == "Darwin" if platform else False
@@ -2080,6 +2110,7 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
         )
 
+
     async def _select_stable_tier_2_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_2_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select normalized features with stability selection."""
@@ -2103,6 +2134,7 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
             selection_criteria="stability",  # Prefer stable features for normalized tier,
         )
+
 
     async def _select_stable_tier_3_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_3_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
@@ -2128,6 +2160,7 @@ class RegimeAwareAnalystEnhancementStep:
             selection_criteria="significance",  # Prefer significant interactions,
         )
 
+
     async def _select_stable_tier_4_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_4_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select lagged features with stability selection."""
@@ -2152,6 +2185,7 @@ class RegimeAwareAnalystEnhancementStep:
             selection_criteria="temporal",  # Prefer temporally stable features,
         )
 
+
     async def _select_stable_tier_5_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_5_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select causality features with stability selection."""
@@ -2175,6 +2209,7 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
             selection_criteria="market_logic",  # Prefer market-logic consistent features,
         )
+
 
     async def _perform_stability_selection(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, available_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, selection_criteria: str = "importance"
@@ -2201,7 +2236,7 @@ class RegimeAwareAnalystEnhancementStep:
                 # Perform feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._select_features_single_bootstrap(
                 model,
-                        model_name,
+                model_name,
                         X_bootstrap,
                         y_bootstrap,
                         available_features,
@@ -2321,6 +2356,7 @@ class RegimeAwareAnalystEnhancementStep:
             5,
         )
 
+
     async def _try_stable_shap_feature_selection(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, min_features: int, max_features: int, n_bootstrap_samples: int, stability_threshold: float, ) -> tuple[list[str], dict]:
         """Attempts stable SHAP-based feature selection with bootstrapping."""
@@ -2369,7 +2405,7 @@ class RegimeAwareAnalystEnhancementStep:
                 # Calculate SHAP values for bootstrap sample
                 shap_importance = (await self._calculate_shap_importance_single_bootstrap(
                 model,
-                        model_name,
+                model_name,
                         X_bootstrap,
                         y_bootstrap,
                         X_val_sample,
@@ -2485,6 +2521,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Ensure we meet minimum requirements
         return max(min_size, sample_size)
 
+
     async def _calculate_shap_importance_single_bootstrap(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> dict[str, float] | None:
         """Calculate SHAP importance for a single bootstrap sample."""
@@ -2492,7 +2529,6 @@ class RegimeAwareAnalystEnhancementStep:
             if model_name in ["lightgbm", "xgboost", "random_forest"]:
                 # Try TreeExplainer with proper import
                 try:
-                    from shap.explainers import TreeExplainer
 
                     explainer = TreeExplainer(model)
                     shap_values = explainer.shap_values(X_val)
@@ -2515,7 +2551,6 @@ class RegimeAwareAnalystEnhancementStep:
 
                 except (ImportError, AttributeError):
                     # Fallback to permutation importance
-                    from sklearn.inspection import permutation_importance
 
                     feature_importance = permutation_importance(
                         model,
@@ -2529,7 +2564,6 @@ class RegimeAwareAnalystEnhancementStep:
             elif model_name == "svm":
                 # Use KernelExplainer for SVM models
                 try:
-                    from shap.explainers import KernelExplainer
 
                     # Use training data as background
                     explainer = KernelExplainer(
@@ -2546,7 +2580,6 @@ class RegimeAwareAnalystEnhancementStep:
                     return None
 
             else: # For other models = use permutation importance
-                from sklearn.inspection import permutation_importance
 
                 feature_importance = permutation_importance(
                     model,
@@ -2593,7 +2626,7 @@ class RegimeAwareAnalystEnhancementStep:
                 # Perform robust feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._robust_feature_selection_single_bootstrap(
                 model,
-                        model_name,
+                model_name,
                         X_bootstrap,
                         y_bootstrap,
                         X_val_sample,
@@ -2670,7 +2703,6 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Method 2: Correlation-based selection
             try:
-                from sklearn.feature_selection import SelectKBest, f_classif
 
                 selector = SelectKBest(score_func=f_classif, k=max_features)
                 selector.fit(X_train[feature_names], y_train)
@@ -2683,7 +2715,6 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Method 3: Mutual information-based selection
             try:
-                from sklearn.feature_selection import mutual_info_classif
 
                 mi_scores = mutual_info_classif(
                     X_train[feature_names], y_train, random_state=42
@@ -2750,7 +2781,7 @@ class RegimeAwareAnalystEnhancementStep:
             # Tier 1: Core technical and liquidity features
             if any(
             keyword in feature_lower
-                    for keyword in [
+            for keyword in [
                         "rsi",
                         "macd",
                         "bb",
@@ -2774,7 +2805,7 @@ class RegimeAwareAnalystEnhancementStep:
             # Tier 2: Normalized features
             elif any(
             keyword in feature_lower
-                    for keyword in [
+            for keyword in [
                         "_z_score",
                         "_change",
                         "_pct_change",
@@ -2797,7 +2828,7 @@ class RegimeAwareAnalystEnhancementStep:
             # Tier 5: Causality features
             elif any(
             keyword in feature_lower
-                    for keyword in [
+            for keyword in [
                         "_predicts_",
                         "_causality",
                         "_divergence",
@@ -2844,7 +2875,6 @@ class RegimeAwareAnalystEnhancementStep:
             
             # Stage 2: VIF filtering (multicollinearity)
             try:
-                from src.utils.vif_calculator import calculate_vif_robust
                 
                 vif_scores = calculate_vif_robust(X_clean)
                 
@@ -2862,7 +2892,6 @@ class RegimeAwareAnalystEnhancementStep:
                 try:
                     y = data[target_column]
                     
-                    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
                     
                     # Determine task type
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
@@ -2885,7 +2914,6 @@ class RegimeAwareAnalystEnhancementStep:
             # Stage 4: SHAP-based filtering (if target available)
             if target_column and target_column in data.columns and len(X_clean.columns) > 50:
                 try:
-                    from src.analyst.meta_label_relevance import compute_shap_importance
                     
                     # Calculate SHAP importance
                     shap_scores = compute_shap_importance(X_clean, y, task=task_type)
@@ -2905,7 +2933,6 @@ class RegimeAwareAnalystEnhancementStep:
             # Stage 5: RandomForest importance filtering (if target available)
             if target_column and target_column in data.columns and len(X_clean.columns) > 30:
                 try:
-                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
                     
                     # Train RF for feature importance
                     if task_type == "classification":
@@ -3124,8 +3151,6 @@ class RegimeAwareAnalystEnhancementStep:
         self, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
         """Lightweight CatBoost HPO using Optuna; returns (best_params, best_score)."""
         try:
-            import optuna
-            from catboost import CatBoostClassifier
 
             def objective(trial: optuna.Trial) -> float:
                 params = {
@@ -3234,7 +3259,6 @@ class RegimeAwareAnalystEnhancementStep:
             # Aggressive MI pruning if still too large
             try:
                 if len(selected_features) > total_max_features:
-                    from sklearn.feature_selection import mutual_info_classif
 
                     X = (data[selected_features]
                         .select_dtypes(include=[np.number])
@@ -3344,8 +3368,6 @@ class RegimeAwareAnalystEnhancementStep:
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
         """Optuna HPO for RandomForest; returns (best_params, best_score)."""
         try:
-            import optuna
-            from sklearn.ensemble import RandomForestClassifier
 
             def objective(trial: optuna.Trial) -> float:
                 params = {
@@ -3381,8 +3403,6 @@ class RegimeAwareAnalystEnhancementStep:
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
         """Optuna HPO for Logistic Regression; returns (best_params, best_score)."""
         try:
-            import optuna
-            from sklearn.linear_model import LogisticRegression
 
             def objective(trial: optuna.Trial) -> float:
                 penalty = trial.suggest_categorical(
@@ -3424,11 +3444,6 @@ class RegimeAwareAnalystEnhancementStep:
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
         """Optuna HPO for SVM proxy (RBFSampler + LinearSVC)."""
         try:
-            import optuna
-            from sklearn.kernel_approximation import RBFSampler
-            from sklearn.pipeline import make_pipeline
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.svm import LinearSVC
 
             def objective(trial: optuna.Trial) -> float:
                 gamma = trial.suggest_float("gamma", 1e-4, 1.0, log=True)
@@ -3563,8 +3578,8 @@ class RegimeAwareAnalystEnhancementStep:
         # Placeholder - implement CNN evaluation
         return 0.0
 
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -3581,6 +3596,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step7_analyst_enhancement")
@@ -3671,7 +3687,7 @@ import copy
 import os.path
 
 with_enhanced_mlflow_logging,
-        log_step_report,
+log_step_report,
         create_detailed_step_report,
         log_step_metrics,
         log_step_dataframe_with_standardized_name,

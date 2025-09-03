@@ -5,7 +5,6 @@
 This step handles saving of all training results using standardized
 data quality management patterns.
 """
-
 import asyncio
 import json
 import os
@@ -228,13 +227,17 @@ class SavingStep:
         try:
             # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
-            from src.utils.mlflow_utils import (
+import mlflow  # type: ignore
+import tempfile
+from src.utils.training_pipeline_decorators import (
+import pandas as pd
+from src.utils.mlflow_utils import (
+from src.utils.enhanced_mlflow_integration import (
                 log_enhanced_training_metadata,
                 log_metrics_with_metadata,
                 log_artifacts_with_metadata,
                 log_params_with_metadata,
             )
-            from src.utils.enhanced_mlflow_integration import (
                 log_step_report,
                 log_step_artifact_with_standardized_name
             )
@@ -243,7 +246,6 @@ class SavingStep:
 
             # Attempt to import mlflow; if unavailable, raise a hard error
             try:
-                import mlflow  # type: ignore
             except Exception:
                 self.logger.exception(
                     "🚨 MLflow is required but not installed. Install it with: 'poetry add mlflow'",
@@ -310,7 +312,6 @@ class SavingStep:
                         )
 
                 # Log training summary as artifact with metadata
-                import tempfile
 
                 with tempfile.NamedTemporaryFile(
                     mode="w",
@@ -425,8 +426,6 @@ class SavingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-import pandas as pd
 
     artifact_versioning,
     artifact_write_lock,

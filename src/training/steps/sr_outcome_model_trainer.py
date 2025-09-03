@@ -5,7 +5,6 @@
 Trains ML models to predict S/R outcomes (breakout/rebounce/consolidation)
 using LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.
 """
-
 import json
 import os
 import pickle
@@ -25,17 +24,18 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.centralized_decorators import (
 import asyncio
+from src.utils.centralized_decorators import (
 
     validate_feature_engineering_with_lookahead_bias_detection,
 )
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import copy
-import os
+import os.path
 
 warnings.filterwarnings("ignore")
+
 
 class SROutcomeModelTrainer:
     """Trainer for S/R outcome prediction models using LightGBM + XGBoost ensemble."""
@@ -92,7 +92,11 @@ class SROutcomeModelTrainer:
         self.ensemble_model = None
         self.feature_names = []
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="S/R outcome model initialization",
+    )
     async def initialize(self) -> bool:
         """Initialize the S/R outcome model trainer."""
         try:
@@ -113,7 +117,11 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="S/R outcome model training",
+    )
     async def train_model(self, training_data: dict[str, pd.DataFrame]) -> bool:
         """Train the S/R outcome prediction model ensemble."""
         try:

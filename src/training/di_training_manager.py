@@ -5,15 +5,14 @@
 This module provides a training manager that uses proper dependency injection
 patterns for managing the training pipeline and its components.
 """
-
 from typing import Any
 
 from src.core.dependency_injection import DependencyContainer
 from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
+from src.utils.error_handler import handle_errors
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     initialization_error,
@@ -22,13 +21,13 @@ import asyncio
     warning,
 )
 
+
 class DITrainingManager(InjectableBase):
     """Dependency injection-aware training manager."
 
     This training manager uses proper dependency injection patterns
     for creating and managing training pipeline components.
     """
-
     def __init__(
         self,
         config: dict[str, Any] | None = None,
@@ -108,11 +107,11 @@ class DITrainingManager(InjectableBase):
                 from src.training.core.pipeline_base import TrainingPipeline
         except Exception as e:
             pass  # TODO: Handle exception properly
-import os
+import os.path
 
 self.training_pipeline = TrainingPipeline(self.training_config)
 
-            # Initialize training steps
+# Initialize training steps
             await self._initialize_training_steps()
 
             self.logger.info("Training components initialized")
@@ -194,7 +193,11 @@ self.training_pipeline = TrainingPipeline(self.training_config)
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="training execution",
+    )
     async def run_training_pipeline(
         self,
         symbol: str,

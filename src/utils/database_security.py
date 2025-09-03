@@ -9,7 +9,6 @@ This module provides comprehensive database security including:
 - Database access auditing
 - Connection pooling with security limits
 """
-
 import hashlib
 import json
 import logging
@@ -21,9 +20,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from src.core.decorators import handles_errors
+from .error_handler import handle_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class DatabaseType:
     """Database type enumeration."""
@@ -33,6 +33,7 @@ class DatabaseType:
     SQLITE = "sqlite"
     MONGODB = "mongodb"
     REDIS = "redis"
+
 
 class DatabaseSecurityManager:
     """Manages database security and secure connections."""
@@ -346,7 +347,7 @@ class DatabaseSecurityManager:
 import copy
 
 connection_params = {
-                "host": params["host"],
+"host": params["host"],
                 "port": params["port"],
                 "db": params.get("database", 0),
                 "password": params.get("password"),
@@ -368,7 +369,7 @@ connection_params = {
         except ImportError:
             raise Exception("redis not installed for Redis connections")
 
-    @handles_errors(fallback=None)
+    @handle_errors(exceptions=(Exception,), default_return=None, context="secure query execution")
     def execute_secure_query(
         self, connection: Any, query: str, parameters: Optional[List[Any]] = None
     ) -> Optional[List[Dict[str, Any]]]:
@@ -653,6 +654,7 @@ connection_params = {
         except Exception as e:
             self.logger.error(f"Failed to generate database security report: {e}")
             return {"error": str(e)}
+
 
 # Global database security manager instance
 database_security_manager = DatabaseSecurityManager()

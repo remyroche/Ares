@@ -5,7 +5,6 @@
 This script provides guidance and templates for updating the training steps
 to use the new unified Parquet partitioned data format.
 """
-
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -57,7 +56,7 @@ def get_unified_data_loading_code(
         Code template string
 
     """
-    return f"""
+    return f""""
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
         data_loader = get_unified_data_loader(self.config)
@@ -89,8 +88,6 @@ def get_unified_data_loading_code(
             self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
     """
-
-
 def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     """Get step-specific guidance for updating."""
     from src.config.constants import (
@@ -187,7 +184,7 @@ def generate_step_update_template(step_name: str) -> str:
     """Generate a template for updating a specific step."""
     guidance = get_step_specific_guidance(step_name)
 
-    return f"""
+    return f""""
 # Template for updating {step_name}.py
 
 ## 1. Add import at the top of the file:
@@ -214,9 +211,6 @@ def generate_step_update_template(step_name: str) -> str:
 #         regime_data = json.load(f)
 #     # Process regime data as needed
 """
-
-
-
 def main() -> None:
     """Main function to generate update guidance."""
     high_complexity_areas = {

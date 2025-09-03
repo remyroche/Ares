@@ -4,7 +4,6 @@ VIF Calculator
 This module provides robust VIF (Variance Inflation Factor) calculation functions
 with comprehensive error handling and validation.
 """
-
 import logging
 from typing import Dict, List, Optional, Tuple, Union
 

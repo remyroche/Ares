@@ -5,15 +5,14 @@ Exchange Volume Adapter for Model Transfer Learning
 This module handles the adaptation of models trained on high-volume exchanges
 (Binance) to work effectively on lower-volume exchanges (MEXC = Gate.io).
 """
-
 from datetime import datetime
 from typing import Any
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, execution_error, initialization_error, warning
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
     error,
     execution_error,
     initialization_error,
@@ -31,7 +30,6 @@ class ExchangeVolumeAdapter:
     - Market impact considerations
     - Data quality adjustments
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ExchangeVolumeAdapter")
@@ -80,7 +78,7 @@ class ExchangeVolumeAdapter:
         self.current_volume_metrics: dict[str, dict[str, Any]] = {}
         self.adaptation_history: list[dict[str, Any]] = []
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid exchange volume adapter configuration"),
             AttributeError: (False, "Missing required adapter parameters"),
@@ -116,7 +114,11 @@ class ExchangeVolumeAdapter:
             )
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="adapter configuration loading",
+    )
     async def _load_adapter_configuration(self) -> None:
         """Load adapter configuration."""
         try:
@@ -132,7 +134,11 @@ class ExchangeVolumeAdapter:
         except Exception as e:
             self.logger.error(f"Error loading adapter configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """Validate adapter configuration."""
         try:
@@ -151,7 +157,11 @@ class ExchangeVolumeAdapter:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="volume metrics initialization",
+    )
     async def _initialize_volume_metrics(self) -> None:
         """Initialize volume metrics for all exchanges."""
         try:
@@ -360,7 +370,11 @@ class ExchangeVolumeAdapter:
             self.print(execution_error(f"Error checking trade execution: {e}"))
             return (False, f"Error: {e}")
 
-    @handles_errors(fallback=1.0)
+    @handle_errors(
+        exceptions=(KeyError, ValueError),
+        default_return=1.0,
+        context="adaptation factor retrieval",
+    )
     async def get_adaptation_factor(self, exchange: str) -> float:
         """Get adaptation factor for an exchange based on volume characteristics."""
         try:
@@ -463,7 +477,12 @@ class ExchangeVolumeAdapter:
         except Exception:
             self.print(error("Error during cleanup: {e}"))
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="exchange volume adapter setup",
+)
 async def setup_exchange_volume_adapter(
     config: dict[str, Any] | None = None,
 ) -> ExchangeVolumeAdapter | None:

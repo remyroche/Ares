@@ -5,7 +5,6 @@ This module performs comprehensive S/R detection optimization before HMM cluster
 to ensure that all subsequent steps use optimized parameters for S/R features.
 Includes detailed reporting and integration with all relevant SR files.
 """
-
 import asyncio
 import sys
 from pathlib import Path
@@ -50,6 +49,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
 
 logger = system_logger.getChild("Step2_5SROptimization")
+
 
 class SROptimizationStep:
     """Step 2.5: S/R Detection Optimization with comprehensive parameter optimization and detailed reporting."""
@@ -96,7 +96,11 @@ class SROptimizationStep:
             self.logger.error(f"❌ Failed to initialize S/R optimization components: {e}")
             raise
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="sr_optimization_initialization"
+    )
     @secure_step_execution
     async def initialize(self) -> bool:
         """Initialize the S/R optimization step."""
@@ -129,7 +133,11 @@ class SROptimizationStep:
     @secure_step_execution
     @validate_pipeline_step
     @with_enhanced_mlflow_logging("step2_5_sr_optimization")
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="sr_optimization_execution"
+    )
     @with_enhanced_mlflow_logging("step2_5")
     async def execute(self) -> bool:
         """Execute the S/R optimization step with comprehensive reporting."""
@@ -370,7 +378,11 @@ class SROptimizationStep:
             self.logger.error(f"❌ Failed to log step 2.5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails'
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="sr_optimization_performance"
+    )
     @resource_monitor
     async def _perform_sr_optimization(self) -> Optional[Any]:
         """Perform comprehensive S/R detection optimization."""
@@ -413,7 +425,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to perform S/R optimization: {e}")
             return None
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="sr_analysis_reports"
+    )
     @secure_data_processing
     async def _generate_sr_analysis_reports(self, optimization_result: Any) -> dict[str, Any]:
         """Generate comprehensive SR analysis reports using SR Breakout Predictor."""
@@ -465,7 +481,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate SR analysis reports: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="sr_integration_analysis"
+    )
     @secure_data_processing
     async def _perform_sr_integration_analysis(self) -> dict[str, Any]:
         """Perform SR data integration analysis."""
@@ -496,7 +516,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to perform SR integration analysis: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="detailed_optimization_reports"
+    )
     @secure_data_processing
     async def _generate_detailed_optimization_reports(
         self, 
@@ -539,7 +563,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate detailed optimization reports: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="get_sample_market_data"
+    )
     @comprehensive_data_validation
     async def _get_sample_market_data(self) -> Optional[pd.DataFrame]:
         """Get sample market data for SR analysis."""
@@ -570,7 +598,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to get sample market data: {e}")
             return None
     
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="get_market_data_for_sr_calculation"
+    )
     @comprehensive_data_validation
     async def _get_market_data_for_sr_calculation(self) -> Optional[pd.DataFrame]:
         """Get market data specifically for SR level calculation."""
@@ -607,7 +639,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to get market data for SR calculation: {e}")
             return None
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_sr_strength"
+    )
     @secure_data_processing
     async def _analyze_sr_strength(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR strength characteristics."""
@@ -652,7 +688,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to analyze SR strength: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_sr_proximity"
+    )
     @secure_data_processing
     async def _analyze_sr_proximity(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR proximity characteristics."""
@@ -697,7 +737,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to analyze SR proximity: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_sr_breakouts"
+    )
     @secure_data_processing
     async def _analyze_sr_breakouts(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR breakout characteristics."""
@@ -729,7 +773,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to analyze SR breakouts: {e}")
             return {}
 
-    @handles_errors(fallback=0.0)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=0.0,
+        context="calculate_proximity_percentile"
+    )
     def _calculate_proximity_percentile(self, market_data: pd.DataFrame, current_price: float, level_type: str) -> float:
         """Calculate proximity percentile based on historical data."""
         try:
@@ -757,7 +805,11 @@ class SROptimizationStep:
             self.logger.warning(f"Failed to calculate proximity percentile: {e}")
             return 0.0
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_confidence_trend"
+    )
     def _analyze_confidence_trend(self, market_data: pd.DataFrame) -> dict[str, Any]:
         """Analyze confidence trend over time."""
         try:
@@ -780,7 +832,11 @@ class SROptimizationStep:
             self.logger.warning(f"Failed to analyze confidence trend: {e}")
             return {"momentum_trend": "unknown", "recent_momentum": 0.0, "trend_strength": 0.0}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="performance_comparison_report"
+    )
     @secure_data_processing
     async def _generate_performance_comparison_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate performance comparison report."""
@@ -810,7 +866,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate performance comparison report: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="parameter_optimization_report"
+    )
     @secure_data_processing
     async def _generate_parameter_optimization_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate parameter optimization report."""
@@ -840,7 +900,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate parameter optimization report: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="method_effectiveness_report"
+    )
     @secure_data_processing
     async def _generate_method_effectiveness_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate method effectiveness report."""
@@ -870,7 +934,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate method effectiveness report: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_price_vwap_comparison"
+    )
     @secure_data_processing
     async def _analyze_price_vwap_comparison(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze price vs VWAP approach performance for support/resistance detection."""
@@ -1019,7 +1087,11 @@ class SROptimizationStep:
             self.logger.warning(f"Failed to generate comparison insights: {e}")
             return ["Unable to generate insights"]
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="integration_analysis_report"
+    )
     @secure_data_processing
     async def _generate_integration_analysis_report(
         self, 
@@ -1059,7 +1131,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate integration analysis report: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="optimization_validation_report"
+    )
     @secure_data_processing
     async def _generate_optimization_validation_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate optimization validation report."""
@@ -1090,7 +1166,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate optimization validation report: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="sr_optimization_combination"
+    )
     @secure_data_processing
     async def _combine_optimization_results(self, results: List[Any]) -> Optional[Any]:
         """Combine multiple optimization results into a single optimized configuration."""
@@ -1171,7 +1251,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to combine optimization results: {e}")
             return None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="sr_optimization_save"
+    )
     @secure_data_processing
     async def _save_optimization_results(self, optimization_result: Any, detailed_reports: dict[str, Any]) -> bool:
         """Save optimization results and detailed reports for subsequent steps."""
@@ -1223,7 +1307,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to save optimization results: {e}")
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="sr_config_update"
+    )
     @secure_data_processing
     async def _update_config_with_optimized_params(self, optimization_result: Any) -> bool:
         """Update configuration with optimized parameters."""
@@ -1263,7 +1351,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to update configuration: {e}")
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="final_comprehensive_report"
+    )
     @secure_data_processing
     async def _generate_final_comprehensive_report(
         self,
@@ -1341,7 +1433,11 @@ class SROptimizationStep:
             self.logger.error(f"Failed to generate final comprehensive report: {e}")
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="sr_optimization_cleanup"
+    )
     @secure_step_execution
     async def cleanup(self) -> bool:
         """Clean up resources after optimization."""
@@ -1371,7 +1467,12 @@ class SROptimizationStep:
             self.logger.error(f"Failed to cleanup S/R optimization: {e}")
             return False
 
-@handles_errors(fallback=False)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=False,
+    context="step2_5_sr_optimization"
+)
 @secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the S/R optimization step."""
@@ -1403,14 +1504,14 @@ async def run_step(config: dict[str, Any]) -> bool:
         logger.error(f"Failed to run S/R optimization step: {e}")
         return False
 
+
 if __name__ == "__main__":
     # Test the step
     import asyncio
 import copy
-from src.core.decorators import handles_errors
     
     # Load test configuration
-test_config = {
+    test_config = {
         "SYMBOL": "ETHUSDT",
         "EXCHANGE": "BINANCE",
         "TIMEFRAME": "1m",

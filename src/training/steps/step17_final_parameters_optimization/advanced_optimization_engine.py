@@ -10,7 +10,6 @@ This module implements the core advanced optimization strategies:
 
 These are production-ready implementations with robust error handling and optimization.
 """
-
 import asyncio
 import logging
 import numpy as np
@@ -45,7 +44,7 @@ except Exception as e:
     pass  # TODO: Handle exception properly
 import copy
 
-MLFLOW_AVAILABLE = True
+    MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
 

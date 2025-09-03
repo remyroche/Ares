@@ -4,7 +4,6 @@
 Performance Monitor for Dual Model System
 Comprehensive monitoring of model performance, system metrics, trading performance, and optimization opportunities.
 """
-
 from __future__ import annotations
 
 from collections import deque
@@ -12,9 +11,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Deque, Dict, List, Optional
 
-from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
+from src.utils.error_handler import handle_errors
 import asyncio
+from src.utils.centralized_decorators import (
 
     performance_monitor,
     PerformanceLevel,
@@ -22,6 +21,7 @@ import asyncio
     memory_efficient,
 )
 from src.utils.logger import system_logger
+
 
 @dataclass
 class PerformanceMetrics:
@@ -45,6 +45,7 @@ class PerformanceMetrics:
     confidence_analyst: float = 0.0
     confidence_tactician: float = 0.0
     confidence_final: float = 0.0
+
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
@@ -71,7 +72,7 @@ class PerformanceMonitor:
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @resource_monitor()
     @memory_efficient()
-    @handles_errors(fallback=False)
+    @handle_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
     async def initialize(self) -> bool:
         self.logger.info("📈 Initializing Performance Monitor ...")
         self.metrics_history.clear()

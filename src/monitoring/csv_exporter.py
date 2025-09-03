@@ -4,7 +4,6 @@ Centralized CSV Export System for Monitoring Data
 
 Provides CSV export capabilities for monitoring data.
 """
-
 from __future__ import annotations
 
 import csv
@@ -13,15 +12,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
+from src.utils.error_handler import handle_errors
 import asyncio
+from src.utils.centralized_decorators import (
 
     performance_monitor,
     PerformanceLevel,
     memory_efficient,
 )
 from src.utils.logger import system_logger
+
 
 class CSVExporter:
     """Centralized CSV export system for monitoring data."""
@@ -52,7 +52,7 @@ class CSVExporter:
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @memory_efficient()
-    @handles_errors(fallback=False)
+    @handle_errors(exceptions=(Exception,), default_return=False, context="csv_exporter.initialize")
     async def initialize(self) -> bool:
         """Initialize CSV exporter."""
         self.logger.info("📊 Initializing CSV Exporter...")
@@ -75,7 +75,7 @@ class CSVExporter:
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @memory_efficient()
-    @handles_errors(fallback=None)
+    @handle_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
     async def export_performance_metrics(
         self,
         data: List[Dict[str, Any]],

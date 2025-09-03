@@ -4,7 +4,6 @@
 This module validates the final regime clustering step outputs with comprehensive
 quality checks for regime clustering artifacts and analysis reports.
 """
-
 import json
 import os
 from pathlib import Path
@@ -444,7 +443,7 @@ if __name__ == "__main__":
     import asyncio
 import datetime as datetime
     
-test_input = {
+    test_input = {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",

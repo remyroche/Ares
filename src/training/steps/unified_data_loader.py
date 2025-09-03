@@ -3,7 +3,6 @@
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
 """
-
 import os
 import sys
 from pathlib import Path
@@ -23,8 +22,11 @@ from src.utils.common_operations import (
 )
 
 try:
-    from src.core.decorators import handles_errors
+    from src.utils.error_handler import handle_errors
     from src.utils.logger import system_logger
+import logging
+from src.training.steps.step1_5_data_converter import ParquetDatasetManager
+import os.path
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
         with_tracing_span,
@@ -70,8 +72,8 @@ except ImportError:
             return func
         return decorator
 
-    import logging
     system_logger = logging.getLogger(__name__)
+
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
@@ -155,14 +157,12 @@ class UnifiedDataLoader:
 
             # Load data using ParquetDatasetManager if available
             try:
-                from src.training.steps.step1_5_data_converter import ParquetDatasetManager
             except Exception as e:
                 pass  # TODO: Handle exception properly
-import os.path
 
 pdm = ParquetDatasetManager(logger=self.logger)
 
-                # Build filters for date range if specified
+# Build filters for date range if specified
                 filters = None
                 if start_date or end_date:
                     filters = []
@@ -380,7 +380,11 @@ pdm = ParquetDatasetManager(logger=self.logger)
         """
         return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="unified_data_loader.get_data_info",
+    )
     async def get_data_info(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
     ) -> Optional[dict[str, Any]]:
@@ -445,6 +449,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
             self.logger.exception(f"❌ Failed to get data info: {e}")
             return None
 
+
 # Global instance for easy access
 _unified_data_loader = None
 
@@ -462,8 +467,13 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
         _unified_data_loader = UnifiedDataLoader(config)
     return _unified_data_loader
 
+
 # Convenience functions for backward compatibility
-@handles_errors(fallback=None)
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="load_unified_data",
+)
 async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
 ) -> Optional[pd.DataFrame]:
     """Load unified data with global loader instance."
@@ -491,7 +501,12 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
         columns=columns
     )
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="get_unified_data_info",
+)
 async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
 ) -> Optional[dict[str, Any]]:
     """Get information about unified data with global loader instance."

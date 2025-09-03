@@ -18,7 +18,6 @@ class OrderBookAnalyzer:
     - Input snapshots as DataFrame with columns: ['bid_price','bid_size','ask_price','ask_size'] or aggregated ladders
     - For correlation, S/R zones provided as DataFrame or dict with centers and scores
     """
-
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config or {}

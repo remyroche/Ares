@@ -5,7 +5,6 @@ This module manages the loading, serving, and hot-swapping of trading models, pa
 and their versions. This allows for updating the strategy without restarting the bot,
 with full version tracking. Now uses async operations for better performance.
 """
-
 import json
 import os
 import pickle
@@ -18,23 +17,21 @@ import joblib
 import numpy as np
 import asyncio
 
-from src.core.decorators import handles_errors
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_copy
 )
 from src.utils.error_handler import (
-    handle_file_operations,
-    handle_specific_errors,
-)
-from src.utils.warning_symbols import (
+
     error,
     failed,
+    handle_errors,
+    handle_file_operations,
+    handle_specific_errors,
     initialization_error,
     invalid,
     missing,
 )
-from src.utils.compat import handle_errors, handle_specific_errors
 from src.utils.error_handler import warning as eh_warning
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -44,6 +41,7 @@ from src.utils.warning_symbols import warning as warn_symbol
 # --- Compatibility shim for NumPy RNG unpickling across versions ---
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
+
 
 # type: ignore[override]
 def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:
@@ -78,6 +76,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
             return bitgen_cls()
         raise
 
+
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
     global _NUMPY_RNG_UNPICKLE_PATCHED, _NP_ORIGINAL_BITGEN_CTOR
@@ -90,7 +89,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
 import os.path
 
 original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
-        if original_ctor is None:
+if original_ctor is None:
             # Fallback implementation for original_ctor
             _NUMPY_RNG_UNPICKLE_PATCHED = True
             return
@@ -114,11 +113,11 @@ original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
                     f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
                 )
 
+
 class ModelManager:
     """
     Enhanced model manager with comprehensive error handling and type safety.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize model manager with enhanced type safety.
@@ -144,7 +143,7 @@ class ModelManager:
         self.auto_backup: bool = bool(self.model_config.get("auto_backup", True))
         self.max_models: int = int(self.model_config.get("max_models", 10))
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid model manager configuration"),
             AttributeError: (False, "Missing required model parameters"),
@@ -179,7 +178,11 @@ class ModelManager:
         self.logger.info("✅ Model Manager initialization completed successfully")
         return True
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="model configuration loading",
+    )
     async def _load_model_configuration(self) -> None:
         """Load model configuration."""
         # Set default model parameters
@@ -201,7 +204,11 @@ class ModelManager:
 
         self.logger.info("Model configuration loaded successfully")
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """
         Validate model configuration.
@@ -227,7 +234,7 @@ class ModelManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handles_errors(
+    @handle_file_operations(
         default_return=None,
         context="directory initialization",
     )
@@ -248,7 +255,7 @@ class ModelManager:
 
         self.logger.info("Directories initialized successfully")
 
-    @handles_errors(
+    @handle_file_operations(
         default_return=None,
         context="existing models loading",
     )
@@ -294,7 +301,7 @@ class ModelManager:
 
         self.logger.info(f"Loaded {len(self.models)} existing models")
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid model parameters"),
             AttributeError: (False, "Missing model components"),
@@ -363,7 +370,11 @@ class ModelManager:
         self.logger.info(f"Model {model_name} registered successfully")
         return True
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="model loading",
+    )
     async def load_model(self, model_name: str) -> Any | None:
         """
         Load a model.
@@ -398,7 +409,11 @@ class ModelManager:
         self.logger.info(f"Model {model_name} loaded successfully")
         return model
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="model saving",
+    )
     async def save_model(
         self,
         model: Any,
@@ -452,7 +467,11 @@ class ModelManager:
         self.logger.info(f"Model {model_name} saved successfully")
         return True
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="active model setting",
+    )
     async def set_active_model(self, model_name: str) -> bool:
         """
         Set the active model.
@@ -477,7 +496,11 @@ class ModelManager:
         self.logger.info(f"Active model set to: {model_name}")
         return True
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="active model getting",
+    )
     async def get_active_model(self) -> str | None:
         """
         Get the active model name.
@@ -487,7 +510,7 @@ class ModelManager:
         """
         return self.active_model
 
-    @handles_errors(
+    @handle_file_operations(
         default_return=None,
         context="metadata saving",
     )
@@ -500,7 +523,7 @@ class ModelManager:
 
         self.logger.info(f"Model metadata saved to: {metadata_path}")
 
-    @handles_errors(
+    @handle_file_operations(
         default_return=None,
         context="model backup creation",
     )
@@ -551,7 +574,11 @@ class ModelManager:
             "last_updated": self.model_metadata.get("last_updated"),
         }
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="model manager cleanup",
+    )
     async def stop(self) -> None:
         """Stop the model manager."""
         self.logger.info("🛑 Stopping Model Manager...")
@@ -561,10 +588,16 @@ class ModelManager:
 
         self.logger.info("✅ Model Manager stopped successfully")
 
+
 # Global model manager instance
 model_manager: ModelManager | None = None
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="model manager setup",
+)
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:

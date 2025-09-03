@@ -5,7 +5,6 @@ This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
 """
-
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
@@ -14,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 # Import essential decorators
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 # Import Numba for performance optimization
@@ -92,6 +91,7 @@ else:
         rolling_min = series.rolling(window=window, min_periods=1).min().values
         return rolling_mean, rolling_std, rolling_max, rolling_min
 
+
 class ProfitBasedFeatureEngineering:
     """Comprehensive profit-based feature engineering system."
     
@@ -99,7 +99,6 @@ class ProfitBasedFeatureEngineering:
     percentage data from triple barrier labeling. It includes multiple feature
     categories with performance optimizations and comprehensive validation.
     """
-
     def __init__(
         self,
         profit_column: str = "potential_profit_pct",
@@ -155,7 +154,11 @@ class ProfitBasedFeatureEngineering:
         else:
             self.logger.info("🐍 Using Python vectorized operations")
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError, MemoryError),
+        default_return=pd.DataFrame(),
+        context="profit_feature_engineering.apply_all_features"
+    )
     def apply_all_features(
         self,
         data: pd.DataFrame,
@@ -246,7 +249,11 @@ class ProfitBasedFeatureEngineering:
         
         return result_data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="basic_profit_features"
+    )
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic profit features."
         
@@ -265,7 +272,11 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="categorical_features"
+    )
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply categorical profit features."
         
@@ -298,7 +309,11 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="risk_reward_features"
+    )
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk-reward features."
         
@@ -337,7 +352,11 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="momentum_features"
+    )
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply momentum features."
         
@@ -372,7 +391,11 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="volatility_features"
+    )
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volatility features."
         
@@ -412,7 +435,11 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="volume_features"
+    )
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volume-based profit features."
         
@@ -449,7 +476,11 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=pd.DataFrame(),
+        context="rolling_features"
+    )
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply rolling profit features."
         
@@ -630,7 +661,8 @@ class ProfitBasedFeatureEngineering:
         
         return selected
 
-@handles_errors(fallback={})
+
+@handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
     """Benchmark profit-based feature engineering performance."
     
@@ -662,6 +694,7 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]
         "python_features": python_features
     }
 
+
 if __name__ == "__main__":
     # Example usage
     import numpy as np
@@ -669,7 +702,7 @@ if __name__ == "__main__":
 import copy
     
     # Create sample data
-dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame({
         'open': np.random.uniform(100, 110, 1000),
         'high': np.random.uniform(105, 115, 1000),

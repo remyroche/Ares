@@ -6,15 +6,19 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
-
 # src/strategist/strategist.py
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import asyncio
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import (
+
+    handle_errors,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -30,6 +34,7 @@ if TYPE_CHECKING:
 import copy
 import numpy as np
 
+
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods
     """
@@ -40,7 +45,6 @@ class Strategist:
     
     Note: Position sizing is handled by the Tactician component
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize strategist with enhanced type safety.
@@ -93,7 +97,7 @@ class Strategist:
         self.analyst: Analyst | None = None
         self.tactician: Tactician | None = None
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid strategist configuration"),
             AttributeError: (False, "Missing required strategist parameters"),
@@ -127,7 +131,11 @@ class Strategist:
             self.logger.error(failed(f"❌ Strategist initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategy components initialization",
+    )
     async def _initialize_strategy_components(self) -> None:
         """Initialize strategy components."""
         try:
@@ -144,7 +152,11 @@ class Strategist:
             self.logger.error(f"Error initializing strategy components: {e}")
             raise
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="configuration validation",
+    )
     # TODO: Refactor to reduce complexity (current: 6)
 
     def _validate_configuration(self) -> bool:
@@ -169,7 +181,7 @@ class Strategist:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid market data for strategy generation"),
             AttributeError: (None, "Missing required market data fields"),
@@ -229,7 +241,11 @@ class Strategist:
             self.logger.error(f"Error generating strategy: {e}")
             return None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="market data validation",
+    )
     # TODO: Refactor to reduce complexity (current: 6)
 
     def _validate_market_data(self, market_data: pd.DataFrame) -> bool:
@@ -256,7 +272,11 @@ class Strategist:
             self.logger.error(f"Error validating market data: {e}")
             return False
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="market indicators extraction",
+    )
     def _extract_market_indicators(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
         """Extract key market indicators from market data."""
         try:
@@ -293,7 +313,11 @@ class Strategist:
             self.logger.error(f"Error extracting market indicators: {e}")
             return {}
 
-    @handles_errors(fallback=0.0)
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="RSI calculation",
+    )
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
         """Calculate Relative Strength Index."""
         try:
@@ -308,7 +332,11 @@ class Strategist:
             self.logger.error(f"Error calculating RSI: {e}")
             return 50.0
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="base strategy generation",
+    )
     async def _generate_base_strategy(self, indicators: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Generate base trading strategy from market indicators."""
         try:
@@ -345,7 +373,11 @@ class Strategist:
             self.logger.error(f"Error generating base strategy: {e}")
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="analysis results integration",
+    )
     # TODO: Refactor to reduce complexity (current: 7)
 
     async def _integrate_analysis_results(self, strategy: dict[str, Any], analysis_results: dict[str, Any]) -> dict[str, Any]:
@@ -390,7 +422,11 @@ class Strategist:
             self.logger.error(f"Error integrating analysis results: {e}")
             return strategy
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="risk management application",
+    )
     async def _apply_risk_management(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Apply risk management to strategy."""
         try:
@@ -426,7 +462,11 @@ class Strategist:
     # Position sizing is handled by the Tactician component
     # This method has been removed to avoid overlap with Tactician responsibilities
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=None,
+        context="strategy results storage",
+    )
     async def _store_strategy_results(self, strategy: dict[str, Any]) -> None:
         """Store strategy results in history."""
         try:
@@ -483,7 +523,11 @@ class Strategist:
             history = history[-limit:]
         return history
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="strategist stop",
+    )
     async def stop(self) -> None:
         """Stop the strategist and cleanup resources."""
         try:

@@ -11,7 +11,6 @@ Enhanced for high precision completion of Analyst signals with:
 - Regime-specific quality filters
 - Regime-aware multi-outcome prediction structure
 """
-
 import asyncio
 import contextlib
 import os
@@ -24,7 +23,7 @@ import pandas as pd
 
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger, dependency_status
 
 # Preference order for selecting analyst ensembles
@@ -567,6 +566,7 @@ class RegimeAwareTacticianLabeler:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
+
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""'
 
@@ -583,12 +583,17 @@ class TacticianLabelingStep:
         self.config = config
         self.logger = system_logger
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="tactician labeling step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the tactician labeling step."""
         self.logger.info("🚀 Initializing Tactician Labeling Step...")
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician labeling step execution",
     )
@@ -612,7 +617,12 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
-            from src.config.constants import (
+from src.utils.logger import log_dataframe_overview, log_io_operation
+from src.training.enhanced_training_manager_optimized import (
+from src.utils.logger import log_dataframe_overview, log_io_operation
+from src.utils.centralized_decorators import (
+from src.config.constants import (
+from src.training.enhanced_training_manager_optimized import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
@@ -837,7 +847,6 @@ class TacticianLabelingStep:
         )
         try:
             try:
-                from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
@@ -850,7 +859,6 @@ class TacticianLabelingStep:
                     row_group_size=128_000,
                 )
             except Exception:
-                from src.utils.logger import log_dataframe_overview, log_io_operation
 
                 with log_io_operation(
                     self.logger,
@@ -880,7 +888,6 @@ class TacticianLabelingStep:
             # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
             try:
-                from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
@@ -893,7 +900,6 @@ class TacticianLabelingStep:
                     row_group_size=128_000,
                 )
             except Exception:
-                from src.utils.logger import log_dataframe_overview, log_io_operation
 
                 with log_io_operation(
                     self.logger,
@@ -915,8 +921,8 @@ class TacticianLabelingStep:
 
         return labeled_file_parquet, signals_file_parquet
 
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.centralized_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -933,9 +939,9 @@ from src.utils.centralized_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+import copy
 
 from src.utils.enhanced_mlflow_integration import (
-import copy
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -944,6 +950,7 @@ import copy
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
+
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1046,6 +1053,7 @@ async def run_step(
 
     except Exception:  # pragma: no cover - defensive
         return False
+
 
 if __name__ == "__main__":
     # Test the step

@@ -13,7 +13,10 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+import logging
+from src.utils.error_handler import (
+    handle_errors,
+)
 from src.utils.warning_symbols import (
     warning,
 )
@@ -22,6 +25,7 @@ from src.utils.centralized_decorators_simple import (
     validate_data_quality,
     with_tracing_span,
 )
+
 
 class UnifiedRegimeClassifier:
     """
@@ -32,7 +36,6 @@ class UnifiedRegimeClassifier:
     2. Ensemble prediction with majority voting for basic regimes
     3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
     """
-
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
         self,
@@ -42,7 +45,7 @@ class UnifiedRegimeClassifier:
     ):
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
-        self.config = config.get("analystf", {}).get("unified_regime_classifier", {})
+        self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
         self.exchange = exchange
@@ -329,7 +332,11 @@ class UnifiedRegimeClassifier:
                     warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
                 )
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="UnifiedRegimeClassifier.initialize",
+    )
     async def initialize(self) -> bool:
         """
         Initialize the UnifiedRegimeClassifier.
@@ -777,7 +784,11 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"Error adding basic S/R features: {e}")
             return features_df
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="UnifiedRegimeClassifier._calculate_rsi",
+    )
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate RSI indicator using price differences."""
         # Use price differences instead of absolute prices
@@ -788,7 +799,11 @@ class UnifiedRegimeClassifier:
         df["rsi"] = 100 - (100 / (1 + rs))
         return df
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="UnifiedRegimeClassifier._calculate_macd",
+    )
     def _calculate_macd(
         self,
         df: pd.DataFrame,
@@ -806,7 +821,11 @@ class UnifiedRegimeClassifier:
         df["macd_histogram"] = df["macd"] - df["macd_signal"]
         return df
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="UnifiedRegimeClassifier._calculate_adx",
+    )
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate the Average Directional Index (ADX)."""
         high = df["high"]
@@ -840,7 +859,11 @@ class UnifiedRegimeClassifier:
 
         return df
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="UnifiedRegimeClassifier._calculate_bollinger_bands",
+    )
     def _calculate_bollinger_bands(
         self,
         df: pd.DataFrame,
@@ -860,7 +883,11 @@ class UnifiedRegimeClassifier:
         df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / sma
         return df
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="UnifiedRegimeClassifier._calculate_atr",
+    )
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate Average True Range using price differences."""
         # Use price differences instead of absolute prices
@@ -1479,7 +1506,7 @@ import copy
 import os.path
 
 try:
-                # Create event loop if none exists
+    # Create event loop if none exists
                 try:
                     loop = asyncio.get_event_loop()
                 except RuntimeError:

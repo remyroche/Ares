@@ -5,7 +5,6 @@
 This step performs HMM-based model training with timeframe-specific architectures
 and S/R integration, using standardized data quality management patterns.
 """
-
 import json
 import os
 import pickle
@@ -116,6 +115,7 @@ else:
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
+
 class HMMBasedTrainingStep:
     """Step 9: HMM-Based Model Training with Standardized Data Quality Management."
 
@@ -123,7 +123,6 @@ class HMMBasedTrainingStep:
     and simple exit-within-H-bars signals leveraging Step 3 HMM posteriors and
     transition probabilities.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
@@ -249,7 +248,33 @@ class HMMBasedTrainingStep:
         # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
         try:
-            from src.training.optimized_feature_selection_manager import (
+import json
+import os
+import pandas as _pd
+from src.utils.hmm_composite_manager import get_hmm_composite_manager
+from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
+from ..model_saving_utils import save_multi_output_model_with_probabilities
+from sklearn.metrics import (
+from sklearn.metrics import (
+from sklearn.metrics import (
+from sklearn.metrics import (
+from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import (
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+import lightgbm as lgb
+import shap
+from src.utils.vif_calculator import calculate_vif_robust
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+from src.analyst.meta_label_relevance import compute_shap_importance
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+import shap
+from src.training.steps.sr_outcome_model_trainer import (
+from src.utils.logger import system_logger
+from src.utils.training_pipeline_decorators import (
+from src.training.optimized_feature_selection_manager import (
+from src.training.steps.feature_artifact_loader import (
                 OptimizedFeatureSelectionManager,
             )
             self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
@@ -357,7 +382,11 @@ class HMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="HMM-based training step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the HMM-based training step."""
         self.logger.info("Initializing HMM-Based Training Step...")
@@ -437,7 +466,8 @@ class HMMBasedTrainingStep:
             raise RuntimeError(msg)
 
     @with_enhanced_mlflow_logging("step9_hmm_based_training")
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-based training step execution",
     )
@@ -587,9 +617,6 @@ class HMMBasedTrainingStep:
 
             # Emit regime forecasting artifacts (next-regime probabilities and exit-within-H)
             try:
-                import json
-                import os
-                import pandas as _pd
 
                 rf_dir = os.path.join(data_dir, "regime_forecasting")
                 ensure_directory(rf_dir)
@@ -673,7 +700,6 @@ class HMMBasedTrainingStep:
 
         # Use centralized HMM composite manager
         try:
-            from src.utils.hmm_composite_manager import get_hmm_composite_manager
 
             hmm_manager = get_hmm_composite_manager()
         except ImportError as e:
@@ -755,7 +781,6 @@ class HMMBasedTrainingStep:
 
         # 1) Try centralized artifact loader for 1m and resample others
         try:
-            from src.training.steps.feature_artifact_loader import (
                 load_features_for_step,
             )
             self.logger.info("🔍 Using centralized feature_artifact_loader for 1m features (Step 6)")
@@ -2248,7 +2273,6 @@ class HMMBasedTrainingStep:
             })
 
             # Initialize multi-output probability trainer
-            from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
             
             # Configure multi-output training with advanced models
             multi_output_config = {
@@ -2363,7 +2387,6 @@ class HMMBasedTrainingStep:
             # Save model with probabilities using multi-output format
             model_path = f"models/{timeframe}_multi_output_lightgbm_model.pkl"
             try:
-                from ..model_saving_utils import save_multi_output_model_with_probabilities
                 save_multi_output_model_with_probabilities(
                     model_data, model_path, save_format="joblib"
                 )
@@ -2801,7 +2824,7 @@ class HMMBasedTrainingStep:
             pass  # TODO: Handle exception properly
         for models in training_results.values()
         ),
-                "data_statistics": {
+        "data_statistics": {
                     "total_samples": len(combined_data),
                     "feature_count": len(feature_columns),
                     "data_columns": list(combined_data.columns),
@@ -2957,17 +2980,17 @@ class HMMBasedTrainingStep:
             pass  # TODO: Handle exception properly
         for models in training_results.values()
         ),
-                    "successful_timeframes": [
+        "successful_timeframes": [
                         tf
         for tf, models in training_results.items()
         if models and isinstance(models, dict) and len(models) > 0
         ],
-                    "failed_timeframes": [
+        "failed_timeframes": [
                         tf
         for tf, models in training_results.items()
         if not models
         or not isinstance(models, dict)
-                        or len(models) == 0
+        or len(models) == 0
                     ],
                 },
                 "performance_summary": {
@@ -3084,7 +3107,9 @@ class HMMBasedTrainingStep:
         # Fallback: return original artifact
         return artifact
 
+
 # Model Architectures
+
 
 class CNNModel(nn.Module):
     """CNN model for 1m timeframe."""
@@ -3124,6 +3149,8 @@ class CNNModel(nn.Module):
         x = self.dropout(x)
         return self.fc2(x)
 
+
+
 class TCNModel(nn.Module):
     """Temporal Convolutional Network for 5m timeframe."""
 
@@ -3156,6 +3183,8 @@ class TCNModel(nn.Module):
         x = x[:, -1, :]  # Take last timestep,
         x = self.dropout(x)
         return self.fc(x)
+
+
 
 class TemporalBlock(nn.Module):
     """Temporal block for TCN."""
@@ -3203,6 +3232,7 @@ class TemporalBlock(nn.Module):
 
         return self.relu(out + x)
 
+
 class TransformerModel(nn.Module):
     """Transformer model for 15m timeframe."""
 
@@ -3235,6 +3265,8 @@ class TransformerModel(nn.Module):
         x = self.dropout(x)
         return self.fc(x)
 
+
+
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
@@ -3256,7 +3288,9 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.pe[: x.size(0), :]
 
+
 # Trainers
+
 
 class CNNTrainer:
     """Trainer for CNN model."""
@@ -3326,6 +3360,7 @@ class CNNTrainer:
             history["test_acc"].append(test_acc)
 
         return history
+
 
 class TCNTrainer:
     """Trainer for TCN model."""
@@ -3400,7 +3435,6 @@ class TCNTrainer:
         self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
         """Train CNN model with cross-validation."""
         try:
-            from sklearn.metrics import (
                 accuracy_score,
                 f1_score,
                 precision_score,
@@ -3477,7 +3511,6 @@ class TCNTrainer:
         self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
         """Train TCN model with cross-validation."""
         try:
-            from sklearn.metrics import (
                 accuracy_score,
                 f1_score,
                 precision_score,
@@ -3555,7 +3588,6 @@ class TCNTrainer:
         self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
         """Train Transformer model with cross-validation."""
         try:
-            from sklearn.metrics import (
                 accuracy_score,
                 f1_score,
                 precision_score,
@@ -3634,7 +3666,6 @@ class TCNTrainer:
         self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
         """Train LightGBM model with cross-validation."""
         try:
-            from sklearn.metrics import (
                 accuracy_score,
                 f1_score,
                 precision_score,
@@ -3912,7 +3943,6 @@ class TCNTrainer:
             n = len(X)
             cut = int(n * (1.0 - test_frac))
             return X.iloc[:cut], X.iloc[cut:], y.iloc[:cut], y.iloc[cut:]
-        from sklearn.model_selection import train_test_split
 
         return train_test_split(
             X, y, test_size=test_frac, random_state=42, stratify=y
@@ -4027,7 +4057,6 @@ class TCNTrainer:
         self, X: pd.DataFrame, y: pd.Series, ) -> np.ndarray:
         """Calculate mutual information between features and target."""
         try:
-            from sklearn.feature_selection import (
                 mutual_info_classif,
                 mutual_info_regression,
             )
@@ -4086,8 +4115,6 @@ class TCNTrainer:
         self, X: pd.DataFrame, target_variance: float = 0.95, ) -> list[str]:
         """Apply PCA for dimensionality reduction while preserving variance."""
         try:
-            from sklearn.decomposition import PCA
-            from sklearn.preprocessing import StandardScaler
 
             # Standardize features
             scaler = StandardScaler()
@@ -4122,7 +4149,6 @@ class TCNTrainer:
         self, X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list[str]:
         """Select features based on Random Forest importance scores."""
         try:
-            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
             # Determine if classification or regression
             if y.dtype in ["object", "category"] or len(y.unique()) < 10:
@@ -4154,8 +4180,6 @@ class TCNTrainer:
         """Validate feature selection using SHAP values."""
         try:
             # Use LightGBM for SHAP analysis (faster than Random Forest for SHAP)
-            import lightgbm as lgb
-            import shap
 
             # Determine if classification or regression
             if y.dtype in ["object", "category"] or len(y.unique()) < 10:
@@ -4231,7 +4255,6 @@ class TCNTrainer:
             
             # Stage 3: VIF filtering (multicollinearity)
             try:
-                from src.utils.vif_calculator import calculate_vif_robust
                 
                 X_vif = X_clean[high_variance_features]
                 vif_scores = calculate_vif_robust(X_vif)
@@ -4282,7 +4305,6 @@ class TCNTrainer:
                     y = X[target_col]
                     
                     # Calculate mutual information
-                    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
                     
                     # Determine task type
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
@@ -4308,7 +4330,6 @@ class TCNTrainer:
             # Stage 6: SHAP-based filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 50:
-                    from src.analyst.meta_label_relevance import compute_shap_importance
                     
                     # Calculate SHAP importance
                     shap_scores = compute_shap_importance(
@@ -4333,7 +4354,6 @@ class TCNTrainer:
             # Stage 7: RandomForest importance filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 30:
-                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
                     
                     # Train RF for feature importance
                     if task_type == "classification":
@@ -4425,7 +4445,6 @@ class TCNTrainer:
 
             # 5. SHAP importance (for top features)
             try:
-                import shap
 
                 sample_size = min(500, len(X_clean))
                 X_sample = X_clean.sample(n=sample_size, random_state=42)
@@ -4702,6 +4721,7 @@ class TCNTrainer:
         except Exception as e:
             self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
 
+
 class TransformerTrainer:
     """Trainer for Transformer model."""
 
@@ -4786,7 +4806,6 @@ class TransformerTrainer:
 
             # Initialize S/R outcome trainer if not already done
             if self.sr_outcome_trainer is None:
-                from src.training.steps.sr_outcome_model_trainer import (
                     SROutcomeModelTrainer,
                 )
 
@@ -5061,7 +5080,6 @@ class TransformerTrainer:
 
         """
         try:
-            from src.utils.logger import system_logger
 
             # Use standardized path construction
             if data_dir is None:
@@ -5104,8 +5122,8 @@ class TransformerTrainer:
             system_logger.error(f"❌ Error in HMM-based training step: {e}")
             return False
 
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -5122,6 +5140,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step6_hmm_based_training")
@@ -5241,14 +5260,12 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
         from src.utils.logger import system_logger
     except Exception as e:
         pass  # TODO: Handle exception properly
-
 import copy
 import numpy as np
 import os.path
-from src.core.decorators import handles_errors
 
 # Create configuration
-        config = {
+config = {
             "symbol": symbol,
             "data_dir": data_dir,
             "exchange": kwargs.get("exchange", "BINANCE"),

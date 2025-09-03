@@ -1409,7 +1409,9 @@ class FinalParametersOptimizationStep:
         """Select the best solution from Pareto front."""
         try:
             # Use configurable weights for composite score
-            from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
+from sklearn.metrics import accuracy_score
+from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
+from src.utils.training_pipeline_decorators import (
                 get_hyperparameter_config,
             )
 
@@ -1598,7 +1600,6 @@ class FinalParametersOptimizationStep:
         This approximates trading performance with simple proxies: win rate and returns from label correctness.
         """
         try:
-            from sklearn.metrics import accuracy_score
 
             # Choose an ensemble if available; else pick first calibrated model
             # Analyst ensembles
@@ -1667,7 +1668,6 @@ class FinalParametersOptimizationStep:
             }
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

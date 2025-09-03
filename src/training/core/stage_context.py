@@ -1,10 +1,15 @@
 from datetime import datetime
 from typing import Any
+import asyncio
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import (
+
+    handle_errors,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -13,6 +18,7 @@ import copy
     missing,
     validation_error,
 )
+
 
 class StageContext:
     """Stage context with comprehensive error handling and type safety."""
@@ -48,7 +54,7 @@ class StageContext:
             True,
         )
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid stage context configuration"),
             AttributeError: (False, "Missing required stage context parameters"),
@@ -85,7 +91,11 @@ class StageContext:
             self.logger.exception(f"❌ Stage Context initialization failed: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context configuration loading",
+    )
     async def _load_context_configuration(self) -> None:
         """Load context configuration."""
         try:
@@ -112,7 +122,11 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error loading context configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """Validate context configuration."
 
@@ -150,7 +164,11 @@ class StageContext:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context modules initialization",
+    )
     async def _initialize_context_modules(self) -> None:
         """Initialize context modules."""
         try:
@@ -175,7 +193,11 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context modules: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context management initialization",
+    )
     async def _initialize_context_management(self) -> None:
         """Initialize context management module."""
         try:
@@ -192,7 +214,11 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context management: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context validation initialization",
+    )
     async def _initialize_context_validation(self) -> None:
         """Initialize context validation module."""
         try:
@@ -209,7 +235,11 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context validation: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context monitoring initialization",
+    )
     async def _initialize_context_monitoring(self) -> None:
         """Initialize context monitoring module."""
         try:
@@ -226,7 +256,11 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context monitoring: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context reporting initialization",
+    )
     async def _initialize_context_reporting(self) -> None:
         """Initialize context reporting module."""
         try:
@@ -243,7 +277,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context reporting: {e}")
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid context parameters"),
             AttributeError: (False, "Missing context components"),
@@ -307,7 +341,11 @@ class StageContext:
             self.is_active = False
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="context inputs validation",
+    )
     def _validate_context_inputs(self, context_input: dict[str, Any]) -> bool:
         """Validate context inputs."
 
@@ -341,7 +379,11 @@ class StageContext:
             self.logger.exception(f"Error validating context inputs: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context management",
+    )
     async def _perform_context_management(
         self,
         context_input: dict[str, Any],
@@ -389,7 +431,11 @@ class StageContext:
             self.logger.exception(f"Error performing context management: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context validation",
+    )
     async def _perform_context_validation(
         self,
         context_input: dict[str, Any],
@@ -437,7 +483,11 @@ class StageContext:
             self.logger.exception(f"Error performing context validation: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context monitoring",
+    )
     async def _perform_context_monitoring(
         self,
         context_input: dict[str, Any],
@@ -485,7 +535,11 @@ class StageContext:
             self.logger.exception(f"Error performing context monitoring: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context reporting",
+    )
     async def _perform_context_reporting(
         self,
         context_input: dict[str, Any],
@@ -803,7 +857,11 @@ class StageContext:
             self.logger.exception(f"Error performing report archiving: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context results storage",
+    )
     async def _store_context_results(self) -> None:
         """Store context results."""
         try:
@@ -822,7 +880,11 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error storing context results: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context results getting",
+    )
     def get_context_results(self, context_type: str | None) -> dict[str, Any]:
         """Get context results."
 
@@ -842,7 +904,11 @@ class StageContext:
             self.logger.exception(f"Error getting context results: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="context history getting",
+    )
     def get_context_history(self, limit: int | None) -> list[dict[str, Any]]:
         """Get context history."
 
@@ -889,7 +955,11 @@ class StageContext:
             "context_history_count": len(self.context_history),
         }
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="stage context cleanup",
+    )
     async def stop(self) -> None:
         """Stop the stage context."""
         self.logger.info("🛑 Stopping Stage Context...")
@@ -909,10 +979,16 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error stopping stage context: {e}")
 
+
 # Global stage context instance
 stage_context: StageContext | None = None
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="stage context setup",
+)
 async def setup_stage_context(
     config: dict[str, Any] | None,
 ) -> StageContext | None:

@@ -3,7 +3,6 @@
 """Raw Data Quality Checker for Early Detection of Data Issues"
 This module provides comprehensive validation of raw market data before any processing.
 """
-
 import asyncio
 import functools
 import glob
@@ -24,7 +23,6 @@ class RawDataQualityChecker:
     """Comprehensive raw data quality checker for early detection of issues."
     This should be called immediately after data download to prevent downstream problems.
     """
-
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = system_logger.getChild("RawDataQualityChecker")
         self.config = config or self._get_default_config()
@@ -612,7 +610,13 @@ class RawDataQualityChecker:
 
         try:
             # Import the unified data downloader
-            from src.training.steps.data_downloader import (
+import glob
+import os
+import copy
+import numpy as np
+import os.path
+from src.training.steps.data_downloader import (
+from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
             )
 
@@ -1732,7 +1736,6 @@ class RawDataQualityChecker:
 
         try:
             # Use the unified downloader
-            from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
             )
 
@@ -1783,16 +1786,11 @@ class RawDataQualityChecker:
 
         """
         try:
-            import glob
-            import os
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-import os.path
 
 # Look for the most recent data file
-            patterns = [
+patterns = [
                 f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
                 f"data/{symbol}_{timeframe}.csv",
                 f"backtesting/data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",

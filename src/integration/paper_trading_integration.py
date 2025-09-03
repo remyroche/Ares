@@ -5,7 +5,6 @@ Paper Trading Integration Module
 Integrates the `PaperTrader` with the `PaperTradingReporter` and provides
 helper methods to execute trades and generate reports in real time.
 """
-
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
@@ -13,9 +12,9 @@ import os
 
 from src.utils.comprehensive_logger import get_comprehensive_logger
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
+from src.utils.error_handler import handle_errors, handle_specific_errors
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -38,7 +37,6 @@ class PaperTradingIntegration:
     """
     Integration module for paper trading with enhanced reporting.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize paper trading integration.
@@ -70,7 +68,7 @@ class PaperTradingIntegration:
         self.report_interval = self.integration_config.get("report_interval", 3600)
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),
             AttributeError: (False, "Missing required integration parameters"),
@@ -97,13 +95,13 @@ class PaperTradingIntegration:
             # Initialize detailed reporter
             if self.enable_detailed_reporting:
                 try:
+import os.path
                     from src.reports.paper_trading_reporter import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly
-import os
 
 setup_paper_trading_reporter as _setup_reporter,
-                    )
+)
 
                     self.reporter = await _setup_reporter(self.config)
                     if not self.reporter:
@@ -134,7 +132,11 @@ setup_paper_trading_reporter as _setup_reporter,
             )
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="integration validation",
+    )
     def _validate_integration(self) -> bool:
         """Validate integration components."""
         try:
@@ -160,7 +162,7 @@ setup_paper_trading_reporter as _setup_reporter,
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @secure_data_processing
     @comprehensive_validation()
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid trade parameters"),
             AttributeError: (False, "Missing trade components"),
@@ -268,7 +270,11 @@ setup_paper_trading_reporter as _setup_reporter,
             return False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="real-time report generation",
+    )
     async def _generate_real_time_report(self) -> None:
         """Generate real-time performance report."""
         try:
@@ -371,7 +377,11 @@ setup_paper_trading_reporter as _setup_reporter,
             return {}
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="basic report generation",
+    )
     async def _generate_basic_report(
         self,
         report_type: str,
@@ -427,7 +437,11 @@ setup_paper_trading_reporter as _setup_reporter,
         }
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="integration cleanup",
+    )
     async def stop(self) -> None:
         """Stop paper trading integration."""
         try:
@@ -445,7 +459,11 @@ setup_paper_trading_reporter as _setup_reporter,
         except Exception as e:
             self.logger.error(error(f"Error stopping integration: {e}"))
 
-@handles_errors(fallback=None)
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="paper trading integration setup",
+)
 async def setup_paper_trading_integration(
     config: dict[str, Any] | None = None,
 ) -> PaperTradingIntegration | None:

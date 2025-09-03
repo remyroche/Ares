@@ -10,7 +10,12 @@ import pandas as pd
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.utils.confidence import aggregate_directional_confidences
-from src.core.decorators import handles_errors
+import asyncio
+from src.utils.error_handler import (
+
+    handle_errors,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
@@ -31,6 +36,7 @@ from src.utils.warning_symbols import (
     initialization_error,
 )
 
+
 class DualModelSystem:
     """Dual Model System for trading decisions."
 
@@ -39,7 +45,6 @@ class DualModelSystem:
 
     Both models use ml_confidence_predictor.py for predictions.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Dual Model System."
 
@@ -126,7 +131,7 @@ class DualModelSystem:
             True,
         )
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid dual model system configuration"),
             AttributeError: (False, "Missing required dual model parameters"),
@@ -172,7 +177,11 @@ class DualModelSystem:
             self.logger.exception("❌ Dual Model System initialization failed")
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="dual model configuration loading",
+    )
     async def _load_dual_model_configuration(self) -> None:
         """Load dual model configuration."""
         try:
@@ -226,7 +235,11 @@ class DualModelSystem:
             error_msg = f"Error loading dual model configuration: {e}"
             self.logger.exception(error_msg)
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """Validate dual model configuration."
 
@@ -276,7 +289,11 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML confidence predictor initialization",
+    )
     async def _initialize_ml_confidence_predictor(self) -> None:
         """Initialize ML Confidence Predictor with meta-labeling integration."""
         try:
@@ -379,7 +396,11 @@ class DualModelSystem:
                 initialization_error(f"Error initializing ML Confidence Predictor: {e}"),
             )
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analyst model initialization",
+    )
     async def _initialize_analyst_model(self) -> None:
         """Initialize Analyst Model for IF decisions (multi-timeframe)."""
         try:
@@ -403,7 +424,11 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician model initialization",
+    )
     async def _initialize_tactician_model(self) -> None:
         """Initialize Tactician Model for WHEN decisions (1m timeframe)."""
         try:
@@ -491,7 +516,7 @@ class DualModelSystem:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"decision_quality_score": 0.7},
     )
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid market data for decision making"),
             AttributeError: (None, "Models not properly initialized"),
@@ -1631,7 +1656,11 @@ class DualModelSystem:
             "description": "Dual model system for trading decisions",
         }
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="dual model system cleanup",
+    )
     async def stop(self) -> None:
         """Stop the dual model system."""
         self.logger.info("🛑 Stopping Dual Model System...")
@@ -1655,10 +1684,16 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
+
 # Global dual model system instance
 dual_model_system: DualModelSystem | None = None
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="dual model system setup",
+)
 async def setup_dual_model_system(
     config: dict[str, Any] | None = None,
 ) -> DualModelSystem | None:

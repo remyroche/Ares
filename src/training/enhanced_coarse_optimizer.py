@@ -56,7 +56,6 @@ class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning,"
     and wider hyperparameter search. Uses functional programming approach and multiprocessing.
     """
-
     def __init__(
         self,
         db_manager: SQLiteManager,
@@ -462,7 +461,7 @@ class EnhancedCoarseOptimizer:
 import copy
 
 explainer = TreeExplainer(model)
-                shap_values = explainer.shap_values(X_sample)
+shap_values = explainer.shap_values(X_sample)
 
                 # Process SHAP values
                 if isinstance(shap_values, list):

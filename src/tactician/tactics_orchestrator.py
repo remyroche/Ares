@@ -3,7 +3,6 @@
 """
 Tactics Orchestrator for coordinating all tactical components.
 """
-
 import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -34,10 +33,10 @@ from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     failed,
     invalid,
@@ -48,7 +47,6 @@ class DecisionPolicy:
     Aggregates sizing, leverage, SR breakout, and ML signals into a unified TradeDecision.
     Provides audit-friendly metadata and metrics.
     """
-
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the decision policy.
@@ -70,7 +68,11 @@ class DecisionPolicy:
         self.sr_predictor: Optional[SRBreakoutPredictor] = None
         self.ml_tactics: Optional[MLTacticsManager] = None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="decision policy initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the decision policy.
@@ -173,7 +175,11 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="trade decision generation"
+    )
     async def generate_decision(
         self,
         market_data: pd.DataFrame,
@@ -506,7 +512,6 @@ class TacticsOrchestrator:
     """
     Main tactics orchestrator that coordinates all tactical components.
     """
-
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the tactics orchestrator.
@@ -534,7 +539,11 @@ class TacticsOrchestrator:
         self.orchestrator_task: Optional[asyncio.Task] = None
         self.is_running = False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="tactics orchestrator initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the tactics orchestrator.
@@ -632,7 +641,11 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactics orchestration start"
+    )
     async def start_orchestration(self) -> bool:
         """
         Start tactics orchestration.
@@ -655,7 +668,11 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Failed to start tactics orchestration: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactics orchestration stop"
+    )
     async def stop_orchestration(self) -> bool:
         """
         Stop tactics orchestration.

@@ -93,7 +93,9 @@ class WalkForwardValidationStep:
 
             # Persist WFV results as Parquet partitioned by fold/horizon for pruning
             try:
-                from src.training.enhanced_training_manager_optimized import (
+import pandas as pd  # local import to keep optional
+from src.training.enhanced_training_manager_optimized import (
+from src.utils.training_pipeline_decorators import (
                     ParquetDatasetManager,
                 )
 
@@ -102,7 +104,6 @@ class WalkForwardValidationStep:
                 os.makedirs(os.path.join(wfv_base, "summary"), exist_ok=True)
 
                 # Materialize summary metrics table for fast reads
-                import pandas as pd  # local import to keep optional
 
                 summary_rows: list[dict[str, Any]] = []
                 for fold_idx, fold in enumerate(wfv_results.get("fold_results", [])):
@@ -143,7 +144,6 @@ class WalkForwardValidationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -160,8 +160,8 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+import os.path
 from src.utils.enhanced_mlflow_integration import (
-import os
 
     with_enhanced_mlflow_logging,
     log_step_report,

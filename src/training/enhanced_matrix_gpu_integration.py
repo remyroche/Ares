@@ -4,7 +4,6 @@
 Enhanced Matrix Operations with M1 GPU Integration.
 Combines advanced matrix operations with Mac M1 GPU acceleration.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -19,10 +18,10 @@ from src.training.gpu_acceleration_m1 import M1GPUAcceleration
 from src.training.steps.step7_enhanced_matrix_operations import (
     EnhancedMatrixOperations,
 )
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
 import copy
+from src.utils.training_pipeline_decorators import (
 
     circuit_breaker_protection,
     debug_training_step,
@@ -34,6 +33,7 @@ import copy
     validate_step_output,
 )
 
+
 class EnhancedMatrixGPUIntegration:
     """
     Enhanced matrix operations with M1 GPU integration.
@@ -41,7 +41,6 @@ class EnhancedMatrixGPUIntegration:
     Combines advanced matrix operations with Mac M1 GPU acceleration
     for maximum performance and efficiency.
     """
-
     def __init__(self, config: dict[str, Any]):
         """Initialize enhanced matrix GPU integration."""
         self.config = config
@@ -68,7 +67,7 @@ class EnhancedMatrixGPUIntegration:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handles_errors(fallback=None)
+    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=None)
     async def enhanced_gpu_matrix_operations(
         self,
         features_df: pd.DataFrame,
@@ -204,7 +203,7 @@ class EnhancedMatrixGPUIntegration:
     @memory_efficient(chunk_size=3000, streaming_processing=True)
     @debug_training_step(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handles_errors(fallback=None)
+    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=None)
     async def gpu_optimized_training_pipeline(
         self,
         training_data: dict[str, Any],
@@ -302,7 +301,7 @@ class EnhancedMatrixGPUIntegration:
     @memory_efficient(chunk_size=2000, streaming_processing=True)
     @debug_training_step(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handles_errors(fallback=None)
+    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=None)
     async def benchmark_gpu_vs_cpu(
         self,
         features_df: pd.DataFrame,
@@ -444,6 +443,7 @@ class EnhancedMatrixGPUIntegration:
         """Clear GPU memory cache."""
         self.gpu_accel.clear_gpu_memory()
 
+
 async def demonstrate_gpu_integration() -> None:
     """Demonstrate GPU integration with enhanced matrix operations."""
 
@@ -541,6 +541,7 @@ async def demonstrate_gpu_integration() -> None:
     print("✅ Enhanced matrix operations with M1 GPU acceleration")
     print("🔒 All operations secured with decorators")
     print("📊 Performance benchmarks completed")
+
 
 if __name__ == "__main__":
     # Run GPU integration demonstration

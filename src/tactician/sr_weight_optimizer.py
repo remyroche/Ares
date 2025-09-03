@@ -3,7 +3,6 @@
 """
 SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
 """
-
 import json
 from typing import Any, Dict, List, Optional
 
@@ -13,11 +12,11 @@ from dataclasses import dataclass
 
 from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
+from src.utils.error_handler import handle_errors
 import copy
 import datetime as datetime
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     invalid,
@@ -49,7 +48,6 @@ class SRWeightOptimizer:
     - Multiple optimization strategies
     - Result validation and ranking
     """
-
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize the SR weight optimizer.
@@ -74,7 +72,11 @@ class SRWeightOptimizer:
         self.best_weights: Optional[Dict[str, float]] = None
         self.optimization_history: List[Dict[str, Any]] = []
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="SR weight optimizer initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the SR weight optimizer.
@@ -132,7 +134,11 @@ class SRWeightOptimizer:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="weight optimization"
+    )
     async def optimize_weights(
         self,
         market_data: pd.DataFrame,

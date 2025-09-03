@@ -5,7 +5,6 @@ including real-time tracking, drift detection, statistical analysis, and
 performance metrics calculation. It integrates with the model behavior tracker
 to provide holistic performance insights.
 """
-
 import asyncio
 import json
 from datetime import datetime
@@ -15,12 +14,12 @@ import numpy as np
 import yaml
 from scipy import stats
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid, warning
-from src.utils.warning_symbols import (
 import copy
-import os
+import os.path
+from src.utils.warning_symbols import (
     error,
     failed,
     invalid,
@@ -31,7 +30,6 @@ class PerformanceMonitor:
     """
     Enhanced Performance Monitor component with DI = type hints, and robust error handling.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PerformanceMonitor")
@@ -72,7 +70,7 @@ class PerformanceMonitor:
         self.model_metrics: dict[str, dict] = {}
         self.retraining_triggers: list[dict[str, Any]] = []
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid performance monitor configuration"),
             AttributeError: (False, "Missing required performance monitor parameters"),
@@ -101,7 +99,11 @@ class PerformanceMonitor:
             self.print(failed(f"❌ Performance Monitor initialization failed with unexpected error: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="monitor configuration loading",
+    )
     async def _load_monitor_configuration(self) -> None:
         try:
             self.monitor_config.setdefault("monitor_interval", 30)
@@ -119,7 +121,11 @@ class PerformanceMonitor:
             self.print(error(f"Unexpected error loading monitor configuration: {e}"))
             self.monitor_config = {"monitor_interval": 60, "max_history": 100}
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         try:
             if self.monitor_interval <= 0:
@@ -134,7 +140,7 @@ class PerformanceMonitor:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             Exception: (False, "Performance monitor run failed"),
         },
@@ -154,7 +160,11 @@ class PerformanceMonitor:
             self.is_running = False
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="performance monitoring step",
+    )
     async def _perform_monitoring(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -168,7 +178,11 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error in performance monitoring step: {e}"))
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="performance metrics collection",
+    )
     async def _collect_performance_metrics(self) -> None:
         try:
             # Simulate performance metrics collection
@@ -184,7 +198,11 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error collecting performance metrics: {e}"))
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="performance alerts check",
+    )
     async def _check_performance_alerts(self) -> None:
         try:
             # Check for performance alerts
@@ -210,7 +228,11 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error checking performance alerts: {e}"))
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="performance monitor stop",
+    )
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Performance Monitor...")
         try:
@@ -366,7 +388,11 @@ class PerformanceMonitor:
     # REAL-TIME PERFORMANCE TRACKING METHODS
     # ============================================================================
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="real-time performance update",
+    )
     async def update_model_performance(
         self,
         model_name: str,
@@ -405,7 +431,11 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"Error updating model performance: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="real-time metrics calculation",
+    )
     async def _calculate_real_time_metrics(self, model_name: str) -> None:
         """Calculate real-time performance metrics for a model."""
         try:
@@ -458,7 +488,11 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"Error calculating real-time metrics: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="retraining trigger check",
+    )
     async def _check_retraining_triggers(self, model_name: str) -> None:
         """Check if model retraining is needed."""
         try:
@@ -530,7 +564,11 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"Error checking retraining triggers: {e}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="adaptive model selection",
+    )
     async def select_best_models(
         self,
         model_names: list[str],
@@ -640,7 +678,11 @@ class PerformanceMonitor:
             self.logger.exception(f"Error getting regime performance adjustment: {e}")
             return 1.0
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="performance feedback loop",
+    )
     async def get_performance_feedback(self) -> dict[str, Any]:
         """Get comprehensive performance feedback for the system."""
         try:
@@ -705,9 +747,15 @@ class PerformanceMonitor:
         """Clear retraining triggers."""
         self.retraining_triggers.clear()
 
+
 performance_monitor: PerformanceMonitor | None = None
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="performance monitor setup",
+)
 async def setup_performance_monitor(
     config: dict[str, Any] | None = None,
 ) -> PerformanceMonitor | None:

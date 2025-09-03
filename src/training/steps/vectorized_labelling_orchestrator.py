@@ -4,7 +4,6 @@
 Coordinates optimized_triple_barrier_labeling.py, vectorized_advanced_feature_engineering.py
 and autoencoder_feature_generator.py with advanced preprocessing and feature selection.
 """
-
 from __future__ import annotations
 
 import contextlib
@@ -21,18 +20,19 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from copy import copy
 
-get_current_datetime, format_datetime, ensure_directory,
+    get_current_datetime, format_datetime, ensure_directory,
     safe_copy, safe_fillna, safe_read_parquet, safe_to_parquet
-from src.utils.common_operations import (
-)
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
 from src.utils.common_operations import ensure_directory
+from src.utils.common_operations import (
+)
+
 
 # -----------------------------------------------------------------------------
 # Warnings logging setup
@@ -50,6 +50,7 @@ if not _warning_logger.handlers:
     except Exception:
         pass
 
+
 def _showwarning(
     message: str | Warning,
     category: type[Warning],
@@ -61,7 +62,9 @@ def _showwarning(
     with contextlib.suppress(Exception):
         _warning_logger.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
 
+
 warnings.showwarning = _showwarning
+
 
 # -----------------------------------------------------------------------------
 # Orchestrator
@@ -70,7 +73,6 @@ class VectorizedLabellingOrchestrator:
     """Comprehensive vectorized labeling orchestrator that coordinates all feature generation"
     and labeling components with advanced preprocessing and feature selection.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLabellingOrchestrator")
@@ -219,7 +221,11 @@ class VectorizedLabellingOrchestrator:
         except Exception:
             pass
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="vectorized labelling orchestrator initialization",
+    )
     async def initialize(self) -> bool:
         """Initialize vectorized labeling orchestrator components."""
         try:
@@ -304,7 +310,11 @@ class VectorizedLabellingOrchestrator:
             )
             return True
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="vectorized labeling orchestration",
+    )
     async def orchestrate_labeling_and_feature_engineering(
         self,
         price_data: pd.DataFrame,
@@ -1732,6 +1742,7 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
             self.logger.warning(f"MI analysis internal error: {e}")
 
+
 # -----------------------------------------------------------------------------
 # Stationarity Checker
 # -----------------------------------------------------------------------------
@@ -1931,6 +1942,7 @@ class VectorizedStationarityChecker:
         except Exception as e:
             self.logger.exception(f"Error transforming order flow stationarity: {e}")
             return order_flow_data
+
 
 # -----------------------------------------------------------------------------
 # Feature Selector
@@ -2298,6 +2310,7 @@ class VectorizedFeatureSelector:
         except Exception as e:
             self.logger.exception(f"Error removing low importance features: {e}")
             return []
+
 
 # -----------------------------------------------------------------------------
 # Data Normalizer

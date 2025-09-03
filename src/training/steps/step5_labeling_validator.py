@@ -3,7 +3,6 @@
 
 This module validates the labeling step outputs.
 """
-
 import json
 import os
 from pathlib import Path
@@ -369,7 +368,7 @@ if __name__ == "__main__":
     import asyncio
 import datetime as datetime
     
-test_input = {
+    test_input = {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",

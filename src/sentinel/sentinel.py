@@ -6,8 +6,8 @@ from typing import Any
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.trading_decorators import performance_monitor
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     failed,

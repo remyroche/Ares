@@ -1,20 +1,20 @@
 """
 Lifecycle manager for pipeline components (minimal scaffold).
 """
-
 from __future__ import annotations
 
 from typing import Any, Dict
+import asyncio
 
 from src.utils.centralized_decorators import (
-import asyncio
 
     performance_monitor,
     PerformanceLevel,
     handle_errors,
+    handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+
 
 class LifecycleManager:
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -22,7 +22,7 @@ class LifecycleManager:
         self.logger = system_logger.getChild("LifecycleManager")
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid lifecycle configuration"),
             AttributeError: (False, "Missing lifecycle parameters"),

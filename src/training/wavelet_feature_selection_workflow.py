@@ -13,7 +13,6 @@ The workflow:
 6. Train Production Model on lean dataset
 7. Create optimized live trading configurations
 """
-
 import pickle
 import time
 from dataclasses import dataclass
@@ -29,18 +28,19 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import cross_val_score
 
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
-from src.training.steps.vectorized_advanced_feature_engineering import (
 import asyncio
+from src.training.steps.vectorized_advanced_feature_engineering import (
 
     VectorizedAdvancedFeatureEngineering,
 )
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
+
 
 @dataclass
 class FeatureImportanceResult:
@@ -52,6 +52,7 @@ class FeatureImportanceResult:
     combined_score: float
     feature_type: str  # 'wavelet', 'technical', 'other'
     computation_cost: float  # Estimated computation time in ms
+
 
 class WaveletFeatureSelectionWorkflow:
     """Comprehensive workflow for wavelet feature selection using two-model strategy."
@@ -65,7 +66,6 @@ class WaveletFeatureSelectionWorkflow:
     6. Trains Production Model on lean dataset
     7. Creates optimized live trading configurations
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeatureSelectionWorkflow")
@@ -132,7 +132,11 @@ class WaveletFeatureSelectionWorkflow:
         self.discovery_model: Any | None = None
         self.production_model: Any | None = None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="wavelet feature selection workflow initialization",
+    )
     async def initialize(self) -> bool:
         """Initialize the wavelet feature selection workflow."""
         try:
@@ -169,7 +173,11 @@ class WaveletFeatureSelectionWorkflow:
             self.print(initialization_error(error_msg))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="full wavelet analysis execution",
+    )
     async def run_full_wavelet_analysis(
         self,
         price_data: pd.DataFrame,
@@ -220,7 +228,11 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="discovery model training",
+    )
     async def train_discovery_model(
         self,
         features: dict[str, Any],
@@ -342,7 +354,11 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="feature importance analysis",
+    )
     async def perform_feature_selection(
         self,
         discovery_model_data: dict[str, Any],
@@ -463,7 +479,11 @@ class WaveletFeatureSelectionWorkflow:
             return 1.0  # Technical indicators are fast
         return 5.0  # Other features are moderate
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="winner feature identification",
+    )
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
         """Step 4: Identify the most important features for live trading."
 
@@ -523,7 +543,11 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="lean dataset creation",
+    )
     async def create_lean_dataset(
         self,
         winner_features: list[FeatureImportanceResult],
@@ -581,7 +605,11 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="production model training",
+    )
     async def train_production_model(
         self,
         lean_dataset: dict[str, Any],
@@ -689,7 +717,11 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="live configuration creation",
+    )
     async def create_live_configurations(
         self,
         winner_features: list[FeatureImportanceResult],

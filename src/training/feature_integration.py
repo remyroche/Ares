@@ -4,7 +4,6 @@
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
 """
-
 from typing import Any
 
 import numpy as np
@@ -12,20 +11,20 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     initialization_error,
 )
 
+
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
     into the ML training pipeline.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("FeatureIntegrationManager")
@@ -52,7 +51,11 @@ class FeatureIntegrationManager:
 
         self.is_initialized = False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="feature integration initialization",
+    )
     async def initialize(self) -> bool:
         """Initialize feature integration manager."""
         try:
@@ -60,13 +63,13 @@ class FeatureIntegrationManager:
 
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
+import copy
                 from src.analyst.advanced_feature_engineering import (
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
 
 AdvancedFeatureEngineering,
-                )
+)
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(
                     self.config,
@@ -83,7 +86,11 @@ AdvancedFeatureEngineering,
             )
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="feature integration",
+    )
     async def integrate_features(
         self,
         historical_data: pd.DataFrame,

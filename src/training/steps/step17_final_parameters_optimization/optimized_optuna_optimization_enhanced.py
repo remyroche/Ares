@@ -30,7 +30,7 @@ import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, A, Callableny
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import optuna
@@ -80,8 +80,8 @@ import contextlib
 from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
 from src.utils.logger import setup_logging
 
-if TYPE_CHECKING:
-    @dataclass
+
+@dataclass
 class OptimizationCache:
     """Simple caches for prepared data and generated features."""
 
@@ -546,7 +546,7 @@ class VectorizedOptunaOptimizer:
         return np.asarray(features)
 
     # JIT decorator with safe fallback
-    def _jit(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def _get_jit_decorator(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         if self.enable_jit and jit is not None:  # pragma: no cover - runtime dependent
             return jit(nopython=True, parallel=True)
 
@@ -556,7 +556,6 @@ class VectorizedOptunaOptimizer:
 
         return _noop
 
-    @_jit
     def _vectorized_signal_calculation(  # type: ignore[misc]
         self,
         strength_scores: np.ndarray,

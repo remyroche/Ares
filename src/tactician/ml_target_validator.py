@@ -18,10 +18,6 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 
-<<<<<<< HEAD
-import copy
-=======
->>>>>>> origin/main
 
 class MLTargetValidator:
     """

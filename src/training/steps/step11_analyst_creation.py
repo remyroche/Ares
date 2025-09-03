@@ -68,7 +68,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_artifact_with_standardized_name
 )
 
-# Suppress Optuna's verbose logging to keep the output clean'
+# Suppress Optuna's verbose logging to keep the output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Required modules for this step
@@ -90,14 +90,14 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 
 
 class AnalystCreationStep:
-    """Step 11: Analyst Creation - Creates base analyst models for each regime."
+    """Step 11: Analyst Creation - Creates base analyst models for each regime.
 
     This step creates the initial analyst models for each regime using the
     regime-specific data and features. It focuses on creating robust base models
     that will be enhanced in subsequent steps.
     """
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the AnalystCreationStep."
+        """Initializes the AnalystCreationStep.
 
         Args:
             config (Dict[str, Any]): Configuration dictionary for the step.
@@ -108,7 +108,7 @@ class AnalystCreationStep:
         self._validate_environment()
         
         # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
-        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.'
+        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
         self.device = self._safe_get_device()
         self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
@@ -149,15 +149,11 @@ class AnalystCreationStep:
             # Use threading with timeout to prevent hanging
             import queue
             import threading
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import os.path
-
-result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
-
-def check_mps() -> None:
-    try:
+            
+            result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
+            
+            def check_mps() -> None:
+                try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
                 except Exception as e:  # noqa: BLE001
@@ -203,7 +199,7 @@ def check_mps() -> None:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Executes the analyst model creation pipeline for each regime."
+        """Executes the analyst model creation pipeline for each regime.
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
@@ -666,7 +662,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the analyst creation step."
+    """Run the analyst creation step.
 
     Args:
         symbol: Trading symbol (e.g., "ETHUSDT")

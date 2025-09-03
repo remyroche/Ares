@@ -7,14 +7,14 @@ It provides recommendations for partition strategy improvements and can perform
 partition maintenance operations.
 """
 
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Any
-from utils.data_loader import PartitionedDataLoader
-from utils.logger import system_logger
 import argparse
 import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
+from utils.data_loader import PartitionedDataLoader
+from utils.logger import system_logger
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
@@ -28,9 +28,9 @@ class PartitionOptimizer:
         self.loader=PartitionedDataLoader()
         self.logger=system_logger.getChild("PartitionOptimizer")
 
-    def analyze_all_partitions(self) -> Dict[str, Any]:
+    def analyze_all_partitions(self) -> dict[str, Any]:
         """Analyze all partitioned datasets in the data cache."""
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "analysis_timestamp": datetime.now().isoformat(),
             "datasets": {},
             "summary": {
@@ -80,14 +80,14 @@ class PartitionOptimizer:
 
             if "recommendations" in analysis:
                 results["summary"]["optimization_opportunities"] += len(
-                    analysis["recommendations"]
+                    analysis["recommendations"],
                 )
 
         return results
 
-    def _find_partitioned_datasets(self) -> List[Path]:
+    def _find_partitioned_datasets(self) -> list[Path]:
         """Find all partitioned dataset directories."""
-        partitioned_dirs: List[Path] = []
+        partitioned_dirs: list[Path] = []
 
         # Look for unified directory structure
         unified_path=self.data_cache_path / "unified"
@@ -110,7 +110,7 @@ class PartitionOptimizer:
 
         return partitioned_dirs
 
-    def _parse_dataset_path(self, dataset_path: Path) -> Dict[str, str] | None:
+    def _parse_dataset_path(self, dataset_path: Path) -> dict[str, str] | None:
         """Parse dataset path to extract exchange, symbol, and data type."""
         # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
         parts=dataset_path.parts
@@ -123,9 +123,9 @@ class PartitionOptimizer:
             }
         return None
 
-    def generate_optimization_report(self, analysis_results: Dict[str, Any], output_file: str | None) -> str:
+    def generate_optimization_report(self, analysis_results: dict[str, Any], output_file: str | None) -> str:
         """Generate a comprehensive optimization report."""
-        report_lines: List[str] = []
+        report_lines: list[str] = []
 
         # Header
         report_lines.append("=" * 80)
@@ -142,7 +142,7 @@ class PartitionOptimizer:
         report_lines.append(f"Total Size: {summary['total_size_gb']:.2f} GB")
         report_lines.append(f"Total Files: {summary['total_files']:,}")
         report_lines.append(
-            f"Optimization Opportunities: {summary['optimization_opportunities']}"
+            f"Optimization Opportunities: {summary['optimization_opportunities']}",
         )
         report_lines.append("")
 
@@ -154,23 +154,23 @@ class PartitionOptimizer:
             report_lines.append(f"\nDataset: {dataset_key}")
             report_lines.append(f"Path: {dataset_info['path']}")
 
-            analysis: Dict[str, Any] = dataset_info["analysis"]
+            analysis: dict[str, Any] = dataset_info["analysis"]
             if "partition_analysis" in analysis:
                 pa=analysis["partition_analysis"]
                 report_lines.append(f"  Total Files: {pa.get('total_files', 0):,}")
                 report_lines.append(
-                    f"  Total Size: {pa.get('total_size_bytes', 0) / (1024**3):.2f} GB"
+                    f"  Total Size: {pa.get('total_size_bytes', 0) / (1024**3):.2f} GB",
                 )
                 report_lines.append(
-                    f"  Average File Size: {pa.get('avg_file_size', 0) / (1024**2):.1f} MB"
+                    f"  Average File Size: {pa.get('avg_file_size', 0) / (1024**2):.1f} MB",
                 )
 
                 if "partition_counts" in pa:
                     report_lines.append("  Partition Distribution:")
                     for partition, values in pa["partition_counts"].items():
-                        unique_count=len(values) if isinstance(values, (list, set, tuple)) else int(values)
+                        unique_count=len(values) if isinstance(values, list | set | tuple) else int(values)
                         report_lines.append(
-                            f"    {partition}: {unique_count} unique values"
+                            f"    {partition}: {unique_count} unique values",
                         )
 
             if "recommendations" in analysis and analysis["recommendations"]:
@@ -185,14 +185,14 @@ class PartitionOptimizer:
         report_lines.append("RECOMMENDED ACTIONS")
         report_lines.append("=" * 80)
 
-        all_recommendations: List[Dict[str, Any]] = []
+        all_recommendations: list[dict[str, Any]] = []
         for dataset_info in analysis_results["datasets"].values():
             if "recommendations" in dataset_info["analysis"]:
                 all_recommendations.extend(dataset_info["analysis"]["recommendations"])
 
         if all_recommendations:
             # Group recommendations by type
-            rec_by_type: Dict[str, List[Dict[str, Any]]] = {}
+            rec_by_type: dict[str, list[dict[str, Any]]] = {}
             for rec in all_recommendations:
                 rec_type=rec.get("type", "general")
                 if rec_type not in rec_by_type:
@@ -217,13 +217,13 @@ class PartitionOptimizer:
                     f.write(report)
                 self.logger.info(f"Report saved to: {output_file}")
             except Exception as e:  # noqa: BLE001
-                self.logger.error(f"Failed to save report to {output_file}: {e}")
+                self.logger.exception(f"Failed to save report to {output_file}: {e}")
 
         return report
 
-    def suggest_partition_strategy(self, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
+    def suggest_partition_strategy(self, dataset_info: dict[str, Any]) -> dict[str, Any]:
         """Suggest optimal partition strategy for a dataset."""
-        recommendations: Dict[str, Any] = {
+        recommendations: dict[str, Any] = {
             "current_strategy": [],
             "recommended_strategy": [],
             "rationale": [],
@@ -239,7 +239,7 @@ class PartitionOptimizer:
 
         if "partition_analysis" in analysis:
             current_partitions=list(
-                analysis["partition_analysis"].get("partition_counts", {}).keys()
+                analysis["partition_analysis"].get("partition_counts", {}).keys(),
             )
             recommendations["current_strategy"] = current_partitions
 
@@ -257,7 +257,7 @@ class PartitionOptimizer:
                     "day",
                 ]
                 recommendations["rationale"].append(
-                    "Large dataset: Use daily partitioning for efficient querying"
+                    "Large dataset: Use daily partitioning for efficient querying",
                 )
             elif data_size > 1024**3:  # > 1GB
                 recommendations["recommended_strategy"] = [
@@ -268,7 +268,7 @@ class PartitionOptimizer:
                     "month",
                 ]
                 recommendations["rationale"].append(
-                    "Medium dataset: Monthly partitioning provides good balance"
+                    "Medium dataset: Monthly partitioning provides good balance",
                 )
             else:
                 recommendations["recommended_strategy"] = [
@@ -278,14 +278,14 @@ class PartitionOptimizer:
                     "year",
                 ]
                 recommendations["rationale"].append(
-                    "Small dataset: Yearly partitioning is sufficient"
+                    "Small dataset: Yearly partitioning is sufficient",
                 )
 
         # Add hour partitioning for high-frequency data
         if dataset_info.get("timeframe") in ["1m", "5m"]:
             recommendations["recommended_strategy"].append("hour")
             recommendations["rationale"].append(
-                "High-frequency data: Add hourly partitioning for better granularity"
+                "High-frequency data: Add hourly partitioning for better granularity",
             )
 
         return recommendations
@@ -293,10 +293,10 @@ class PartitionOptimizer:
 
 def main() -> None:
     parser=argparse.ArgumentParser(
-        description="Analyze and optimize parquet partition structures"
+        description="Analyze and optimize parquet partition structures",
     )
     parser.add_argument(
-        "--data-cache", default="data_cache", help="Path to data cache directory"
+        "--data-cache", default="data_cache", help="Path to data cache directory",
     )
     parser.add_argument("--output", help="Output file for the report")
     parser.add_argument(
@@ -321,7 +321,7 @@ def main() -> None:
             print("\n" + report)
 
         print(
-            f"✅ Analysis complete! Found {analysis_results['summary']['optimization_opportunities']} optimization opportunities."
+            f"✅ Analysis complete! Found {analysis_results['summary']['optimization_opportunities']} optimization opportunities.",
         )
 
     elif args.action== "optimize":

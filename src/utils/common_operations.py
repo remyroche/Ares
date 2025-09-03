@@ -5,22 +5,25 @@ This module provides commonly used operations that were identified as undefined
 in the codebase analysis. It serves as a central location for these utilities.
 """
 
-import datetime
-import pandas as pd
-import numpy as np
+import argparse
 import asyncio
-import json
-import os
-import time
+import datetime
 import glob
 import hashlib
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable, Generator, Tuple, TypeVar, Awaitable, cast
-from collections import defaultdict, Counter, deque
+import json
 import logging
-from copy import copy, deepcopy
-import argparse
+import time
+from collections import Counter, defaultdict, deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from pathlib import Path
+from typing import (
+    Any,
+)
+
+import numpy as np
+import pandas as pd
 
 
 # DateTime utilities
@@ -45,7 +48,7 @@ def parse_datetime(date_string: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> datetime
 
 
 # DataFrame operations
-def create_empty_dataframe(columns: List[str]) -> pd.DataFrame:
+def create_empty_dataframe(columns: list[str]) -> pd.DataFrame:
     """Create an empty DataFrame with specified columns."""
     return pd.DataFrame(columns=columns)
 
@@ -61,18 +64,18 @@ def safe_rolling(df: pd.DataFrame, window: int, min_periods: int = 1) -> pd.core
 
 
 # Numeric operations
-def safe_mean(values: Union[List, np.ndarray, pd.Series]) -> float:
+def safe_mean(values: list | np.ndarray | pd.Series) -> float:
     """Calculate mean safely, handling empty inputs."""
-    if isinstance(values, (list, tuple)):
+    if isinstance(values, list | tuple):
         values = np.array(values)
     if len(values) == 0:
         return np.nan
     return np.nanmean(values)
 
 
-def safe_std(values: Union[List, np.ndarray, pd.Series]) -> float:
+def safe_std(values: list | np.ndarray | pd.Series) -> float:
     """Calculate standard deviation safely."""
-    if isinstance(values, (list, tuple)):
+    if isinstance(values, list | tuple):
         values = np.array(values)
     if len(values) == 0:
         return np.nan
@@ -80,14 +83,14 @@ def safe_std(values: Union[List, np.ndarray, pd.Series]) -> float:
 
 
 # File operations
-def ensure_directory(path: Union[str, Path]) -> Path:
+def ensure_directory(path: str | Path) -> Path:
     """Ensure a directory exists, creating it if necessary."""
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def safe_file_exists(path: Union[str, Path]) -> bool:
+def safe_file_exists(path: str | Path) -> bool:
     """Check if a file exists safely."""
     try:
         return Path(path).exists()
@@ -95,15 +98,15 @@ def safe_file_exists(path: Union[str, Path]) -> bool:
         return False
 
 
-def safe_json_dump(data: Any, file_path: Union[str, Path], **kwargs) -> None:
+def safe_json_dump(data: Any, file_path: str | Path, **kwargs) -> None:
     """Safely dump data to JSON file."""
-    with open(file_path, 'w') as f:
+    with open(file_path, "w") as f:
         json.dump(data, f, **kwargs)
 
 
-def safe_json_load(file_path: Union[str, Path]) -> Any:
+def safe_json_load(file_path: str | Path) -> Any:
     """Safely load data from JSON file."""
-    with open(file_path, 'r') as f:
+    with open(file_path) as f:
         return json.load(f)
 
 
@@ -125,7 +128,7 @@ def create_async_task(coroutine) -> asyncio.Task:
 
 
 # Collection utilities
-def safe_append(lst: List[Any], item: Any) -> List[Any]:
+def safe_append(lst: list[Any], item: Any) -> list[Any]:
     """Safely append to a list."""
     if lst is None:
         lst = []
@@ -133,7 +136,7 @@ def safe_append(lst: List[Any], item: Any) -> List[Any]:
     return lst
 
 
-def safe_extend(lst: List[Any], items: List[Any]) -> List[Any]:
+def safe_extend(lst: list[Any], items: list[Any]) -> list[Any]:
     """Safely extend a list."""
     if lst is None:
         lst = []
@@ -141,14 +144,14 @@ def safe_extend(lst: List[Any], items: List[Any]) -> List[Any]:
     return lst
 
 
-def safe_dict_get(d: Dict[Any, Any], key: Any, default: Any = None) -> Any:
+def safe_dict_get(d: dict[Any, Any], key: Any, default: Any = None) -> Any:
     """Safely get value from dictionary."""
     if d is None:
         return default
     return d.get(key, default)
 
 
-def safe_dict_items(d: Dict[Any, Any]) -> List[tuple]:
+def safe_dict_items(d: dict[Any, Any]) -> list[tuple]:
     """Safely get items from dictionary."""
     if d is None:
         return []
@@ -170,7 +173,7 @@ def safe_upper(s: str) -> str:
     return str(s).upper()
 
 
-def safe_join(separator: str, items: List[Any]) -> str:
+def safe_join(separator: str, items: list[Any]) -> str:
     """Safely join items into a string."""
     if items is None:
         return ""
@@ -187,7 +190,7 @@ def setup_basic_logging(level: int = logging.INFO) -> None:
     """Setup basic logging configuration."""
     logging.basicConfig(
         level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
 
@@ -199,12 +202,12 @@ def create_argument_parser(description: str) -> argparse.ArgumentParser:
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to parser."""
-    parser.add_argument('--verbose', '-v', action='store_true',
-                       help='Enable verbose output')
-    parser.add_argument('--config', type=str, default='config.json',
-                       help='Configuration file path')
-    parser.add_argument('--output', '-o', type=str,
-                       help='Output file path')
+    parser.add_argument("--verbose", "-v", action="store_true",
+                       help="Enable verbose output")
+    parser.add_argument("--config", type=str, default="config.json",
+                       help="Configuration file path")
+    parser.add_argument("--output", "-o", type=str,
+                       help="Output file path")
 
 
 # Exception handling utilities
@@ -240,26 +243,24 @@ def safe_int(value: Any, default: int = 0) -> int:
 # Optuna-specific utilities (for hyperparameter optimization)
 def suggest_float_uniform(trial: Any, name: str, low: float, high: float) -> float:
     """Wrapper for Optuna's suggest_float."""
-    if hasattr(trial, 'suggest_float'):
+    if hasattr(trial, "suggest_float"):
         return trial.suggest_float(name, low, high)
-    else:
-        # Fallback for non-Optuna contexts
-        import random
-        return random.uniform(low, high)
+    # Fallback for non-Optuna contexts
+    import random
+    return random.uniform(low, high)
 
 
 def suggest_int_uniform(trial: Any, name: str, low: int, high: int) -> int:
     """Wrapper for Optuna's suggest_int."""
-    if hasattr(trial, 'suggest_int'):
+    if hasattr(trial, "suggest_int"):
         return trial.suggest_int(name, low, high)
-    else:
-        # Fallback for non-Optuna contexts
-        import random
-        return random.randint(low, high)
+    # Fallback for non-Optuna contexts
+    import random
+    return random.randint(low, high)
 
 
 # Validation utilities
-def validate_dataframe(df: pd.DataFrame, required_columns: List[str]) -> bool:
+def validate_dataframe(df: pd.DataFrame, required_columns: list[str]) -> bool:
     """Validate that a DataFrame has required columns."""
     if df is None or df.empty:
         return False
@@ -276,50 +277,47 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting types."""
     for col in df.columns:
         col_type = df[col].dtype
-        
-        if col_type != 'object':
+
+        if col_type != "object":
             c_min = df[col].min()
             c_max = df[col].max()
-            
-            if str(col_type)[:3] == 'int':
+
+            if str(col_type)[:3] == "int":
                 if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                     df[col] = df[col].astype(np.int8)
                 elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
                     df[col] = df[col].astype(np.int16)
                 elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
                     df[col] = df[col].astype(np.int32)
-            else:
-                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
-                    df[col] = df[col].astype(np.float32)
-                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
-                    df[col] = df[col].astype(np.float32)
-    
+            elif c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max or c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                df[col] = df[col].astype(np.float32)
+
     return df
 
 
 # Parquet operations
-def safe_read_parquet(file_path: Union[str, Path], columns: Optional[List[str]] = None) -> pd.DataFrame:
+def safe_read_parquet(file_path: str | Path, columns: list[str] | None = None) -> pd.DataFrame:
     """Safely read parquet file with error handling."""
     try:
         return pd.read_parquet(file_path, columns=columns)
     except Exception as e:
         logger = get_logger(__name__)
-        logger.error(f"Failed to read parquet file {file_path}: {e}")
+        logger.exception(f"Failed to read parquet file {file_path}: {e}")
         return pd.DataFrame()
 
 
-def safe_to_parquet(df: pd.DataFrame, file_path: Union[str, Path], **kwargs) -> bool:
+def safe_to_parquet(df: pd.DataFrame, file_path: str | Path, **kwargs) -> bool:
     """Safely write DataFrame to parquet with error handling."""
     try:
         df.to_parquet(file_path, **kwargs)
         return True
     except Exception as e:
         logger = get_logger(__name__)
-        logger.error(f"Failed to write parquet file {file_path}: {e}")
+        logger.exception(f"Failed to write parquet file {file_path}: {e}")
         return False
 
 
-def list_parquet_files(directory: Union[str, Path], recursive: bool = True) -> List[Path]:
+def list_parquet_files(directory: str | Path, recursive: bool = True) -> list[Path]:
     """List all parquet files in a directory."""
     directory = Path(directory)
     if recursive:
@@ -328,21 +326,20 @@ def list_parquet_files(directory: Union[str, Path], recursive: bool = True) -> L
 
 
 # Hashing and cache operations
-def generate_hash(data: Union[str, bytes, pd.DataFrame], algorithm: str = "md5") -> str:
+def generate_hash(data: str | bytes | pd.DataFrame, algorithm: str = "md5") -> str:
     """Generate hash for data with support for different types."""
-    import hashlib
-    
+
     if isinstance(data, pd.DataFrame):
         data = pd.util.hash_pandas_object(data).values.tobytes()
     elif isinstance(data, str):
         data = data.encode()
-    
+
     if algorithm == "md5":
         return hashlib.md5(data).hexdigest()
-    elif algorithm == "sha256":
+    if algorithm == "sha256":
         return hashlib.sha256(data).hexdigest()
-    else:
-        raise ValueError(f"Unsupported algorithm: {algorithm}")
+    msg = f"Unsupported algorithm: {algorithm}"
+    raise ValueError(msg)
 
 
 def generate_cache_key(prefix: str, *args, max_length: int = 16) -> str:
@@ -370,9 +367,8 @@ def safe_deepcopy(obj: Any) -> Any:
 
 
 # Enhanced file system operations
-def safe_glob(pattern: str, recursive: bool = False) -> List[Path]:
+def safe_glob(pattern: str, recursive: bool = False) -> list[Path]:
     """Safely glob for files with error handling."""
-    import glob
     try:
         files = glob.glob(pattern, recursive=recursive)
         return [Path(f) for f in files]
@@ -380,20 +376,20 @@ def safe_glob(pattern: str, recursive: bool = False) -> List[Path]:
         return []
 
 
-def list_files(directory: Union[str, Path], pattern: str = "*", 
-              suffix: Optional[str] = None) -> List[Path]:
+def list_files(directory: str | Path, pattern: str = "*",
+              suffix: str | None = None) -> list[Path]:
     """List files in directory with optional pattern/suffix filter."""
     directory = Path(directory)
     if not directory.exists():
         return []
-    
+
     if suffix:
         return [f for f in directory.iterdir() if f.is_file() and f.suffix == suffix]
-    
+
     return [f for f in directory.glob(pattern) if f.is_file()]
 
 
-def get_latest_file(directory: Union[str, Path], pattern: str = "*") -> Optional[Path]:
+def get_latest_file(directory: str | Path, pattern: str = "*") -> Path | None:
     """Get the most recently modified file matching pattern."""
     files = list_files(directory, pattern)
     if not files:
@@ -402,17 +398,17 @@ def get_latest_file(directory: Union[str, Path], pattern: str = "*") -> Optional
 
 
 # Enhanced data validation
-def validate_dataframe_schema(df: pd.DataFrame, 
-                            required_columns: List[str],
-                            column_types: Optional[Dict[str, type]] = None) -> Tuple[bool, List[str]]:
+def validate_dataframe_schema(df: pd.DataFrame,
+                            required_columns: list[str],
+                            column_types: dict[str, type] | None = None) -> tuple[bool, list[str]]:
     """Validate DataFrame schema including column types."""
     errors = []
-    
+
     # Check required columns
     missing = set(required_columns) - set(df.columns)
     if missing:
         errors.append(f"Missing columns: {missing}")
-    
+
     # Check column types if specified
     if column_types:
         for col, expected_type in column_types.items():
@@ -420,70 +416,71 @@ def validate_dataframe_schema(df: pd.DataFrame,
                 actual_type = df[col].dtype
                 if not np.issubdtype(actual_type, expected_type):
                     errors.append(f"Column {col} has type {actual_type}, expected {expected_type}")
-    
+
     return len(errors) == 0, errors
 
 
-def validate_data_quality(df: pd.DataFrame, 
+def validate_data_quality(df: pd.DataFrame,
                         max_nan_ratio: float = 0.1,
-                        check_duplicates: bool = True) -> Dict[str, Any]:
+                        check_duplicates: bool = True) -> dict[str, Any]:
     """Comprehensive data quality validation."""
     quality_report = {
         "total_rows": len(df),
         "total_columns": len(df.columns),
         "memory_usage_mb": df.memory_usage(deep=True).sum() / 1024 / 1024,
-        "issues": []
+        "issues": [],
     }
-    
+
     # Check NaN ratio
     nan_ratios = df.isna().sum() / len(df)
     high_nan_cols = nan_ratios[nan_ratios > max_nan_ratio]
     if not high_nan_cols.empty:
         quality_report["issues"].append({
             "type": "high_nan_ratio",
-            "columns": high_nan_cols.to_dict()
+            "columns": high_nan_cols.to_dict(),
         })
-    
+
     # Check duplicates
     if check_duplicates:
         duplicates = df.duplicated().sum()
         if duplicates > 0:
             quality_report["issues"].append({
                 "type": "duplicates",
-                "count": duplicates
+                "count": duplicates,
             })
-    
+
     quality_report["is_valid"] = len(quality_report["issues"]) == 0
     return quality_report
 
 
 # Time series operations
-def safe_resample(df: pd.DataFrame, rule: str, 
-                 agg_dict: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+def safe_resample(df: pd.DataFrame, rule: str,
+                 agg_dict: dict[str, str] | None = None) -> pd.DataFrame:
     """Safely resample time series data."""
     if not isinstance(df.index, pd.DatetimeIndex):
-        raise ValueError("DataFrame must have DatetimeIndex")
-    
+        msg = "DataFrame must have DatetimeIndex"
+        raise ValueError(msg)
+
     if agg_dict is None:
         # Default aggregations for common columns
         agg_dict = {
             "close": "last",
-            "open": "first", 
+            "open": "first",
             "high": "max",
             "low": "min",
-            "volume": "sum"
+            "volume": "sum",
         }
         # Only use columns that exist
         agg_dict = {k: v for k, v in agg_dict.items() if k in df.columns}
-    
+
     return df.resample(rule).agg(agg_dict)
 
 
-def align_dataframes(*dfs: pd.DataFrame, method: str = "inner") -> List[pd.DataFrame]:
+def align_dataframes(*dfs: pd.DataFrame, method: str = "inner") -> list[pd.DataFrame]:
     """Align multiple DataFrames by index."""
     if len(dfs) < 2:
         return list(dfs)
-    
+
     # Find common index range
     if method == "inner":
         start = max(df.index.min() for df in dfs)
@@ -491,7 +488,7 @@ def align_dataframes(*dfs: pd.DataFrame, method: str = "inner") -> List[pd.DataF
         aligned = [df.loc[start:end] for df in dfs]
     else:  # outer
         aligned = list(dfs)
-    
+
     return aligned
 
 
@@ -501,12 +498,12 @@ def safe_defaultdict(default_factory: Callable) -> defaultdict:
     return defaultdict(default_factory)
 
 
-def safe_counter(items: Optional[List[Any]] = None) -> Counter:
+def safe_counter(items: list[Any] | None = None) -> Counter:
     """Create a Counter safely."""
     return Counter(items or [])
 
 
-def safe_deque(items: Optional[List[Any]] = None, maxlen: Optional[int] = None) -> deque:
+def safe_deque(items: list[Any] | None = None, maxlen: int | None = None) -> deque:
     """Create a deque safely."""
     return deque(items or [], maxlen=maxlen)
 
@@ -514,7 +511,6 @@ def safe_deque(items: Optional[List[Any]] = None, maxlen: Optional[int] = None) 
 # Progress and timing utilities
 def timed_operation(operation_name: str):
     """Decorator to time operations."""
-    import time
     def decorator(func):
         def wrapper(*args, **kwargs):
             start = time.time()
@@ -527,7 +523,7 @@ def timed_operation(operation_name: str):
                 return result
             except Exception as e:
                 elapsed = time.time() - start
-                logger.error(f"Failed {operation_name} after {elapsed:.2f}s: {e}")
+                logger.exception(f"Failed {operation_name} after {elapsed:.2f}s: {e}")
                 raise
         return wrapper
     return decorator
@@ -535,7 +531,7 @@ def timed_operation(operation_name: str):
 
 def format_bytes(size_bytes: int) -> str:
     """Format bytes to human readable string."""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size_bytes < 1024.0:
             return f"{size_bytes:.2f} {unit}"
         size_bytes /= 1024.0
@@ -543,7 +539,7 @@ def format_bytes(size_bytes: int) -> str:
 
 
 # Batch processing utilities
-def chunked_iterable(iterable: List[Any], chunk_size: int) -> List[List[Any]]:
+def chunked_iterable(iterable: list[Any], chunk_size: int) -> list[list[Any]]:
     """Split an iterable into chunks."""
     chunks = []
     for i in range(0, len(iterable), chunk_size):
@@ -551,17 +547,16 @@ def chunked_iterable(iterable: List[Any], chunk_size: int) -> List[List[Any]]:
     return chunks
 
 
-def parallel_map(func: Callable, items: List[Any], 
-                max_workers: Optional[int] = None) -> List[Any]:
+def parallel_map(func: Callable, items: list[Any],
+                max_workers: int | None = None) -> list[Any]:
     """Apply function to items in parallel."""
-    from concurrent.futures import ThreadPoolExecutor
-    
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(func, items))
 
 
 # MLflow integration helpers
-def safe_log_metric(key: str, value: float, step: Optional[int] = None) -> None:
+def safe_log_metric(key: str, value: float, step: int | None = None) -> None:
     """Safely log metric to MLflow if available."""
     try:
         import mlflow
@@ -571,7 +566,7 @@ def safe_log_metric(key: str, value: float, step: Optional[int] = None) -> None:
         pass
 
 
-def safe_log_params(params: Dict[str, Any]) -> None:
+def safe_log_params(params: dict[str, Any]) -> None:
     """Safely log parameters to MLflow if available."""
     try:
         import mlflow
@@ -581,7 +576,7 @@ def safe_log_params(params: Dict[str, Any]) -> None:
         pass
 
 
-def safe_log_artifact(file_path: Union[str, Path]) -> None:
+def safe_log_artifact(file_path: str | Path) -> None:
     """Safely log artifact to MLflow if available."""
     try:
         import mlflow
@@ -594,63 +589,63 @@ def safe_log_artifact(file_path: Union[str, Path]) -> None:
 # Export commonly used items for easier imports
 __all__ = [
     # DateTime utilities
-    'get_current_datetime', 'get_today', 'format_datetime', 'parse_datetime',
-    
+    "get_current_datetime", "get_today", "format_datetime", "parse_datetime",
+
     # DataFrame operations
-    'create_empty_dataframe', 'safe_fillna', 'safe_rolling', 'safe_copy', 
-    'safe_deepcopy', 'safe_resample', 'align_dataframes',
-    
+    "create_empty_dataframe", "safe_fillna", "safe_rolling", "safe_copy",
+    "safe_deepcopy", "safe_resample", "align_dataframes",
+
     # Numeric operations
-    'safe_mean', 'safe_std',
-    
+    "safe_mean", "safe_std",
+
     # File operations
-    'ensure_directory', 'safe_file_exists', 'safe_json_dump', 'safe_json_load',
-    'safe_glob', 'list_files', 'get_latest_file',
-    
+    "ensure_directory", "safe_file_exists", "safe_json_dump", "safe_json_load",
+    "safe_glob", "list_files", "get_latest_file",
+
     # Parquet operations
-    'safe_read_parquet', 'safe_to_parquet', 'list_parquet_files',
-    
+    "safe_read_parquet", "safe_to_parquet", "list_parquet_files",
+
     # Hashing and cache operations
-    'generate_hash', 'generate_cache_key',
-    
+    "generate_hash", "generate_cache_key",
+
     # Async utilities
-    'safe_sleep', 'safe_gather', 'create_async_task',
-    
+    "safe_sleep", "safe_gather", "create_async_task",
+
     # Collection utilities
-    'safe_append', 'safe_extend', 'safe_dict_get', 'safe_dict_items',
-    'safe_defaultdict', 'safe_counter', 'safe_deque',
-    
+    "safe_append", "safe_extend", "safe_dict_get", "safe_dict_items",
+    "safe_defaultdict", "safe_counter", "safe_deque",
+
     # String operations
-    'safe_lower', 'safe_upper', 'safe_join',
-    
+    "safe_lower", "safe_upper", "safe_join",
+
     # Logging utilities
-    'get_logger', 'setup_basic_logging',
-    
+    "get_logger", "setup_basic_logging",
+
     # Argument parsing utilities
-    'create_argument_parser', 'add_common_arguments',
-    
+    "create_argument_parser", "add_common_arguments",
+
     # Exception handling utilities
-    'safe_exception_handler',
-    
+    "safe_exception_handler",
+
     # Type conversion utilities
-    'safe_float', 'safe_int',
-    
+    "safe_float", "safe_int",
+
     # Optuna utilities
-    'suggest_float_uniform', 'suggest_int_uniform',
-    
+    "suggest_float_uniform", "suggest_int_uniform",
+
     # Validation utilities
-    'validate_dataframe', 'validate_numeric_range', 'validate_dataframe_schema',
-    'validate_data_quality',
-    
+    "validate_dataframe", "validate_numeric_range", "validate_dataframe_schema",
+    "validate_data_quality",
+
     # Memory optimization utilities
-    'optimize_dataframe_dtypes',
-    
+    "optimize_dataframe_dtypes",
+
     # Progress and timing utilities
-    'timed_operation', 'format_bytes',
-    
+    "timed_operation", "format_bytes",
+
     # Batch processing utilities
-    'chunked_iterable', 'parallel_map',
-    
+    "chunked_iterable", "parallel_map",
+
     # MLflow integration helpers
-    'safe_log_metric', 'safe_log_params', 'safe_log_artifact'
+    "safe_log_metric", "safe_log_params", "safe_log_artifact",
 ]

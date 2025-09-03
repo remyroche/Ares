@@ -8,11 +8,11 @@ Scaffolding for regime detection and S/R tracking.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import asyncio
+
 
 class RegimeType(Enum):
     BULL_TREND = "bull_trend"
@@ -24,7 +24,7 @@ class RegimeType(Enum):
 class RegimeSRTracker:
     """Regime and S/R tracker scaffold."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("RegimeSRTracker")
 

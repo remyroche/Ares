@@ -1,12 +1,18 @@
 # src/components/modular_supervisor.py
 
 from datetime import datetime
-from src.utils.logger import system_logger
 from typing import Any
+
 from src.core.decorators import handles_errors
-from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
-import copy
-import asyncio
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
+
 
 class ModularSupervisor:
     """
@@ -86,7 +92,7 @@ class ModularSupervisor:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Modular Supervisor initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Modular Supervisor initialization failed: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -112,7 +118,7 @@ class ModularSupervisor:
             self.logger.info("Supervisor configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error loading supervisor configuration: {e}"))
+            self.logger.exception(error(f"Error loading supervisor configuration: {e}"))
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
@@ -149,7 +155,7 @@ class ModularSupervisor:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating configuration: {e}"))
+            self.logger.exception(error(f"Error validating configuration: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -175,7 +181,7 @@ class ModularSupervisor:
             self.logger.info("Supervision modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing supervision modules: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing supervision modules: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_performance_monitoring(self) -> None:
@@ -194,7 +200,7 @@ class ModularSupervisor:
             self.logger.info("Performance monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing performance monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing performance monitoring: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_risk_monitoring(self) -> None:
@@ -213,7 +219,7 @@ class ModularSupervisor:
             self.logger.info("Risk monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing risk monitoring: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_system_monitoring(self) -> None:
@@ -232,7 +238,7 @@ class ModularSupervisor:
             self.logger.info("System monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing system monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing system monitoring: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_alerting(self) -> None:
@@ -249,7 +255,7 @@ class ModularSupervisor:
             self.logger.info("Alerting module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing alerting: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing alerting: {e}"))
 
     @handles_errors(
         error_handlers={
@@ -322,7 +328,7 @@ class ModularSupervisor:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error executing supervision: {e}"))
+            self.logger.exception(error(f"Error executing supervision: {e}"))
             self.is_supervising = False
             return False
 
@@ -358,18 +364,18 @@ class ModularSupervisor:
                     return False
 
             # Validate data types
-            if not isinstance(trading_data["returns"], (int, float)):
+            if not isinstance(trading_data["returns"], int | float):
                 self.logger.error(invalid("Invalid returns data type"))
                 return False
 
-            if not isinstance(system_data["cpu_usage"], (int, float)):
+            if not isinstance(system_data["cpu_usage"], int | float):
                 self.logger.error(invalid("Invalid CPU usage data type"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating supervision inputs: {e}"))
+            self.logger.exception(error(f"Error validating supervision inputs: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -419,7 +425,7 @@ class ModularSupervisor:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing performance monitoring: {e}"))
+            self.logger.exception(error(f"Error performing performance monitoring: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -469,7 +475,7 @@ class ModularSupervisor:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing risk monitoring: {e}"))
+            self.logger.exception(error(f"Error performing risk monitoring: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -519,7 +525,7 @@ class ModularSupervisor:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing system monitoring: {e}"))
+            self.logger.exception(error(f"Error performing system monitoring: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -544,7 +550,7 @@ class ModularSupervisor:
             # Check performance alerts
             if self.alerting_rules.get("performance_alerts", False):
                 results["performance_alerts"] = self._check_performance_alerts(
-                    trading_data, system_data
+                    trading_data, system_data,
                 )
 
             # Check risk alerts
@@ -558,14 +564,14 @@ class ModularSupervisor:
             # Check threshold alerts
             if self.alerting_rules.get("threshold_alerts", False):
                 results["threshold_alerts"] = self._check_threshold_alerts(
-                    trading_data, system_data
+                    trading_data, system_data,
                 )
 
             self.logger.info("Alerting completed")
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing alerting: {e}"))
+            self.logger.exception(error(f"Error performing alerting: {e}"))
             return {}
 
     # Performance monitoring calculation methods
@@ -584,7 +590,7 @@ class ModularSupervisor:
                 "daily_return": 0.001,
             }
         except Exception as e:
-            self.logger.error(error(f"Error calculating returns: {e}"))
+            self.logger.exception(error(f"Error calculating returns: {e}"))
             return {}
 
     def _calculate_sharpe_ratio(
@@ -597,7 +603,7 @@ class ModularSupervisor:
             # Simulate Sharpe ratio calculation
             return 1.25
         except Exception as e:
-            self.logger.error(error(f"Error calculating Sharpe ratio: {e}"))
+            self.logger.exception(error(f"Error calculating Sharpe ratio: {e}"))
             return 0.0
 
     def _calculate_sortino_ratio(
@@ -610,7 +616,7 @@ class ModularSupervisor:
             # Simulate Sortino ratio calculation
             return 1.45
         except Exception as e:
-            self.logger.error(error(f"Error calculating Sortino ratio: {e}"))
+            self.logger.exception(error(f"Error calculating Sortino ratio: {e}"))
             return 0.0
 
     def _calculate_calmar_ratio(
@@ -623,7 +629,7 @@ class ModularSupervisor:
             # Simulate Calmar ratio calculation
             return 1.35
         except Exception as e:
-            self.logger.error(error(f"Error calculating Calmar ratio: {e}"))
+            self.logger.exception(error(f"Error calculating Calmar ratio: {e}"))
             return 0.0
 
     def _calculate_max_drawdown(
@@ -636,7 +642,7 @@ class ModularSupervisor:
             # Simulate max drawdown calculation
             return 0.08
         except Exception as e:
-            self.logger.error(error(f"Error calculating max drawdown: {e}"))
+            self.logger.exception(error(f"Error calculating max drawdown: {e}"))
             return 0.0
 
     def _calculate_win_rate(
@@ -649,7 +655,7 @@ class ModularSupervisor:
             # Simulate win rate calculation
             return 0.65
         except Exception as e:
-            self.logger.error(error(f"Error calculating win rate: {e}"))
+            self.logger.exception(error(f"Error calculating win rate: {e}"))
             return 0.0
 
     # Risk monitoring calculation methods
@@ -664,7 +670,7 @@ class ModularSupervisor:
             # Simulate VaR calculation
             return 0.025
         except Exception as e:
-            self.logger.error(error(f"Error calculating VaR: {e}"))
+            self.logger.exception(error(f"Error calculating VaR: {e}"))
             return 0.0
 
     def _calculate_cvar(
@@ -677,7 +683,7 @@ class ModularSupervisor:
             # Simulate CVaR calculation
             return 0.035
         except Exception as e:
-            self.logger.error(error(f"Error calculating CVaR: {e}"))
+            self.logger.exception(error(f"Error calculating CVaR: {e}"))
             return 0.0
 
     def _calculate_volatility(
@@ -690,7 +696,7 @@ class ModularSupervisor:
             # Simulate volatility calculation
             return 0.18
         except Exception as e:
-            self.logger.error(error(f"Error calculating volatility: {e}"))
+            self.logger.exception(error(f"Error calculating volatility: {e}"))
             return 0.0
 
     def _calculate_beta(
@@ -703,7 +709,7 @@ class ModularSupervisor:
             # Simulate beta calculation
             return 0.85
         except Exception as e:
-            self.logger.error(error(f"Error calculating beta: {e}"))
+            self.logger.exception(error(f"Error calculating beta: {e}"))
             return 0.0
 
     def _calculate_correlation(
@@ -716,7 +722,7 @@ class ModularSupervisor:
             # Simulate correlation calculation
             return 0.25
         except Exception as e:
-            self.logger.error(error(f"Error calculating correlation: {e}"))
+            self.logger.exception(error(f"Error calculating correlation: {e}"))
             return 0.0
 
     def _calculate_concentration(
@@ -729,7 +735,7 @@ class ModularSupervisor:
             # Simulate concentration calculation
             return 0.15
         except Exception as e:
-            self.logger.error(error(f"Error calculating concentration: {e}"))
+            self.logger.exception(error(f"Error calculating concentration: {e}"))
             return 0.0
 
     # System monitoring methods
@@ -748,7 +754,7 @@ class ModularSupervisor:
                 "cpu_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring CPU usage: {e}"))
+            self.logger.exception(error(f"Error monitoring CPU usage: {e}"))
             return {}
 
     def _monitor_memory_usage(
@@ -765,7 +771,7 @@ class ModularSupervisor:
                 "memory_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring memory usage: {e}"))
+            self.logger.exception(error(f"Error monitoring memory usage: {e}"))
             return {}
 
     def _monitor_disk_usage(
@@ -782,7 +788,7 @@ class ModularSupervisor:
                 "disk_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring disk usage: {e}"))
+            self.logger.exception(error(f"Error monitoring disk usage: {e}"))
             return {}
 
     def _monitor_network_latency(
@@ -799,7 +805,7 @@ class ModularSupervisor:
                 "latency_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring network latency: {e}"))
+            self.logger.exception(error(f"Error monitoring network latency: {e}"))
             return {}
 
     def _monitor_error_rate(
@@ -816,7 +822,7 @@ class ModularSupervisor:
                 "error_rate_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring error rate: {e}"))
+            self.logger.exception(error(f"Error monitoring error rate: {e}"))
             return {}
 
     def _monitor_uptime(
@@ -833,7 +839,7 @@ class ModularSupervisor:
                 "uptime_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring uptime: {e}"))
+            self.logger.exception(error(f"Error monitoring uptime: {e}"))
             return {}
 
     # Alerting methods
@@ -852,7 +858,7 @@ class ModularSupervisor:
                 "critical_alerts": 0,
             }
         except Exception as e:
-            self.logger.error(error(f"Error checking performance alerts: {e}"))
+            self.logger.exception(error(f"Error checking performance alerts: {e}"))
             return {}
 
     def _check_risk_alerts(
@@ -869,7 +875,7 @@ class ModularSupervisor:
                 "critical_alerts": 0,
             }
         except Exception as e:
-            self.logger.error(error(f"Error checking risk alerts: {e}"))
+            self.logger.exception(error(f"Error checking risk alerts: {e}"))
             return {}
 
     def _check_system_alerts(
@@ -886,7 +892,7 @@ class ModularSupervisor:
                 "critical_alerts": 0,
             }
         except Exception as e:
-            self.logger.error(error(f"Error checking system alerts: {e}"))
+            self.logger.exception(error(f"Error checking system alerts: {e}"))
             return {}
 
     def _check_threshold_alerts(
@@ -903,7 +909,7 @@ class ModularSupervisor:
                 "critical_alerts": 0,
             }
         except Exception as e:
-            self.logger.error(error(f"Error checking threshold alerts: {e}"))
+            self.logger.exception(error(f"Error checking threshold alerts: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -923,7 +929,7 @@ class ModularSupervisor:
             self.logger.info("Supervision results stored successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error storing supervision results: {e}"))
+            self.logger.exception(error(f"Error storing supervision results: {e}"))
 
     @handles_errors(fallback=None)
     def get_supervision_results(
@@ -945,7 +951,7 @@ class ModularSupervisor:
             return self.supervision_results.copy()
 
         except Exception as e:
-            self.logger.error(error(f"Error getting supervision results: {e}"))
+            self.logger.exception(error(f"Error getting supervision results: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -968,7 +974,7 @@ class ModularSupervisor:
             return history
 
         except Exception as e:
-            self.logger.error(error(f"Error getting supervision history: {e}"))
+            self.logger.exception(error(f"Error getting supervision history: {e}"))
             return []
 
     def get_supervisor_status(self) -> dict[str, Any]:
@@ -1013,7 +1019,7 @@ class ModularSupervisor:
             self.logger.info("✅ Modular Supervisor stopped successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error stopping modular supervisor: {e}"))
+            self.logger.exception(error(f"Error stopping modular supervisor: {e}"))
 
 # Global modular supervisor instance
 modular_supervisor: ModularSupervisor | None = None

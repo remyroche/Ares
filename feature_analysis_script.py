@@ -4,10 +4,10 @@ Feature Analysis Script
 Analyzes detailed validation reports to provide actionable insights
 """
 
-from collections import defaultdict
-from typing import Any
 import argparse
 import json
+from collections import defaultdict
+from typing import Any
 
 
 def analyze_validation_report(report_file: str) -> dict[str, Any]:

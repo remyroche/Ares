@@ -19,17 +19,19 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
-import io
 import json
 import logging
 import os
 import re
-import sys
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 # --------------------------------------------------------------------------------------
 # Logging
@@ -50,7 +52,7 @@ class CheckResult:
     name: str
     passed: bool
     summary: str
-    details: Dict[str, object]
+    details: dict[str, object]
 
 
 def _ensure_reports_dir(path: Path) -> None:
@@ -64,7 +66,8 @@ def _load_syntax_scanner_class():
     target=SCRIPTS_DIR / "syntax_error_scanner.py"
     spec = importlib.util.spec_from_file_location("syntax_error_scanner", target)
     if spec is None or spec.loader is None:  # pragma: no cover - defensive
-        raise RuntimeError("Unable to load syntax_error_scanner module")
+        msg = "Unable to load syntax_error_scanner module"
+        raise RuntimeError(msg)
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.SyntaxErrorScanner
@@ -118,8 +121,8 @@ def run_syntax_check(code_roots: Sequence[Path], jobs: int, reports_dir: Path) -
 # --------------------------------------------------------------------------------------
 # Ruff checks (lint + format check)
 # --------------------------------------------------------------------------------------
-def _run_cmd(cmd: List[str], cwd: Optional[Path] = None, timeout: Optional[int] = None) -> Tuple[int, str, str]:
-    proc=subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout)
+def _run_cmd(cmd: list[str], cwd: Path | None = None, timeout: int | None = None) -> tuple[int, str, str]:
+    proc=subprocess.run(cmd, check=False, cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -204,7 +207,7 @@ def _iter_data_files(dirs: Sequence[Path], max_size_mb: float=20.0) -> Iterable[
                         continue
 
 
-def _validate_json_file(path: Path) -> Optional[str]:
+def _validate_json_file(path: Path) -> str | None:
     try:
         text=path.read_text(encoding="utf-8")
     except Exception as exc:
@@ -216,11 +219,11 @@ def _validate_json_file(path: Path) -> Optional[str]:
         return f"json_decode_error: {exc}"
 
 
-def _validate_csv_file(path: Path, sample_rows: int=1000) -> Optional[str]:
+def _validate_csv_file(path: Path, sample_rows: int=1000) -> str | None:
     try:
         with path.open("r", encoding="utf-8", newline="") as f:
             reader=csv.reader(f)
-            expected_cols: Optional[int] = None
+            expected_cols: int | None = None
             count=0
             for row in reader:
                 if expected_cols is None:
@@ -237,9 +240,9 @@ def _validate_csv_file(path: Path, sample_rows: int=1000) -> Optional[str]:
 
 def run_data_validation(data_dirs: Sequence[Path], reports_dir: Path, jobs: int) -> CheckResult:
     files=list(_iter_data_files(data_dirs))
-    issues: List[DataIssue] = []
+    issues: list[DataIssue] = []
 
-    def validate(path: Path) -> Optional[DataIssue]:
+    def validate(path: Path) -> DataIssue | None:
         if path.suffix.lower() == ".json":
             res=_validate_json_file(path)
         else:
@@ -290,7 +293,7 @@ DEFAULT_DECORATOR_ALLOWLIST={
 class FunctionDecoratorIssue:
     file: str
     function: str
-    decorators_found: List[str]
+    decorators_found: list[str]
 
 
 @dataclass
@@ -310,9 +313,9 @@ def _iter_py_files(paths: Sequence[Path]) -> Iterable[Path]:
                     yield Path(dirpath) / name
 
 
-def _get_decorator_names(node: ast.AST) -> List[str]:
-    names: List[str] = []
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+def _get_decorator_names(node: ast.AST) -> list[str]:
+    names: list[str] = []
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
         for d in node.decorator_list:
             if isinstance(d, ast.Name):
                 names.append(d.id)
@@ -336,8 +339,8 @@ def run_decorator_and_logging_checks(
     import fnmatch
 
     py_files=list(_iter_py_files(code_roots))
-    decorator_issues: List[FunctionDecoratorIssue] = []
-    logging_issues: List[LoggingIssue] = []
+    decorator_issues: list[FunctionDecoratorIssue] = []
+    logging_issues: list[LoggingIssue] = []
 
     for file_path in py_files:
         rel=str(file_path.relative_to(REPO_ROOT))
@@ -365,7 +368,7 @@ def run_decorator_and_logging_checks(
             continue
 
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 if enforce:
                     decos=_get_decorator_names(node)
                     if not any(d in decorator_allowlist for d in decos):
@@ -374,7 +377,7 @@ def run_decorator_and_logging_checks(
                                 file=rel,
                                 function=node.name,
                                 decorators_found=decos,
-                            )
+                            ),
                         )
 
     payload={
@@ -392,7 +395,7 @@ def run_decorator_and_logging_checks(
 # Orchestrator
 # --------------------------------------------------------------------------------------
 
-def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p=argparse.ArgumentParser(description="Run universal repository checks and produce reports.")
     p.add_argument("--code-dirs", nargs="*", default=["src", "scripts"], help="Directories to scan for code checks")
     p.add_argument("--data-dirs", nargs="*", default=["data", "results", "reports"], help="Directories to scan for data validation")
@@ -417,7 +420,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args=_parse_args(argv)
 
     reports_dir=Path(args.reports_dir).resolve()
@@ -426,7 +429,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     code_roots=[REPO_ROOT / d for d in args.code_dirs]
     data_roots = [REPO_ROOT / d for d in args.data_dirs]
 
-    results: List[CheckResult] = []
+    results: list[CheckResult] = []
 
     # Run checks
     logger.info("Running syntax check...")
@@ -454,7 +457,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             enforce_globs=args.decorator_enforce_glob,
             decorator_allowlist=args.decorator_allow,
             reports_dir=reports_dir,
-        )
+        ),
     )
 
     # Aggregate
@@ -467,7 +470,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Write combined reports
     (reports_dir / "universal_check_report.json").write_text(json.dumps(overall, indent=2), encoding="utf-8")
 
-    text_lines: List[str] = []
+    text_lines: list[str] = []
     text_lines.append("=" * 80)
     text_lines.append("UNIVERSAL CHECK REPORT")
     text_lines.append("=" * 80)

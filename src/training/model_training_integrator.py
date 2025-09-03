@@ -4,6 +4,7 @@ Enables full functionality with trained models.
 """
 import json
 import os
+import os.path
 import pickle
 from datetime import datetime
 from typing import Any
@@ -21,10 +22,7 @@ from sklearn.model_selection import cross_val_score
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
 from src.utils.error_handler import handle_errors
-import os.path
-import asyncio
 from src.utils.warning_symbols import (
-
     error,
     failed,
     initialization_error,

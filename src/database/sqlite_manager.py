@@ -1,17 +1,17 @@
 # src/database/sqlite_manager.py
 
-from collections import defaultdict
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
 import json
 import os
-import time
 import sqlite3
+import time
+from collections import defaultdict
+from datetime import datetime
+from typing import Any
 
 from src.config.constants import *
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,
     error,
@@ -20,6 +20,7 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
+
 
 class ConnectionPool:
     """Async connection pool for database operations."""
@@ -618,7 +619,7 @@ class SQLiteManager:
 
     @handles_errors(fallback=None)
     async def get_trades(
-        self, symbol: str | None = None, limit: int | None = None
+        self, symbol: str | None = None, limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Get trades with enhanced error handling and connection pooling.

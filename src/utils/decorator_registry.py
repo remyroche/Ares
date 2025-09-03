@@ -1,12 +1,9 @@
 """Central registry for all decorators with metadata and versioning."""
 
-import functools
-import inspect
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Union
-
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +17,7 @@ class DecoratorMetadata:
         decorator: Callable,
         version: str = "1.0",
         description: str = "",
-        tags: List[str] = None,
+        tags: list[str] = None,
         deprecated: bool = False,
     ):
         self.name = name
@@ -40,9 +37,9 @@ class DecoratorRegistry:
     """Central registry for all decorators with metadata and versioning."""
 
     def __init__(self):
-        self._decorators: Dict[str, DecoratorMetadata] = {}
-        self._aliases: Dict[str, str] = {}
-        self._version_history: Dict[str, List[str]] = {}
+        self._decorators: dict[str, DecoratorMetadata] = {}
+        self._aliases: dict[str, str] = {}
+        self._version_history: dict[str, list[str]] = {}
 
     def register(
         self,
@@ -50,9 +47,9 @@ class DecoratorRegistry:
         decorator: Callable,
         version: str = "1.0",
         description: str = "",
-        tags: List[str] = None,
+        tags: list[str] = None,
         deprecated: bool = False,
-        aliases: List[str] = None,
+        aliases: list[str] = None,
     ) -> None:
         """Register a decorator with version tracking."""
         if name in self._decorators:
@@ -81,19 +78,21 @@ class DecoratorRegistry:
             name = self._aliases[name]
 
         if name not in self._decorators:
-            raise KeyError(f"Decorator '{name}' not found in registry")
+            msg = f"Decorator '{name}' not found in registry"
+            raise KeyError(msg)
 
         metadata = self._decorators[name]
 
         if version and metadata.version != version:
-            raise ValueError(f"Version mismatch for {name}: requested {version}, available {metadata.version}")
+            msg = f"Version mismatch for {name}: requested {version}, available {metadata.version}"
+            raise ValueError(msg)
 
         # Increment usage count
         metadata.usage_count += 1
 
         return metadata.decorator
 
-    def list_decorators(self, include_deprecated: bool = False, tags: List[str] = None) -> List[DecoratorMetadata]:
+    def list_decorators(self, include_deprecated: bool = False, tags: list[str] = None) -> list[DecoratorMetadata]:
         """List all registered decorators with optional filtering."""
         decorators = list(self._decorators.values())
 
@@ -105,7 +104,7 @@ class DecoratorRegistry:
 
         return sorted(decorators, key=lambda x: x.name)
 
-    def get_usage_stats(self) -> Dict[str, int]:
+    def get_usage_stats(self) -> dict[str, int]:
         """Get usage statistics for all decorators."""
         return {name: metadata.usage_count for name, metadata in self._decorators.items()}
 
@@ -116,7 +115,8 @@ class DecoratorRegistry:
             if replacement:
                 logger.warning(f"Decorator '{name}' is deprecated. Use '{replacement}' instead.")
         else:
-            raise KeyError(f"Decorator '{name}' not found in registry")
+            msg = f"Decorator '{name}' not found in registry"
+            raise KeyError(msg)
 
     def remove(self, name: str) -> None:
         """Remove a decorator from the registry."""
@@ -128,9 +128,10 @@ class DecoratorRegistry:
                 del self._aliases[alias]
             logger.info(f"Removed decorator: {name}")
         else:
-            raise KeyError(f"Decorator '{name}' not found in registry")
+            msg = f"Decorator '{name}' not found in registry"
+            raise KeyError(msg)
 
-    def search(self, query: str) -> List[DecoratorMetadata]:
+    def search(self, query: str) -> list[DecoratorMetadata]:
         """Search decorators by name, description, or tags."""
         query_lower = query.lower()
         results = []
@@ -145,7 +146,7 @@ class DecoratorRegistry:
 
         return results
 
-    def export_config(self) -> Dict[str, Any]:
+    def export_config(self) -> dict[str, Any]:
         """Export registry configuration for persistence."""
         return {
             "decorators": {
@@ -172,9 +173,9 @@ def register_decorator(
     name: str,
     version: str = "1.0",
     description: str = "",
-    tags: List[str] = None,
+    tags: list[str] = None,
     deprecated: bool = False,
-    aliases: List[str] = None,
+    aliases: list[str] = None,
 ):
     """Decorator to register a decorator function in the registry."""
 

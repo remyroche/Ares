@@ -4,8 +4,6 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 
 @dataclass
 class PurgedKFoldTime:
@@ -73,8 +71,8 @@ class PurgedKFoldTime:
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]
             else:
-                purge_n = int(self.purge) if isinstance(self.purge, (int, float)) else 0
-                embargo_n = int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
+                purge_n = int(self.purge) if isinstance(self.purge, int | float) else 0
+                embargo_n = int(self.embargo) if isinstance(self.embargo, int | float) else 0
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
                 train_mask = np.ones(n_samples, dtype=bool)

@@ -5,8 +5,9 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
+from src.utils.common_operations import safe_json_load
 from src.utils.warning_symbols import (
 	error,
 	failed,
@@ -14,7 +15,6 @@ from src.utils.warning_symbols import (
 	missing,
 	validation_error,
 )
-from src.utils.common_operations import safe_json_load, ensure_directory
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -24,16 +24,17 @@ if str(project_root) not in sys.path:
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
+
 class Step21SavingValidator(BaseValidator):
 	"""Validator for Step 21: Extended Saving."""
 
-	def __init__(self, config: Dict[str, Any]) -> None:
+	def __init__(self, config: dict[str, Any]) -> None:
 		super().__init__("step21_saving", config)
 
 	async def validate(
 		self,
-		training_input: Dict[str, Any],
-		pipeline_state: Dict[str, Any],
+		training_input: dict[str, Any],
+		pipeline_state: dict[str, Any],
 	) -> bool:
 		"""Validate the saving step.
 
@@ -362,7 +363,7 @@ class Step21SavingValidator(BaseValidator):
 				inner = getattr(artifact, "best_estimator_", None)
 				if callable(getattr(inner, "predict", None)):
 					return inner
-			if isinstance(artifact, (list, tuple)) and artifact:
+			if isinstance(artifact, list | tuple) and artifact:
 				first = artifact[0]
 				if callable(getattr(first, "predict", None)):
 					return first
@@ -476,9 +477,9 @@ class Step21SavingValidator(BaseValidator):
 
 
 async def run_validator(
-	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	training_input: dict[str, Any],
+	pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
 	"""Run the step21_saving validator.
 
 	Args:

@@ -10,15 +10,13 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, execution_error, initialization_error, warning
-import asyncio
 from src.utils.warning_symbols import (
     error,
     execution_error,
     initialization_error,
-    invalid,
-    warning
+    warning,
 )
+
 
 class ExchangeVolumeAdapter:
     """
@@ -132,7 +130,7 @@ class ExchangeVolumeAdapter:
             self.logger.info("Adapter configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error loading adapter configuration: {e}")
+            self.logger.exception(f"Error loading adapter configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -154,7 +152,7 @@ class ExchangeVolumeAdapter:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handle_errors(
@@ -406,7 +404,7 @@ class ExchangeVolumeAdapter:
             return max(0.1, min(2.0, base_factor))  # Clamp between 0.1 and 2.0
 
         except Exception as e:
-            self.logger.error(f"Error getting adaptation factor for {exchange}: {e}")
+            self.logger.exception(f"Error getting adaptation factor for {exchange}: {e}")
             return 1.0
 
     def get_adaptation_summary(self) -> dict[str, Any]:

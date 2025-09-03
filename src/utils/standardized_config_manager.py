@@ -6,15 +6,12 @@ versioning, and standardized access patterns across all pipeline steps.
 """
 
 import json
-import logging
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # Import pipeline standards
-from .pipeline_standards import PipelineStandards, pipeline_standards
-import copy
+from .pipeline_standards import pipeline_standards
 
 
 class StandardizedConfigManager:
@@ -45,7 +42,7 @@ class StandardizedConfigManager:
             },
         }
 
-    def load_config(self, config_type: str, config_name: str = "default") -> Dict[str, Any]:
+    def load_config(self, config_type: str, config_name: str = "default") -> dict[str, Any]:
         """Load configuration with validation and caching.
 
         Args:
@@ -67,11 +64,11 @@ class StandardizedConfigManager:
             config = self._get_default_config(config_type)
         else:
             try:
-                with open(config_path, "r") as f:
+                with open(config_path) as f:
                     config = json.load(f)
                 self.logger.info(f"✅ Loaded config: {config_path}")
             except Exception as e:
-                self.logger.error(f"❌ Error loading config {config_path}: {e}")
+                self.logger.exception(f"❌ Error loading config {config_path}: {e}")
                 config = self._get_default_config(config_type)
 
         # Validate and apply defaults
@@ -82,13 +79,13 @@ class StandardizedConfigManager:
 
         return validated_config
 
-    def _get_default_config(self, config_type: str) -> Dict[str, Any]:
+    def _get_default_config(self, config_type: str) -> dict[str, Any]:
         """Get default configuration for a given type."""
         if config_type in self.schemas:
             return self.schemas[config_type]["defaults"].copy()
         return {}
 
-    def _validate_config(self, config: Dict[str, Any], config_type: str) -> Dict[str, Any]:
+    def _validate_config(self, config: dict[str, Any], config_type: str) -> dict[str, Any]:
         """Validate configuration against schema and apply defaults."""
         if config_type not in self.schemas:
             self.logger.warning(f"⚠️ Unknown config type: {config_type}")
@@ -112,11 +109,12 @@ class StandardizedConfigManager:
 
         if missing_required:
             self.logger.error(f"❌ Missing required config keys: {missing_required}")
-            raise ValueError(f"Missing required configuration keys: {missing_required}")
+            msg = f"Missing required configuration keys: {missing_required}"
+            raise ValueError(msg)
 
         return validated_config
 
-    def create_step_config(self, step_name: str, base_config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_step_config(self, step_name: str, base_config: dict[str, Any]) -> dict[str, Any]:
         """Create standardized configuration for a specific step.
 
         Args:
@@ -140,12 +138,12 @@ class StandardizedConfigManager:
                     "enable_validation": True,
                     "enable_logging": True,
                     "enable_mlflow": step_config.get("enable_mlflow", True),
-                }
+                },
             )
 
         return step_config
 
-    def save_config(self, config: Dict[str, Any], config_type: str, config_name: str) -> bool:
+    def save_config(self, config: dict[str, Any], config_type: str, config_name: str) -> bool:
         """Save configuration to file.
 
         Args:
@@ -175,10 +173,10 @@ class StandardizedConfigManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error saving config: {e}")
+            self.logger.exception(f"❌ Error saving config: {e}")
             return False
 
-    def get_standardized_paths(self, exchange: str, symbol: str) -> Dict[str, str]:
+    def get_standardized_paths(self, exchange: str, symbol: str) -> dict[str, str]:
         """Get standardized paths for a given exchange and symbol.
 
         Args:
@@ -197,7 +195,7 @@ class StandardizedConfigManager:
             "logs": pipeline_standards.build_path("logs", exchange, symbol),
         }
 
-    def validate_environment_config(self) -> Dict[str, bool]:
+    def validate_environment_config(self) -> dict[str, bool]:
         """Validate environment configuration.
 
         Returns:
@@ -224,7 +222,7 @@ class StandardizedConfigManager:
 config_manager = StandardizedConfigManager()
 
 
-def get_standardized_config(step_name: str, config_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def get_standardized_config(step_name: str, config_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     """Get standardized configuration for a step.
 
     Args:
@@ -242,12 +240,11 @@ def get_standardized_config(step_name: str, config_overrides: Optional[Dict[str,
         base_config.update(config_overrides)
 
     # Create step-specific config
-    step_config = config_manager.create_step_config(step_name, base_config)
-
-    return step_config
+    return config_manager.create_step_config(step_name, base_config)
 
 
-def validate_step_config(step_config: Dict[str, Any], step_name: str) -> bool:
+
+def validate_step_config(step_config: dict[str, Any], step_name: str) -> bool:
     """Validate step configuration.
 
     Args:

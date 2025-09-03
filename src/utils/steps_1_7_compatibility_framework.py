@@ -11,23 +11,24 @@ This module provides comprehensive compatibility management between steps 1-7 in
 """
 
 import json
-import os
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
-from .pipeline_standards import PipelineStandards, pipeline_standards
-from .standardized_error_handler import ErrorCategory, ErrorSeverity, standardized_error_handler
+from .pipeline_standards import pipeline_standards
+from .standardized_error_handler import (
+    standardized_error_handler,
+)
+
 
 class StepContract:
     """Defines the input/output contract for each step."""
 
-    def __init__(self, step_name: str, inputs: Dict[str, Any], outputs: Dict[str, Any]):
+    def __init__(self, step_name: str, inputs: dict[str, Any], outputs: dict[str, Any]):
         self.step_name = step_name
         self.inputs = inputs
         self.outputs = outputs
@@ -180,10 +181,10 @@ class Steps1_7CompatibilityFramework:
         self.standards = pipeline_standards
         self.logger = system_logger.getChild("Steps1_7Compatibility")
         self.error_handler = standardized_error_handler
-        self.compatibility_history: List[Dict[str, Any]] = []
+        self.compatibility_history: list[dict[str, Any]] = []
 
     @handles_errors(fallback=False)
-    def validate_step_contract(self, step_name: str, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> bool:
+    def validate_step_contract(self, step_name: str, inputs: dict[str, Any], outputs: dict[str, Any]) -> bool:
         """Validate that a step's inputs and outputs match its contract.
 
         Args:
@@ -226,7 +227,7 @@ class Steps1_7CompatibilityFramework:
 
         return validation_result
 
-    def _validate_input(self, input_name: str, input_value: Any, input_spec: Dict[str, Any]) -> bool:
+    def _validate_input(self, input_name: str, input_value: Any, input_spec: dict[str, Any]) -> bool:
         """Validate a single input against its specification."""
         try:
             # Type validation
@@ -242,10 +243,10 @@ class Steps1_7CompatibilityFramework:
 
             return True
         except Exception as e:
-            self.logger.error(f"Error validating input '{input_name}': {e}")
+            self.logger.exception(f"Error validating input '{input_name}': {e}")
             return False
 
-    def _validate_output(self, output_name: str, output_value: Any, output_spec: Dict[str, Any]) -> bool:
+    def _validate_output(self, output_name: str, output_value: Any, output_spec: dict[str, Any]) -> bool:
         """Validate a single output against its specification."""
         try:
             # Type validation
@@ -261,7 +262,7 @@ class Steps1_7CompatibilityFramework:
 
             return True
         except Exception as e:
-            self.logger.error(f"Error validating output '{output_name}': {e}")
+            self.logger.exception(f"Error validating output '{output_name}': {e}")
             return False
 
     def _validate_dataframe_schema(self, df: pd.DataFrame, schema_name: str) -> bool:
@@ -288,7 +289,7 @@ class Steps1_7CompatibilityFramework:
         return True
 
     @handles_errors(fallback=False)
-    def validate_cross_step_consistency(self, step_data: Dict[str, pd.DataFrame], step_sequence: List[str]) -> bool:
+    def validate_cross_step_consistency(self, step_data: dict[str, pd.DataFrame], step_sequence: list[str]) -> bool:
         """Validate data consistency across multiple steps.
 
         Args:
@@ -303,11 +304,9 @@ class Steps1_7CompatibilityFramework:
 
         # Get reference dataframe (first step with data)
         reference_df = None
-        reference_step = None
         for step in step_sequence:
             if step in step_data and step_data[step] is not None and len(step_data[step]) > 0:
                 reference_df = step_data[step]
-                reference_step = step
                 break
 
         if reference_df is None:
@@ -338,7 +337,7 @@ class Steps1_7CompatibilityFramework:
                     extra_timestamps = df_timestamps - reference_timestamps
                     if missing_timestamps or extra_timestamps:
                         consistency_issues.append(
-                            f"Timestamp mismatch in {step}: missing={len(missing_timestamps)}, extra={len(extra_timestamps)}"
+                            f"Timestamp mismatch in {step}: missing={len(missing_timestamps)}, extra={len(extra_timestamps)}",
                         )
 
         if consistency_issues:
@@ -350,7 +349,7 @@ class Steps1_7CompatibilityFramework:
         return True
 
     @handles_errors(fallback=False)
-    def validate_configuration_compatibility(self, configs: Dict[str, Dict[str, Any]]) -> bool:
+    def validate_configuration_compatibility(self, configs: dict[str, dict[str, Any]]) -> bool:
         """Validate that configurations are compatible across steps.
 
         Args:
@@ -394,7 +393,7 @@ class Steps1_7CompatibilityFramework:
 
     @handles_errors(fallback=False)
     def validate_step_dependencies(
-        self, step_name: str, dependencies: List[str], available_data: Dict[str, Any]
+        self, step_name: str, dependencies: list[str], available_data: dict[str, Any],
     ) -> bool:
         """Validate that all dependencies for a step are available.
 
@@ -420,7 +419,7 @@ class Steps1_7CompatibilityFramework:
         return True
 
     def _record_compatibility_check(
-        self, step_name: str, check_type: str, result: bool, details: Optional[Dict[str, Any]] = None
+        self, step_name: str, check_type: str, result: bool, details: dict[str, Any] | None = None,
     ) -> None:
         """Record a compatibility check result."""
         check_record = {
@@ -437,7 +436,7 @@ class Steps1_7CompatibilityFramework:
         if len(self.compatibility_history) > 1000:
             self.compatibility_history = self.compatibility_history[-500:]
 
-    def get_compatibility_report(self, step_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_compatibility_report(self, step_name: str | None = None) -> dict[str, Any]:
         """Get a compatibility report.
 
         Args:
@@ -490,7 +489,7 @@ class Steps1_7CompatibilityFramework:
                 json.dump(report, f, indent=2)
             return True
         except Exception as e:
-            self.logger.error(f"Failed to export compatibility report: {e}")
+            self.logger.exception(f"Failed to export compatibility report: {e}")
             return False
 
 # Global instance

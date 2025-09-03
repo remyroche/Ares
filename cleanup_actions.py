@@ -21,7 +21,7 @@ def cleanup_file(file_path: str):
             r"print\(.*🔍.*\)\s*\n",
             r"print\(.*debug.*\)\s*\n",
         ]
-        for pattern in debug_patterns:
+        for _pattern in debug_patterns:
             content=re.sub(r"", content, flags=re.IGNORECASE)
 
         # Remove type ignore comments (be careful with this)

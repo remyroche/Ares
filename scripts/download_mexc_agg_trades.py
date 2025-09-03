@@ -5,17 +5,18 @@ This script ensures compatibility with existing data processing pipelines.
 """
 
 import argparse
-from datetime import datetime, timedelta
-from pathlib import Path
-from src.utils.logger import system_logger
 import asyncio
 import os
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
 
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing, warning
-import pandas as pd
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -146,7 +147,6 @@ async def download_mexc_agg_trades(symbol: str="BTCUSDT", lookback_days: int=30,
     logger.info("🎉 MEXC aggregated trades download completed successfully!")
     return True
 
-    pass
     print(error(f"❌ Error downloading MEXC aggregated trades: {e}"))
     return False
 
@@ -167,7 +167,7 @@ async def main():
 
     success=await download_mexc_agg_trades(
         symbol=args.symbol, lookback_days=args.days,
-        output_dir=args.output
+        output_dir=args.output,
     )
 
     if success:

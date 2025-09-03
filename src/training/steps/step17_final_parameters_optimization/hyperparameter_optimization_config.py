@@ -721,7 +721,7 @@ if __name__ == "__main__":
         f" - Total trials: {plan['summary']['total_trials']} | "
         f"Estimated time (hrs): "
         f"{plan['optimization_plan']['total_estimated_time_hours']:.1f} | "
-        f"Parallel: {plan['optimization_plan']['parallel_execution']}"
+        f"Parallel: {plan['optimization_plan']['parallel_execution']}",
     )
 
     # Print search spaces
@@ -730,5 +730,5 @@ if __name__ == "__main__":
         print(
             f" - {_name}: parameters={len(_space.parameters)} | "
             f"trials={_space.n_trials} | "
-            f"strategy={_space.optimization_strategy.value}"
+            f"strategy={_space.optimization_strategy.value}",
         )

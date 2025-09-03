@@ -1,23 +1,21 @@
 # src/interfaces/enhanced_event_bus.py
 
-from abc import ABC, abstractmethod
-from collections import defaultdict
-from collections.abc import Callable
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from enum import Enum
-from pathlib import Path
-from typing import Any
 import asyncio
 import json
 import uuid
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any
 
+from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
+from src.utils.error_handler import handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
-from src.utils.error_handler import handle_errors, handle_specific_errors
-import copy
 from src.utils.warning_symbols import (
-
     error,
     failed,
     initialization_error,
@@ -63,7 +61,7 @@ class EventMetadata:
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     version: str = "1.0.0"
     schema_version: str = "1.0.0"
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     source: str = ""
     correlation_id: str | None = None
     causation_id: str | None = None
@@ -102,7 +100,7 @@ class Event:
         timestamp = (
             datetime.fromisoformat(ts_raw)
             if isinstance(ts_raw, str)
-            else datetime.now(timezone.utc)
+            else datetime.now(UTC)
         )
         status_value = metadata_dict.get("status", EventStatus.PENDING.value)
         if isinstance(status_value, str):
@@ -129,10 +127,7 @@ class Event:
         )
 
         et = data.get("event_type")
-        if isinstance(et, str):
-            event_type = EventType(et)
-        else:
-            event_type = et
+        event_type = EventType(et) if isinstance(et, str) else et
 
         return cls(event_type=event_type, data=data.get("data"), metadata=metadata)
 
@@ -142,7 +137,7 @@ class EventSnapshot:
     """Snapshot of system state at a point in time"""
 
     snapshot_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     aggregate_id: str = ""
     sequence_number: int = 0
     state_data: dict[str, Any] = field(default_factory=dict)
@@ -205,7 +200,7 @@ class FileEventStore(IEventStore):
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"Failed to save event: {e}"))
+            self.logger.exception(failed(f"Failed to save event: {e}"))
             return False
 
     async def get_events(
@@ -244,7 +239,7 @@ class FileEventStore(IEventStore):
             return events
 
         except Exception as e:
-            self.logger.error(failed(f"Failed to retrieve events: {e}"))
+            self.logger.exception(failed(f"Failed to retrieve events: {e}"))
             return []
 
     async def save_snapshot(self, snapshot: EventSnapshot) -> bool:
@@ -269,7 +264,7 @@ class FileEventStore(IEventStore):
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"Failed to save snapshot: {e}"))
+            self.logger.exception(failed(f"Failed to save snapshot: {e}"))
             return False
 
     async def get_latest_snapshot(self, aggregate_id: str) -> EventSnapshot | None:
@@ -296,7 +291,7 @@ class FileEventStore(IEventStore):
             return latest_snapshot
 
         except Exception as e:
-            self.logger.error(failed(f"Failed to retrieve latest snapshot: {e}"))
+            self.logger.exception(failed(f"Failed to retrieve latest snapshot: {e}"))
             return None
 
 
@@ -368,7 +363,7 @@ class EventVersionManager:
             return True
 
         except Exception as e:
-            self.logger.error(validation_error(f"Schema validation error: {e}"))
+            self.logger.exception(validation_error(f"Schema validation error: {e}"))
             return False
 
     def migrate_event(self, event: Event, target_version: str) -> Event:
@@ -410,7 +405,7 @@ class EventVersionManager:
             return migrated_event
 
         except Exception as e:
-            self.logger.error(error(f"Event migration error: {e}"))
+            self.logger.exception(error(f"Event migration error: {e}"))
             return event
 
 
@@ -484,7 +479,7 @@ class EnhancedEventBus:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Event Bus initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Enhanced Event Bus initialization failed: {e}"))
             return False
 
     @performance_monitor(level=PerformanceLevel.BASIC)
@@ -508,7 +503,7 @@ class EnhancedEventBus:
             self.logger.info("Enhanced event bus configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 error(f"Error loading enhanced event bus configuration: {e}"),
             )
 
@@ -531,7 +526,7 @@ class EnhancedEventBus:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating configuration: {e}"))
+            self.logger.exception(error(f"Error validating configuration: {e}"))
             return False
 
     @performance_monitor(level=PerformanceLevel.BASIC)
@@ -554,7 +549,7 @@ class EnhancedEventBus:
             self.logger.info("Enhanced event processing initialized successfully")
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 initialization_error(
                     f"Error initializing enhanced event processing: {e}",
                 ),
@@ -574,7 +569,7 @@ class EnhancedEventBus:
                 )
 
         except Exception as e:
-            self.logger.error(error(f"Error loading event history: {e}"))
+            self.logger.exception(error(f"Error loading event history: {e}"))
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     async def run(self) -> bool:
@@ -590,7 +585,7 @@ class EnhancedEventBus:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error in enhanced event bus run: {e}"))
+            self.logger.exception(error(f"Error in enhanced event bus run: {e}"))
             self.is_running = False
             return False
 
@@ -598,7 +593,7 @@ class EnhancedEventBus:
     async def _process_events(self) -> None:
         """Process events from the queue"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self.status = {"timestamp": now.isoformat(), "status": "running"}
 
             # Update history
@@ -628,7 +623,7 @@ class EnhancedEventBus:
                 await self._create_snapshot()
 
         except Exception as e:
-            self.logger.error(error(f"Error in enhanced event processing: {e}"))
+            self.logger.exception(error(f"Error in enhanced event processing: {e}"))
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     async def _dispatch_event(self, event: Event) -> bool:
@@ -680,7 +675,7 @@ class EnhancedEventBus:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error dispatching event: {e}"))
+            self.logger.exception(error(f"Error dispatching event: {e}"))
             event.metadata.status = EventStatus.FAILED
             return False
 
@@ -695,7 +690,7 @@ class EnhancedEventBus:
                     "metrics": self.metrics.copy(),
                     "subscribers_count": {k: len(v) for k, v in self.subscribers.items()},
                     "queue_size": self.event_queue.qsize(),
-                    "last_processed": datetime.now(timezone.utc).isoformat(),
+                    "last_processed": datetime.now(UTC).isoformat(),
                 },
             )
 
@@ -708,7 +703,7 @@ class EnhancedEventBus:
             self.logger.info(f"Created snapshot at sequence {self.sequence_counter}")
 
         except Exception as e:
-            self.logger.error(error(f"Error creating snapshot: {e}"))
+            self.logger.exception(error(f"Error creating snapshot: {e}"))
 
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def stop(self) -> None:
@@ -722,13 +717,13 @@ class EnhancedEventBus:
                 await self._create_snapshot()
 
             self.status = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "status": "stopped",
             }
             self.logger.info("✅ Enhanced Event Bus stopped successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error stopping enhanced event bus: {e}"))
+            self.logger.exception(error(f"Error stopping enhanced event bus: {e}"))
 
     def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
         """Subscribe to an event type"""
@@ -740,7 +735,7 @@ class EnhancedEventBus:
             self.logger.info(f"Subscriber added for event type: {event_type_str}")
 
         except Exception as e:
-            self.logger.error(error(f"Error subscribing to event: {e}"))
+            self.logger.exception(error(f"Error subscribing to event: {e}"))
 
     def unsubscribe(self, event_type: EventType | str, callback: Callable) -> None:
         """Unsubscribe from an event type"""
@@ -755,7 +750,7 @@ class EnhancedEventBus:
                 self.logger.info(f"Subscriber removed for event type: {event_type_str}")
 
         except Exception as e:
-            self.logger.error(error(f"Error unsubscribing from event: {e}"))
+            self.logger.exception(error(f"Error unsubscribing from event: {e}"))
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     async def publish(
@@ -774,13 +769,13 @@ class EnhancedEventBus:
                 try:
                     event_type = EventType(event_type)
                 except ValueError:
-                    self.logger.error(error(f"Unknown event type: {event_type}"))
+                    self.logger.exception(error(f"Unknown event type: {event_type}"))
                     return ""
 
             # Create event metadata
             metadata = EventMetadata(
                 event_id=str(uuid.uuid4()),
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 source=source,
                 correlation_id=correlation_id,
                 aggregate_id=aggregate_id,
@@ -801,7 +796,7 @@ class EnhancedEventBus:
             return event.metadata.event_id
 
         except Exception as e:
-            self.logger.error(error(f"Error publishing event: {e}"))
+            self.logger.exception(error(f"Error publishing event: {e}"))
             return ""
 
     @performance_monitor(level=PerformanceLevel.BASIC)
@@ -833,7 +828,7 @@ class EnhancedEventBus:
             return events
 
         except Exception as e:
-            self.logger.error(error(f"Error replaying events: {e}"))
+            self.logger.exception(error(f"Error replaying events: {e}"))
             return []
 
     @performance_monitor(level=PerformanceLevel.BASIC)
@@ -881,7 +876,7 @@ class EnhancedEventBus:
             return state
 
         except Exception as e:
-            self.logger.error(error(f"Error rebuilding from events: {e}"))
+            self.logger.exception(error(f"Error rebuilding from events: {e}"))
             return {}
 
     def get_status(self) -> dict[str, Any]:

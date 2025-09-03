@@ -11,7 +11,7 @@ import aiofiles
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class AsyncFileManager:
     """
@@ -128,7 +128,7 @@ class AsyncFileManager:
 
         # Read file
         chosen_encoding = encoding or self.default_encoding
-        async with aiofiles.open(file_path, mode="r", encoding=chosen_encoding) as f:
+        async with aiofiles.open(file_path, encoding=chosen_encoding) as f:
             content = await f.read()
 
         # Cache the content
@@ -389,12 +389,12 @@ class AsyncTaskManager:
             self.task_results[task_name] = result
             self.logger.info(f"Task completed: {task_name}")
             return result
-        except asyncio.TimeoutError:
-            self.logger.error(failed(f"Task timed out: {task_name}"))
+        except TimeoutError:
+            self.logger.exception(failed(f"Task timed out: {task_name}"))
             task.cancel()
             return None
         except Exception as e:  # noqa: BLE001
-            self.logger.error(failed(f"Task failed: {task_name} - {e}"))
+            self.logger.exception(failed(f"Task failed: {task_name} - {e}"))
             return None
         finally:
             # Remove from active tasks
@@ -545,7 +545,7 @@ class AsyncProcessesManager:
                 stderr=asyncio.subprocess.PIPE,
             )
         except Exception as e:  # noqa: BLE001
-            self.logger.error(failed(f"Failed to start process '{name}': {e}"))
+            self.logger.exception(failed(f"Failed to start process '{name}': {e}"))
             return None
 
         self.processes[name] = process
@@ -562,11 +562,11 @@ class AsyncProcessesManager:
         try:
             process.terminate()
             await asyncio.wait_for(process.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             process.kill()
             await process.wait()
         except Exception as e:  # noqa: BLE001
-            self.logger.error(failed(f"Failed to stop process '{name}': {e}"))
+            self.logger.exception(failed(f"Failed to stop process '{name}': {e}"))
             return False
 
         del self.processes[name]

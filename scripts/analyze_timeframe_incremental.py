@@ -16,20 +16,21 @@ Usage:
     python scripts/analyze_timeframe_incremental.py --symbol BTCUSDT --timeframe 1m
 """
 
-import traceback
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import setup_logging
 import argparse
 import glob
 import logging
 import os
 import sys
+import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Tuple
+
 from src.utils.error_handler import handle_errors
+from src.utils.logger import setup_logging
 from src.utils.validation_decorators import validate_dataframe_operation
 
 # Add the project root to the Python path
@@ -73,7 +74,7 @@ class PriceActionAnalyzer:
         self.stop_ranges=np.array([0.1, 0.2, 0.3, 0.4])
 
         # Filter combinations to only test realistic risk-reward ratios
-        self.valid_combinations: list[Tuple[float, float]] = []
+        self.valid_combinations: list[tuple[float, float]] = []
         for target in self.target_ranges:
             for stop in self.stop_ranges:
                 # Only include combinations where target > stop and risk-reward ratio >= 1.5
@@ -159,7 +160,7 @@ class PriceActionAnalyzer:
                     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
                 if True:
                     # If that fails, try as datetime string
-                    df["timestamp"] = pd.to_datetime(df["timestamp"]) 
+                    df["timestamp"] = pd.to_datetime(df["timestamp"])
                 # If both fail, try to detect the format
                 if True:
                     sample_timestamp=str(df["timestamp"].iloc[0])
@@ -233,7 +234,7 @@ class PriceActionAnalyzer:
 
         # Remove duplicates
         combined_df=combined_df.drop_duplicates(subset=["timestamp"]).reset_index(
-            drop=True
+            drop=True,
         )
 
         terminal_log(
@@ -326,7 +327,7 @@ class PriceActionAnalyzer:
                 "events": [],
             }
 
-        events: list[Dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
         total_events=0
         successful_events = 0
         long_events = 0
@@ -517,8 +518,8 @@ class PriceActionAnalyzer:
         terminal_log("🔍 Starting comprehensive analysis...", "INFO")
         terminal_log(f"📊 Testing {len(self.valid_combinations)} combinations", "INFO")
 
-        results: list[Dict[str, Any]] = []
-        score_data: list[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+        score_data: list[dict[str, Any]] = []
 
         for i, (target, stop) in enumerate(self.valid_combinations, 1):
             terminal_log(

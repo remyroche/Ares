@@ -28,11 +28,6 @@ from typing import TYPE_CHECKING, Any
 import joblib
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold
 
 from src.config import CONFIG
 from src.core.decorators import handles_errors
@@ -40,7 +35,6 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
-import copy
 import os.path
 
 # Enhanced logging setup
@@ -254,14 +248,14 @@ class MultiTimeframeHMMEnsemble:
                     "timeframe": tf_config.timeframe,
                     "config": tf_config,
                     "trained_at": time.time(),
-                }
+                },
             )
 
             return True
 
         except Exception as e:
             self.logger.exception(
-                f"💥 Error training {tf_config.timeframe} models: {e}"
+                f"💥 Error training {tf_config.timeframe} models: {e}",
             )
             return False
 
@@ -431,15 +425,15 @@ class MultiTimeframeHMMEnsemble:
             # Combine predictions based on ensemble method
             if self.config.ensemble_method == "weighted_average":
                 final_prediction, final_confidence = self._weighted_average_ensemble(
-                    timeframe_predictions, timeframe_confidences
+                    timeframe_predictions, timeframe_confidences,
                 )
             elif self.config.ensemble_method == "meta_learner":
                 final_prediction, final_confidence = self._meta_learner_ensemble(
-                    timeframe_predictions
+                    timeframe_predictions,
                 )
             elif self.config.ensemble_method == "stacking":
                 final_prediction, final_confidence = self._stacking_ensemble(
-                    timeframe_predictions
+                    timeframe_predictions,
                 )
             else:
                 self.logger.error(
@@ -519,7 +513,7 @@ class MultiTimeframeHMMEnsemble:
             return "HOLD", 0.0
 
     def _meta_learner_ensemble(
-        self, timeframe_predictions: dict[str, pd.DataFrame]
+        self, timeframe_predictions: dict[str, pd.DataFrame],
     ) -> tuple[str, float]:
         """Combine predictions using meta-learner (primary method)."""
         try:
@@ -564,7 +558,7 @@ class MultiTimeframeHMMEnsemble:
             return "HOLD", 0.0
 
     def _stacking_ensemble(
-        self, timeframe_predictions: dict[str, pd.DataFrame]
+        self, timeframe_predictions: dict[str, pd.DataFrame],
     ) -> tuple[str, float]:
         """Combine predictions using stacking ensemble (advanced method)."""
         try:
@@ -605,15 +599,15 @@ class MultiTimeframeHMMEnsemble:
                                 else 0.0
                             )
                             stacking_features[f"{tf1}_{tf2}_interaction"] = float(
-                                pred1 * pred2
+                                pred1 * pred2,
                             )
                             stacking_features[f"{tf1}_{tf2}_difference"] = float(
-                                pred1 - pred2
+                                pred1 - pred2,
                             )
 
             # 3. Statistical features across timeframes
             all_predictions: list[float] = []
-            for _, predictions in timeframe_predictions.items():
+            for predictions in timeframe_predictions.values():
                 if not predictions.empty:
                     all_predictions.extend(predictions.iloc[-1].values.tolist())
 

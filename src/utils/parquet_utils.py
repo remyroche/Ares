@@ -7,9 +7,9 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+
 
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
@@ -18,7 +18,7 @@ class ParquetUtils:
         self.logger = system_logger.getChild("ParquetUtils")
 
     @handles_errors(
-        default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file"
+        default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file",
     )
     def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
         """
@@ -97,7 +97,7 @@ class ParquetUtils:
         for idx, engine in enumerate(engines, start=1):
             try:
                 strategy_msg = (
-                    f"   Trying strategy {idx}/{len(engines)}: " f"{'default' if engine is None else engine} engine"
+                    f"   Trying strategy {idx}/{len(engines)}: {'default' if engine is None else engine} engine"
                 )
                 self.logger.info(strategy_msg)
                 read_kwargs = dict(kwargs)

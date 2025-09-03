@@ -4,14 +4,14 @@ Investigate High VIF Features
 Analyzes and fixes features with high Variance Inflation Factor (VIF) values.
 """
 
-from pathlib import Path
-from typing import Dict, List
-from src.utils.logger import setup_logging, system_logger
 import sys
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from src.utils.logger import setup_logging, system_logger
 
 warnings.filterwarnings("ignore")
 
@@ -29,7 +29,7 @@ def analyze_high_vif_features() -> bool:
 	print("=" * 80)
 
 	# High VIF features from the logs
-	high_vif_features: Dict[str, Dict[str, float | str]] = {
+	high_vif_features: dict[str, dict[str, float | str]] = {
 		"sma_20": {
 			"vif": 183.11,
 			"issue": "Very high multicollinearity",
@@ -107,7 +107,7 @@ def analyze_high_vif_features() -> bool:
 		print()
 
 	# Group features by type for systematic fixes
-	feature_groups: Dict[str, List[str]] = {
+	feature_groups: dict[str, list[str]] = {
 		"Moving Averages": ["sma_20", "ema20_slope"],
 		"Momentum Indicators": ["momentum_5", "momentum_10", "roc_5", "roc_10"],
 		"Volatility Indicators": [
@@ -199,7 +199,7 @@ def analyze_high_vif_features() -> bool:
 			"low": np.cumsum(np.random.randn(n_samples) * 0.01) + 99.5,
 			"open": np.cumsum(np.random.randn(n_samples) * 0.01) + 100,
 			"volume": np.random.lognormal(10, 1, n_samples),
-		}
+		},
 	)
 
 	# 1. Moving Averages Fix
@@ -227,14 +227,14 @@ def analyze_high_vif_features() -> bool:
 		np.corrcoef(
 			sma_fixed_clean.iloc[-min_len_fixed:],
 			ema_fixed_clean.iloc[-min_len_fixed:],
-		)[0, 1]
+		)[0, 1],
 	)
 
 	print(f"   Original correlation: {corr_orig:.3f}")
 	print(f"   Fixed correlation: {corr_fixed:.3f}")
 	print(f"   Improvement: {abs(corr_orig) - abs(corr_fixed):.3f}")
 
-	test_results: Dict[str, Dict[str, float]] = {}
+	test_results: dict[str, dict[str, float]] = {}
 	test_results["Moving Averages"] = {
 		"original_corr": corr_orig,
 		"fixed_corr": corr_fixed,
@@ -262,7 +262,7 @@ def analyze_high_vif_features() -> bool:
 		np.corrcoef(
 			mom5_clean.iloc[-min_len_mom:],
 			mom10_clean.iloc[-min_len_mom:],
-		)[0, 1]
+		)[0, 1],
 	)
 
 	mom3_clean=momentum_3_fixed.dropna()
@@ -272,7 +272,7 @@ def analyze_high_vif_features() -> bool:
 		np.corrcoef(
 			mom3_clean.iloc[-min_len_mom_fixed:],
 			mom7_clean.iloc[-min_len_mom_fixed:],
-		)[0, 1]
+		)[0, 1],
 	)
 
 	print(f"   Original momentum correlation: {corr_mom_orig:.3f}")
@@ -306,7 +306,7 @@ def analyze_high_vif_features() -> bool:
 
 	# Calculate correlations
 	corr_vol_orig=float(
-		np.corrcoef(realized_vol_orig.dropna(), price_vol_orig.dropna())[0, 1]
+		np.corrcoef(realized_vol_orig.dropna(), price_vol_orig.dropna())[0, 1],
 	)
 	corr_vol_fixed=float(np.corrcoef(garman_klass.dropna(), parkinson.dropna())[0, 1])
 

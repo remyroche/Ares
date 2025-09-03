@@ -7,13 +7,13 @@ This module provides a launcher that uses proper dependency injection
 patterns for creating and managing trading system components.
 """
 
+from typing import Any
+
+from src.config import CONFIG
 from src.core.dependency_injection import DependencyContainer
 from src.core.enhanced_factories import TradingSystemFactory
 from src.core.service_registry import ServiceRegistry
 from src.utils.logger import system_logger
-from typing import Any
-from src.config import CONFIG
-import asyncio
 
 
 class DILauncher:

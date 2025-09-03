@@ -3,13 +3,14 @@
 Script to create missing HMM artifacts for 30m timeframe.
 This will run the step1_7 HMM regime discovery process specifically for 30m.
 """
-import traceback
-from pathlib import Path
-from src.training.steps.step3_hmm_regime_discovery import run_step
-from src.utils.logger import system_logger
 import asyncio
 import os
 import sys
+import traceback
+from pathlib import Path
+
+from src.training.steps.step3_hmm_regime_discovery import run_step
+from src.utils.logger import system_logger
 
 # Add the project root to the path
 project_root = Path(__file__).parent

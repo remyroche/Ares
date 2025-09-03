@@ -30,28 +30,25 @@ Notes:
 from __future__ import annotations
 
 import argparse
-import json
 import os
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 import sys
+from pathlib import Path
+from typing import Any
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from src.utils.logger import system_logger  # noqa: E402
-from src.utils.common_operations import (  # noqa: E402
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_read_parquet, safe_to_parquet, list_parquet_files,
-    format_bytes
-)
 from src.training.enhanced_training_manager_optimized import (  # noqa: E402
     ParquetDatasetManager,
 )
+from src.utils.common_operations import (  # noqa: E402
+    format_datetime,
+    get_current_datetime,
+)
+from src.utils.logger import system_logger  # noqa: E402
 
 
-def _handle_errors(default: Optional[Any] = None):
+def _handle_errors(default: Any | None = None):
     """Decorator to log exceptions and return a default value."""
 
     def decorator(func):
@@ -88,14 +85,14 @@ class EnhancedParquetManager:
         """Migrate flat parquet directory to partitioned dataset."""
         pdm=ParquetDatasetManager(logger=self.logger)
 
-        static_columns: Dict[str, str] = {
+        static_columns: dict[str, str] = {
             "exchange": exchange,
             "symbol": symbol,
             "timeframe": timeframe,
         }
 
         self.logger.info(
-            "Migrating %s -> %s (schema=%s)", src_dir, dst_base_dir, schema_name
+            "Migrating %s -> %s (schema=%s)", src_dir, dst_base_dir, schema_name,
         )
         compression=(
             "zstd" if schema_name in {"klines", "aggtrades", "futures"} else "snappy"
@@ -109,9 +106,9 @@ class EnhancedParquetManager:
         )
 
     @_handle_errors(default={})
-    def analyze_partitions(self) -> Dict[str, Any]:
+    def analyze_partitions(self) -> dict[str, Any]:
         """Analyze all partitioned datasets in the data cache."""
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "analysis_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
             "datasets": {},
             "summary": {
@@ -154,17 +151,17 @@ class EnhancedParquetManager:
 
                 if "recommendations" in analysis:
                     results["summary"]["optimization_opportunities"] += len(
-                        analysis["recommendations"]
+                        analysis["recommendations"],
                     )
             except Exception as e:  # pragma: no cover - continue on errors
-                self.logger.error("Error analyzing %s: %s", dataset_path, e)
+                self.logger.exception("Error analyzing %s: %s", dataset_path, e)
 
         return results
 
     @_handle_errors(default=[])
-    def _find_partitioned_datasets(self) -> List[Path]:
+    def _find_partitioned_datasets(self) -> list[Path]:
         """Find all partitioned dataset directories."""
-        partitioned_dirs: List[Path] = []
+        partitioned_dirs: list[Path] = []
 
         # Look for unified directory structure
         unified_path=self.data_cache_path / "unified"
@@ -189,7 +186,7 @@ class EnhancedParquetManager:
         return partitioned_dirs
 
     @_handle_errors(default=None)
-    def _parse_dataset_path(self, dataset_path: Path) -> Optional[Dict[str, str]]:
+    def _parse_dataset_path(self, dataset_path: Path) -> dict[str, str] | None:
         """Parse dataset path to extract exchange, symbol, and timeframe.
 
         Attempts to infer from either unified path or partition key=value segments.
@@ -209,7 +206,7 @@ class EnhancedParquetManager:
             pass
 
         # Fallback: parse key=value segments from path
-        kv: Dict[str, str] = {}
+        kv: dict[str, str] = {}
         for p in parts:
             if "=" in p:
                 key, value=p.split("=", 1)
@@ -234,9 +231,9 @@ class EnhancedParquetManager:
         return None
 
     @_handle_errors(default={})
-    def _analyze_dataset(self, dataset_path: Path) -> Dict[str, Any]:
+    def _analyze_dataset(self, dataset_path: Path) -> dict[str, Any]:
         """Analyze a single dataset."""
-        analysis: Dict[str, Any] = {
+        analysis: dict[str, Any] = {
             "total_files": 0,
             "total_size_bytes": 0,
             "partition_counts": {},
@@ -287,7 +284,7 @@ class EnhancedParquetManager:
                     "suggestion": (
                         f"Consider finer partitioning to reduce file sizes (avg: {analysis['avg_file_size'] / 1_000_000:.1f}MB)"
                     ),
-                }
+                },
             )
         elif analysis.get("avg_file_size", 0) > 0 and analysis["avg_file_size"] < 1_000_000:  # 1MB
             analysis["recommendations"].append(
@@ -296,7 +293,7 @@ class EnhancedParquetManager:
                     "suggestion": (
                         f"Consider coarser partitioning to increase file sizes (avg: {analysis['avg_file_size'] / 1_000_000:.1f}MB)"
                     ),
-                }
+                },
             )
 
         # Check partition distribution
@@ -309,7 +306,7 @@ class EnhancedParquetManager:
                             "suggestion": (
                                 f"Consider coarser partitioning for {partition_col} ({len(values)} unique values)"
                             ),
-                        }
+                        },
                     )
                 elif len(values) < 5:
                     analysis["recommendations"].append(
@@ -318,17 +315,17 @@ class EnhancedParquetManager:
                             "suggestion": (
                                 f"Consider removing {partition_col} partitioning ({len(values)} unique values)"
                             ),
-                        }
+                        },
                     )
 
         return analysis
 
     @_handle_errors(default="")
     def generate_analysis_report(
-        self, analysis_results: Dict[str, Any], output_file: Optional[str]
+        self, analysis_results: dict[str, Any], output_file: str | None,
     ) -> str:
         """Generate a comprehensive analysis report."""
-        report_lines: List[str] = []
+        report_lines: list[str] = []
 
         # Header
         report_lines.append("=" * 80)
@@ -345,7 +342,7 @@ class EnhancedParquetManager:
         report_lines.append(f"Total Size: {summary['total_size_gb']:.2f} GB")
         report_lines.append(f"Total Files: {summary['total_files']:,}")
         report_lines.append(
-            f"Optimization Opportunities: {summary['optimization_opportunities']}"
+            f"Optimization Opportunities: {summary['optimization_opportunities']}",
         )
         report_lines.append("")
 
@@ -359,13 +356,13 @@ class EnhancedParquetManager:
 
             analysis=dataset_info["analysis"]
             report_lines.append(
-                f"  Total Files: {analysis.get('total_files', 0):,}"
+                f"  Total Files: {analysis.get('total_files', 0):,}",
             )
             report_lines.append(
-                f"  Total Size: {analysis.get('total_size_bytes', 0) / (1024**3):.2f} GB"
+                f"  Total Size: {analysis.get('total_size_bytes', 0) / (1024**3):.2f} GB",
             )
             report_lines.append(
-                f"  Average File Size: {analysis.get('avg_file_size', 0) / (1024**2):.1f} MB"
+                f"  Average File Size: {analysis.get('avg_file_size', 0) / (1024**2):.1f} MB",
             )
 
             if "partition_counts" in analysis:
@@ -373,7 +370,7 @@ class EnhancedParquetManager:
                 for partition, values in analysis["partition_counts"].items():
                     if isinstance(values, list):
                         report_lines.append(
-                            f"    {partition}: {len(values)} unique values"
+                            f"    {partition}: {len(values)} unique values",
                         )
 
             if analysis.get("recommendations"):
@@ -388,14 +385,14 @@ class EnhancedParquetManager:
         report_lines.append("RECOMMENDED ACTIONS")
         report_lines.append("=" * 80)
 
-        all_recommendations: List[Dict[str, Any]] = []
+        all_recommendations: list[dict[str, Any]] = []
         for dataset_info in analysis_results["datasets"].values():
             if "recommendations" in dataset_info["analysis"]:
                 all_recommendations.extend(dataset_info["analysis"]["recommendations"])
 
         if all_recommendations:
             # Group recommendations by type
-            rec_by_type: Dict[str, List[Dict[str, Any]]] = {}
+            rec_by_type: dict[str, list[dict[str, Any]]] = {}
             for rec in all_recommendations:
                 rec_type=rec.get("type", "misc")
                 if rec_type not in rec_by_type:
@@ -420,7 +417,7 @@ class EnhancedParquetManager:
         return report
 
     @_handle_errors(default={"status": "not_implemented"})
-    def optimize_partitions(self, dry_run: bool=True) -> Dict[str, Any]:
+    def optimize_partitions(self, dry_run: bool=True) -> dict[str, Any]:
         """Optimize partition structures (placeholder for future implementation)."""
         self.logger.info("Partition optimization not yet implemented")
         return {
@@ -442,7 +439,7 @@ def migrate_datasets(args: argparse.Namespace) -> int:
         return 0
 
     # Map subdirectory names to schema names
-    dataset_map: Dict[str, str] = {
+    dataset_map: dict[str, str] = {
         "klines": "klines",
         "aggtrades": "aggtrades",
         "futures": "futures",
@@ -492,7 +489,7 @@ def analyze_partitions(args: argparse.Namespace) -> int:
         print("\n" + report)
 
     print(
-        f"✅ Analysis complete! Found {analysis_results['summary']['optimization_opportunities']} optimization opportunities."
+        f"✅ Analysis complete! Found {analysis_results['summary']['optimization_opportunities']} optimization opportunities.",
     )
     return 0
 
@@ -515,35 +512,35 @@ def main() -> int:
 
     # Migration subcommand
     migrate_parser=subparsers.add_parser(
-        "migrate", help="Migrate flat parquet to partitioned"
+        "migrate", help="Migrate flat parquet to partitioned",
     )
     migrate_parser.add_argument(
-        "--exchange", default=os.environ.get("AresExchange", "BINANCE")
+        "--exchange", default=os.environ.get("AresExchange", "BINANCE"),
     )
     migrate_parser.add_argument(
-        "--symbol", default=os.environ.get("AresSymbol", "ETHUSDT")
+        "--symbol", default=os.environ.get("AresSymbol", "ETHUSDT"),
     )
     migrate_parser.add_argument(
-        "--timeframe", default=os.environ.get("AresTimeframe", "1m")
+        "--timeframe", default=os.environ.get("AresTimeframe", "1m"),
     )
     migrate_parser.add_argument("--src-base", default="data/training/parquet")
     migrate_parser.add_argument("--dst-base", default="data_cache/parquet")
 
     # Analysis subcommand
     analyze_parser=subparsers.add_parser(
-        "analyze", help="Analyze partition structures"
+        "analyze", help="Analyze partition structures",
     )
     analyze_parser.add_argument(
-        "--data-cache", default="data_cache", help="Path to data cache directory"
+        "--data-cache", default="data_cache", help="Path to data cache directory",
     )
     analyze_parser.add_argument("--output", help="Output file for the report")
 
     # Optimization subcommand
     optimize_parser=subparsers.add_parser(
-        "optimize", help="Optimize partition structures"
+        "optimize", help="Optimize partition structures",
     )
     optimize_parser.add_argument(
-        "--data-cache", default="data_cache", help="Path to data cache directory"
+        "--data-cache", default="data_cache", help="Path to data cache directory",
     )
     optimize_parser.add_argument(
         "--dry-run",
@@ -555,13 +552,12 @@ def main() -> int:
 
     if args.action== "migrate":
         return migrate_datasets(args)
-    elif args.action== "analyze":
+    if args.action== "analyze":
         return analyze_partitions(args)
-    elif args.action== "optimize":
+    if args.action== "optimize":
         return optimize_partitions_cli(args)
-    else:
-        parser.print_help()
-        return 1
+    parser.print_help()
+    return 1
 
 
 if __name__== "__main__":

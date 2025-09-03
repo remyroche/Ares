@@ -10,25 +10,26 @@ Usage:
     python scripts/assess_data_quality.py --data_path /path/to/your/data --symbol ETHUSDT --exchange binance
 """
 
-from pathlib import Path
-from sklearn.linear_model import LinearRegression
-from typing import Any
-from utils.logger import system_logger
 import argparse
 import asyncio
 import sys
+from pathlib import Path
+from typing import Any
 
-from sklearn.impute import SimpleImputer
-from training.steps.vectorized_labelling_orchestrator import VectorizedLabellingOrchestrator
 import numpy as np
 import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression
+
+from utils.logger import system_logger
 
 # Add the src directory to the Python path
 current_dir=Path(__file__).parent
 src_dir=current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
-from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
+
 
 class EnhancedDataQualityAnalyzer:
     """
@@ -122,7 +123,7 @@ class EnhancedDataQualityAnalyzer:
                 corr_value=correlation_matrix.iloc[i, j]
                 if abs(corr_value) > 0.8:
                     high_correlation_pairs.append(
-                        (correlation_matrix.columns[i], correlation_matrix.columns[j], corr_value)
+                        (correlation_matrix.columns[i], correlation_matrix.columns[j], corr_value),
                     )
 
         return {
@@ -314,7 +315,7 @@ class EnhancedDataQualityAnalyzer:
         # Check for critical issues
         if results["multicollinearity"]["features_with_high_vif"] > 10:
             summary["critical_issues"].append(
-                f"High multicollinearity: {results['multicollinearity']['features_with_high_vif']} features with VIF > 5"
+                f"High multicollinearity: {results['multicollinearity']['features_with_high_vif']} features with VIF > 5",
             )
 
         if "issues" in results["label_distribution"]:
@@ -322,7 +323,7 @@ class EnhancedDataQualityAnalyzer:
 
         if results["feature_redundancy"]["total_redundant_pairs"] > 20:
             summary["warnings"].append(
-                f"Feature redundancy: {results['feature_redundancy']['total_redundant_pairs']} highly correlated feature pairs"
+                f"Feature redundancy: {results['feature_redundancy']['total_redundant_pairs']} highly correlated feature pairs",
             )
 
         # Add recommendations
@@ -331,7 +332,7 @@ class EnhancedDataQualityAnalyzer:
 
         if results["multicollinearity"]["features_with_high_vif"] > 0:
             summary["recommendations"].append(
-                "Consider removing or combining highly correlated features"
+                "Consider removing or combining highly correlated features",
             )
 
         results["summary"] = summary
@@ -341,7 +342,7 @@ class EnhancedDataQualityAnalyzer:
 async def main():
     """Main function for data quality assessment."""
     parser=argparse.ArgumentParser(
-        description="Enhanced Data Quality Assessment Tool"
+        description="Enhanced Data Quality Assessment Tool",
     )
     parser.add_argument(
         "--data_path",
@@ -400,13 +401,11 @@ async def main():
     def convert_numpy_types(obj):
         if isinstance(obj, np.integer):
             return int(obj)
-        elif isinstance(obj, np.floating):
+        if isinstance(obj, np.floating):
             return float(obj)
-        elif isinstance(obj, np.ndarray):
+        if isinstance(obj, np.ndarray):
             return obj.tolist()
-        elif isinstance(obj, pd.DataFrame):
-            return obj.to_dict()
-        elif isinstance(obj, pd.Series):
+        if isinstance(obj, pd.DataFrame | pd.Series):
             return obj.to_dict()
         return obj
 
@@ -418,24 +417,24 @@ async def main():
 
     # Print summary
     summary=results["summary"]
-    print(f"\n📊 Data Quality Summary:")
+    print("\n📊 Data Quality Summary:")
     print(f"Total features: {summary['total_features']}")
     print(f"Total samples: {summary['total_samples']}")
     print(f"Critical issues: {len(summary['critical_issues'])}")
     print(f"Warnings: {len(summary['warnings'])}")
 
     if summary["critical_issues"]:
-        print(f"\n🚨 Critical Issues:")
+        print("\n🚨 Critical Issues:")
         for issue in summary["critical_issues"]:
             print(f"  - {issue}")
 
     if summary["warnings"]:
-        print(f"\n⚠️ Warnings:")
+        print("\n⚠️ Warnings:")
         for warning in summary["warnings"]:
             print(f"  - {warning}")
 
     if summary["recommendations"]:
-        print(f"\n💡 Recommendations:")
+        print("\n💡 Recommendations:")
         for rec in summary["recommendations"]:
             print(f"  - {rec}")
 

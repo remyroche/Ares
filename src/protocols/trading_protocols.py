@@ -6,22 +6,18 @@ Enhanced trading system protocols with comprehensive type safety (minimal scaffo
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from src.custom_types.base_types import Symbol, Timestamp
-from src.custom_types.data_types import OrderInfo
-from src.custom_types.ml_types import ModelInput, PredictionResult
-import asyncio
-from src.custom_types.trading_types import (
-
-    OrderRequest,
-    PerformanceMetrics,
-    PositionInfo,
-    RegimeClassification,
-    RiskParameters,
-    TradeDecision,
-    TradingSignal,
-)
+if TYPE_CHECKING:
+    from src.custom_types.base_types import Symbol, Timestamp
+    from src.custom_types.ml_types import ModelInput, PredictionResult
+    from src.custom_types.trading_types import (
+        PositionInfo,
+        RegimeClassification,
+        RiskParameters,
+        TradeDecision,
+        TradingSignal,
+    )
 
 
 @runtime_checkable
@@ -84,7 +80,7 @@ class TradingRiskManager(Protocol):
 
     @abstractmethod
     async def calculate_position_size(
-        self, symbol: Symbol, account_info: dict, risk_parameters: RiskParameters
+        self, symbol: Symbol, account_info: dict, risk_parameters: RiskParameters,
     ) -> float:
         ...
 

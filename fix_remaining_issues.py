@@ -3,9 +3,10 @@
 Script to fix remaining specific syntax issues in src/utils/ files
 """
 
+import glob
 import os
 import re
-import glob
+
 
 def fix_specific_issues(content):
     """Fix specific syntax issues that remain."""
@@ -24,48 +25,47 @@ def fix_specific_issues(content):
                     r"from src.utils.error_handler import handle_file_operations", content)
 
     # Fix indentation issues by ensuring proper structure
-    lines = content.split('\n')
+    lines = content.split("\n")
     fixed_lines = []
     i = 0
     while i < len(lines):
         line = lines[i]
 
         # Fix specific indentation issues
-        if 'def colorize(' in line and 'False)' in line:
+        if "def colorize(" in line and "False)" in line:
             # Fix the colorize function signature
             line = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*False\)", r"\\1: \\2, \\3, bold: bool=False)", line)
 
         # Fix if statement indentation
-        if line.strip().startswith('if ') and i + 1 < len(lines):
+        if line.strip().startswith("if ") and i + 1 < len(lines):
             next_line = lines[i + 1]
             if not next_line.strip():
                 # Ensure at least a pass after if
                 fixed_lines.append(line)
-                fixed_lines.append('    pass')
+                fixed_lines.append("    pass")
                 i += 2
                 continue
 
         fixed_lines.append(line)
         i += 1
 
-    return '\n'.join(fixed_lines)
+    return "\n".join(fixed_lines)
 
 def fix_file(filepath):
     """Fix a single file."""
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding="utf-8") as f:
             content=f.read()
 
         original_content=content
         content = fix_specific_issues(content)
 
         if content != original_content:
-            with open(filepath, 'w', encoding='utf-8') as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f"Fixed: {filepath}")
             return True
-        else:
-            return False
+        return False
 
     except Exception as e:
         print(f"Error fixing {filepath}: {e}")

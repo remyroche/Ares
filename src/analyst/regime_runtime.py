@@ -1,14 +1,16 @@
 # src/analyst/regime_runtime.py
 
-from src.utils.hmm_composite_manager import get_hmm_composite_manager
-from src.utils.logger import system_logger
-from typing import Any
 import os
+import os.path
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
-import os.path
+
+from src.utils.hmm_composite_manager import get_hmm_composite_manager
+from src.utils.logger import system_logger
+
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
     try:

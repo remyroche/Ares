@@ -1,16 +1,17 @@
 # Enhanced validation wrapper
 
-from typing import Dict, Any
-import json
 from datetime import datetime
-from src.utils.data_quality_validator import validate_features
+from typing import Any
+
 import pandas as pd
+
+from src.utils.data_quality_validator import validate_features
 
 
 def enhanced_validate_features(
     data: pd.DataFrame,
     dataset_name: str = "features",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Enhanced validation with detailed logging"""
 
     # Run original validation

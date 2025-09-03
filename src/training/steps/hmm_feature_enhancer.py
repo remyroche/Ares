@@ -1,12 +1,12 @@
 # src/training/steps/hmm_feature_enhancer.py
 
 
+
 import numpy as np
 import pandas as pd
 
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
-import copy
 
 
 class HMMFeatureEnhancer:
@@ -91,15 +91,15 @@ class HMMFeatureEnhancer:
             if "composite_cluster_id" in df.columns:
                 # Rolling regime consistency
                 df["regime_consistency_5"] = df["composite_cluster_id"].rolling(5).apply(
-                    lambda x: len(x.unique()) == 1, raw=False
+                    lambda x: len(x.unique()) == 1, raw=False,
                 ).astype(float)
 
                 df["regime_consistency_10"] = df["composite_cluster_id"].rolling(10).apply(
-                    lambda x: len(x.unique()) == 1, raw=False
+                    lambda x: len(x.unique()) == 1, raw=False,
                 ).astype(float)
 
                 df["regime_consistency_20"] = df["composite_cluster_id"].rolling(20).apply(
-                    lambda x: len(x.unique()) == 1, raw=False
+                    lambda x: len(x.unique()) == 1, raw=False,
                 ).astype(float)
 
             # State probability stability

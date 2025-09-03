@@ -85,13 +85,13 @@ def create_regime_splits_file():
 
                 # Create output files
                 train_file = os.path.join(
-                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_train.parquet"
+                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_train.parquet",
                 )
                 val_file=os.path.join(
-                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_validation.parquet"
+                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_validation.parquet",
                 )
                 test_file=os.path.join(
-                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_test.parquet"
+                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_test.parquet",
                 )
 
                 # Save splits
@@ -128,7 +128,7 @@ def create_regime_splits_file():
         "exchange": exchange, "symbol": symbol,
         "created_at": pd.Timestamp.now().isoformat(),
         "total_regimes": len(regime_details),
-        "regime_details": regime_details
+        "regime_details": regime_details,
     }
 
     # Save the regime splits file

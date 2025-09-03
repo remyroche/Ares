@@ -1,13 +1,13 @@
 # src/utils/config_loader.py
 
 import os
+import os.path
 from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, missing, yaml
-import os.path
+
 
 class ConfigLoader:
     """
@@ -213,26 +213,26 @@ class ConfigLoader:
 
     # Convenience functions
 
-    def load_position_sizing_config(config_dir: str = "config") -> dict[str, Any]:
+    def load_position_sizing_config(self: str = "config") -> dict[str, Any]:
         """Load position sizing configuration."""
         loader = ConfigLoader()
-        return loader.load_position_sizing_config(config_dir)
+        return loader.load_position_sizing_config(self)
 
-    def load_leverage_sizing_config(config_dir: str = "config") -> dict[str, Any]:
+    def load_leverage_sizing_config(self: str = "config") -> dict[str, Any]:
         """Load leverage sizing configuration."""
         loader = ConfigLoader()
-        return loader.load_leverage_sizing_config(config_dir)
+        return loader.load_leverage_sizing_config(self)
 
-    def load_combined_sizing_config(config_dir: str = "config") -> dict[str, Any]:
+    def load_combined_sizing_config(self: str = "config") -> dict[str, Any]:
         """Load combined sizing configuration."""
         loader = ConfigLoader()
-        return loader.load_combined_sizing_config(config_dir)
+        return loader.load_combined_sizing_config(self)
 
     def load_config_with_fallback(
-        primary_config: str,
+        self: str,
         fallback_config: str,
         config_dir: str = "config",
     ) -> dict[str, Any]:
         """Load configuration with fallback."""
         loader = ConfigLoader()
-        return loader.load_config_with_fallback(primary_config, fallback_config, config_dir)
+        return loader.load_config_with_fallback(self, fallback_config, config_dir)

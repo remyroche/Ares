@@ -1,8 +1,5 @@
 # src/training/multi_timeframe_training_manager.py
 
-from datetime import datetime
-from typing import Any
-
 # Add multi-timeframe feature engineering and regime integration imports
 # Temporarily commented out due to syntax errors
 # from src.analyst.multi_timeframe_feature_engineering import (
@@ -11,9 +8,10 @@ from typing import Any
 # from src.analyst.multi_timeframe_regime_integration import (
 #     MultiTimeframeRegimeIntegration,
 # )
-import asyncio
-from src.utils.error_handler import (
+from datetime import datetime
+from typing import Any
 
+from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
@@ -21,9 +19,7 @@ from src.utils.logger import system_logger
 
 # Import StepDependencyValidator for step dependency validation
 from src.utils.step_dependency_validator import step_dependency_validator
-import copy
 from src.utils.warning_symbols import (
-
     error,
     invalid,
     validation_error,
@@ -1086,7 +1082,7 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training results getting",
     )
     def get_multi_timeframe_training_results(
-        self, multi_timeframe_training_type: str | None = None
+        self, multi_timeframe_training_type: str | None = None,
     ) -> dict[str, Any]:
         """Get multi-timeframe training results."
 
@@ -1116,7 +1112,7 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training history getting",
     )
     def get_multi_timeframe_training_history(
-        self, limit: int | None = None
+        self, limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Get multi-timeframe training history."
 

@@ -1,21 +1,20 @@
+import logging
 import os
+import os.path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from joblib import dump, load
 from lightgbm import LGBMClassifier
+from sklearn.decomposition import PCA
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.decomposition import PCA
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
-import logging
-import copy
-import os.path
 
 
 class RegimePredictiveEnsembles:
@@ -122,7 +121,7 @@ class RegimePredictiveEnsembles:
         # Get unique regimes
         unique_regimes = prepared_data[regime_column].unique()
         self.logger.info(
-            f"📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}"
+            f"📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}",
         )
 
         for regime_id in unique_regimes:
@@ -279,12 +278,12 @@ class RegimePredictiveEnsembles:
                         combined_base_predictions[unique_model_name] = pred_value
 
                 self.logger.info(
-                    f"Primary expert ({primary_regime}) prediction: {prediction_output.get('prediction', 'HOLD')} (confidence: {prediction_output.get('confidence', confidence):.3f})"
+                    f"Primary expert ({primary_regime}) prediction: {prediction_output.get('prediction', 'HOLD')} (confidence: {prediction_output.get('confidence', confidence):.3f})",
                 )
 
             except Exception as e:
-                self.logger.error(
-                    f"Error getting prediction from {primary_regime} expert: {e}"
+                self.logger.exception(
+                    f"Error getting prediction from {primary_regime} expert: {e}",
                 )
                 ensemble_predictions_for_meta[primary_regime] = "HOLD"
                 ensemble_confidences_for_meta[primary_regime] = 0.0
@@ -445,7 +444,7 @@ class RegimePredictiveEnsembles:
             # Optional PCA after scaling to reduce dimensionality (fit on train only)
             if self.global_meta_config.get("use_pca", False):
                 n_components = min(
-                    self.global_meta_config.get("pca_components", 16), X_train.shape[1]
+                    self.global_meta_config.get("pca_components", 16), X_train.shape[1],
                 )
                 pca = PCA(n_components=n_components)
                 X_train = pca.fit_transform(X_train)
@@ -620,10 +619,9 @@ class RegimePredictiveEnsembles:
         if "composite_cluster_id" in current_features.columns:
             cluster_id = current_features["composite_cluster_id"].iloc[-1]
             return self._map_cluster_to_regime(cluster_id)
-        else:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
-            return "UNKNOWN"
+        self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
+        self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+        return "UNKNOWN"
 
     def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
         """
@@ -681,14 +679,13 @@ class RegimePredictiveEnsembles:
                 )
                 if not ensemble.load_model(final_model_file_name):
                     self.logger.warning(
-                        f"Could not load final model for {regime_name}. Returning None."
+                        f"Could not load final model for {regime_name}. Returning None.",
                     )
                     return None
 
             return ensemble
-        else:
-            self.logger.warning(f"No ensemble found for regime {regime_name}")
-            return None
+        self.logger.warning(f"No ensemble found for regime {regime_name}")
+        return None
 
     def get_current_regime_info(self, current_features: pd.DataFrame) -> dict[str, Any]:
         """
@@ -727,7 +724,7 @@ class RegimePredictiveEnsembles:
         confidence = 0.0
         if "intensity_cluster_" + str(cluster_id) in current_features.columns:
             confidence = float(
-                current_features[f"intensity_cluster_{cluster_id}"].iloc[-1]
+                current_features[f"intensity_cluster_{cluster_id}"].iloc[-1],
             )
 
         return {

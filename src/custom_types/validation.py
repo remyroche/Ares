@@ -4,13 +4,15 @@
 Runtime type validation utilities for critical paths.
 """
 
-from collections.abc import Callable
-import logging
-from typing import Any, TypeVar, Union, get_args, get_origin, Type
-from src.utils.warning_symbols import validation_error
 import inspect
+import logging
 import types
+from collections.abc import Callable
 from functools import wraps
+from typing import Any, TypeVar, Union, get_args, get_origin
+
+from src.utils.warning_symbols import validation_error
+
 from .base_types import Price, Symbol, Volume
 from .config_types import ConfigDict
 from .data_types import MarketDataDict, OHLCVData
@@ -183,7 +185,7 @@ def validate_critical_path(
             try:
                 return validator_func(result)
             except RuntimeTypeError as e:
-                logger.error(
+                logger.exception(
                     validation_error(
                         f"Critical path type validation failed: {e}",
                     ),

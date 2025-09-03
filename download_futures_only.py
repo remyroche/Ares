@@ -135,7 +135,7 @@ async def main() -> bool:
 
         # Download 2025 futures data
         if not shutdown_requested:
-            pass  # TODO: Add proper implementation
+            # TODO: Add proper implementation
             results_2025=await download_futures_2025_01_to_04()
             all_results.update(results_2025)
 

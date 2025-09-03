@@ -2,6 +2,7 @@
 
 """Progressive Optimizer for efficient parameter optimization using tiered approach."""
 
+import datetime as datetime
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -12,15 +13,12 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
-import datetime as datetime
-import asyncio
 from src.utils.warning_symbols import (
-
     error,
     failed,
     warning,
 )
+
 
 class OptimizationTier(Enum):
     """Enum for optimization tiers."""

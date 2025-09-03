@@ -71,15 +71,14 @@ def fix_function_def_params(line: str) -> str:
 
     # Find parameter segment between first '(' and last ')'
     try:
-        start=line.index('(')
-        end=line.rindex(')')
+        start=line.index("(")
+        end=line.rindex(")")
     except ValueError:
         return line
 
     params=line[start + 1 : end]
 
     # Iteratively replace occurrences
-    prev = None
     current = params
     pattern = re.compile(r"(:\s*[^,()]+)\s*,\s*([^,()\s]+)")
     for _ in range(10):  # avoid infinite loops

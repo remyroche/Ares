@@ -13,7 +13,6 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 from src.utils.logger import system_logger
-import asyncio
 
 if TYPE_CHECKING:  # only for type checking; avoids runtime import cost
     from src.interfaces.base_interfaces import (

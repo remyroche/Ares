@@ -12,15 +12,14 @@ from typing import Any
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+
 from src.config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.logger import system_logger
-import copy
 from src.utils.warning_symbols import (
-
     failed,
 )
 

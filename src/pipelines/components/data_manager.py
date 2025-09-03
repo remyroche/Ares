@@ -19,10 +19,6 @@ from src.core.domain import (
 )
 
 from typing import Any
-    handle_specific_errors,
-    performance_monitor,
-    secure_data_processing,
-    validate_data_quality,
 from src.utils.logger import system_logger
 
 class DataManager:
@@ -40,6 +36,7 @@ class DataManager:
         },
         default_return=False,
         context="data_manager.initialize",
+    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing DataManager ...")
         return True
@@ -47,6 +44,10 @@ class DataManager:
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @cached()
     @validates(required_columns=None, context="data_manager.process")
-    @handles_errors(Exception,, fallback=None, context="data_manager.process")
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="data_manager.process"
+    )
     async def process(self, data):
         return data

@@ -25,7 +25,6 @@ import pandas as pd
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.utils.confidence import aggregate_directional_confidences
-import asyncio
 
 from src.utils.logger import system_logger
 

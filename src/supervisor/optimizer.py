@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
+
 
 class Optimizer:
     """
@@ -48,7 +48,7 @@ class Optimizer:
             self.logger.info("✅ Optimizer initialization completed successfully")
             return True
         except Exception as e:
-            self.logger.error(f"❌ Optimizer initialization failed: {e}")
+            self.logger.exception(f"❌ Optimizer initialization failed: {e}")
             return False
 
     @handles_errors(fallback=None)
@@ -60,7 +60,7 @@ class Optimizer:
             self.max_history = self.optimizer_config["max_history"]
             self.logger.info("Optimizer configuration loaded successfully")
         except Exception as e:
-            self.logger.error(f"Error loading optimizer configuration: {e}")
+            self.logger.exception(f"Error loading optimizer configuration: {e}")
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
@@ -74,7 +74,7 @@ class Optimizer:
             self.logger.info("Configuration validation successful")
             return True
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handles_errors(
@@ -93,7 +93,7 @@ class Optimizer:
                 await asyncio.sleep(self.optimization_interval)
             return True
         except Exception as e:
-            self.logger.error(f"Error in optimizer run: {e}")
+            self.logger.exception(f"Error in optimizer run: {e}")
             self.is_running = False
             return False
 
@@ -109,7 +109,7 @@ class Optimizer:
             await self._update_optimization_results()
             self.logger.info(f"Optimization tick at {now}")
         except Exception as e:
-            self.logger.error(f"Error in optimization step: {e}")
+            self.logger.exception(f"Error in optimization step: {e}")
 
     @handles_errors(fallback=None)
     async def _optimize_parameters(self) -> None:
@@ -124,7 +124,7 @@ class Optimizer:
             self.parameters.update(optimized_params)
             self.logger.info("Parameter optimization completed")
         except Exception as e:
-            self.logger.error(f"Error optimizing parameters: {e}")
+            self.logger.exception(f"Error optimizing parameters: {e}")
 
     @handles_errors(fallback=None)
     async def _update_optimization_results(self) -> None:
@@ -135,7 +135,7 @@ class Optimizer:
             self.optimization_results["parameters"] = self.parameters.copy()
             self.logger.info("Optimization results updated successfully")
         except Exception as e:
-            self.logger.error(f"Error updating optimization results: {e}")
+            self.logger.exception(f"Error updating optimization results: {e}")
 
     @handles_errors(fallback=None)
     async def stop(self) -> None:
@@ -145,7 +145,7 @@ class Optimizer:
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Optimizer stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error stopping optimizer: {e}")
+            self.logger.exception(f"Error stopping optimizer: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()
@@ -233,7 +233,7 @@ class Optimizer:
             return optimization_results
 
         except Exception as e:
-            self.logger.error(f"Error in global system optimization: {e}")
+            self.logger.exception(f"Error in global system optimization: {e}")
             return {"status": "failed", "error": str(e)}
 
     def _get_sr_levels(self, daily_df: pd.DataFrame) -> list:
@@ -254,7 +254,7 @@ class Optimizer:
 
             return levels
         except Exception as e:
-            self.logger.error(f"Error calculating SR levels: {e}")
+            self.logger.exception(f"Error calculating SR levels: {e}")
             return []
 
 optimizer: Optimizer | None = None

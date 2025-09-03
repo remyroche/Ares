@@ -6,9 +6,8 @@ This script identifies which aggtrades files are missing between 2023-03-10 and 
 and generates a list of files that need to be re-downloaded.
 """
 
-from datetime import datetime, timedelta
-from pathlib import Path
 import os
+from datetime import datetime, timedelta
 
 
 def generate_expected_dates(start_date, end_date):
@@ -50,7 +49,7 @@ def main():
     print("🔍 IDENTIFYING DELETED AGGTRADES FILES")
     print("=" * 60)
     print(
-        f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
     )
     print(f"📁 Data cache path: {data_cache_path}")
     print("=" * 60)
@@ -61,14 +60,14 @@ def main():
 
     # Check existing files
     existing_files, missing_files=check_existing_files(
-        data_cache_path = expected_dates
+        data_cache_path = expected_dates,
     )
 
     print(f"\n✅ Existing files: {len(existing_files)}")
     print(f"❌ Missing files: {len(missing_files)}")
 
     if missing_files:
-        print(f"\n📋 MISSING FILES TO RE-DOWNLOAD:")
+        print("\n📋 MISSING FILES TO RE-DOWNLOAD:")
         print("-" * 40)
         for i, date in enumerate(missing_files, 1):
             print(f"{i:3d}. {date}")
@@ -90,7 +89,7 @@ def main():
                 missing_by_month[month_key] = []
             missing_by_month[month_key].append(date)
 
-        print(f"\n📅 MISSING FILES BY MONTH:")
+        print("\n📅 MISSING FILES BY MONTH:")
         print("-" * 40)
         for month, dates in sorted(missing_by_month.items()):
             print(f"{month}: {len(dates)} files")

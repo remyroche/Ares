@@ -15,19 +15,17 @@ from src.core.domain import PerformanceLevel
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import asyncio
 
 from src.utils.logger import system_logger
 
 class CSVExporter:
     """Centralized CSV export system for monitoring data."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("CSVExporter")
 
@@ -49,7 +47,7 @@ class CSVExporter:
         self.export_dir.mkdir(parents=True, exist_ok=True)
 
         # Export history
-        self.export_history: List[Dict[str, Any]] = []
+        self.export_history: list[dict[str, Any]] = []
 
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @cached()
@@ -79,10 +77,10 @@ class CSVExporter:
     @handles_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
     async def export_performance_metrics(
         self,
-        data: List[Dict[str, Any]],
+        data: list[dict[str, Any]],
         time_range: str = "24h",
         include_metadata: bool = True,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Export performance metrics to CSV."""
         if not data:
             self.logger.warning("No performance data to export")
@@ -100,10 +98,10 @@ class CSVExporter:
     async def _write_csv_file(
         self,
         filepath: Path,
-        rows: List[Dict[str, Any]],
+        rows: list[dict[str, Any]],
         include_metadata: bool,
     ) -> None:
-        fieldnames = sorted({key for row in rows for key in row.keys()})
+        fieldnames = sorted({key for row in rows for key in row})
         with filepath.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -132,5 +130,5 @@ class CSVExporter:
                 "path": str(filepath),
                 "count": count,
                 "timestamp": datetime.now().isoformat(),
-            }
+            },
         )

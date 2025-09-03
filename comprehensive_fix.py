@@ -38,10 +38,10 @@ def fix_function_signatures(content):
 def fix_import_statements(content):
     """Fix broken import statements"""
     # Fix from imports
-    content = re.sub(r'from (\w+') import (\w+) = (\w+)', r'from \1 import \2, \3', content)
+    content = re.sub(r'from (\w+) import (\w+) = (\w+)', r'from \1 import \2, \3', content)
     
     # Fix multiple imports
-    content = re.sub(r'(\w+') = (\w+)', r'\1, \2', content)
+    content = re.sub(r'(\w+) = (\w+)', r'\1, \2', content)
     
     return content
 

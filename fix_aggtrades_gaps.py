@@ -6,14 +6,15 @@ This script specifically targets files with the most gaps and attempts to fill t
 by downloading missing data from the exchange.
 """
 
-from pathlib import Path
-from src.utils.logger import system_logger
-from typing import Dict, List
 import asyncio
 import sys
+from pathlib import Path
 
 from src.training.steps.step01.data_gap_detector import DataGapDetector
-from src.training.steps.step01.missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
+from src.training.steps.step01.missing_data_downloader_and_gap_filler import (
+    MissingDataDownloaderAndGapFiller,
+)
+from src.utils.logger import system_logger
 
 # Add project root to path
 project_root=Path(__file__).parent
@@ -23,8 +24,8 @@ logger=system_logger.getChild("FixAggtradesGaps")
 
 
 async def fix_specific_files_gaps(
-    symbol: str="ETHUSDT", exchange: str="BINANCE", target_files: List[str] = None
-) -> Dict:
+    symbol: str="ETHUSDT", exchange: str="BINANCE", target_files: list[str] = None,
+) -> dict:
     """
     Fix gaps in specific aggtrades files
 
@@ -66,7 +67,7 @@ async def fix_specific_files_gaps(
         if target_files:
             target_gaps=[gap for gap in all_gaps if gap["file"] in target_files]
             logger.info(
-                f"🎯 Filtering to {len(target_gaps)} gaps in target files: {target_files}"
+                f"🎯 Filtering to {len(target_gaps)} gaps in target files: {target_files}",
             )
         else:
             target_gaps=all_gaps
@@ -94,7 +95,7 @@ async def fix_specific_files_gaps(
             try:
                 # Attempt to fill gaps for this file
                 fill_results=await gap_filler.fill_aggtrades_gaps(
-                    symbol, exchange, file_gaps
+                    symbol, exchange, file_gaps,
                 )
 
                 results["gaps_fixed"] += fill_results["filled_gaps"]
@@ -104,11 +105,11 @@ async def fix_specific_files_gaps(
                     results["errors"].extend(fill_results["errors"])
 
                 logger.info(
-                    f"✅ {file_name}: {fill_results['filled_gaps']} gaps filled, {fill_results['failed_gaps']} failed"
+                    f"✅ {file_name}: {fill_results['filled_gaps']} gaps filled, {fill_results['failed_gaps']} failed",
                 )
 
             except Exception as e:
-                logger.error(f"❌ Error processing {file_name}: {e}")
+                logger.exception(f"❌ Error processing {file_name}: {e}")
                 results["errors"].append(f"{file_name}: {e}")
                 results["failed_fixes"] += len(file_gaps)
 
@@ -136,7 +137,7 @@ async def fix_specific_files_gaps(
         logger.info(f"📊 Gaps eliminated: {gaps_eliminated}")
         logger.info(f"📊 Improvement rate: {improvement_rate:.1f}%")
         logger.info(
-            f"📊 Fix attempts: {results['gaps_fixed']} successful, {results['failed_fixes']} failed"
+            f"📊 Fix attempts: {results['gaps_fixed']} successful, {results['failed_fixes']} failed",
         )
 
         if results["errors"]:
@@ -152,7 +153,7 @@ async def fix_specific_files_gaps(
         return results
 
     except Exception as e:
-        logger.error(f"❌ Critical error in gap fixing: {e}")
+        logger.exception(f"❌ Critical error in gap fixing: {e}")
         results["errors"].append(str(e))
         return results
 
@@ -173,19 +174,18 @@ async def main():
 
     # Fix gaps in these specific files
     results=await fix_specific_files_gaps(
-        symbol="ETHUSDT", exchange="BINANCE", target_files=problematic_files
+        symbol="ETHUSDT", exchange="BINANCE", target_files=problematic_files,
     )
 
     # Success check
     if results["improvement_rate"] > 50:
         logger.info("🎉 SUCCESS: Significant improvement achieved!")
         return True
-    elif results["improvement_rate"] > 0:
+    if results["improvement_rate"] > 0:
         logger.info("✅ PARTIAL SUCCESS: Some improvement achieved")
         return True
-    else:
-        logger.warning("⚠️ LIMITED SUCCESS: Minimal or no improvement")
-        return False
+    logger.warning("⚠️ LIMITED SUCCESS: Minimal or no improvement")
+    return False
 
 
 if __name__== "__main__":

@@ -8,23 +8,22 @@ for large datasets.
 
 import logging
 import os
-import time
+import os.path
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import pandas as pd
-import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from src.core.decorators import (
-    traced as with_tracing_span,
-    validates
+    as,
+    traced,
+    validates,
+    with_tracing_span
 )
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import os.path
 
 try:
     PYARROW_AVAILABLE = True
@@ -126,11 +125,11 @@ class PartitionedDataLoader:
 
         if use_streaming and PYARROW_AVAILABLE:
             result = self._load_with_pyarrow_streaming(
-                dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs
+                dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs,
             )
         else:
             result = self._load_with_pandas(
-                dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs
+                dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs,
             )
 
         # Cache the result
@@ -312,7 +311,7 @@ class PartitionedDataLoader:
         return sorted(partitions)
 
     def estimate_dataset_size(
-        self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades"
+        self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades",
     ) -> dict[str, Any]:
         """Estimate the size of a partitioned dataset."""
         dataset_path = os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
@@ -348,7 +347,7 @@ class PartitionedDataLoader:
 
         return {"total_rows": total_rows, "total_size_mb": round(total_size_mb, 2), "partitions": partition_count}
 
-    def _optimize_filters_for_pruning(self, filters: List[Tuple], dataset_path: str) -> List[Tuple]:
+    def _optimize_filters_for_pruning(self, filters: list[tuple], dataset_path: str) -> list[tuple]:
         """Optimize filters for better partition pruning."""
         optimized_filters = []
 
@@ -372,7 +371,7 @@ class PartitionedDataLoader:
         return optimized_filters
 
     @lru_cache(maxsize=64)
-    def _get_partition_info(self, dataset_path: str) -> Dict[str, Any]:
+    def _get_partition_info(self, dataset_path: str) -> dict[str, Any]:
         """Get partition information for a dataset (cached)."""
         if PYARROW_AVAILABLE:
             try:
@@ -392,8 +391,8 @@ class PartitionedDataLoader:
         return {"partition_columns": [], "schema": None, "dataset_path": dataset_path}
 
     def get_partition_statistics(
-        self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades"
-    ) -> Dict[str, Any]:
+        self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades",
+    ) -> dict[str, Any]:
         """Get comprehensive statistics about partitioned data."""
         dataset_path = os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
 
@@ -411,7 +410,7 @@ class PartitionedDataLoader:
             }
 
             # Walk through partition structure
-            for root, dirs, files in os.walk(dataset_path):
+            for root, _dirs, files in os.walk(dataset_path):
                 parquet_files = [f for f in files if f.endswith(".parquet")]
                 stats["total_files"] += len(parquet_files)
 
@@ -448,8 +447,8 @@ class PartitionedDataLoader:
             return {"error": str(e)}
 
     def optimize_partition_access(
-        self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades"
-    ) -> Dict[str, Any]:
+        self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades",
+    ) -> dict[str, Any]:
         """Analyze and suggest optimizations for partition access patterns."""
         stats = self.get_partition_statistics(base_dir, exchange, symbol, data_type)
 
@@ -468,7 +467,7 @@ class PartitionedDataLoader:
                             "partition": partition_col,
                             "unique_values": len(values),
                             "suggestion": f"Consider coarser partitioning for {partition_col}",
-                        }
+                        },
                     )
                 elif len(values) < 5:
                     recommendations["recommendations"].append(
@@ -477,7 +476,7 @@ class PartitionedDataLoader:
                             "partition": partition_col,
                             "unique_values": len(values),
                             "suggestion": f"Consider removing {partition_col} partitioning",
-                        }
+                        },
                     )
 
         # File size analysis
@@ -488,7 +487,7 @@ class PartitionedDataLoader:
                         "type": "large_files",
                         "avg_size_mb": stats["avg_file_size"] / 1_000_000,
                         "suggestion": "Consider finer partitioning to reduce file sizes",
-                    }
+                    },
                 )
             elif stats["avg_file_size"] < 1_000_000:  # 1MB
                 recommendations["recommendations"].append(
@@ -496,7 +495,7 @@ class PartitionedDataLoader:
                         "type": "small_files",
                         "avg_size_mb": stats["avg_file_size"] / 1_000_000,
                         "suggestion": "Consider coarser partitioning to increase file sizes",
-                    }
+                    },
                 )
 
         return recommendations

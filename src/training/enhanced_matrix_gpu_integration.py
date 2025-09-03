@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Tuple, Dict
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -35,7 +35,7 @@ from src.training.steps.step7_enhanced_matrix_operations import (
 )
 
 from src.utils.logger import system_logger
-import copy
+
 
 class EnhancedMatrixGPUIntegration:
     """
@@ -181,7 +181,7 @@ class EnhancedMatrixGPUIntegration:
             total_time = time.time() - start_time
             all_metadata["total_processing_time"] = total_time
             all_metadata["feature_count_increase"] = len(enhanced_df.columns) - len(
-                features_df.columns
+                features_df.columns,
             )
 
             # GPU performance summary
@@ -234,7 +234,7 @@ class EnhancedMatrixGPUIntegration:
 
                 # Apply enhanced GPU matrix operations
                 enhanced_features, enhancement_metadata = await self.enhanced_gpu_matrix_operations(
-                    features_df, target
+                    features_df, target,
                 )
                 enhanced_data["features"] = enhanced_features
                 pipeline_metadata["enhancement"] = enhancement_metadata
@@ -515,7 +515,7 @@ async def demonstrate_gpu_integration() -> None:
     # Apply enhanced GPU matrix operations
     print("\n🔧 Applying Enhanced GPU Matrix Operations...")
     enhanced_features, enhancement_metadata = await integration.enhanced_gpu_matrix_operations(
-        features_df, target
+        features_df, target,
     )
 
     print(

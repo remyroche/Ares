@@ -5,14 +5,16 @@ Download Aggtrades Range: 2025-05-01 to 2025-08-18
 This script downloads aggtrades data for the gap between existing files.
 """
 
-from backtesting.ares_data_downloader_optimized import DownloadConfig, OptimizedDataDownloader
-from datetime import datetime, timedelta
-from pathlib import Path
 import asyncio
 import logging
 import signal
 import sys
-import time
+from pathlib import Path
+
+from backtesting.ares_data_downloader_optimized import (
+    DownloadConfig,
+    OptimizedDataDownloader,
+)
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -20,7 +22,7 @@ sys.path.insert(0, str(project_root))
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger=logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ async def download_aggtrades_range(start_date: str, end_date: str) -> bool:
         # Initialize the downloader first
         if not await downloader.initialize():
             print(
-                f"❌ Failed to initialize downloader for range {start_date} to {end_date}"
+                f"❌ Failed to initialize downloader for range {start_date} to {end_date}",
             )
             return False
         # Download only aggtrades data=not all data types
@@ -71,19 +73,19 @@ async def download_aggtrades_range(start_date: str, end_date: str) -> bool:
 
         if success:
             print(
-                f"✅ Successfully downloaded aggtrades data from {start_date} to {end_date}"
+                f"✅ Successfully downloaded aggtrades data from {start_date} to {end_date}",
             )
         else:
             print(
-                f"❌ Failed to download aggtrades data from {start_date} to {end_date}"
+                f"❌ Failed to download aggtrades data from {start_date} to {end_date}",
             )
 
         return success
     except Exception as e:
         print(
-            f"❌ Error downloading aggtrades data from {start_date} to {end_date}: {e}"
+            f"❌ Error downloading aggtrades data from {start_date} to {end_date}: {e}",
         )
-        logger.exception(f"Error in download_aggtrades_range")
+        logger.exception("Error in download_aggtrades_range")
         return False
 
 

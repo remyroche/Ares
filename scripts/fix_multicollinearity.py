@@ -12,7 +12,8 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
+
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
@@ -24,7 +25,7 @@ class MulticollinearityFixer:
         self.logger=system_logger.getChild("MulticollinearityFixer")
 
     @handle_errors(default_return={}, context="generate_feature_engineering_fixes")
-    def generate_feature_engineering_fixes(self) -> Dict[str, Any]:
+    def generate_feature_engineering_fixes(self) -> dict[str, Any]:
         """Generate specific fixes for the feature engineering pipeline."""
         self.logger.info("Generating multicollinearity fixes...")
 
@@ -58,7 +59,7 @@ class MulticollinearityFixer:
         }
 
     @handle_errors(default_return={}, context="generate_configuration_template")
-    def generate_configuration_template(self) -> Dict[str, Any]:
+    def generate_configuration_template(self) -> dict[str, Any]:
         """Generate a configuration template that addresses multicollinearity."""
         return {
             "vectorized_labelling_orchestrator": {
@@ -108,14 +109,14 @@ class MulticollinearityFixer:
         }
 
     @handle_errors(default_return={}, context="generate_code_fixes")
-    def generate_code_fixes(self) -> Dict[str, List[str]]:
+    def generate_code_fixes(self) -> dict[str, list[str]]:
         """Generate specific code edit suggestions for the pipeline (display only)."""
         return {
             "vectorized_advanced_feature_engineering.py": [
                 "# Add this method to filter out redundant price features",
                 (
                     "def _filter_redundant_price_features(self, data: pd.DataFrame) -> pd.DataFrame:\n"
-                    "    \"\"\"Remove redundant price features that cause multicollinearity.\"\"\"\n"
+                    '    """Remove redundant price features that cause multicollinearity."""\n'
                     "    redundant_features=[\n"
                     "        'open', 'high', 'low', 'avg_price', 'min_price', 'max_price',\n"
                     "        'open_price_change', 'high_price_change', 'low_price_change',\n"
@@ -130,7 +131,7 @@ class MulticollinearityFixer:
                 "# Add this method to validate VIF scores",
                 (
                     "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float=10.0) -> bool:\n"
-                    "    \"\"\"Validate that all features have acceptable VIF scores.\"\"\"\n"
+                    '    """Validate that all features have acceptable VIF scores."""\n'
                     "    import numpy as np\n"
                     "    from sklearn.linear_model import LinearRegression\n"
                     "    from sklearn.impute import SimpleImputer\n"
@@ -164,7 +165,7 @@ class MulticollinearityFixer:
                 "# Add this helper to remove extreme VIF features early",
                 (
                     "def _remove_extreme_vif_features(self, data: pd.DataFrame, threshold: float=1000.0) -> pd.DataFrame:\n"
-                    "    \"\"\"Remove features with extreme VIF scores (> threshold).\"\"\"\n"
+                    '    """Remove features with extreme VIF scores (> threshold)."""\n'
                     "    vif_scores=self._calculate_vif_scores(data)\n"
                     "    extreme=[c for c, v in vif_scores.items() if v > threshold]\n"
                     "    if extreme:\n"

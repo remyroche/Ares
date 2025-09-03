@@ -4,16 +4,17 @@ Compare aggregated trades formats between MEXC and Binance to ensure compatibili
 """
 
 import argparse
-from datetime import datetime, timedelta
-from pathlib import Path
-from src.utils.logger import system_logger
 import asyncio
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
 import pandas as pd
 
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, missing, warning
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import missing, warning
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -59,7 +60,7 @@ async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=
     for exchange_name, exchange in exchanges.items():
         logger.info(f"📥 Downloading from {exchange_name.upper()}...")
         trades=await exchange.get_historical_agg_trades(
-            symbol, start_time_ms=start_time_ms, end_time_ms=end_time_ms, limit=100
+            symbol, start_time_ms=start_time_ms, end_time_ms=end_time_ms, limit=100,
         )
         if trades:
             df=pd.DataFrame(trades)
@@ -78,14 +79,13 @@ async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=
         if binance_cols== mexc_cols:
             logger.info("✅ Column formats match between MEXC and Binance")
             return True
-        else:
-            missing_in_mexc=binance_cols - mexc_cols
-            missing_in_binance = mexc_cols - binance_cols
-            if missing_in_mexc:
-                print(missing(f"❌ Columns missing in MEXC: {sorted(missing_in_mexc)}"))
-            if missing_in_binance:
-                print(missing(f"❌ Columns missing in Binance: {sorted(missing_in_binance)}"))
-            return False
+        missing_in_mexc=binance_cols - mexc_cols
+        missing_in_binance = mexc_cols - binance_cols
+        if missing_in_mexc:
+            print(missing(f"❌ Columns missing in MEXC: {sorted(missing_in_mexc)}"))
+        if missing_in_binance:
+            print(missing(f"❌ Columns missing in Binance: {sorted(missing_in_binance)}"))
+        return False
 
     logger.info("⚠️ Could not compare formats due to missing data")
     return False

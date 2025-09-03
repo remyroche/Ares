@@ -28,7 +28,7 @@ def fix_multiline_function_params(text: str) -> str:
 
         # 1) Fix chained type corruption with optional default: a: T=b: U (= default)? -> a: T, b: U (= default)?
         chain=re.compile(
-            r"([A-Za-z_]\w*\s*:\s*[^,=()\n]+)\s*=\s*([A-Za-z_]\w*\s*:\s*[^,=()\n]+)(\s*=\s*[^,()\n]+)?"
+            r"([A-Za-z_]\w*\s*:\s*[^,=()\n]+)\s*=\s*([A-Za-z_]\w*\s*:\s*[^,=()\n]+)(\s*=\s*[^,()\n]+)?",
         )
         for _ in range(10):
             newp=chain.sub(r"\1, \2\3", p)
@@ -64,7 +64,7 @@ def fix_decorator_kw_commas(text: str) -> str:
         suffix=m.group(3)
         lines=body.splitlines()
         fixed_lines=[]
-        for i, line in enumerate(lines):
+        for _i, line in enumerate(lines):
             stripped=line.strip()
             if not stripped:
                 fixed_lines.append(line)

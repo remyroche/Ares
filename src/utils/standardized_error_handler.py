@@ -8,14 +8,13 @@ This module provides unified error handling patterns across all steps including:
 - Error context tracking
 """
 
-import sys
 import traceback
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
 from .logger import system_logger
-from .pipeline_standards import PipelineStandards, pipeline_standards
+from .pipeline_standards import pipeline_standards
 
 
 class ErrorSeverity(Enum):
@@ -51,7 +50,7 @@ class ErrorContext:
         self.config_context = kwargs.get("config_context", {})
         self.user_context = kwargs.get("user_context", {})
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert context to dictionary."""
         return {
             "step_name": self.step_name,
@@ -76,7 +75,7 @@ class ErrorRecord:
 
     def _categorize_error(self, error: Exception) -> ErrorCategory:
         """Categorize the error based on its type and message."""
-        error_type = type(error).__name__
+        type(error).__name__
         error_message = str(error).lower()
 
         # Data quality errors
@@ -109,7 +108,7 @@ class ErrorRecord:
 
         return ErrorCategory.UNKNOWN
 
-    def _get_recovery_strategy(self) -> Dict[str, Any]:
+    def _get_recovery_strategy(self) -> dict[str, Any]:
         """Get recovery strategy based on error category."""
         strategies = {
             ErrorCategory.DATA_QUALITY: {
@@ -164,7 +163,7 @@ class ErrorRecord:
 
         return strategies.get(self.category, strategies[ErrorCategory.UNKNOWN])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert error record to dictionary."""
         return {
             "error_type": type(self.error).__name__,
@@ -184,14 +183,14 @@ class StandardizedErrorHandler:
         """Initialize the error handler."""
         self.standards = pipeline_standards
         self.logger = system_logger
-        self.error_history: List[ErrorRecord] = []
+        self.error_history: list[ErrorRecord] = []
         self.max_history_size = 1000
 
     def handle_step_error(
         self,
         error: Exception,
         step_name: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         severity: ErrorSeverity = ErrorSeverity.ERROR,
     ) -> ErrorRecord:
         """Handle an error in a pipeline step.
@@ -237,7 +236,7 @@ class StandardizedErrorHandler:
         error_record = ErrorRecord(error, ErrorContext("unknown", "unknown"))
         return error_record.category
 
-    def get_recovery_strategy(self, error_type: Union[Exception, ErrorCategory]) -> Dict[str, Any]:
+    def get_recovery_strategy(self, error_type: Exception | ErrorCategory) -> dict[str, Any]:
         """Get recovery strategy for an error type.
 
         Args:
@@ -249,15 +248,14 @@ class StandardizedErrorHandler:
         if isinstance(error_type, Exception):
             error_record = ErrorRecord(error_type, ErrorContext("unknown", "unknown"))
             return error_record.recovery_strategy
-        else:
-            # Direct category lookup
-            error_record = ErrorRecord(Exception("dummy"), ErrorContext("unknown", "unknown"))
-            error_record.category = error_type
-            error_record.recovery_strategy = error_record._get_recovery_strategy()
-            return error_record.recovery_strategy
+        # Direct category lookup
+        error_record = ErrorRecord(Exception("dummy"), ErrorContext("unknown", "unknown"))
+        error_record.category = error_type
+        error_record.recovery_strategy = error_record._get_recovery_strategy()
+        return error_record.recovery_strategy
 
     def log_error_with_context(
-        self, error: Exception, step_name: str, data_context: Optional[Dict[str, Any]] = None
+        self, error: Exception, step_name: str, data_context: dict[str, Any] | None = None,
     ) -> None:
         """Log an error with context information.
 
@@ -300,7 +298,7 @@ Error in {error_record.context.step_name}:
         if len(self.error_history) > self.max_history_size:
             self.error_history.pop(0)
 
-    def get_error_summary(self, step_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_error_summary(self, step_name: str | None = None) -> dict[str, Any]:
         """Get summary of errors.
 
         Args:
@@ -360,7 +358,7 @@ Error in {error_record.context.step_name}:
                 json.dump([error.to_dict() for error in self.error_history], f, indent=2)
             return True
         except Exception as e:
-            self.logger.error(f"Failed to export errors: {e}")
+            self.logger.exception(f"Failed to export errors: {e}")
             return False
 
 

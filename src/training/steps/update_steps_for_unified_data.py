@@ -7,10 +7,10 @@ to use the new unified Parquet partitioned data format.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 # List of all training steps that need to be updated
-TRAINING_STEPS: List[str] = [
+TRAINING_STEPS: list[str] = [
     "step2_market_regime_classification",
     "step3_regime_data_splitting",
     "step4_analyst_labeling_feature_engineering",
@@ -88,7 +88,7 @@ def get_unified_data_loading_code(
             self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
     """
-def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
+def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
     """Get step-specific guidance for updating."""
     from src.config.constants import (
         BLANK_TRAINING_LOOKBACK_DAYS,
@@ -96,7 +96,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
 
     # High complexity areas that need special attention
 
-    guidance: Dict[str, Any] = {
+    guidance: dict[str, Any] = {
         "step2_market_regime_classification": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1h",  # Regime classification typically uses 1h
@@ -193,7 +193,7 @@ def generate_step_update_template(step_name: str) -> str:
 ## 2. Replace existing data loading code with:
 {get_unified_data_loading_code(
     lookback_days=guidance['lookback_days'],
-    timeframe_var=f'\"{guidance["timeframe"]}\"',
+    timeframe_var=f'"{guidance["timeframe"]}"',
 )}
 
 ## 3. Step-specific considerations:

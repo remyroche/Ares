@@ -9,10 +9,11 @@ Usage:
     python scripts/fix_multicollinearity_issue.py
 """
 
-from pathlib import Path
-from src.utils.logger import system_logger
 import sys
 from functools import wraps
+from pathlib import Path
+
+from src.utils.logger import system_logger
 
 # Add the src directory to the Python path
 current_dir=Path(__file__).parent
@@ -56,7 +57,7 @@ def fix_feature_engineering_code() -> bool:
 
     # Read the current file
     content: str
-    with open(feature_eng_file, "r", encoding="utf-8") as f:
+    with open(feature_eng_file, encoding="utf-8") as f:
         content=f.read()
 
     logger.info("📖 Reading current feature engineering code...")

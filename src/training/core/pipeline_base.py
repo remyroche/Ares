@@ -10,18 +10,6 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.logger import system_logger
-import copy
-import asyncio
-from src.utils.warning_symbols import (
-
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    validation_error,
-)
 
 @dataclass
 class StageContext:
@@ -1034,5 +1022,5 @@ async def setup_pipeline_stage(
             return pipeline_stage
         return None
 
-    except Exception as e:
+    except Exception:
         return None

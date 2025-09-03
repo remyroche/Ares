@@ -13,17 +13,18 @@ Usage:
     python scripts/run_enhanced_training.py --checkpoint  # Run checkpoint demo
 """
 
-from pathlib import Path
-from src.utils.logger import system_logger
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed
 
 # Add project root to path

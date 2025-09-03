@@ -1,18 +1,16 @@
 # src/core/dependency_injection.py
 
 from collections.abc import Callable
-from src.utils.logger import system_logger
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from dataclasses import dataclass
-import asyncio
 from src.interfaces import (
-
     IAnalyst,
     IStrategist,
     ISupervisor,
     ITactician,
 )
+from src.utils.logger import system_logger
 
 T = TypeVar("T")
 
@@ -281,22 +279,26 @@ class ComponentFactory:
     def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
         """Create an analyst component."""
         # Implementation would depend on specific analyst classes
-        raise NotImplementedError("Analyst creation not implemented")
+        msg = "Analyst creation not implemented"
+        raise NotImplementedError(msg)
 
     def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
         """Create a strategist component."""
         # Implementation would depend on specific strategist classes
-        raise NotImplementedError("Strategist creation not implemented")
+        msg = "Strategist creation not implemented"
+        raise NotImplementedError(msg)
 
     def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
         """Create a tactician component."""
         # Implementation would depend on specific tactician classes
-        raise NotImplementedError("Tactician creation not implemented")
+        msg = "Tactician creation not implemented"
+        raise NotImplementedError(msg)
 
     def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
         """Create a supervisor component."""
         # Implementation would depend on specific supervisor classes
-        raise NotImplementedError("Supervisor creation not implemented")
+        msg = "Supervisor creation not implemented"
+        raise NotImplementedError(msg)
 
 
 class ModularTradingSystem:
@@ -312,10 +314,8 @@ class ModularTradingSystem:
         """Initialize the trading system."""
         self.logger.info("Initializing modular trading system")
         # Initialize components as needed
-        pass
 
     async def shutdown(self) -> None:
         """Shutdown the trading system."""
         self.logger.info("Shutting down modular trading system")
         # Cleanup components
-        pass

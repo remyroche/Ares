@@ -1,10 +1,8 @@
 """Backwards compatibility layer for existing decorator usage."""
 
 import warnings
-from functools import wraps
-from typing import Any, Callable, TypeVar
-
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from .decorator_config import global_config
 
@@ -14,7 +12,6 @@ from .decorator_registry import decorator_registry
 # Import new decorators
 from .decorators import (
     auto_vectorize,
-    enforce_ndarray,
     guard_array_nan_inf,
     guard_dataframe_nulls,
     normalize_errors,
@@ -134,7 +131,7 @@ def set_decorator_config(**kwargs):
         if hasattr(global_config, key):
             setattr(global_config, key, value)
         else:
-            warnings.warn(f"Unknown configuration key: {key}")
+            warnings.warn(f"Unknown configuration key: {key}", stacklevel=2)
 
 
 def list_available_decorators(include_deprecated: bool = False):
@@ -161,19 +158,18 @@ def legacy_decorator_factory(legacy_name: str, new_name: str):
         # Import the new decorator dynamically to avoid circular imports
         if new_name == "smart_error_recovery":
             return smart_error_recovery(*args, **kwargs)
-        elif new_name == "cached_validation":
+        if new_name == "cached_validation":
             return cached_validation(*args, **kwargs)
-        elif new_name == "enhanced_validation":
+        if new_name == "enhanced_validation":
             return enhanced_validation(*args, **kwargs)
-        elif new_name == "performance_monitor_v2":
+        if new_name == "performance_monitor_v2":
             return performance_monitor_v2(*args, **kwargs)
-        else:
-            # Fallback to importing from the main decorators module
-            import importlib
+        # Fallback to importing from the main decorators module
+        import importlib
 
-            decorators_module = importlib.import_module("src.utils.decorators")
-            new_decorator = getattr(decorators_module, new_name)
-            return new_decorator(*args, **kwargs)
+        decorators_module = importlib.import_module("src.utils.decorators")
+        new_decorator = getattr(decorators_module, new_name)
+        return new_decorator(*args, **kwargs)
 
     return decorator
 

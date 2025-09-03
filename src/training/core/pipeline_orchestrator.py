@@ -7,19 +7,15 @@ from src.core.decorators import handles_errors
 
 from datetime import datetime
 from typing import Any
-import asyncio
 
-from src.utils.logger import system_logger
-import copy
-from src.utils.warning_symbols import (
-
-    error,
-    execution_error,
-    initialization_error,
-    invalid,
-    missing,
-    validation_error,
+<<<<<<< HEAD
+=======
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
 )
+>>>>>>> origin/main
+from src.utils.logger import system_logger
 
 class PipelineOrchestrator:
     """Pipeline orchestrator with comprehensive error handling and type safety."""
@@ -1056,5 +1052,5 @@ async def setup_pipeline_orchestrator(
             return pipeline_orchestrator
         return None
 
-    except Exception as e:
+    except Exception:
         return None

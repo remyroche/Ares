@@ -1,23 +1,23 @@
 """Validator for Step 20: Extended A/B Testing."""
 
 import asyncio
-from typing import Any, Dict
+from typing import Any
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
-from src.utils.warning_symbols import error, failed
+from src.utils.warning_symbols import failed
 
 
 class Step20ABTestingValidator(BaseValidator):
 	"""Validator for Step 20: Extended A/B Testing."""
 
-	def __init__(self, config: Dict[str, Any]) -> None:
+	def __init__(self, config: dict[str, Any]) -> None:
 		super().__init__("step20_ab_testing", config)
 
 	async def validate(
 		self,
-		training_input: Dict[str, Any],
-		pipeline_state: Dict[str, Any],
+		training_input: dict[str, Any],
+		pipeline_state: dict[str, Any],
 	) -> bool:
 		self.logger.info("🔍 Validating A/B testing step...")
 		symbol = training_input.get("symbol", "ETHUSDT")
@@ -34,9 +34,9 @@ class Step20ABTestingValidator(BaseValidator):
 
 
 async def run_validator(
-	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	training_input: dict[str, Any],
+	pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
 	validator = Step20ABTestingValidator(CONFIG)
 	validation_passed = await validator.validate(training_input, pipeline_state)
 	return {

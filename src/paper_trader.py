@@ -11,10 +11,8 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
-import asyncio
 
 from src.config.constants import (
-
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,
     DEFAULT_MAX_POSITION_SIZE,
@@ -26,9 +24,7 @@ from src.utils.trading_decorators import (
     comprehensive_trading_decorator,
     get_trade_tracker,
 )
-import copy
 from src.utils.warning_symbols import (
-
     execution_error,
     initialization_error,
     invalid,
@@ -62,19 +58,19 @@ class PaperTrader:
         self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
         self.initial_balance: float=self.trader_config.get(
             "initial_balance",
-            DEFAULT_INITIAL_BALANCE
+            DEFAULT_INITIAL_BALANCE,
         )
         self.max_position_size: float=self.trader_config.get(
             "max_position_size",
-            DEFAULT_MAX_POSITION_SIZE
+            DEFAULT_MAX_POSITION_SIZE,
         )
         self.commission_rate: float=self.trader_config.get(
             "commission_rate",
-            DEFAULT_COMMISSION_RATE
+            DEFAULT_COMMISSION_RATE,
         )
         self.slippage_rate: float=self.trader_config.get(
             "slippage_rate",
-            DEFAULT_SLIPPAGE_RATE
+            DEFAULT_SLIPPAGE_RATE,
         )
 
         # Trade tracking

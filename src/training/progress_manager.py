@@ -17,6 +17,7 @@ from src.utils.warning_symbols import (
     failed,
 )
 
+
 class ProgressManager:
     """Manages progress saving and loading for training steps."""
 

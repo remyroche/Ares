@@ -2,6 +2,7 @@
 
 import gc
 import os
+import os.path
 import threading
 import time
 import tracemalloc
@@ -13,8 +14,6 @@ import numpy as np
 import psutil
 
 from src.utils.logger import system_logger
-import asyncio
-import os.path
 
 class MemoryProfiler:
     """Comprehensive memory profiler for detecting memory leaks and optimizing memory usage

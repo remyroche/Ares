@@ -19,8 +19,6 @@ from enum import Enum, auto
 from functools import wraps
 from typing import Any, TypeVar, cast
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 try:
     import numpy as np
 except Exception:  # Minimal fallback for environments without numpy
@@ -139,7 +137,7 @@ def call_method_robust(
 
     except Exception as e:
         if logger:
-            logger.error(f"Error calling method '{method_name}' on {type(obj).__name__}: {e}")
+            logger.exception(f"Error calling method '{method_name}' on {type(obj).__name__}: {e}")
         return default_return
 
 
@@ -857,7 +855,7 @@ async def _execute_with_retries(
             else:
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"Max retries ({max_retries}) reached. " f"Returning default value.",
+                    f"Max retries ({max_retries}) reached. Returning default value.",
                 )
                 return default_return
 
@@ -1147,7 +1145,7 @@ async def safe_network_operation(
                     wait_time = 2**attempt  # Exponential backoff
                     system_logger = get_system_logger()
                     system_logger.warning(
-                        f"Network error (attempt {attempt + 1}/{max_retries}): " f"{e}. Retrying in {wait_time}s...",
+                        f"Network error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s...",
                     )
                     await asyncio.sleep(wait_time)
                 else:
@@ -1317,7 +1315,7 @@ class ErrorRecoveryStrategies:
                 delay = base_delay * (2**attempt)
                 system_logger = get_system_logger()
                 system_logger.warning(
-                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): " f"{e}. Retrying in {delay}s...",
+                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay}s...",
                 )
                 time.sleep(delay)
 
@@ -1349,7 +1347,7 @@ class ErrorRecoveryStrategies:
                 )
                 if i == len(operations) - 1:
                     system_logger = get_system_logger()
-                    system_logger.error("All fallback operations failed")
+                    system_logger.exception("All fallback operations failed")
                     return None
 
         return None
@@ -1621,10 +1619,9 @@ def handle_nan_issues(func: Callable) -> Callable:
                 if np.isnan(result) or np.isinf(result):
                     return 0.0
                 return result
-            elif isinstance(result, pd.Series):
+            if isinstance(result, pd.Series):
                 # Handle pandas Series separately to avoid ambiguous truth value
-                result = result.fillna(0).replace([np.inf, -np.inf], 0)
-                return result
+                return result.fillna(0).replace([np.inf, -np.inf], 0)
 
             return result
 
@@ -1674,10 +1671,9 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
             return default
         result = numerator / denominator
         # Handle scalar result safely
-        if isinstance(result, (int, float)):
+        if isinstance(result, int | float):
             return result if not (np.isnan(result) or np.isinf(result)) else default
-        else:
-            return result
+        return result
     except Exception as e:
         logger = get_system_logger()
         logger.warning(f"Error in safe division: {e}")

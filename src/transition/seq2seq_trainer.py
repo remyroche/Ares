@@ -1,27 +1,29 @@
 # src/transition/seq2seq_trainer.py
 
 from __future__ import annotations
-from src.utils.logger import system_logger
-from typing import TYPE_CHECKING, Any
+
 import contextlib
 import os
-import pandas as pd
+import os.path
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-import numpy as np
-import torch
-import asyncio
-import os.path
+
+from src.utils.logger import system_logger
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 try:
     pass
 except Exception:  # pragma: no cover
     pl = None  # type: ignore
 
-if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
 # Hint to speed CPU matmul on Apple Accelerate
 with contextlib.suppress(Exception):
     torch.set_float32_matmul_precision("high")
@@ -43,7 +45,7 @@ def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
         return float("nan")
 
 class TransitionSeqDataset(Dataset):
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     def __init__(
         self,
         samples: list[dict[str, Any]],
@@ -88,7 +90,7 @@ class TransitionSeqDataset(Dataset):
         }
 
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     def __init__(
         self,
         hmm_vocab: int,
@@ -245,7 +247,7 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         }
 
 class SmallTCN(SmallTransformer):
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     def __init__(
         self,
         hmm_vocab: int,

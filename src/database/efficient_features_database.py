@@ -3,6 +3,7 @@
 from src.core.decorators import handles_errors
 
 import os
+import os.path
 import pickle
 from datetime import datetime
 from typing import Any
@@ -11,23 +12,10 @@ import pandas as pd
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-import copy
-import os.path
-import asyncio
 from src.utils.warning_symbols import (
-
     error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
     missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
+    warning,
 )
 
 
@@ -181,7 +169,7 @@ class EfficientFeaturesDatabase:
             )
             return databases
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error scanning existing databases: {e}"))
             return []
 
@@ -219,7 +207,7 @@ class EfficientFeaturesDatabase:
                 }
             return {}
 
-        except Exception as e:
+        except Exception:
             self.print(warning("Error reading database info: {e}"))
             return {}
 
@@ -302,7 +290,7 @@ class EfficientFeaturesDatabase:
 
             return db_name, missing_ranges
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error finding existing database: {e}"))
             return None, [(start_time, end_time)] if start_time and end_time else []
 
@@ -341,7 +329,7 @@ class EfficientFeaturesDatabase:
             )
             return data
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error loading database {database_name}: {e}"))
             return pd.DataFrame()
 
@@ -436,7 +424,7 @@ class EfficientFeaturesDatabase:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error saving database: {e}")
+            self.logger.exception(f"❌ Error saving database: {e}")
             return False
 
     @handles_errors(exceptions=(ValueError, KeyError, OSError, pd.errors.EmptyDataError), default_return=False)
@@ -515,7 +503,7 @@ class EfficientFeaturesDatabase:
 
             return success
 
-        except Exception as e:
+        except Exception:
             self.print(error("❌ Error updating database: {e}"))
             return False
 
@@ -605,7 +593,7 @@ class EfficientFeaturesDatabase:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error saving database with timestamp: {e}")
+            self.logger.exception(f"❌ Error saving database with timestamp: {e}")
             return False
 
     def get_database_list(
@@ -694,11 +682,11 @@ class EfficientFeaturesDatabase:
                             del self.database_cache[db_name]
 
                     except Exception as e:
-                        self.logger.error(f"Error deleting database {db_name}: {e}")
+                        self.logger.exception(f"Error deleting database {db_name}: {e}")
 
             self.logger.info(
                 f"Cleanup completed. Deleted {deleted_count} old databases",
             )
 
         except Exception as e:
-            self.logger.error(f"Error during database cleanup: {e}")
+            self.logger.exception(f"Error during database cleanup: {e}")

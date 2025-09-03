@@ -6,17 +6,17 @@ Analyzes why regime features may have zero variance and provides fixes.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Dict, List
 import sys
 import traceback
 import warnings
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
@@ -30,11 +30,11 @@ class RegimeCalculationInvestigator:
     def __init__(self) -> None:
         self.logger=system_logger.getChild("RegimeCalculationInvestigator")
 
-    def investigate_regime_calculations(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def investigate_regime_calculations(self, data: pd.DataFrame) -> dict[str, Any]:
         """Investigate regime calculation issues."""
         self.logger.info("Investigating regime calculation issues...")
 
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "regime_features": {},
             "calculation_issues": [],
             "recommendations": [],
@@ -45,14 +45,14 @@ class RegimeCalculationInvestigator:
         for feature in regime_features:
             if feature in data.columns:
                 results["regime_features"][feature] = self._analyze_regime_feature(
-                    data[feature], feature
+                    data[feature], feature,
                 )
             else:
                 results.setdefault("calculation_issues", []).append(
                     {
                         "type": "missing_feature",
                         "description": f"Missing regime feature: {feature}",
-                    }
+                    },
                 )
 
         # Analyze the underlying calculations
@@ -61,10 +61,10 @@ class RegimeCalculationInvestigator:
 
         return results
 
-    def _analyze_regime_feature(self, series: pd.Series, feature_name: str) -> Dict[str, Any]:
+    def _analyze_regime_feature(self, series: pd.Series, feature_name: str) -> dict[str, Any]:
         """Analyze a specific regime feature."""
         series=pd.to_numeric(series, errors="coerce")
-        analysis: Dict[str, Any] = {
+        analysis: dict[str, Any] = {
             "feature_name": feature_name,
             "total_values": int(len(series)),
             "unique_values": int(series.nunique(dropna=True)),
@@ -94,9 +94,9 @@ class RegimeCalculationInvestigator:
 
         return analysis
 
-    def _identify_calculation_issues(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _identify_calculation_issues(self, data: pd.DataFrame) -> list[dict[str, Any]]:
         """Identify specific calculation issues."""
-        issues: List[Dict[str, Any]] = []
+        issues: list[dict[str, Any]] = []
 
         # Check if we have the raw data needed for regime calculations
         required_columns=["close", "volume"]
@@ -107,7 +107,7 @@ class RegimeCalculationInvestigator:
                     "type": "missing_raw_data",
                     "description": f"Missing required columns for regime calculation: {missing_columns}",
                     "impact": "Cannot verify regime calculations",
-                }
+                },
             )
 
         # Trend
@@ -119,7 +119,7 @@ class RegimeCalculationInvestigator:
                         "type": "trend_regime_issue",
                         "description": "Trend regime calculation issues",
                         "details": trend_analysis,
-                    }
+                    },
                 )
 
         # Volatility
@@ -131,7 +131,7 @@ class RegimeCalculationInvestigator:
                         "type": "volatility_regime_issue",
                         "description": "Volatility regime calculation issues",
                         "details": vol_analysis,
-                    }
+                    },
                 )
 
         # Volume
@@ -143,14 +143,14 @@ class RegimeCalculationInvestigator:
                         "type": "volume_regime_issue",
                         "description": "Volume regime calculation issues",
                         "details": volume_analysis,
-                    }
+                    },
                 )
 
         return issues
 
-    def _analyze_trend_calculation(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def _analyze_trend_calculation(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze trend regime calculation."""
-        analysis: Dict[str, Any] = {"issues": []}
+        analysis: dict[str, Any] = {"issues": []}
 
         if "close" not in data.columns:
             analysis["issues"].append("Missing 'close' column for trend calculation")
@@ -185,9 +185,9 @@ class RegimeCalculationInvestigator:
 
         return analysis
 
-    def _analyze_volatility_calculation(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def _analyze_volatility_calculation(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze volatility regime calculation."""
-        analysis: Dict[str, Any] = {"issues": []}
+        analysis: dict[str, Any] = {"issues": []}
 
         if "close" not in data.columns:
             analysis["issues"].append(
@@ -222,9 +222,9 @@ class RegimeCalculationInvestigator:
 
         return analysis
 
-    def _analyze_volume_calculation(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def _analyze_volume_calculation(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze volume regime calculation."""
-        analysis: Dict[str, Any] = {"issues": []}
+        analysis: dict[str, Any] = {"issues": []}
 
         if "volume" not in data.columns:
             analysis["issues"].append("Missing 'volume' column for volume calculation")
@@ -259,9 +259,9 @@ class RegimeCalculationInvestigator:
 
         return analysis
 
-    def _generate_recommendations(self, results: Dict[str, Any]) -> List[str]:
+    def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
         """Generate recommendations based on findings."""
-        recommendations: List[str] = []
+        recommendations: list[str] = []
 
         # Analyze regime features
         for feature_name, analysis in results.get("regime_features", {}).items():
@@ -284,7 +284,7 @@ class RegimeCalculationInvestigator:
 
         return recommendations
 
-    def generate_fixed_regime_calculations(self) -> Dict[str, str]:
+    def generate_fixed_regime_calculations(self) -> dict[str, str]:
         """Generate fixed regime calculation code as reference (strings)."""
         return {
             "trend_regime": (
@@ -362,9 +362,9 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
             ).strip(),
         }
 
-    def generate_report(self, results: Dict[str, Any]) -> str:
+    def generate_report(self, results: dict[str, Any]) -> str:
         """Generate a comprehensive investigation report."""
-        report: List[str] = []
+        report: list[str] = []
         report.append("=" * 80)
         report.append("REGIME CALCULATION INVESTIGATION REPORT")
         report.append("=" * 80)
@@ -395,17 +395,17 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
                     if "trend_strength_stats" in details:
                         stats = details["trend_strength_stats"]
                         report.append(
-                            f"   - Trend strength: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}"
+                            f"   - Trend strength: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
                     if "volatility_stats" in details:
                         stats=details["volatility_stats"]
                         report.append(
-                            f"   - Volatility: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}"
+                            f"   - Volatility: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
                     if "volume_ratio_stats" in details:
                         stats=details["volume_ratio_stats"]
                         report.append(
-                            f"   - Volume ratio: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}"
+                            f"   - Volume ratio: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
             report.append("")
 
@@ -461,7 +461,7 @@ def main() -> None:
                 {
                     "close": np.cumsum(np.random.randn(n_samples) * 0.01) + 100,
                     "volume": np.random.lognormal(10, 1, n_samples),
-                }
+                },
             )
 
             # Simulate regime features with issues
@@ -472,7 +472,7 @@ def main() -> None:
                     "volume_regime": np.random.choice([0, 1, 2], size=n_samples, p=[0.7, 0.2, 0.1]),
                     "close": price_data["close"],
                     "volume": price_data["volume"],
-                }
+                },
             )
             print("Using simulated data for demonstration")
         else:

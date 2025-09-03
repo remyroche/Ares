@@ -11,33 +11,36 @@ from src.core.domain import PerformanceLevel
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from src.core.decorators import handles_errors
 
 from src.utils.logger import system_logger
 
+if TYPE_CHECKING:
+    import asyncio
+
+
 @dataclass
 class MonitoringComponents:
-    metrics_dashboard: Optional["MetricsDashboard"] = None
-    advanced_tracer: Optional["AdvancedTracer"] = None
-    correlation_manager: Optional["CorrelationManager"] = None
-    ml_monitor: Optional["MLMonitor"] = None
-    report_scheduler: Optional["ReportScheduler"] = None
-    tracking_system: Optional["TrackingSystem"] = None
+    metrics_dashboard: MetricsDashboard | None = None
+    advanced_tracer: AdvancedTracer | None = None
+    correlation_manager: CorrelationManager | None = None
+    ml_monitor: MLMonitor | None = None
+    report_scheduler: ReportScheduler | None = None
+    tracking_system: TrackingSystem | None = None
 
 class MonitoringIntegrationManager:
     """Unified monitoring integration manager."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("MonitoringIntegrationManager")
         self.integration_config = config.get("monitoring_integration", {})
         self.components = MonitoringComponents()
         self.is_integrated: bool = False
-        self.integration_task: Optional[asyncio.Task] = None
+        self.integration_task: asyncio.Task | None = None
 
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @handles_errors(

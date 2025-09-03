@@ -7,16 +7,20 @@ Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
 """
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-import asyncio
+from typing import Any
 
+<<<<<<< HEAD
+=======
+from src.utils.error_handler import (
+    handle_errors,
+)
+>>>>>>> origin/main
 from src.utils.logger import system_logger
-import copy
 from src.utils.warning_symbols import (
-
     failed,
     warning,
 )
+
 
 class PositionDivisionStrategy:
     """
@@ -28,7 +32,7 @@ class PositionDivisionStrategy:
     - Position closure logic
     - Risk management rules
     """
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize the position division strategy.
 
@@ -46,14 +50,14 @@ class PositionDivisionStrategy:
         self.stop_loss_pct = self.strategy_config.get("stop_loss_pct", 0.01)  # 1%
 
         # State tracking
-        self.active_positions: Dict[str, Dict[str, Any]] = {}
-        self.position_history: List[Dict[str, Any]] = []
-        self.strategy_performance: Dict[str, Any] = {}
+        self.active_positions: dict[str, dict[str, Any]] = {}
+        self.position_history: list[dict[str, Any]] = []
+        self.strategy_performance: dict[str, Any] = {}
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="position division strategy initialization"
+        context="position division strategy initialization",
     )
     async def initialize(self) -> bool:
         """
@@ -79,7 +83,7 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position Division Strategy initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Position Division Strategy initialization failed: {e}"))
             return False
 
     def _validate_configuration(self) -> bool:
@@ -109,20 +113,20 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="position division calculation"
+        context="position division calculation",
     )
     async def calculate_position_division(
         self,
         total_capital: float,
         confidence_score: float,
-        market_conditions: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        market_conditions: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         Calculate position division strategy.
 
@@ -154,14 +158,14 @@ class PositionDivisionStrategy:
                 "stop_loss_levels": tp_sl_levels["stop_loss"],
                 "confidence_score": confidence_score,
                 "total_capital": total_capital,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
             self.logger.info(f"✅ Position division strategy calculated: {num_positions} positions")
             return strategy
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position division calculation failed: {e}"))
+            self.logger.exception(failed(f"❌ Position division calculation failed: {e}"))
             return None
 
     def _calculate_num_positions(self, confidence_score: float) -> int:
@@ -180,25 +184,24 @@ class PositionDivisionStrategy:
 
             if confidence_score >= 0.8:
                 return 1  # High confidence = single position
-            elif confidence_score >= 0.6:
+            if confidence_score >= 0.6:
                 return 2  # Medium-high confidence = 2 positions
-            elif confidence_score >= 0.4:
+            if confidence_score >= 0.4:
                 return 3  # Medium confidence = 3 positions
-            elif confidence_score >= 0.2:
+            if confidence_score >= 0.2:
                 return 4  # Medium-low confidence = 4 positions
-            else:
-                return min(5, self.max_positions)  # Low confidence = max positions
+            return min(5, self.max_positions)  # Low confidence = max positions
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating number of positions: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating number of positions: {e}"))
             return 1
 
     def _calculate_position_sizes(
         self,
         total_capital: float,
         num_positions: int,
-        confidence_score: float
-    ) -> List[float]:
+        confidence_score: float,
+    ) -> list[float]:
         """
         Calculate position sizes for each position.
 
@@ -236,10 +239,10 @@ class PositionDivisionStrategy:
             return position_sizes
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating position sizes: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating position sizes: {e}"))
             return [total_capital * 0.1]  # Fallback to 10%
 
-    def _calculate_tp_sl_levels(self, market_conditions: Dict[str, Any]) -> Dict[str, List[float]]:
+    def _calculate_tp_sl_levels(self, market_conditions: dict[str, Any]) -> dict[str, list[float]]:
         """
         Calculate take profit and stop loss levels.
 
@@ -271,25 +274,25 @@ class PositionDivisionStrategy:
 
             return {
                 "take_profit": take_profit_levels,
-                "stop_loss": stop_loss_levels
+                "stop_loss": stop_loss_levels,
             }
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating TP/SL levels: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating TP/SL levels: {e}"))
             return {
                 "take_profit": [self.take_profit_pct] * self.max_positions,
-                "stop_loss": [self.stop_loss_pct] * self.max_positions
+                "stop_loss": [self.stop_loss_pct] * self.max_positions,
             }
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="position management"
+        context="position management",
     )
     async def add_position(
         self,
         position_id: str,
-        position_data: Dict[str, Any]
+        position_data: dict[str, Any],
     ) -> bool:
         """
         Add a new position to the strategy.
@@ -311,26 +314,26 @@ class PositionDivisionStrategy:
             self.active_positions[position_id] = {
                 **position_data,
                 "added_at": datetime.now().isoformat(),
-                "status": "active"
+                "status": "active",
             }
 
             self.logger.info(f"Added position {position_id} to strategy")
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error adding position: {e}"))
+            self.logger.exception(failed(f"❌ Error adding position: {e}"))
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="position closure"
+        context="position closure",
     )
     async def close_position(
         self,
         position_id: str,
         close_reason: str,
-        pnl: float
+        pnl: float,
     ) -> bool:
         """
         Close a position and record its performance.
@@ -363,7 +366,7 @@ class PositionDivisionStrategy:
                 "close_reason": close_reason,
                 "entry_time": position_data.get("added_at"),
                 "exit_time": datetime.now().isoformat(),
-                "hold_time": self._calculate_hold_time(position_data.get("added_at"))
+                "hold_time": self._calculate_hold_time(position_data.get("added_at")),
             }
 
             # Add to history
@@ -379,7 +382,7 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error closing position: {e}"))
+            self.logger.exception(failed(f"❌ Error closing position: {e}"))
             return False
 
     def _calculate_hold_time(self, entry_time: str) -> float:
@@ -396,15 +399,14 @@ class PositionDivisionStrategy:
             if not entry_time:
                 return 0.0
 
-            entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
-            hold_time = (datetime.now() - entry_dt).total_seconds()
-            return hold_time
+            entry_dt = datetime.fromisoformat(entry_time)
+            return (datetime.now() - entry_dt).total_seconds()
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating hold time: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating hold time: {e}"))
             return 0.0
 
-    def _update_performance_metrics(self, closure_record: Dict[str, Any]) -> None:
+    def _update_performance_metrics(self, closure_record: dict[str, Any]) -> None:
         """
         Update performance metrics based on closed position.
 
@@ -424,13 +426,13 @@ class PositionDivisionStrategy:
                 "losing_positions": total_positions - winning_positions,
                 "win_rate": winning_positions / total_positions if total_positions > 0 else 0.0,
                 "average_pnl": total_pnl / total_positions if total_positions > 0 else 0.0,
-                "last_updated": datetime.now().isoformat()
+                "last_updated": datetime.now().isoformat(),
             })
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error updating performance metrics: {e}"))
+            self.logger.exception(failed(f"❌ Error updating performance metrics: {e}"))
 
-    def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
+    def get_active_positions(self) -> dict[str, dict[str, Any]]:
         """
         Get all active positions.
 
@@ -439,7 +441,7 @@ class PositionDivisionStrategy:
         """
         return self.active_positions.copy()
 
-    def get_position_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_position_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get position history.
 
@@ -455,10 +457,10 @@ class PositionDivisionStrategy:
             return self.position_history.copy()
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting position history: {e}"))
+            self.logger.exception(failed(f"❌ Error getting position history: {e}"))
             return []
 
-    def get_performance_metrics(self) -> Dict[str, Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         """
         Get performance metrics.
 
@@ -467,7 +469,7 @@ class PositionDivisionStrategy:
         """
         return self.strategy_performance.copy()
 
-    def get_strategy_summary(self) -> Dict[str, Any]:
+    def get_strategy_summary(self) -> dict[str, Any]:
         """
         Get strategy summary.
 
@@ -482,11 +484,11 @@ class PositionDivisionStrategy:
                 "take_profit_pct": self.take_profit_pct,
                 "stop_loss_pct": self.stop_loss_pct,
                 "performance": self.strategy_performance,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting strategy summary: {e}"))
+            self.logger.exception(failed(f"❌ Error getting strategy summary: {e}"))
             return {}
 
     async def cleanup(self) -> None:
@@ -508,4 +510,4 @@ class PositionDivisionStrategy:
             self.logger.info("✅ Position Division Strategy cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position Division Strategy cleanup failed: {e}"))
+            self.logger.exception(failed(f"❌ Position Division Strategy cleanup failed: {e}"))

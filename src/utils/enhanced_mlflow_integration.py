@@ -20,16 +20,14 @@ import sys
 import tempfile
 from datetime import datetime
 from functools import wraps
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import mlflow
 import pandas as pd
 
 from src.config import ARES_VERSION
 from src.utils.logger import system_logger
-import asyncio
 from src.utils.mlflow_utils import (
-
     extract_training_metadata,
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,
@@ -38,7 +36,6 @@ from src.utils.mlflow_utils import (
     log_params_with_metadata,
     validate_run_metadata,
 )
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 def with_enhanced_mlflow_logging(step_name: str):
@@ -58,7 +55,7 @@ def with_enhanced_mlflow_logging(step_name: str):
     """
     def decorator(func):
         @wraps(func)
-        async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
+        async def wrapper(self, training_input: dict[str, Any], pipeline_state: dict[str, Any], *args, **kwargs):
             # Extract metadata from config
             config = getattr(self, "config", {})
             metadata = extract_training_metadata(config)
@@ -146,7 +143,7 @@ def with_enhanced_mlflow_logging(step_name: str):
                     if isinstance(result, dict):
                         metrics = {}
                         for key, value in result.items():
-                            if isinstance(value, (int, float)) and key not in ["status", "duration"]:
+                            if isinstance(value, int | float) and key not in ["status", "duration"]:
                                 metrics[f"step_{key}"] = float(value)
 
                         if metrics:
@@ -177,12 +174,12 @@ def with_enhanced_mlflow_logging(step_name: str):
 
 
 def log_step_artifact(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
     artifact_path: str,
     artifact_type: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Log a step artifact with enhanced metadata."
 
@@ -235,7 +232,7 @@ def generate_standardized_artifact_name(
     step_number: str,
     artifact_type: str,
     extension: str = "",
-    timestamp: Optional[datetime] = None,
+    timestamp: datetime | None = None,
 ) -> str:
     """Generate standardized artifact name following the pattern: exchange_token_date_hourminute_NumberOfStep_Artifact"
 
@@ -275,12 +272,12 @@ def generate_standardized_artifact_name(
 
 
 def log_step_dataframe(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
     df: pd.DataFrame,
     artifact_name: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Log a DataFrame as an artifact for a specific step."
 
@@ -331,7 +328,7 @@ def log_step_dataframe(
         system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
 
 
-def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[str, str]:
+def create_standardized_artifact_folders(base_dir: str = "artifacts") -> dict[str, str]:
     """Create standardized folder structure for all pipeline artifacts."
 
     Args:
@@ -360,7 +357,7 @@ def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[st
 
 
 def get_standardized_artifact_path(
-    artifact_type: str, step_name: str, artifact_name: str, base_dir: str = "artifacts"
+    artifact_type: str, step_name: str, artifact_name: str, base_dir: str = "artifacts",
 ) -> str:
     """Get standardized path for an artifact based on its type."
 
@@ -392,12 +389,12 @@ def get_standardized_artifact_path(
 
 
 def log_step_dataframe_with_standardized_name(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
     df: pd.DataFrame,
     artifact_type: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Log a DataFrame with standardized naming pattern and folder structure."
 
@@ -418,11 +415,11 @@ def log_step_dataframe_with_standardized_name(
 
     # Generate standardized artifact name
     artifact_name = generate_standardized_artifact_name(
-        exchange=exchange, token=token, step_number=step_name, artifact_type=artifact_type, extension="parquet"
+        exchange=exchange, token=token, step_number=step_name, artifact_type=artifact_type, extension="parquet",
     )
 
     # Get standardized path
-    artifact_path = get_standardized_artifact_path("dataframe", step_name, artifact_name)
+    get_standardized_artifact_path("dataframe", step_name, artifact_name)
 
     # Log the DataFrame
     log_step_dataframe(
@@ -438,12 +435,12 @@ def log_step_dataframe_with_standardized_name(
 
 
 def log_step_artifact_with_standardized_name(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
     artifact_path: str,
     artifact_type: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Log an artifact with standardized naming pattern and folder structure."
 
@@ -467,11 +464,11 @@ def log_step_artifact_with_standardized_name(
 
     # Generate standardized artifact name
     artifact_name = generate_standardized_artifact_name(
-        exchange=exchange, token=token, step_number=step_name, artifact_type=artifact_type, extension=file_extension
+        exchange=exchange, token=token, step_number=step_name, artifact_type=artifact_type, extension=file_extension,
     )
 
     # Get standardized path
-    standardized_path = get_standardized_artifact_path(artifact_type, step_name, artifact_name)
+    get_standardized_artifact_path(artifact_type, step_name, artifact_name)
 
     # Log the artifact
     log_step_artifact(
@@ -487,12 +484,12 @@ def log_step_artifact_with_standardized_name(
 
 
 def log_step_report(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
-    report_data: Dict[str, Any],
+    report_data: dict[str, Any],
     report_type: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Log a step report with standardized naming pattern and folder structure."
 
@@ -514,11 +511,11 @@ def log_step_report(
 
         # Generate standardized report name
         report_name = generate_standardized_artifact_name(
-            exchange=exchange, token=token, step_number=step_name, artifact_type=report_type, extension="json"
+            exchange=exchange, token=token, step_number=step_name, artifact_type=report_type, extension="json",
         )
 
         # Get standardized path
-        report_path = get_standardized_artifact_path("report", step_name, report_name)
+        get_standardized_artifact_path("report", step_name, report_name)
 
         # Create temporary file
         import json
@@ -561,13 +558,13 @@ def log_step_report(
 
 
 def log_step_model(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
     model: Any,
     model_name: str,
     model_type: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Log a model for a specific step with enhanced metadata."
 
@@ -611,11 +608,11 @@ def log_step_model(
 
 
 def log_step_metrics(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
-    metrics: Dict[str, Union[int, float]],
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
+    metrics: dict[str, int | float],
+    run_id: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Log metrics for a specific step with enhanced metadata."
 
@@ -657,7 +654,7 @@ def log_step_metrics(
 class EnhancedMLflowManager:
     """Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize the enhanced MLflow manager."
 
         Args:
@@ -665,7 +662,7 @@ class EnhancedMLflowManager:
         """
         self.config = config
         self.metadata = extract_training_metadata(config)
-        self.current_run_id: Optional[str] = None
+        self.current_run_id: str | None = None
         self.logger = system_logger
 
         # Set up MLflow
@@ -683,10 +680,10 @@ class EnhancedMLflowManager:
             self.logger.info(f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}")
 
         except Exception as e:
-            self.logger.error(f"Failed to setup MLflow: {e}")
+            self.logger.exception(f"Failed to setup MLflow: {e}")
             raise
 
-    def start_run(self, run_name: Optional[str] = None, step_name: Optional[str] = None) -> str:
+    def start_run(self, run_name: str | None = None, step_name: str | None = None) -> str:
         """Start an MLflow run with enhanced metadata."
 
         Args:
@@ -721,7 +718,7 @@ class EnhancedMLflowManager:
                 return self.current_run_id
 
         except Exception as e:
-            self.logger.error(f"Failed to start MLflow run: {e}")
+            self.logger.exception(f"Failed to start MLflow run: {e}")
             raise
 
     def log_model(
@@ -729,7 +726,7 @@ class EnhancedMLflowManager:
         model: Any,
         model_name: str,
         model_type: str,
-        additional_metadata: Optional[Dict[str, Any]] = None,
+        additional_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a model with enhanced metadata."
 
@@ -740,7 +737,8 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
-            raise ValueError("No active MLflow run. Call start_run() first.")
+            msg = "No active MLflow run. Call start_run() first."
+            raise ValueError(msg)
 
         try:
             # Prepare additional metadata
@@ -766,14 +764,14 @@ class EnhancedMLflowManager:
             self.logger.info(f"✅ Logged model '{model_name}' with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log model '{model_name}': {e}")
+            self.logger.exception(f"Failed to log model '{model_name}': {e}")
             raise
 
     def log_metrics(
         self,
-        metrics: Dict[str, Union[int, float]],
-        step: Optional[int] = None,
-        additional_metadata: Optional[Dict[str, Any]] = None,
+        metrics: dict[str, int | float],
+        step: int | None = None,
+        additional_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log metrics with enhanced metadata."
 
@@ -783,11 +781,12 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
-            raise ValueError("No active MLflow run. Call start_run() first.")
+            msg = "No active MLflow run. Call start_run() first."
+            raise ValueError(msg)
 
         try:
             # Convert metrics to float
-            float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+            float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, int | float)}
 
             if not float_metrics:
                 self.logger.warning("No valid metrics to log")
@@ -815,13 +814,13 @@ class EnhancedMLflowManager:
             self.logger.info(f"✅ Logged {len(float_metrics)} metrics with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log metrics: {e}")
+            self.logger.exception(f"Failed to log metrics: {e}")
             raise
 
     def log_parameters(
         self,
-        parameters: Dict[str, Any],
-        additional_metadata: Optional[Dict[str, Any]] = None,
+        parameters: dict[str, Any],
+        additional_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log parameters with enhanced metadata."
 
@@ -830,7 +829,8 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
-            raise ValueError("No active MLflow run. Call start_run() first.")
+            msg = "No active MLflow run. Call start_run() first."
+            raise ValueError(msg)
 
         try:
             # Prepare additional metadata
@@ -854,7 +854,7 @@ class EnhancedMLflowManager:
             self.logger.info(f"✅ Logged {len(parameters)} parameters with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log parameters: {e}")
+            self.logger.exception(f"Failed to log parameters: {e}")
             raise
 
     def log_artifact(
@@ -862,7 +862,7 @@ class EnhancedMLflowManager:
         local_path: str,
         artifact_path: str,
         artifact_type: str,
-        additional_metadata: Optional[Dict[str, Any]] = None,
+        additional_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log an artifact with enhanced metadata."
 
@@ -873,7 +873,8 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
-            raise ValueError("No active MLflow run. Call start_run() first.")
+            msg = "No active MLflow run. Call start_run() first."
+            raise ValueError(msg)
 
         try:
             # Prepare additional metadata
@@ -899,14 +900,14 @@ class EnhancedMLflowManager:
             self.logger.info(f"✅ Logged artifact '{artifact_path}' with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log artifact '{artifact_path}': {e}")
+            self.logger.exception(f"Failed to log artifact '{artifact_path}': {e}")
             raise
 
     def log_dataframe(
         self,
         df: pd.DataFrame,
         artifact_path: str,
-        additional_metadata: Optional[Dict[str, Any]] = None,
+        additional_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a DataFrame as an artifact with enhanced metadata."
 
@@ -943,13 +944,13 @@ class EnhancedMLflowManager:
             os.unlink(tmp_path)
 
         except Exception as e:
-            self.logger.error(f"Failed to log DataFrame: {e}")
+            self.logger.exception(f"Failed to log DataFrame: {e}")
             raise
 
     def log_training_summary(
         self,
-        summary: Dict[str, Any],
-        additional_metadata: Optional[Dict[str, Any]] = None,
+        summary: dict[str, Any],
+        additional_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log training summary with enhanced metadata."
 
@@ -986,7 +987,7 @@ class EnhancedMLflowManager:
             os.unlink(tmp_path)
 
         except Exception as e:
-            self.logger.error(f"Failed to log training summary: {e}")
+            self.logger.exception(f"Failed to log training summary: {e}")
             raise
 
     def validate_current_run(self) -> bool:
@@ -1001,14 +1002,15 @@ class EnhancedMLflowManager:
 
         return validate_run_metadata(self.current_run_id)
 
-    def get_run_metadata(self) -> Dict[str, Any]:
+    def get_run_metadata(self) -> dict[str, Any]:
         """Get metadata for the current run."
 
         Returns:
             Dictionary containing run metadata
         """
         if not self.current_run_id:
-            raise ValueError("No active MLflow run")
+            msg = "No active MLflow run"
+            raise ValueError(msg)
 
         from src.utils.mlflow_utils import get_enhanced_run_metadata
 
@@ -1024,10 +1026,10 @@ class EnhancedMLflowManager:
 
 @handles_errors(default_return=None, context="enhanced_mlflow_integration.log_step_metadata")
 def log_step_metadata(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step_name: str,
-    step_data: Dict[str, Any],
-    run_id: Optional[str] = None,
+    step_data: dict[str, Any],
+    run_id: str | None = None,
 ) -> None:
     """Log metadata for a specific pipeline step."
 
@@ -1063,11 +1065,11 @@ def log_step_metadata(
 
 @handles_errors(default_return=None, context="enhanced_mlflow_integration.log_model_performance")
 def log_model_performance(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     model_name: str,
     model_type: str,
-    performance_metrics: Dict[str, float],
-    run_id: Optional[str] = None,
+    performance_metrics: dict[str, float],
+    run_id: str | None = None,
 ) -> None:
     """Log model performance metrics with enhanced metadata."
 
@@ -1104,9 +1106,9 @@ def log_model_performance(
 
 @handles_errors(default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion")
 def log_pipeline_completion(
-    config: Dict[str, Any],
-    pipeline_results: Dict[str, Any],
-    run_id: Optional[str] = None,
+    config: dict[str, Any],
+    pipeline_results: dict[str, Any],
+    run_id: str | None = None,
 ) -> None:
     """Log pipeline completion with enhanced metadata."
 
@@ -1142,13 +1144,13 @@ def log_pipeline_completion(
 
 def create_detailed_step_report(
     step_name: str,
-    step_data: Dict[str, Any],
-    training_input: Dict[str, Any],
-    execution_metadata: Dict[str, Any],
-    artifacts_generated: List[str],
-    metrics_calculated: Dict[str, Any],
-    errors_encountered: List[str] = None,
-) -> Dict[str, Any]:
+    step_data: dict[str, Any],
+    training_input: dict[str, Any],
+    execution_metadata: dict[str, Any],
+    artifacts_generated: list[str],
+    metrics_calculated: dict[str, Any],
+    errors_encountered: list[str] = None,
+) -> dict[str, Any]:
     """Create a detailed report for a pipeline step."
 
     Args:
@@ -1163,7 +1165,7 @@ def create_detailed_step_report(
     Returns:
         Detailed report dictionary
     """
-    report = {
+    return {
         "step_info": {
             "step_name": step_name,
             "execution_timestamp": datetime.now().isoformat(),
@@ -1191,12 +1193,12 @@ def create_detailed_step_report(
         "artifacts_generated": {
             "count": len(artifacts_generated),
             "artifacts": artifacts_generated,
-            "artifact_types": list(set([os.path.splitext(artifact)[1] for artifact in artifacts_generated])),
+            "artifact_types": list({os.path.splitext(artifact)[1] for artifact in artifacts_generated}),
         },
         "metrics_calculated": {
             "count": len(metrics_calculated),
             "metrics": metrics_calculated,
-            "metric_types": list(set([type(v).__name__ for v in metrics_calculated.values()])),
+            "metric_types": list({type(v).__name__ for v in metrics_calculated.values()}),
         },
         "step_data_summary": {
             "data_keys": list(step_data.keys()) if isinstance(step_data, dict) else [],
@@ -1225,4 +1227,3 @@ def create_detailed_step_report(
         },
     }
 
-    return report

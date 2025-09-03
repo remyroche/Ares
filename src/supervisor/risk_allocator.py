@@ -8,7 +8,7 @@ import numpy as np
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
+
 
 class RiskAllocator:
     """
@@ -63,7 +63,7 @@ class RiskAllocator:
             self.logger.info("✅ Risk Allocator initialization completed successfully")
             return True
         except Exception as e:
-            self.logger.error(f"❌ Risk Allocator initialization failed: {e}")
+            self.logger.exception(f"❌ Risk Allocator initialization failed: {e}")
             return False
 
     @handles_errors(fallback=None)
@@ -75,7 +75,7 @@ class RiskAllocator:
             self.max_history = self.risk_config["max_history"]
             self.logger.info("Risk allocator configuration loaded successfully")
         except Exception as e:
-            self.logger.error(f"Error loading risk configuration: {e}")
+            self.logger.exception(f"Error loading risk configuration: {e}")
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
@@ -89,7 +89,7 @@ class RiskAllocator:
             self.logger.info("Configuration validation successful")
             return True
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handles_errors(
@@ -108,7 +108,7 @@ class RiskAllocator:
                 await asyncio.sleep(self.allocation_interval)
             return True
         except Exception as e:
-            self.logger.error(f"Error in risk allocator run: {e}")
+            self.logger.exception(f"Error in risk allocator run: {e}")
             self.is_running = False
             return False
 
@@ -124,7 +124,7 @@ class RiskAllocator:
             await self._update_risk_limits()
             self.logger.info(f"Risk allocation tick at {now}")
         except Exception as e:
-            self.logger.error(f"Error in risk allocation step: {e}")
+            self.logger.exception(f"Error in risk allocation step: {e}")
 
     @handles_errors(fallback=None)
     async def _calculate_risk_allocations(self) -> None:
@@ -139,7 +139,7 @@ class RiskAllocator:
             self.risk_allocations.update(allocations)
             self.logger.info("Risk allocation calculation completed")
         except Exception as e:
-            self.logger.error(f"Error calculating risk allocations: {e}")
+            self.logger.exception(f"Error calculating risk allocations: {e}")
 
     @handles_errors(fallback=None)
     async def _update_risk_limits(self) -> None:
@@ -154,7 +154,7 @@ class RiskAllocator:
             self.risk_limits.update(limits)
             self.logger.info("Risk limits updated successfully")
         except Exception as e:
-            self.logger.error(f"Error updating risk limits: {e}")
+            self.logger.exception(f"Error updating risk limits: {e}")
 
     @handles_errors(fallback=None)
     async def stop(self) -> None:
@@ -164,7 +164,7 @@ class RiskAllocator:
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Risk Allocator stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error stopping risk allocator: {e}")
+            self.logger.exception(f"Error stopping risk allocator: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()
@@ -200,7 +200,7 @@ class RiskAllocator:
             return abs(var)  # Return absolute value for risk measurement
 
         except Exception as e:
-            self.logger.error(f"Error calculating VaR: {e}")
+            self.logger.exception(f"Error calculating VaR: {e}")
             return 0.0
 
     def calculate_expected_shortfall(self, returns: list[float], confidence_level: float = None) -> float:
@@ -232,7 +232,7 @@ class RiskAllocator:
             return abs(es)  # Return absolute value
 
         except Exception as e:
-            self.logger.error(f"Error calculating Expected Shortfall: {e}")
+            self.logger.exception(f"Error calculating Expected Shortfall: {e}")
             return 0.0
 
     def calculate_multi_timeframe_var(
@@ -263,7 +263,7 @@ class RiskAllocator:
             return var_results
 
         except Exception as e:
-            self.logger.error(f"Error calculating multi-timeframe VaR: {e}")
+            self.logger.exception(f"Error calculating multi-timeframe VaR: {e}")
             return {}
 
     def monitor_risk_limits(self, current_var: float, current_es: float) -> dict[str, Any]:
@@ -329,7 +329,7 @@ class RiskAllocator:
             return risk_metrics
 
         except Exception as e:
-            self.logger.error(f"Error monitoring risk limits: {e}")
+            self.logger.exception(f"Error monitoring risk limits: {e}")
             return {}
 
     def get_risk_metrics(self, timeframe: str = "all") -> dict[str, Any]:
@@ -359,7 +359,7 @@ class RiskAllocator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting risk metrics: {e}")
+            self.logger.exception(f"Error getting risk metrics: {e}")
             return {}
 
     def _calculate_risk_summary(self) -> dict[str, Any]:
@@ -386,7 +386,7 @@ class RiskAllocator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating risk summary: {e}")
+            self.logger.exception(f"Error calculating risk summary: {e}")
             return {}
 
 risk_allocator: RiskAllocator | None = None

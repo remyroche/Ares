@@ -40,8 +40,8 @@ def consolidate_aggtrades():
     consolidated_df=pd.concat(dfs, ignore_index=True)
 
     # Sort by timestamp if it exists
-    if 'timestamp' in consolidated_df.columns:
-        consolidated_df=consolidated_df.sort_values('timestamp')
+    if "timestamp" in consolidated_df.columns:
+        consolidated_df=consolidated_df.sort_values("timestamp")
 
     # Remove duplicates if any
     consolidated_df=consolidated_df.drop_duplicates()

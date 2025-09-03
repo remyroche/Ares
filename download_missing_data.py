@@ -4,14 +4,15 @@ Simple script to download missing data from November 2022 to July 2023
 """
 
 import asyncio
-import ccxt.async_support as ccxt
-import pandas as pd
+import logging
 import os
 from datetime import datetime
-import logging
+
+import ccxt.async_support as ccxt
+import pandas as pd
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger=logging.getLogger(__name__)
 
 async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", interval="1m"):
@@ -19,8 +20,8 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
 
     # Initialize exchange
     exchange=getattr(ccxt, exchange_name)({
-        'enableRateLimit': True,
-        'rateLimit': 100,  # 100ms between requests
+        "enableRateLimit": True,
+        "rateLimit": 100,  # 100ms between requests
     })
 
     try:
@@ -48,7 +49,7 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
                     symbol,
                     interval,
                     since=current_since,
-                    limit=batch_size
+                    limit=batch_size,
                 )
 
                 if not klines:
@@ -56,8 +57,8 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
                     break
 
                 # Convert to DataFrame
-                df=pd.DataFrame(klines, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df=pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close", "volume"])
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
                 all_klines.append(df)
 
@@ -69,15 +70,15 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
                 await asyncio.sleep(0.1)
 
             except Exception as e:
-                logger.error(f"Error downloading batch: {e}")
+                logger.exception(f"Error downloading batch: {e}")
                 await asyncio.sleep(1)
                 continue
 
         # Combine all data
         if all_klines:
             combined_df=pd.concat(all_klines, ignore_index=True)
-            combined_df=combined_df.drop_duplicates(subset=['timestamp'])
-            combined_df=combined_df.sort_values('timestamp')
+            combined_df=combined_df.drop_duplicates(subset=["timestamp"])
+            combined_df=combined_df.sort_values("timestamp")
 
             logger.info(f"✅ Downloaded {len(combined_df)} klines")
 
@@ -90,12 +91,12 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
             existing_file=f"data_cache/klines_{exchange_name.upper()}_{symbol}_{interval}_consolidated.parquet"
             if os.path.exists(existing_file):
                 existing_df=pd.read_parquet(existing_file)
-                existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp'])
+                existing_df["timestamp"] = pd.to_datetime(existing_df["timestamp"])
 
                 # Combine and remove duplicates
                 combined_all=pd.concat([existing_df, combined_df], ignore_index=True)
-                combined_all=combined_all.drop_duplicates(subset=['timestamp'])
-                combined_all=combined_all.sort_values('timestamp')
+                combined_all=combined_all.drop_duplicates(subset=["timestamp"])
+                combined_all=combined_all.sort_values("timestamp")
 
                 # Save back
                 combined_all.to_parquet(existing_file, index=False)
@@ -103,12 +104,11 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
                 logger.info(f"📊 Total rows: {len(combined_all)}")
 
             return True
-        else:
-            logger.error("No data downloaded")
-            return False
+        logger.error("No data downloaded")
+        return False
 
     except Exception as e:
-        logger.error(f"Error in download_missing_data: {e}")
+        logger.exception(f"Error in download_missing_data: {e}")
         return False
     finally:
         await exchange.close()

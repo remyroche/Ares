@@ -1,18 +1,22 @@
 # src/transition/multitask_rf.py
 
 from __future__ import annotations
-from collections import Counter
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import classification_report, f1_score, mean_absolute_error
-from src.utils.logger import system_logger
-from typing import Any, List, Dict
+
 import json
 import os
+import os.path
+import pickle
+from collections import Counter
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import pickle
-import os.path
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import classification_report, f1_score, mean_absolute_error
+
+from src.utils.logger import system_logger
+
 
 @dataclass
 class MTRFConfig:
@@ -192,7 +196,7 @@ class MultiTaskRandomForest:
                     vals = [
                         str(v)
                         for v in y_states["regime"].tolist()
-                        if isinstance(v, (str, int))
+                        if isinstance(v, str | int)
                     ]
                     if vals:
                         # majority label

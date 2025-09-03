@@ -34,7 +34,7 @@ def calculate_correct_kelly_position_size(
         confidences=[]
 
         for level in target_levels:
-            closest_level = min(
+            min(
                 price_target_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
             )
@@ -47,7 +47,7 @@ def calculate_correct_kelly_position_size(
         # Get average adverse risk (probability of loss)
         adverse_risks=[]
         for level in target_levels:
-            closest_level = min(
+            min(
                 adversarial_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
             )
@@ -79,7 +79,7 @@ def calculate_correct_kelly_position_size(
 
         # Ensure within bounds
         return max(
-            min_position_size, min(max_position_size, kelly_position_size)
+            min_position_size, min(max_position_size, kelly_position_size),
         )
 
     except (ValueError, TypeError, KeyError) as e:
@@ -119,7 +119,7 @@ def calculate_enhanced_kelly_position_size(
         base_kelly_size=calculate_correct_kelly_position_size(
             price_target_confidences=adversarial_confidences,
             kelly_multiplier=kelly_multiplier,
-            max_position_size=max_position_size
+            max_position_size=max_position_size,
         )
 
         # Volatility adjustment
@@ -135,7 +135,7 @@ def calculate_enhanced_kelly_position_size(
 
         # Ensure within bounds
         final_size = max(
-            min_position_size, min(max_position_size, adjusted_size)
+            min_position_size, min(max_position_size, adjusted_size),
         )
 
         return {
@@ -150,7 +150,7 @@ def calculate_enhanced_kelly_position_size(
             "base_kelly_size": min_position_size, "volatility_adjustment": 1.0,
             "balance_adjustment": 1.0,
             "final_position_size": min_position_size, "market_volatility": market_volatility,
-            "account_balance": account_balance
+            "account_balance": account_balance,
         }
     except ZeroDivisionError as e:
         print(f"Division by zero in enhanced Kelly calculation: {e}")
@@ -158,7 +158,7 @@ def calculate_enhanced_kelly_position_size(
             "base_kelly_size": min_position_size, "volatility_adjustment": 1.0,
             "balance_adjustment": 1.0,
             "final_position_size": min_position_size, "market_volatility": market_volatility,
-            "account_balance": account_balance
+            "account_balance": account_balance,
         }
 
 

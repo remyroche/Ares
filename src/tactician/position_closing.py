@@ -7,23 +7,21 @@ Position Closing Module for Tactician.
 Handles position closure based on dual model confidence scores and ATR-based exit rules.
 """
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Any
 
 from src.utils.logger import system_logger
-import copy
-import asyncio
 from src.utils.warning_symbols import (
-
     failed,
     invalid,
 )
+
 
 class PositionCloser:
     """
     Position Closer that handles position closure based on dual model confidence scores
     and ATR-based exit rules.
     """
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize Position Closer.
 
@@ -35,16 +33,16 @@ class PositionCloser:
 
         # Configuration from step17 optimization results
         self.position_config = config.get("position_closing", {})
-        
+
         # Load step17 optimized parameters
         step17_config = config.get("step17_optimization", {})
         tpsl_optimization = step17_config.get("tpsl", {})
-        
+
         # Load optimized position closing parameters
         self.atr_multiplier = tpsl_optimization.get("atr_multiplier", 2.0)
         self.confidence_threshold = tpsl_optimization.get("confidence_threshold", 0.7)
         self.min_hold_time = tpsl_optimization.get("min_hold_time", 300)  # 5 minutes
-        
+
         # Load additional optimized parameters
         self.stop_loss_multiplier = tpsl_optimization.get("stop_loss_multiplier", 1.5)
         self.take_profit_multiplier = tpsl_optimization.get("take_profit_multiplier", 2.0)
@@ -59,7 +57,7 @@ class PositionCloser:
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="position closer initialization"
+        context="position closer initialization",
     )
     async def initialize(self) -> bool:
         """
@@ -80,7 +78,7 @@ class PositionCloser:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position Closer initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Position Closer initialization failed: {e}"))
             return False
 
     def _validate_configuration(self) -> bool:
@@ -106,49 +104,49 @@ class PositionCloser:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "tpsl" in step17_results:
                 tpsl_optimization = step17_results["tpsl"]
-                
+
                 # Update position closing parameters
                 self.atr_multiplier = tpsl_optimization.get("atr_multiplier", self.atr_multiplier)
                 self.confidence_threshold = tpsl_optimization.get("confidence_threshold", self.confidence_threshold)
                 self.min_hold_time = tpsl_optimization.get("min_hold_time", self.min_hold_time)
-                
+
                 # Update additional parameters
                 self.stop_loss_multiplier = tpsl_optimization.get("stop_loss_multiplier", self.stop_loss_multiplier)
                 self.take_profit_multiplier = tpsl_optimization.get("take_profit_multiplier", self.take_profit_multiplier)
                 self.trailing_stop_enabled = tpsl_optimization.get("trailing_stop_enabled", self.trailing_stop_enabled)
                 self.trailing_stop_distance = tpsl_optimization.get("trailing_stop_distance", self.trailing_stop_distance)
                 self.max_hold_time = tpsl_optimization.get("max_hold_time", self.max_hold_time)
-                
+
                 self.logger.info("✅ Position closer configuration refreshed from step17 results")
-                
+
         except Exception as e:
-            self.logger.error(f"Error refreshing step17 configuration: {e}")
+            self.logger.exception(f"Error refreshing step17 configuration: {e}")
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="position closure evaluation"
+        context="position closure evaluation",
     )
     async def should_close_position(
         self,
-        position_data: Dict[str, Any],
+        position_data: dict[str, Any],
         model_confidence: float,
         atr_value: float,
-        current_price: float
+        current_price: float,
     ) -> bool:
         """
         Determine if a position should be closed based on model confidence and ATR.
@@ -181,14 +179,14 @@ class PositionCloser:
             return False
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position closure evaluation failed: {e}"))
+            self.logger.exception(failed(f"❌ Position closure evaluation failed: {e}"))
             return False
 
     def _should_close_by_atr(
         self,
-        position_data: Dict[str, Any],
+        position_data: dict[str, Any],
         atr_value: float,
-        current_price: float
+        current_price: float,
     ) -> bool:
         """
         Check if position should be closed based on ATR.
@@ -215,17 +213,17 @@ class PositionCloser:
                 return current_price <= stop_loss
 
             # For short positions
-            elif position_data.get("side", "").upper() == "SHORT":
+            if position_data.get("side", "").upper() == "SHORT":
                 stop_loss = entry_price + atr_exit_distance
                 return current_price >= stop_loss
 
             return False
 
         except Exception as e:
-            self.logger.error(failed(f"❌ ATR-based closure check failed: {e}"))
+            self.logger.exception(failed(f"❌ ATR-based closure check failed: {e}"))
             return False
 
-    def _should_close_by_time(self, position_data: Dict[str, Any]) -> bool:
+    def _should_close_by_time(self, position_data: dict[str, Any]) -> bool:
         """
         Check if position should be closed based on minimum hold time.
 
@@ -241,25 +239,25 @@ class PositionCloser:
                 return False
 
             if isinstance(entry_time, str):
-                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                entry_time = datetime.fromisoformat(entry_time)
 
             hold_time = (datetime.now() - entry_time).total_seconds()
             return hold_time >= self.min_hold_time
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Time-based closure check failed: {e}"))
+            self.logger.exception(failed(f"❌ Time-based closure check failed: {e}"))
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="position closure execution"
+        context="position closure execution",
     )
     async def close_position(
         self,
-        position_data: Dict[str, Any],
-        close_reason: str
-    ) -> Optional[Dict[str, Any]]:
+        position_data: dict[str, Any],
+        close_reason: str,
+    ) -> dict[str, Any] | None:
         """
         Execute position closure.
 
@@ -283,7 +281,7 @@ class PositionCloser:
                 "quantity": position_data.get("quantity"),
                 "close_reason": close_reason,
                 "close_time": datetime.now().isoformat(),
-                "pnl": self._calculate_pnl(position_data)
+                "pnl": self._calculate_pnl(position_data),
             }
 
             self.closed_positions.append(closure_record)
@@ -293,10 +291,10 @@ class PositionCloser:
             return closure_record
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position closure failed: {e}"))
+            self.logger.exception(failed(f"❌ Position closure failed: {e}"))
             return None
 
-    def _calculate_pnl(self, position_data: Dict[str, Any]) -> float:
+    def _calculate_pnl(self, position_data: dict[str, Any]) -> float:
         """
         Calculate position PnL.
 
@@ -317,16 +315,15 @@ class PositionCloser:
 
             if side == "LONG":
                 return (current_price - entry_price) * quantity
-            elif side == "SHORT":
+            if side == "SHORT":
                 return (entry_price - current_price) * quantity
-            else:
-                return 0.0
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ PnL calculation failed: {e}"))
             return 0.0
 
-    def get_closed_positions(self) -> List[Dict[str, Any]]:
+        except Exception as e:
+            self.logger.exception(failed(f"❌ PnL calculation failed: {e}"))
+            return 0.0
+
+    def get_closed_positions(self) -> list[dict[str, Any]]:
         """
         Get list of closed positions.
 
@@ -335,7 +332,7 @@ class PositionCloser:
         """
         return self.closed_positions.copy()
 
-    def get_position_history(self) -> List[Dict[str, Any]]:
+    def get_position_history(self) -> list[dict[str, Any]]:
         """
         Get complete position history.
 
@@ -344,7 +341,7 @@ class PositionCloser:
         """
         return self.position_history.copy()
 
-    def get_performance_metrics(self) -> Dict[str, Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         """
         Get performance metrics for closed positions.
 
@@ -359,7 +356,7 @@ class PositionCloser:
                     "losing_positions": 0,
                     "win_rate": 0.0,
                     "total_pnl": 0.0,
-                    "average_pnl": 0.0
+                    "average_pnl": 0.0,
                 }
 
             total_positions = len(self.closed_positions)
@@ -373,11 +370,11 @@ class PositionCloser:
                 "losing_positions": losing_positions,
                 "win_rate": winning_positions / total_positions if total_positions > 0 else 0.0,
                 "total_pnl": total_pnl,
-                "average_pnl": total_pnl / total_positions if total_positions > 0 else 0.0
+                "average_pnl": total_pnl / total_positions if total_positions > 0 else 0.0,
             }
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Performance metrics calculation failed: {e}"))
+            self.logger.exception(failed(f"❌ Performance metrics calculation failed: {e}"))
             return {}
 
     async def cleanup(self) -> None:
@@ -394,4 +391,4 @@ class PositionCloser:
             self.logger.info("✅ Position Closer cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position Closer cleanup failed: {e}"))
+            self.logger.exception(failed(f"❌ Position Closer cleanup failed: {e}"))

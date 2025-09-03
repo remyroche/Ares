@@ -3,14 +3,16 @@
 ARES Bot Monitor - Notifies AI Assistant when bot stops or encounters issues
 """
 
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import system_logger
 import json
 import sys
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 import psutil
-from typing import Any, Dict, List
+
+from src.utils.logger import system_logger
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent
@@ -28,17 +30,17 @@ class BotMonitor:
         self.status_file.parent.mkdir(parents=True, exist_ok=True)
         self.last_status=self._load_status()
 
-    def _load_status(self) -> Dict[str, Any]:
+    def _load_status(self) -> dict[str, Any]:
         """Load the last known status of the bot"""
         try:
             if self.status_file.exists():
-                with open(self.status_file, "r", encoding="utf-8") as f:
+                with open(self.status_file, encoding="utf-8") as f:
                     return json.load(f)
         except Exception as e:  # noqa: BLE001
             print(error(f"Error loading status file: {e}"))
         return {"running": False, "last_check": None, "issues": []}
 
-    def _save_status(self, status: Dict[str, Any]) -> None:
+    def _save_status(self, status: dict[str, Any]) -> None:
         """Save the current status of the bot"""
         try:
             with open(self.status_file, "w", encoding="utf-8") as f:
@@ -46,9 +48,9 @@ class BotMonitor:
         except Exception as e:  # noqa: BLE001
             print(error(f"Error saving status file: {e}"))
 
-    def _check_python_processes(self) -> List[Dict[str, Any]]:
+    def _check_python_processes(self) -> list[dict[str, Any]]:
         """Check if any ARES-related Python processes are running"""
-        ares_processes: List[Dict[str, Any]] = []
+        ares_processes: list[dict[str, Any]] = []
 
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
@@ -70,21 +72,21 @@ class BotMonitor:
 
         return ares_processes
 
-    def _check_log_files(self) -> List[Dict[str, Any]]:
+    def _check_log_files(self) -> list[dict[str, Any]]:
         """Check recent log files for errors"""
         log_dir=project_root / "logs"
         if not log_dir.exists():
             print(warning("Logs directory not found"))
             return []
 
-        issues: List[Dict[str, Any]] = []
+        issues: list[dict[str, Any]] = []
         current_time=time.time()
 
         for log_file in log_dir.glob("*.log"):
             try:
                 # Check if log file was modified in the last 5 minutes
                 if current_time - log_file.stat().st_mtime < 300:
-                    with open(log_file, "r", encoding="utf-8") as f:
+                    with open(log_file, encoding="utf-8") as f:
                         lines=f.readlines()
                     # Check last 50 lines for errors
                     for line in lines[-50:]:
@@ -113,7 +115,7 @@ class BotMonitor:
 
         return issues
 
-    def _notify_ai_assistant(self, message: str, issues: List[Dict[str, Any]] | None=None) -> None:
+    def _notify_ai_assistant(self, message: str, issues: list[dict[str, Any]] | None=None) -> None:
         """Notify the AI assistant about issues"""
         notification={
             "timestamp": datetime.now().isoformat(),
@@ -161,7 +163,7 @@ class BotMonitor:
                 recent_issues=self._check_log_files()
 
                 # Update status
-                current_status: Dict[str, Any] = {
+                current_status: dict[str, Any] = {
                     "running": is_running,
                     "last_check": current_time.isoformat(),
                     "processes": ares_processes,
@@ -170,7 +172,7 @@ class BotMonitor:
 
                 # Check if status changed
                 status_changed=self.last_status.get("running") != is_running or len(
-                    recent_issues
+                    recent_issues,
                 ) > len(self.last_status.get("issues", []))
 
                 if status_changed:
@@ -178,7 +180,7 @@ class BotMonitor:
                         message="🚨 ARES Bot has stopped running!"
                         self._notify_ai_assistant(message, recent_issues)
                     elif recent_issues and len(recent_issues) > len(
-                        self.last_status.get("issues", [])
+                        self.last_status.get("issues", []),
                     ):
                         message="⚠️ New issues detected in ARES Bot logs!"
                         self._notify_ai_assistant(message, recent_issues)

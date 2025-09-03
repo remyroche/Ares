@@ -14,16 +14,17 @@ Usage:
     Example: python scripts/resume_training.py BTCUSDT BINANCE
 """
 
-from pathlib import Path
-from src.training.steps.step1_data_collection import run_step as run_data_collection_step
-from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
-from typing import Any
+from pathlib import Path
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.training.steps.step1_data_collection import (
+    run_step as run_data_collection_step,
+)
+from src.utils.logger import setup_logging, system_logger
 from src.utils.warning_symbols import error, failed
 
 # Add the project root to the Python path

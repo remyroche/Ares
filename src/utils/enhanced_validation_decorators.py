@@ -6,19 +6,16 @@ provide comprehensive validation capabilities with better performance, error han
 and consistency across all training steps.
 """
 
-import asyncio
 import functools
 import inspect
-import logging
 import time
-from datetime import datetime
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from src.utils.base_validator import BaseValidator
 from src.utils.comprehensive_file_validation import ComprehensiveFileValidator
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class ValidationContext:
@@ -190,14 +187,13 @@ def comprehensive_step_validation(
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
 def validate_with_base_validator(
-    validator_class: type, validation_method: str = "validate", fallback_to_original: bool = True
+    validator_class: type, validation_method: str = "validate", fallback_to_original: bool = True,
 ):
     """
     Decorator that uses a specific BaseValidator class for validation.
@@ -224,7 +220,8 @@ def validate_with_base_validator(
                     if not validation_result:
                         system_logger.warning(f"⚠️ Validation failed for {func.__name__}")
                         if not fallback_to_original:
-                            raise ValueError(f"Validation failed for {func.__name__}")
+                            msg = f"Validation failed for {func.__name__}"
+                            raise ValueError(msg)
 
                 # Execute original function
                 return await func(*args, **kwargs)
@@ -233,8 +230,7 @@ def validate_with_base_validator(
                 system_logger.exception(f"❌ Validation error in {func.__name__}: {e}")
                 if fallback_to_original:
                     return await func(*args, **kwargs)
-                else:
-                    raise
+                raise
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
@@ -251,7 +247,8 @@ def validate_with_base_validator(
                     if not validation_result:
                         system_logger.warning(f"⚠️ Validation failed for {func.__name__}")
                         if not fallback_to_original:
-                            raise ValueError(f"Validation failed for {func.__name__}")
+                            msg = f"Validation failed for {func.__name__}"
+                            raise ValueError(msg)
 
                 # Execute original function
                 return func(*args, **kwargs)
@@ -260,20 +257,18 @@ def validate_with_base_validator(
                 system_logger.exception(f"❌ Validation error in {func.__name__}: {e}")
                 if fallback_to_original:
                     return func(*args, **kwargs)
-                else:
-                    raise
+                raise
 
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
 def smart_validation_cache(
-    cache_key_func: Optional[Callable] = None, ttl_seconds: int = 300, max_cache_size: int = 1000  # 5 minutes default
+    cache_key_func: Callable | None = None, ttl_seconds: int = 300, max_cache_size: int = 1000,  # 5 minutes default
 ):
     """
     Smart caching decorator for validation results to improve performance.
@@ -302,10 +297,9 @@ def smart_validation_cache(
             if cache_key in cache and cache_key in cache_timestamps:
                 if current_time - cache_timestamps[cache_key] < ttl_seconds:
                     return cache[cache_key]
-                else:
-                    # Expired entry
-                    del cache[cache_key]
-                    del cache_timestamps[cache_key]
+                # Expired entry
+                del cache[cache_key]
+                del cache_timestamps[cache_key]
 
             # Execute function and cache result
             result = await func(*args, **kwargs)
@@ -336,10 +330,9 @@ def smart_validation_cache(
             if cache_key in cache and cache_key in cache_timestamps:
                 if current_time - cache_timestamps[cache_key] < ttl_seconds:
                     return cache[cache_key]
-                else:
-                    # Expired entry
-                    del cache[cache_key]
-                    del cache_timestamps[cache_key]
+                # Expired entry
+                del cache[cache_key]
+                del cache_timestamps[cache_key]
 
             # Execute function and cache result
             result = func(*args, **kwargs)
@@ -360,8 +353,7 @@ def smart_validation_cache(
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
@@ -458,7 +450,7 @@ def validate_step7_comprehensive(func: Callable) -> Callable:
 # Helper functions for validation decorators
 
 
-def _extract_validator_instance(args: tuple, kwargs: dict) -> Optional[BaseValidator]:
+def _extract_validator_instance(args: tuple, kwargs: dict) -> BaseValidator | None:
     """Extract BaseValidator instance from function arguments."""
     # Look for validator in self parameter (for class methods)
     if args and hasattr(args[0], "__class__"):
@@ -466,7 +458,7 @@ def _extract_validator_instance(args: tuple, kwargs: dict) -> Optional[BaseValid
             return args[0]
 
     # Look for validator in keyword arguments
-    for key, value in kwargs.items():
+    for value in kwargs.values():
         if isinstance(value, BaseValidator):
             return value
 
@@ -474,8 +466,8 @@ def _extract_validator_instance(args: tuple, kwargs: dict) -> Optional[BaseValid
 
 
 async def _validate_prerequisites_async(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext
-) -> Dict[str, Any]:
+    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+) -> dict[str, Any]:
     """Validate prerequisites asynchronously."""
     try:
         if hasattr(validator, "validate_step_prerequisites"):
@@ -485,15 +477,14 @@ async def _validate_prerequisites_async(
             timeframe = kwargs.get("timeframe", "1m")
 
             return validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        else:
-            return {"validation_passed": True, "warnings": [], "errors": []}
+        return {"validation_passed": True, "warnings": [], "errors": []}
     except Exception as e:
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
 def _validate_prerequisites_sync(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext
-) -> Dict[str, Any]:
+    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+) -> dict[str, Any]:
     """Validate prerequisites synchronously."""
     try:
         if hasattr(validator, "validate_step_prerequisites"):
@@ -503,15 +494,14 @@ def _validate_prerequisites_sync(
             timeframe = kwargs.get("timeframe", "1m")
 
             return validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        else:
-            return {"validation_passed": True, "warnings": [], "errors": []}
+        return {"validation_passed": True, "warnings": [], "errors": []}
     except Exception as e:
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
 async def _validate_inputs_async(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext
-) -> Dict[str, Any]:
+    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+) -> dict[str, Any]:
     """Validate inputs asynchronously."""
     try:
         # Extract file paths and validate
@@ -537,8 +527,8 @@ async def _validate_inputs_async(
 
 
 def _validate_inputs_sync(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext
-) -> Dict[str, Any]:
+    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+) -> dict[str, Any]:
     """Validate inputs synchronously."""
     try:
         # Extract file paths and validate
@@ -563,7 +553,7 @@ def _validate_inputs_sync(
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
-async def _validate_outputs_async(validator: BaseValidator, result: Any, context: ValidationContext) -> Dict[str, Any]:
+async def _validate_outputs_async(validator: BaseValidator, result: Any, context: ValidationContext) -> dict[str, Any]:
     """Validate outputs asynchronously."""
     try:
         if hasattr(validator, "validate_step_output"):
@@ -573,13 +563,12 @@ async def _validate_outputs_async(validator: BaseValidator, result: Any, context
             timeframe = getattr(validator, "timeframe", "1m")
 
             return validator.validate_step_output(symbol, exchange, timeframe)
-        else:
-            return {"validation_passed": True, "warnings": [], "errors": []}
+        return {"validation_passed": True, "warnings": [], "errors": []}
     except Exception as e:
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
-def _validate_outputs_sync(validator: BaseValidator, result: Any, context: ValidationContext) -> Dict[str, Any]:
+def _validate_outputs_sync(validator: BaseValidator, result: Any, context: ValidationContext) -> dict[str, Any]:
     """Validate outputs synchronously."""
     try:
         if hasattr(validator, "validate_step_output"):
@@ -589,15 +578,14 @@ def _validate_outputs_sync(validator: BaseValidator, result: Any, context: Valid
             timeframe = getattr(validator, "timeframe", "1m")
 
             return validator.validate_step_output(symbol, exchange, timeframe)
-        else:
-            return {"validation_passed": True, "warnings": [], "errors": []}
+        return {"validation_passed": True, "warnings": [], "errors": []}
     except Exception as e:
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
 async def _validate_data_quality_async(
-    validator: BaseValidator, result: Any, context: ValidationContext
-) -> Dict[str, Any]:
+    validator: BaseValidator, result: Any, context: ValidationContext,
+) -> dict[str, Any]:
     """Validate data quality asynchronously."""
     try:
         # Check if result contains DataFrames
@@ -629,7 +617,7 @@ async def _validate_data_quality_async(
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
-def _validate_data_quality_sync(validator: BaseValidator, result: Any, context: ValidationContext) -> Dict[str, Any]:
+def _validate_data_quality_sync(validator: BaseValidator, result: Any, context: ValidationContext) -> dict[str, Any]:
     """Validate data quality synchronously."""
     try:
         # Check if result contains DataFrames
@@ -662,7 +650,7 @@ def _validate_data_quality_sync(validator: BaseValidator, result: Any, context: 
 
 
 async def _handle_validation_failure(
-    func: Callable, args: tuple, kwargs: dict, validation_result: Dict[str, Any]
+    func: Callable, args: tuple, kwargs: dict, validation_result: dict[str, Any],
 ) -> Any:
     """Handle validation failure for async functions."""
     # For now, log the failure and continue with original function
@@ -672,7 +660,7 @@ async def _handle_validation_failure(
 
 
 def _handle_validation_failure_sync(
-    func: Callable, args: tuple, kwargs: dict, validation_result: Dict[str, Any]
+    func: Callable, args: tuple, kwargs: dict, validation_result: dict[str, Any],
 ) -> Any:
     """Handle validation failure for sync functions."""
     # For now, log the failure and continue with original function
@@ -690,7 +678,7 @@ def _log_validation_performance(context: ValidationContext, logger: Any, log_lev
                 logger.debug(f"📊 {validation_type} validation: avg={avg_time:.3f}s, count={len(times)}")
 
 
-def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> List[str]:
+def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> list[str]:
     """Extract file paths from function arguments."""
     file_paths = []
 
@@ -698,7 +686,7 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> List[str]:
     for arg in args:
         if isinstance(arg, str) and _looks_like_file_path(arg):
             file_paths.append(arg)
-        elif isinstance(arg, (list, tuple)):
+        elif isinstance(arg, list | tuple):
             for item in arg:
                 if isinstance(item, str) and _looks_like_file_path(item):
                     file_paths.append(item)
@@ -709,7 +697,7 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> List[str]:
         if any(file_key in key.lower() for file_key in file_keywords):
             if isinstance(value, str) and _looks_like_file_path(value):
                 file_paths.append(value)
-            elif isinstance(value, (list, tuple)):
+            elif isinstance(value, list | tuple):
                 for item in value:
                     if isinstance(item, str) and _looks_like_file_path(item):
                         file_paths.append(item)
@@ -717,17 +705,17 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> List[str]:
     return file_paths
 
 
-def _extract_dataframes_from_result(result: Any) -> List[Any]:
+def _extract_dataframes_from_result(result: Any) -> list[Any]:
     """Extract DataFrames from function result."""
     dataframes = []
 
     if hasattr(result, "shape"):  # Single DataFrame result
         dataframes.append(result)
     elif isinstance(result, dict):
-        for key, value in result.items():
+        for value in result.values():
             if hasattr(value, "shape"):  # DataFrame in dict
                 dataframes.append(value)
-    elif isinstance(result, (list, tuple)):
+    elif isinstance(result, list | tuple):
         for item in result:
             if hasattr(item, "shape"):  # DataFrame in list/tuple
                 dataframes.append(item)

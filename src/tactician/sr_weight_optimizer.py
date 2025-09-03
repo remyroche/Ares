@@ -5,32 +5,32 @@ from src.core.decorators import handles_errors
 """
 SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
 """
+import datetime as datetime
 import json
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
 from src.utils.logger import system_logger
-
-import copy
-import datetime as datetime
-import asyncio
+from src.tactician.sr_breakout_predictor import (
+    ensure_optimized_sr_config,
+    setup_sr_breakout_predictor
+)
 from src.utils.warning_symbols import (
-
     failed,
     invalid,
     warning,
 )
 
+
 @dataclass
 class WeightOptimizationResult:
     """Result of weight optimization backtesting."""
 
-    weights: Dict[str, float]
-    performance_metrics: Dict[str, float]
+    weights: dict[str, float]
+    performance_metrics: dict[str, float]
     sharpe_ratio: float
     max_drawdown: float
     win_rate: float
@@ -50,7 +50,7 @@ class SRWeightOptimizer:
     - Multiple optimization strategies
     - Result validation and ranking
     """
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize the SR weight optimizer.
 
@@ -70,14 +70,14 @@ class SRWeightOptimizer:
         self.sr_predictor = None
 
         # Optimization state
-        self.optimization_results: List[WeightOptimizationResult] = []
-        self.best_weights: Optional[Dict[str, float]] = None
-        self.optimization_history: List[Dict[str, Any]] = []
+        self.optimization_results: list[WeightOptimizationResult] = []
+        self.best_weights: dict[str, float] | None = None
+        self.optimization_history: list[dict[str, Any]] = []
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="SR weight optimizer initialization"
+        context="SR weight optimizer initialization",
     )
     async def initialize(self) -> bool:
         """
@@ -107,7 +107,7 @@ class SRWeightOptimizer:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ SR Weight Optimizer initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ SR Weight Optimizer initialization failed: {e}"))
             return False
 
     def _validate_configuration(self) -> bool:
@@ -133,19 +133,19 @@ class SRWeightOptimizer:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="weight optimization"
+        context="weight optimization",
     )
     async def optimize_weights(
         self,
         market_data: pd.DataFrame,
-        target_data: pd.Series
-    ) -> Optional[WeightOptimizationResult]:
+        target_data: pd.Series,
+    ) -> WeightOptimizationResult | None:
         """
         Optimize SR breakout prediction weights.
 
@@ -191,10 +191,10 @@ class SRWeightOptimizer:
             return best_result
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Weight optimization failed: {e}"))
+            self.logger.exception(failed(f"❌ Weight optimization failed: {e}"))
             return None
 
-    def _generate_weight_combinations(self) -> List[Dict[str, float]]:
+    def _generate_weight_combinations(self) -> list[dict[str, float]]:
         """
         Generate weight combinations for optimization.
 
@@ -207,7 +207,7 @@ class SRWeightOptimizer:
                 "fractal_weight": np.arange(0.1, 1.0, 0.1),
                 "volume_weight": np.arange(0.1, 1.0, 0.1),
                 "pivot_weight": np.arange(0.1, 1.0, 0.1),
-                "atr_weight": np.arange(0.1, 1.0, 0.1)
+                "atr_weight": np.arange(0.1, 1.0, 0.1),
             }
 
             # Generate all combinations
@@ -223,22 +223,22 @@ class SRWeightOptimizer:
                                     "fractal_weight": fractal_w / total_weight,
                                     "volume_weight": volume_w / total_weight,
                                     "pivot_weight": pivot_w / total_weight,
-                                    "atr_weight": atr_w / total_weight
+                                    "atr_weight": atr_w / total_weight,
                                 }
                                 combinations.append(weights)
 
             return combinations
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error generating weight combinations: {e}"))
+            self.logger.exception(failed(f"❌ Error generating weight combinations: {e}"))
             return []
 
     async def _test_weights(
         self,
-        weights: Dict[str, float],
+        weights: dict[str, float],
         market_data: pd.DataFrame,
-        target_data: pd.Series
-    ) -> Optional[WeightOptimizationResult]:
+        target_data: pd.Series,
+    ) -> WeightOptimizationResult | None:
         """
         Test a specific weight combination.
 
@@ -268,7 +268,7 @@ class SRWeightOptimizer:
             optimization_score = self._calculate_optimization_score(performance_metrics)
 
             # Create result
-            result = WeightOptimizationResult(
+            return WeightOptimizationResult(
                 weights=weights,
                 performance_metrics=performance_metrics,
                 sharpe_ratio=performance_metrics.get("sharpe_ratio", 0.0),
@@ -278,20 +278,19 @@ class SRWeightOptimizer:
                 total_return=performance_metrics.get("total_return", 0.0),
                 optimization_score=optimization_score,
                 backtest_periods=len(backtest_results),
-                confidence_level=performance_metrics.get("confidence", 0.0)
+                confidence_level=performance_metrics.get("confidence", 0.0),
             )
 
-            return result
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error testing weights: {e}"))
+            self.logger.exception(failed(f"❌ Error testing weights: {e}"))
             return None
 
     async def _run_backtest(
         self,
         market_data: pd.DataFrame,
-        target_data: pd.Series
-    ) -> Optional[List[Dict[str, Any]]]:
+        target_data: pd.Series,
+    ) -> list[dict[str, Any]] | None:
         """
         Run backtest with current weights.
 
@@ -323,17 +322,17 @@ class SRWeightOptimizer:
                     result = {
                         "prediction": prediction,
                         "actual_target": actual_target,
-                        "timestamp": market_data.index[i+self.backtest_periods] if i+self.backtest_periods < len(market_data) else None
+                        "timestamp": market_data.index[i+self.backtest_periods] if i+self.backtest_periods < len(market_data) else None,
                     }
                     results.append(result)
 
             return results
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error running backtest: {e}"))
+            self.logger.exception(failed(f"❌ Error running backtest: {e}"))
             return None
 
-    def _calculate_performance_metrics(self, backtest_results: List[Dict[str, Any]]) -> Dict[str, float]:
+    def _calculate_performance_metrics(self, backtest_results: list[dict[str, Any]]) -> dict[str, float]:
         """
         Calculate performance metrics from backtest results.
 
@@ -353,12 +352,12 @@ class SRWeightOptimizer:
 
             # Calculate basic metrics
             total_predictions = len(predictions)
-            correct_predictions = sum(1 for p, a in zip(predictions, actuals) if (p > 0.5 and a > 0) or (p < 0.5 and a < 0))
+            correct_predictions = sum(1 for p, a in zip(predictions, actuals, strict=False) if (p > 0.5 and a > 0) or (p < 0.5 and a < 0))
             win_rate = correct_predictions / total_predictions if total_predictions > 0 else 0.0
 
             # Calculate returns
             returns = []
-            for i, (pred, actual) in enumerate(zip(predictions, actuals)):
+            for _i, (pred, actual) in enumerate(zip(predictions, actuals, strict=False)):
                 if pred > 0.5:  # Predicted positive
                     returns.append(actual)
                 else:  # Predicted negative
@@ -393,14 +392,14 @@ class SRWeightOptimizer:
                 "sharpe_ratio": sharpe_ratio,
                 "max_drawdown": max_drawdown,
                 "profit_factor": profit_factor,
-                "confidence": np.mean(predictions) if predictions else 0.0
+                "confidence": np.mean(predictions) if predictions else 0.0,
             }
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating performance metrics: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating performance metrics: {e}"))
             return {}
 
-    def _calculate_optimization_score(self, performance_metrics: Dict[str, float]) -> float:
+    def _calculate_optimization_score(self, performance_metrics: dict[str, float]) -> float:
         """
         Calculate optimization score from performance metrics.
 
@@ -422,24 +421,23 @@ class SRWeightOptimizer:
             profit_factor_score = min(performance_metrics.get("profit_factor", 0.0) / 2.0, 1.0)  # Normalize to 0-1
             drawdown_score = max(0, 1.0 + performance_metrics.get("max_drawdown", 0.0))  # Higher drawdown = lower score
 
-            optimization_score = (
+            return (
                 sharpe_score * sharpe_weight +
                 win_rate_score * win_rate_weight +
                 profit_factor_score * profit_factor_weight +
                 drawdown_score * drawdown_weight
             )
 
-            return optimization_score
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating optimization score: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating optimization score: {e}"))
             return 0.0
 
     def _record_optimization_step(
         self,
         step: int,
-        weights: Dict[str, float],
-        result: Optional[WeightOptimizationResult]
+        weights: dict[str, float],
+        result: WeightOptimizationResult | None,
     ) -> None:
         """
         Record an optimization step.
@@ -454,15 +452,15 @@ class SRWeightOptimizer:
                 "step": step,
                 "weights": weights,
                 "optimization_score": result.optimization_score if result else 0.0,
-                "timestamp": pd.Timestamp.now().isoformat()
+                "timestamp": pd.Timestamp.now().isoformat(),
             }
 
             self.optimization_history.append(step_record)
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error recording optimization step: {e}"))
+            self.logger.exception(failed(f"❌ Error recording optimization step: {e}"))
 
-    def get_best_weights(self) -> Optional[Dict[str, float]]:
+    def get_best_weights(self) -> dict[str, float] | None:
         """
         Get the best weights found during optimization.
 
@@ -471,7 +469,7 @@ class SRWeightOptimizer:
         """
         return self.best_weights.copy() if self.best_weights else None
 
-    def get_optimization_results(self, limit: Optional[int] = None) -> List[WeightOptimizationResult]:
+    def get_optimization_results(self, limit: int | None = None) -> list[WeightOptimizationResult]:
         """
         Get optimization results.
 
@@ -487,10 +485,10 @@ class SRWeightOptimizer:
             return self.optimization_results.copy()
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting optimization results: {e}"))
+            self.logger.exception(failed(f"❌ Error getting optimization results: {e}"))
             return []
 
-    def get_optimization_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_optimization_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get optimization history.
 
@@ -506,7 +504,7 @@ class SRWeightOptimizer:
             return self.optimization_history.copy()
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting optimization history: {e}"))
+            self.logger.exception(failed(f"❌ Error getting optimization history: {e}"))
             return []
 
     def save_optimization_results(self, filepath: str) -> bool:
@@ -537,19 +535,19 @@ class SRWeightOptimizer:
                     "total_return": result.total_return,
                     "optimization_score": result.optimization_score,
                     "backtest_periods": result.backtest_periods,
-                    "confidence_level": result.confidence_level
+                    "confidence_level": result.confidence_level,
                 }
                 serializable_results.append(serializable_result)
 
             # Save to file
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(serializable_results, f, indent=2)
 
             self.logger.info(f"✅ Optimization results saved to {filepath}")
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error saving optimization results: {e}"))
+            self.logger.exception(failed(f"❌ Error saving optimization results: {e}"))
             return False
 
     def load_optimization_results(self, filepath: str) -> bool:
@@ -563,7 +561,7 @@ class SRWeightOptimizer:
             bool: True if loaded successfully
         """
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f:
                 data = json.load(f)
 
             # Convert back to WeightOptimizationResult objects
@@ -579,7 +577,7 @@ class SRWeightOptimizer:
                     total_return=item["total_return"],
                     optimization_score=item["optimization_score"],
                     backtest_periods=item["backtest_periods"],
-                    confidence_level=item["confidence_level"]
+                    confidence_level=item["confidence_level"],
                 )
                 self.optimization_results.append(result)
 
@@ -592,7 +590,7 @@ class SRWeightOptimizer:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error loading optimization results: {e}"))
+            self.logger.exception(failed(f"❌ Error loading optimization results: {e}"))
             return False
 
     async def cleanup(self) -> None:
@@ -610,4 +608,4 @@ class SRWeightOptimizer:
             self.logger.info("✅ SR Weight Optimizer cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ SR Weight Optimizer cleanup failed: {e}"))
+            self.logger.exception(failed(f"❌ SR Weight Optimizer cleanup failed: {e}"))

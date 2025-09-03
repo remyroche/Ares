@@ -1,9 +1,11 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import random
 import sys
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -12,16 +14,16 @@ from fastapi import (
     BackgroundTasks,
     FastAPI,
     HTTPException,
+    Request,
     WebSocket,
     WebSocketDisconnect,
-    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST
+from pydantic import BaseModel
+
 from src.utils.prometheus_metrics import metrics as prometheus_metrics
-import time
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -36,13 +38,13 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 try:
     from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
+    from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
+    from src.monitoring.metrics_dashboard import MetricsDashboard
+    from src.monitoring.ml_monitor import MLMonitor
+    from src.monitoring.performance_dashboard import PerformanceDashboard
+    from src.monitoring.performance_monitor import PerformanceMonitor
     from src.supervisor.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
-    from src.monitoring.metrics_dashboard import MetricsDashboard
-    from src.monitoring.performance_dashboard import PerformanceDashboard
-    from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
-    from src.monitoring.ml_monitor import MLMonitor
-    from src.monitoring.performance_monitor import PerformanceMonitor
     ares_config = AresConfig()
     print("Successfully imported Ares modules.")
 except ImportError as e:
@@ -93,8 +95,8 @@ app = FastAPI(
 
 # Observability and structured logging
 try:
-    from src.utils.structured_logging import CorrelationIdMiddleware
     from src.utils.observability import init_observability
+    from src.utils.structured_logging import CorrelationIdMiddleware
 
     init_observability({})
     # Add correlation ID middleware for request scoping
@@ -140,7 +142,7 @@ async def startup_event():
                 return instance
             return result if result is not None else instance
         except Exception as e:
-            logger.error(f"Failed to initialize {name}: {e}")
+            logger.exception(f"Failed to initialize {name}: {e}")
             return None
 
     async def init_only(inst):
@@ -370,10 +372,8 @@ class WebSocketManager:
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
-            try:
+            with contextlib.suppress(Exception):
                 await connection.send_text(json.dumps(message))
-            except Exception:
-                pass
 
 
 manager = WebSocketManager()
@@ -861,7 +861,7 @@ async def get_trade_details(trade_id: str):
     """Get detailed analysis for a specific trade."""
     try:
         # Mock detailed trade data
-        trade_details = {
+        return {
             "trade_id": trade_id,
             "pair": "BTC/USDT",
             "side": "long",
@@ -897,7 +897,6 @@ async def get_trade_details(trade_id: str):
             },
         }
 
-        return trade_details
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -988,17 +987,17 @@ async def get_monitoring_dashboard():
     try:
         dashboard_data = {}
         # Metrics Dashboard
-        if metrics_dashboard and hasattr(metrics_dashboard, 'get_dashboard_data'):
-            dashboard_data['metrics_dashboard'] = metrics_dashboard.get_dashboard_data()
+        if metrics_dashboard and hasattr(metrics_dashboard, "get_dashboard_data"):
+            dashboard_data["metrics_dashboard"] = metrics_dashboard.get_dashboard_data()
         # Performance Dashboard
-        if performance_dashboard and hasattr(performance_dashboard, 'get_dashboard_summary'):
-            dashboard_data['performance_dashboard'] = performance_dashboard.get_dashboard_summary()
+        if performance_dashboard and hasattr(performance_dashboard, "get_dashboard_summary"):
+            dashboard_data["performance_dashboard"] = performance_dashboard.get_dashboard_summary()
         # Enhanced ML Tracker
-        if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
-            dashboard_data['ml_tracker'] = await enhanced_ml_tracker.get_tracking_statistics()
+        if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, "get_tracking_statistics"):
+            dashboard_data["ml_tracker"] = await enhanced_ml_tracker.get_tracking_statistics()
         # ML Monitor
-        if ml_monitor and hasattr(ml_monitor, 'get_ml_monitoring_summary'):
-            dashboard_data['ml_monitor'] = ml_monitor.get_ml_monitoring_summary()
+        if ml_monitor and hasattr(ml_monitor, "get_ml_monitoring_summary"):
+            dashboard_data["ml_monitor"] = ml_monitor.get_ml_monitoring_summary()
         return dashboard_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1008,114 +1007,114 @@ async def export_monitoring_data(request: Request):
     """Export monitoring data as CSV."""
     try:
         data = await request.json()
-        data_type = data.get('dataType', 'performance')
-        time_range = data.get('timeRange', '7d')
-        
+        data_type = data.get("dataType", "performance")
+        time_range = data.get("timeRange", "7d")
+
         # Generate CSV data based on type and time range
         import csv
         import io
-        from datetime import datetime, timedelta
         import random
-        
+        from datetime import datetime, timedelta
+
         # Create CSV data
         output = io.StringIO()
         writer = csv.writer(output)
-        
-        if data_type == 'performance':
-            writer.writerow(['timestamp', 'model_accuracy', 'trading_win_rate', 'profit_factor', 'sharpe_ratio', 'system_memory_usage', 'system_cpu_usage'])
-            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
-            for i in range(168 if time_range == '7d' else 24):  # 7 days * 24 hours or 24 hours
+
+        if data_type == "performance":
+            writer.writerow(["timestamp", "model_accuracy", "trading_win_rate", "profit_factor", "sharpe_ratio", "system_memory_usage", "system_cpu_usage"])
+            base_time = datetime.now() - timedelta(days=7 if time_range == "7d" else 1)
+            for i in range(168 if time_range == "7d" else 24):  # 7 days * 24 hours or 24 hours
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
-                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    timestamp.strftime("%Y-%m-%d %H:%M"),
                     round(0.75 + random.uniform(-0.05, 0.05), 3),
                     round(0.65 + random.uniform(-0.03, 0.03), 3),
                     round(1.5 + random.uniform(-0.1, 0.1), 2),
                     round(1.2 + random.uniform(-0.05, 0.05), 2),
                     round(0.6 + random.uniform(-0.1, 0.1), 3),
-                    round(0.4 + random.uniform(-0.1, 0.1), 3)
+                    round(0.4 + random.uniform(-0.1, 0.1), 3),
                 ])
-        
-        elif data_type == 'anomalies':
-            writer.writerow(['timestamp', 'anomaly_count', 'severity_level', 'detection_rate', 'metric', 'value', 'threshold'])
-            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
-            for i in range(168 if time_range == '7d' else 24):
+
+        elif data_type == "anomalies":
+            writer.writerow(["timestamp", "anomaly_count", "severity_level", "detection_rate", "metric", "value", "threshold"])
+            base_time = datetime.now() - timedelta(days=7 if time_range == "7d" else 1)
+            for i in range(168 if time_range == "7d" else 24):
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
-                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    timestamp.strftime("%Y-%m-%d %H:%M"),
                     random.randint(0, 5),
-                    random.choice(['low', 'medium', 'high', 'critical']),
+                    random.choice(["low", "medium", "high", "critical"]),
                     round(random.uniform(0.8, 0.95), 3),
-                    random.choice(['model_accuracy', 'win_rate', 'memory_usage', 'cpu_usage']),
+                    random.choice(["model_accuracy", "win_rate", "memory_usage", "cpu_usage"]),
                     round(random.uniform(0.5, 0.9), 3),
-                    round(random.uniform(0.6, 0.8), 3)
+                    round(random.uniform(0.6, 0.8), 3),
                 ])
-        
-        elif data_type == 'predictions':
-            writer.writerow(['timestamp', 'predicted_accuracy', 'predicted_win_rate', 'confidence_score', 'trend', 'next_5_predictions'])
-            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
-            for i in range(168 if time_range == '7d' else 24):
+
+        elif data_type == "predictions":
+            writer.writerow(["timestamp", "predicted_accuracy", "predicted_win_rate", "confidence_score", "trend", "next_5_predictions"])
+            base_time = datetime.now() - timedelta(days=7 if time_range == "7d" else 1)
+            for i in range(168 if time_range == "7d" else 24):
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
-                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    timestamp.strftime("%Y-%m-%d %H:%M"),
                     round(0.78 + random.uniform(-0.02, 0.02), 3),
                     round(0.67 + random.uniform(-0.02, 0.02), 3),
                     round(0.85 + random.uniform(-0.05, 0.05), 3),
-                    random.choice(['increasing', 'decreasing', 'stable']),
-                    ','.join([str(round(random.uniform(0.7, 0.8), 3)) for _ in range(5)])
+                    random.choice(["increasing", "decreasing", "stable"]),
+                    ",".join([str(round(random.uniform(0.7, 0.8), 3)) for _ in range(5)]),
                 ])
-        
-        elif data_type == 'correlations':
-            writer.writerow(['metric', 'correlation_value', 'significance', 'p_value', 'sample_size'])
-            metrics = ['Model Accuracy', 'Win Rate', 'Profit Factor', 'Sharpe Ratio', 'System Health']
+
+        elif data_type == "correlations":
+            writer.writerow(["metric", "correlation_value", "significance", "p_value", "sample_size"])
+            metrics = ["Model Accuracy", "Win Rate", "Profit Factor", "Sharpe Ratio", "System Health"]
             for metric in metrics:
                 writer.writerow([
                     metric,
                     round(random.uniform(0.3, 0.9), 3),
-                    random.choice(['high', 'medium', 'low']),
+                    random.choice(["high", "medium", "low"]),
                     round(random.uniform(0.001, 0.05), 4),
-                    random.randint(100, 1000)
+                    random.randint(100, 1000),
                 ])
-        
-        elif data_type == 'riskMetrics':
-            writer.writerow(['timestamp', 'portfolio_var', 'max_drawdown', 'correlation_risk', 'concentration_risk', 'leverage_ratio'])
-            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
-            for i in range(168 if time_range == '7d' else 24):
+
+        elif data_type == "riskMetrics":
+            writer.writerow(["timestamp", "portfolio_var", "max_drawdown", "correlation_risk", "concentration_risk", "leverage_ratio"])
+            base_time = datetime.now() - timedelta(days=7 if time_range == "7d" else 1)
+            for i in range(168 if time_range == "7d" else 24):
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
-                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    timestamp.strftime("%Y-%m-%d %H:%M"),
                     round(0.03 + random.uniform(-0.01, 0.01), 4),
                     round(-0.05 + random.uniform(-0.02, 0.02), 4),
                     round(0.12 + random.uniform(-0.02, 0.02), 4),
                     round(0.15 + random.uniform(-0.03, 0.03), 4),
-                    round(1.0 + random.uniform(-0.1, 0.1), 2)
+                    round(1.0 + random.uniform(-0.1, 0.1), 2),
                 ])
-        
-        elif data_type == 'systemHealth':
-            writer.writerow(['timestamp', 'health_score', 'memory_usage', 'cpu_usage', 'response_time', 'error_rate', 'uptime'])
-            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
-            for i in range(168 if time_range == '7d' else 24):
+
+        elif data_type == "systemHealth":
+            writer.writerow(["timestamp", "health_score", "memory_usage", "cpu_usage", "response_time", "error_rate", "uptime"])
+            base_time = datetime.now() - timedelta(days=7 if time_range == "7d" else 1)
+            for i in range(168 if time_range == "7d" else 24):
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
-                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    timestamp.strftime("%Y-%m-%d %H:%M"),
                     round(0.85 + random.uniform(-0.05, 0.05), 3),
                     round(0.6 + random.uniform(-0.1, 0.1), 3),
                     round(0.4 + random.uniform(-0.1, 0.1), 3),
                     round(1.5 + random.uniform(-0.3, 0.3), 2),
                     round(random.uniform(0.001, 0.01), 4),
-                    random.randint(3600, 86400)
+                    random.randint(3600, 86400),
                 ])
-        
+
         # Create response with CSV data
         output.seek(0)
         csv_data = output.getvalue()
-        
+
         from fastapi.responses import Response
         response = Response(content=csv_data, media_type="text/csv")
         response.headers["Content-Disposition"] = f"attachment; filename=monitoring_data_{data_type}_{time_range}.csv"
-        
+
         return response
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1150,7 +1149,7 @@ async def get_tokens():
 
         return tokens
     except Exception as e:
-        logger.error(f"Error getting tokens: {e}")
+        logger.exception(f"Error getting tokens: {e}")
         # Return mock data
         return [
             TokenConfig(
@@ -1200,7 +1199,7 @@ async def update_token_config(request: TokenManagementRequest):
             "message": f"Token {request.symbol} on {request.exchange} updated",
         }
     except Exception as e:
-        logger.error(f"Error updating token config: {e}")
+        logger.exception(f"Error updating token config: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1227,7 +1226,7 @@ async def remove_token(symbol: str, exchange: str):
             }
         return {"success": False, "error": "Token not found"}
     except Exception as e:
-        logger.error(f"Error removing token: {e}")
+        logger.exception(f"Error removing token: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1254,7 +1253,7 @@ async def get_available_models():
 
         return models
     except Exception as e:
-        logger.error(f"Error getting available models: {e}")
+        logger.exception(f"Error getting available models: {e}")
         # Return mock data
         return [
             {
@@ -1321,7 +1320,7 @@ async def get_model_performance(symbol: str, exchange: str):
 
         return performances
     except Exception as e:
-        logger.error(f"Error getting model performance: {e}")
+        logger.exception(f"Error getting model performance: {e}")
         return []
 
 
@@ -1353,7 +1352,7 @@ async def select_model_for_token(request: ModelSelectionRequest):
             }
         return {"success": False, "error": "Token not found"}
     except Exception as e:
-        logger.error(f"Error selecting model: {e}")
+        logger.exception(f"Error selecting model: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1399,7 +1398,7 @@ async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str)
         winner = model_a if a_score > b_score else model_b
         confidence = abs(a_score - b_score) / max(a_score, b_score) * 100
 
-        comparison = ModelComparison(
+        return ModelComparison(
             model_a=model_a,
             model_b=model_b,
             symbol=symbol,
@@ -1409,9 +1408,8 @@ async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str)
             confidence=confidence,
         )
 
-        return comparison
     except Exception as e:
-        logger.error(f"Error comparing models: {e}")
+        logger.exception(f"Error comparing models: {e}")
         return {"error": str(e)}
 
 
@@ -1427,7 +1425,7 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
             return {"error": "Model not found"}
 
         # Create detailed analysis based on performance_reporter.py structure
-        analysis = {
+        return {
             "basic_metrics": {
                 "total_trades": performance.total_trades,
                 "win_rate": performance.win_rate,
@@ -1469,9 +1467,8 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
             },
         }
 
-        return analysis
     except Exception as e:
-        logger.error(f"Error getting model analysis: {e}")
+        logger.exception(f"Error getting model analysis: {e}")
         return {"error": str(e)}
 
 # --- DriftAlert Pydantic Model ---
@@ -1488,41 +1485,41 @@ class DriftAlertModel(BaseModel):
 
 @app.get("/api/monitoring/drift-alerts", response_model=list[DriftAlertModel])
 async def get_drift_alerts():
-    if ml_monitor and hasattr(ml_monitor, 'get_drift_alerts'):
+    if ml_monitor and hasattr(ml_monitor, "get_drift_alerts"):
         alerts = ml_monitor.get_drift_alerts()
         # Convert to DriftAlertModel, ensuring timestamp is str
         return [
             DriftAlertModel(
                 model_id=a.model_id,
                 model_type=a.model_type,
-                drift_type=a.drift_type.value if hasattr(a.drift_type, 'value') else str(a.drift_type),
+                drift_type=a.drift_type.value if hasattr(a.drift_type, "value") else str(a.drift_type),
                 drift_score=a.drift_score,
                 threshold=a.threshold,
-                timestamp=a.timestamp.isoformat() if hasattr(a.timestamp, 'isoformat') else str(a.timestamp),
+                timestamp=a.timestamp.isoformat() if hasattr(a.timestamp, "isoformat") else str(a.timestamp),
                 features_affected=a.features_affected,
                 severity=a.severity,
-                description=a.description
+                description=a.description,
             ) for a in alerts
         ]
     return []
 
 @app.get("/api/monitoring/feature-importance/{model_id}")
 async def get_feature_importance(model_id: str):
-    if ml_monitor and hasattr(ml_monitor, 'get_feature_importance_history'):
+    if ml_monitor and hasattr(ml_monitor, "get_feature_importance_history"):
         return [fi.__dict__ for fi in ml_monitor.get_feature_importance_history(model_id)]
     return []
 
 @app.get("/api/monitoring/online-learning/{model_id}")
 async def get_online_learning_metrics(model_id: str):
-    if ml_monitor and hasattr(ml_monitor, 'get_online_learning_metrics'):
+    if ml_monitor and hasattr(ml_monitor, "get_online_learning_metrics"):
         metrics = ml_monitor.get_online_learning_metrics(model_id)
         return metrics.__dict__ if metrics else {}
     return {}
 
 # --- ML Tracker Stats Cache ---
 _ml_tracker_stats_cache = {
-    'data': None,
-    'timestamp': 0
+    "data": None,
+    "timestamp": 0,
 }
 _ML_TRACKER_STATS_CACHE_TTL = 5  # seconds
 
@@ -1530,14 +1527,14 @@ _ML_TRACKER_STATS_CACHE_TTL = 5  # seconds
 async def get_ml_tracker_stats():
     now = time.time()
     if (
-        _ml_tracker_stats_cache['data'] is not None and
-        now - _ml_tracker_stats_cache['timestamp'] < _ML_TRACKER_STATS_CACHE_TTL
+        _ml_tracker_stats_cache["data"] is not None and
+        now - _ml_tracker_stats_cache["timestamp"] < _ML_TRACKER_STATS_CACHE_TTL
     ):
-        return _ml_tracker_stats_cache['data']
-    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+        return _ml_tracker_stats_cache["data"]
+    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, "get_tracking_statistics"):
         stats = await enhanced_ml_tracker.get_tracking_statistics()
-        _ml_tracker_stats_cache['data'] = stats
-        _ml_tracker_stats_cache['timestamp'] = now
+        _ml_tracker_stats_cache["data"] = stats
+        _ml_tracker_stats_cache["timestamp"] = now
         return stats
     return {}
 
@@ -1545,17 +1542,17 @@ async def get_ml_tracker_stats():
 @app.get("/api/monitoring/retraining-recommendations")
 async def get_retraining_recommendations():
     stats = await get_ml_tracker_stats()
-    return stats.get('retraining_recommendations', [])
+    return stats.get("retraining_recommendations", [])
 
 @app.get("/api/monitoring/model-comparison")
 async def get_model_comparison():
     stats = await get_ml_tracker_stats()
-    return stats.get('comparison_reports', [])
+    return stats.get("comparison_reports", [])
 
 @app.get("/api/monitoring/regime-performance")
 async def get_regime_performance():
     stats = await get_ml_tracker_stats()
-    return stats.get('regime_performance', {})
+    return stats.get("regime_performance", {})
 
 
 if __name__ == "__main__":

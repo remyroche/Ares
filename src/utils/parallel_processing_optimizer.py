@@ -15,17 +15,16 @@ import os
 import platform
 import subprocess
 import time
-from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from functools import partial, wraps
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 import psutil
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ class MacM1ParallelOptimizer:
 
     def __init__(
         self,
-        max_workers: Optional[int] = None,
+        max_workers: int | None = None,
         *,
         chunk_size: int = 1000,
         use_process_pool: bool = True,
@@ -113,7 +112,7 @@ class MacM1ParallelOptimizer:
         self,
         df: pd.DataFrame,
         *,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
     ) -> list[pd.DataFrame]:
         """
         Split DataFrame into chunks.
@@ -154,7 +153,8 @@ class MacM1ParallelOptimizer:
         Apply a function to DataFrame chunks in parallel.
         """
         if not isinstance(df, pd.DataFrame):
-            raise TypeError("parallel_apply expects a pandas DataFrame as first argument")
+            msg = "parallel_apply expects a pandas DataFrame as first argument"
+            raise TypeError(msg)
 
         # For small datasets, process sequentially to avoid overhead
         if len(df) < self.chunk_size * 2:
@@ -309,7 +309,7 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
             optimizer.max_workers = max(1, max_workers)
 
             # Identify first DataFrame arg
-            df_arg: Optional[pd.DataFrame] = None
+            df_arg: pd.DataFrame | None = None
             for arg in args:
                 if isinstance(arg, pd.DataFrame):
                     df_arg = arg
@@ -318,7 +318,7 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
                 # Fallback implementation for df_arg
                 # Fallback implementation for df_arg
                 # Try kwargs
-                for _k, v in kwargs.items():
+                for v in kwargs.values():
                     if isinstance(v, pd.DataFrame):
                         df_arg = v
                         break

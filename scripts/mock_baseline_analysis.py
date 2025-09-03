@@ -3,98 +3,96 @@
 """Mock baseline performance analysis for demonstration purposes."""
 
 import json
-import os
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any
 
 
-def create_mock_baseline_metrics() -> Dict[str, Any]:
+def create_mock_baseline_metrics() -> dict[str, Any]:
     """Create mock baseline performance metrics.
-    
+
     Returns:
         Dictionary with mock baseline metrics
     """
     # Simulate realistic baseline metrics
-    baseline_metrics={
-        'data_samples': 8000,
-        'feature_count': 15,
-        'model_accuracy': 0.5247,
-        'sharpe_ratio': 0.8234,
-        'max_drawdown': -0.1567,
-        'win_rate': 0.4876,
-        'profit_factor': 1.2345,
-        'total_return': 0.0892,
-        'volatility': 0.0234,
-        'feature_importance': {
-            'returns': 0.234,
-            'volatility': 0.189,
-            'sma_20': 0.156,
-            'rsi': 0.134,
-            'volume_ratio': 0.098,
-            'log_returns': 0.087,
-            'sma_50': 0.076,
-            'volume_sma': 0.026
-        }
+    return {
+        "data_samples": 8000,
+        "feature_count": 15,
+        "model_accuracy": 0.5247,
+        "sharpe_ratio": 0.8234,
+        "max_drawdown": -0.1567,
+        "win_rate": 0.4876,
+        "profit_factor": 1.2345,
+        "total_return": 0.0892,
+        "volatility": 0.0234,
+        "feature_importance": {
+            "returns": 0.234,
+            "volatility": 0.189,
+            "sma_20": 0.156,
+            "rsi": 0.134,
+            "volume_ratio": 0.098,
+            "log_returns": 0.087,
+            "sma_50": 0.076,
+            "volume_sma": 0.026,
+        },
     }
-    
-    return baseline_metrics
+
 
 
 def create_mock_performance_tracker():
     """Create mock performance tracking files."""
-    
+
     # Create output directory
     output_dir=Path("data/fractional_performance/baseline")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Mock performance metrics
     baseline_metrics=create_mock_baseline_metrics()
-    
+
     # Save baseline metrics
     metrics_file=output_dir / "performance_metrics.json"
     metrics_data = {
-        'baseline': baseline_metrics,
-        'current': baseline_metrics.copy(),
-        'historical': [baseline_metrics.copy()],
-        'last_updated': datetime.now().isoformat()
+        "baseline": baseline_metrics,
+        "current": baseline_metrics.copy(),
+        "historical": [baseline_metrics.copy()],
+        "last_updated": datetime.now().isoformat(),
     }
-    
-    with open(metrics_file, 'w') as f:
+
+    with open(metrics_file, "w") as f:
         json.dump(metrics_data, f, indent=2)
-    
+
     # Create mock baseline report
     report_file=output_dir / "baseline_report.json"
     report_data = {
-        'baseline_analysis': {
-            'timestamp': datetime.now().isoformat(),
-            'test_data_size': 10000,
-            'validation_split': 0.2,
-            'metrics': baseline_metrics,
-            'feature_statistics': {
-                'total_features': 15,
-                'feature_columns': [
-                    'returns', 'log_returns', 'volatility', 'sma_20', 'sma_50',
-                    'rsi', 'volume_sma', 'volume_ratio'
+        "baseline_analysis": {
+            "timestamp": datetime.now().isoformat(),
+            "test_data_size": 10000,
+            "validation_split": 0.2,
+            "metrics": baseline_metrics,
+            "feature_statistics": {
+                "total_features": 15,
+                "feature_columns": [
+                    "returns", "log_returns", "volatility", "sma_20", "sma_50",
+                    "rsi", "volume_sma", "volume_ratio",
                 ],
-                'data_shape': [8000, 15],
-                'missing_values': {},
-                'data_types': {}
-            }
-        }
+                "data_shape": [8000, 15],
+                "missing_values": {},
+                "data_types": {},
+            },
+        },
     }
-    
-    with open(report_file, 'w') as f:
+
+    with open(report_file, "w") as f:
         json.dump(report_data, f, indent=2)
-    
+
     return baseline_metrics
 
 
 def create_mock_dashboard():
     """Create mock performance dashboard."""
-    
+
     output_dir=Path("data/fractional_performance/baseline")
-    
+
     # Create simple HTML dashboard
     dashboard_content="""
     <!DOCTYPE html>
@@ -114,10 +112,10 @@ def create_mock_dashboard():
     <body>
         <div class="header">
             <h1>Fractional Implementations Performance Dashboard</h1>
-            <p>Last updated: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
+            <p>Last updated: """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
             <p>Total checks: 1</p>
         </div>
-        
+
         <div class="metrics">
             <div class="metric-card">
                 <div class="metric-label">Sharpe Ratio</div>
@@ -144,7 +142,7 @@ def create_mock_dashboard():
                 <div class="metric-value">0.0892</div>
             </div>
         </div>
-        
+
         <div class="chart">
             <h3>Performance Charts</h3>
             <p>Charts will be generated when matplotlib is available</p>
@@ -152,23 +150,23 @@ def create_mock_dashboard():
     </body>
     </html>
     """
-    
+
     dashboard_file = output_dir / "performance_dashboard.html"
-    with open(dashboard_file, 'w') as f:
+    with open(dashboard_file, "w") as f:
         f.write(dashboard_content)
 
 
 def main():
     """Main function to create mock baseline analysis."""
     print("🔍 Creating mock baseline performance metrics...")
-    
+
     # Create mock baseline metrics
     baseline_metrics=create_mock_baseline_metrics()
-    
+
     # Create performance tracking files
     create_mock_performance_tracker()
     create_mock_dashboard()
-    
+
     # Print results
     print("\n📊 Mock Baseline Performance Metrics:")
     print(f"  Model Accuracy: {baseline_metrics.get('model_accuracy', 0):.4f}")
@@ -178,11 +176,11 @@ def main():
     print(f"  Profit Factor: {baseline_metrics.get('profit_factor', 0):.4f}")
     print(f"  Total Return: {baseline_metrics.get('total_return', 0):.4f}")
     print(f"  Volatility: {baseline_metrics.get('volatility', 0):.4f}")
-    
-    print(f"\n📈 Data Statistics:")
+
+    print("\n📈 Data Statistics:")
     print(f"  Samples: {baseline_metrics.get('data_samples', 0)}")
     print(f"  Features: {baseline_metrics.get('feature_count', 0)}")
-    
+
     print("\n✅ Mock baseline performance analysis complete!")
     print("📁 Results saved to: data/fractional_performance/baseline/")
     print("\n📋 Next Steps:")

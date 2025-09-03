@@ -14,32 +14,35 @@ Real-time monitoring and visualization of system performance metrics.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from src.core.decorators import handles_errors
 
 from src.utils.logger import system_logger
+
+if TYPE_CHECKING:
+    import asyncio
+    from datetime import datetime
+
 
 @dataclass
 class DashboardMetrics:
     """Dashboard metrics data structure."""
 
     timestamp: datetime
-    model_performance: Dict[str, float]
-    trading_performance: Dict[str, float]
-    system_performance: Dict[str, float]
-    confidence_metrics: Dict[str, float]
-    alerts: List[Dict[str, Any]]
-    optimization_opportunities: List[Dict[str, Any]]
+    model_performance: dict[str, float]
+    trading_performance: dict[str, float]
+    system_performance: dict[str, float]
+    confidence_metrics: dict[str, float]
+    alerts: list[dict[str, Any]]
+    optimization_opportunities: list[dict[str, Any]]
 
 class PerformanceDashboard:
     """Real-time performance dashboard."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("PerformanceDashboard")
 
@@ -59,12 +62,12 @@ class PerformanceDashboard:
 
         # Dashboard state
         self.is_active: bool = False
-        self.update_task: Optional[asyncio.Task] = None
-        self.export_task: Optional[asyncio.Task] = None
+        self.update_task: asyncio.Task | None = None
+        self.export_task: asyncio.Task | None = None
 
         # Dashboard data
-        self.metrics_history: List[DashboardMetrics] = []
-        self.current_metrics: Optional[DashboardMetrics] = None
+        self.metrics_history: list[DashboardMetrics] = []
+        self.current_metrics: DashboardMetrics | None = None
 
         # Export configuration
         self.export_dir = Path("dashboard_exports")

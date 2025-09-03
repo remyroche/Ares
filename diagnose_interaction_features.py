@@ -3,12 +3,14 @@
 Diagnostic script to understand why interaction features are being filtered out
 """
 
-from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering)
 import os
 import sys
 
-import numpy as np
 import pandas as pd
+
+from src.training.steps.vectorized_advanced_feature_engineering import (
+    VectorizedAdvancedFeatureEngineering,
+)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -185,7 +187,7 @@ def diagnose_interaction_features():
             print(f"✅ Kept non-targeted feature: {k}")
         else:
             print(
-                f"❌ Filtered out feature: {k} (is_accel={is_accel}, is_diff={is_diff}, is_cross={is_cross})"
+                f"❌ Filtered out feature: {k} (is_accel={is_accel}, is_diff={is_diff}, is_cross={is_cross})",
             )
 
     print(f"\n📊 Final features after capping: {len(capped_features)}")

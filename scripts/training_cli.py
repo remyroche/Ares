@@ -26,23 +26,28 @@ will run for ALL supported tokens defined in the configuration.
     # python scripts/training_cli.py validate-regularization
 """
 
-from backtesting.ares_backtester import run_backtest
-from backtesting.ares_data_preparer import calculate_and_label_regimes, get_sr_levels, load_raw_data
-from backtesting.ares_deep_analyzer import calculate_detailed_metrics
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
 import time
 import traceback
-from typing import Any, Dict, List, Tuple
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import mlflow
+from backtesting.ares_backtester import run_backtest
+from backtesting.ares_data_preparer import (
+    calculate_and_label_regimes,
+    get_sr_levels,
+    load_raw_data,
+)
+from backtesting.ares_deep_analyzer import calculate_detailed_metrics
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.utils.logger import setup_logging, system_logger
 from src.utils.warning_symbols import error, execution_error, failed, warning
-import mlflow
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -315,16 +320,16 @@ class TrainingCLI:
             portfolio=run_backtest(prepared_df, current_best_params)
             self.logger.info("✅ Backtest completed successfully")
 
-            report_lines: List[str] = []
+            report_lines: list[str] = []
             separator="=" * 80
 
             report_lines.append("\n" + separator)
             report_lines.append("BACKTESTING RESULTS WITH NEWLY TRAINED MODEL")
             report_lines.append(separator)
             if hasattr(portfolio, "equity"):
-                report_lines.append(f"\nFinal Equity: ${getattr(portfolio, 'equity'):,.2f}")
+                report_lines.append(f"\nFinal Equity: ${portfolio.equity:,.2f}")
             if hasattr(portfolio, "trades"):
-                report_lines.append(f"Total Trades: {len(getattr(portfolio, 'trades'))}\n")
+                report_lines.append(f"Total Trades: {len(portfolio.trades)}\n")
 
             # Calculate detailed metrics for a comprehensive report
             num_days_in_backtest=(
@@ -403,7 +408,7 @@ class TrainingCLI:
         print("🪙 Supported Tokens and Exchanges (100x Leverage):")
         print("=" * 60)
 
-        supported_tokens: Dict[str, List[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
+        supported_tokens: dict[str, list[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
         self.logger.info(
             f"📊 Found {len(supported_tokens)} exchanges with supported tokens",
         )
@@ -425,7 +430,7 @@ class TrainingCLI:
         print("🤖 Available Model Types:")
         print("=" * 60)
 
-        model_configs: Dict[str, Dict[str, Any]] = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
+        model_configs: dict[str, dict[str, Any]] = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
         self.logger.info(f"📊 Found {len(model_configs)} model types in configuration")
 
         for model_name, config in model_configs.items():
@@ -458,7 +463,7 @@ class TrainingCLI:
         print("⚙️ Training Configuration:")
         print("=" * 60)
 
-        config: Dict[str, Any] = CONFIG.get("MODEL_TRAINING", {})
+        config: dict[str, Any] = CONFIG.get("MODEL_TRAINING", {})
         self.logger.info("📊 Training configuration loaded from CONFIG")
 
         print(f"📊 Data retention: {config.get('data_retention_days', 'N/A')} days")
@@ -474,13 +479,13 @@ class TrainingCLI:
         )
 
         print("\n🔧 Regularization:")
-        reg_config: Dict[str, Any] = config.get("regularization", {})
+        reg_config: dict[str, Any] = config.get("regularization", {})
         print(f"   - L1 alpha: {reg_config.get('l1_alpha', 'N/A')}")
         print(f"   - L2 alpha: {reg_config.get('l2_alpha', 'N/A')}")
         print(f"   - Dropout rate: {reg_config.get('dropout_rate', 'N/A')}")
 
         print("\n🎯 Hyperparameter tuning:")
-        hp_config: Dict[str, Any] = config.get("hyperparameter_tuning", {})
+        hp_config: dict[str, Any] = config.get("hyperparameter_tuning", {})
         print(f"   - Enabled: {hp_config.get('enabled', 'N/A')}")
         print(f"   - Max trials: {hp_config.get('max_trials', 'N/A')}")
         print(
@@ -531,7 +536,7 @@ def print_usage() -> None:
     print("  python src/training/regularization.py validate")
 
 
-def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
+def get_symbols_to_process(argv: list[str]) -> list[tuple[str, str]]:
     """
     Determines which symbols and exchanges to process based on command-line arguments.
     If a symbol is provided, it processes that one. Otherwise, it processes all
@@ -547,8 +552,8 @@ def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
     system_logger.info(
         "No symbol provided. Processing all supported tokens from config.",
     )
-    symbols_list: List[Tuple[str, str]] = []
-    supported_tokens: Dict[str, List[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
+    symbols_list: list[tuple[str, str]] = []
+    supported_tokens: dict[str, list[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
     for exchange, tokens in supported_tokens.items():
         for token in tokens:
             symbols_list.append((token, exchange))

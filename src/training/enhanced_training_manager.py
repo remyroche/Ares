@@ -186,11 +186,11 @@ class EnhancedTrainingManager:
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
-            "step1_data_collection",           # Download and prepare market data
-            "step1_5_data_converter",          # Convert data to unified format
+            "step01_data_collection",           # Download and prepare market data
+            "step01_5_data_converter",          # Convert data to unified format
             "step2_feature_engineering",       # Feature engineering
-            "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
-            "step4_regime_data_splitting",     # Regime data splitting
+            "step03_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
+            "step04_regime_data_splitting",     # Regime data splitting
             "step5_triple_barrier_method",     # Apply triple barrier method
             "step6_feature_generation",        # Feature generation
             "step7_matrix_feature_selection",  # Matrix feature selection
@@ -212,11 +212,11 @@ class EnhancedTrainingManager:
 
         # Define critical artifact patterns for each step
         self.CRITICAL_ARTIFACTS = {
-            "step1_data_collection": [
+            "step01_data_collection": [
                 "data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
                 "data_cache/parquet/aggtrades_{exchange}_{symbol}/**/*.parquet",
             ],
-            "step1_5_data_converter": [
+            "step01_5_data_converter": [
                 "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
                 "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
             ],
@@ -224,11 +224,11 @@ class EnhancedTrainingManager:
                 "data/training/{exchange}_{symbol}_features_train.parquet",
                 "data/training/{exchange}_{symbol}_features_metadata.json",
             ],
-            "step2_5_sr_optimization": [
+            "step02_5_sr_optimization": [
                 "data/optimization/sr_optimization_results.json",
                 "optimization_results.json",
             ],
-            "step3_hmm_regime_discovery": [
+            "step03_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
             ],
             "step4_processing_labeling": [
@@ -241,7 +241,7 @@ class EnhancedTrainingManager:
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
             ],
-            "step9_5_multi_timeframe_hmm_ensemble": [
+            "step09_5_multi_timeframe_hmm_ensemble": [
                 "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json",
                 "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib",
             ],
@@ -297,32 +297,32 @@ class EnhancedTrainingManager:
 
         # Define artifact patterns for clearing (includes all artifacts, not just critical ones)
         self.ARTIFACT_PATTERNS = {
-            "step1_data_collection": [
+            "step01_data_collection": [
                 "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
                 "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
             ],
-            "step1_5_data_converter": [
+            "step01_5_data_converter": [
                 "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
                 "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
             ],
-            "step2_data_reading": [
+            "step02_data_reading": [
                 "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
                 "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
             ],
-            "step3_hmm_regime_discovery": [
+            "step03_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
             ],
-            "step4_5_triple_barrier_method": [
+            "step04_5_triple_barrier_method": [
                 "data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json",
             ],
-            "step5_labeling": [
+            "step05_labeling": [
                 "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_labels_*.json",
             ],
-            "step6_feature_engineering": [
+            "step06_feature_engineering": [
                 "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
                 "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
             ],
@@ -886,10 +886,10 @@ class EnhancedTrainingManager:
         """
         if is_blank_mode:
             return {
-                "step1_data_collection": 5,
-                "step1_5_data_converter": 3,
+                "step01_data_collection": 5,
+                "step01_5_data_converter": 3,
                 "step2_feature_engineering": 15,
-                "step3_hmm_regime_discovery": 3,
+                "step03_hmm_regime_discovery": 3,
                 "step4_processing_labeling": 8,
                 "step5_regime_data_splitting": 2,
                 "step6_hmm_based_training": 10,
@@ -911,10 +911,10 @@ class EnhancedTrainingManager:
                 "step21_saving": 2,
             }
         return {
-            "step1_data_collection": 15,
-            "step1_5_data_converter": 10,
+            "step01_data_collection": 15,
+            "step01_5_data_converter": 10,
             "step2_feature_engineering": 60,
-            "step3_hmm_regime_discovery": 8,
+            "step03_hmm_regime_discovery": 8,
             "step4_processing_labeling": 20,
             "step5_regime_data_splitting": 5,
             "step6_hmm_based_training": 30,
@@ -1437,7 +1437,7 @@ class EnhancedTrainingManager:
 
             data_dir = "data/training"
             data_root = Path(data_dir)
-            start_step = training_input.get("start_step", "step1_data_collection")
+            start_step = training_input.get("start_step", "step01_data_collection")
 
             # Initialize pipeline state and timing
             pipeline_state = {}
@@ -1499,7 +1499,7 @@ class EnhancedTrainingManager:
             step_start = time.time()
 
             # Use optimized data loading for Step 1: Data Collection
-            if start_step == "step1_data_collection":
+            if start_step == "step01_data_collection":
                 self.logger.info("📊 STEP 1: Data Collection...")
                 self.logger.info("   🔍 Downloading and preparing market data...")
 
@@ -1526,13 +1526,13 @@ class EnhancedTrainingManager:
                     return False
 
                 # Save checkpoint after data collection
-                self._save_checkpoint("step1_data_collection", pipeline_state)
-                step_times["step1_data_collection"] = time.time() - step_start
+                self._save_checkpoint("step01_data_collection", pipeline_state)
+                step_times["step01_data_collection"] = time.time() - step_start
 
                 # Optionally run validator for Step 1
                 try:
                     step1_validation = await self._run_step_validator(
-                        "step1_data_collection",
+                        "step01_data_collection",
                         training_input,
                         pipeline_state,
                     )
@@ -1543,7 +1543,7 @@ class EnhancedTrainingManager:
                         
                         # Run enhanced validation
                         enhanced_validation = await self._run_enhanced_validation(
-                            step_name="step1_data_collection",
+                            step_name="step01_data_collection",
                             pipeline_state=pipeline_state,
                             previous_step_name=None,
                             training_input=training_input
@@ -1588,7 +1588,7 @@ class EnhancedTrainingManager:
                         }
 
                 # Get start step key
-                start_step_key = training_input.get("start_step", "step1_data_collection")
+                start_step_key = training_input.get("start_step", "step01_data_collection")
 
                 # Define helper function for step execution logic
                 def _should_run(step_name: str) -> bool:
@@ -1602,7 +1602,7 @@ class EnhancedTrainingManager:
                 self._heartbeat("Step 1.5: Data Converter")
 
                 # Determine whether Step 1.5 should run based on requested start_step
-                should_run_step1_5 = _should_run("step1_5_data_converter")
+                should_run_step1_5 = _should_run("step01_5_data_converter")
 
                 if not should_run_step1_5:
                     self.logger.info(
@@ -1617,18 +1617,18 @@ class EnhancedTrainingManager:
                     }
                 else:
                     # Verify previous step artifacts BEFORE execution
-                    if not await self.verify_previous_step_artifacts("step1_5_data_converter", symbol, exchange, timeframe):
+                    if not await self.verify_previous_step_artifacts("step01_5_data_converter", symbol, exchange, timeframe):
                         self.logger.error("❌ Previous step artifacts not found for step1_5, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
-                    if not await self.validate_step_dependencies("step1_5_data_converter", pipeline_state, self.force_rerun):
+                    if not await self.validate_step_dependencies("step01_5_data_converter", pipeline_state, self.force_rerun):
                         self.logger.error("❌ Step 1.5 dependencies not met, stopping pipeline")
                         return False
 
                     step_start_1_5 = time.time()
                     try:
-                        from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+                        from src.training.steps.step01_5_data_converter import run_step as step1_5_run_step
 
                         # Execute step 1.5 with QA decorators
                         step1_5_success = await self._execute_step1_5_with_qa(
@@ -1663,13 +1663,13 @@ class EnhancedTrainingManager:
                         "success": bool(step1_5_success),
                         "completed": bool(step1_5_success),
                     }
-                    self._save_checkpoint("step1_5_data_converter", pipeline_state)
-                    step_times["step1_5_data_converter"] = time.time() - step_start_1_5
+                    self._save_checkpoint("step01_5_data_converter", pipeline_state)
+                    step_times["step01_5_data_converter"] = time.time() - step_start_1_5
 
                     # Run validator for Step 1.5 (AFTER execution, for verification only)
                     try:
                         step1_5_validation = await self._run_step_validator(
-                            "step1_5_data_converter", training_input, pipeline_state,
+                            "step01_5_data_converter", training_input, pipeline_state,
                         )
                         if step1_5_validation and step1_5_validation.get("validation_passed", False):
                             self.logger.info(
@@ -1678,9 +1678,9 @@ class EnhancedTrainingManager:
                             
                             # Run enhanced validation
                             enhanced_validation = await self._run_enhanced_validation(
-                                step_name="step1_5_data_converter",
+                                step_name="step01_5_data_converter",
                                 pipeline_state=pipeline_state,
-                                previous_step_name="step1_data_collection",
+                                previous_step_name="step01_data_collection",
                                 training_input=training_input
                             )
                             if enhanced_validation.get("validation_passed", False):
@@ -1700,7 +1700,7 @@ class EnhancedTrainingManager:
                 self._heartbeat("Step 2: Feature Engineering")
 
                 # Determine whether Step 2 should run based on requested start_step
-                start_step_key = training_input.get("start_step", "step1_data_collection")
+                start_step_key = training_input.get("start_step", "step01_data_collection")
                 def _should_run(step_name: str) -> bool:
                     try:
                         return self.STEP_ORDER.index(step_name) >= self.STEP_ORDER.index(start_step_key)
@@ -1803,7 +1803,7 @@ class EnhancedTrainingManager:
                                 enhanced_validation = await self._run_enhanced_validation(
                                     step_name="step2_feature_engineering",
                                     pipeline_state=pipeline_state,
-                                    previous_step_name="step1_5_data_converter",
+                                    previous_step_name="step01_5_data_converter",
                                     training_input=training_input
                                 )
                                 if enhanced_validation.get("validation_passed", False):
@@ -1822,7 +1822,7 @@ class EnhancedTrainingManager:
                 # Step 2.5: S/R Detection Optimization - Fatal on failure
                 self._heartbeat("Step 2.5: S/R Detection Optimization")
 
-                should_run_step2_5 = _should_run("step2_5_sr_optimization")
+                should_run_step2_5 = _should_run("step02_5_sr_optimization")
                 step_start_2_5 = time.time()
 
                 if not should_run_step2_5:
@@ -1837,12 +1837,12 @@ class EnhancedTrainingManager:
                     }
                 else:
                     # Verify previous step artifacts BEFORE execution
-                    if not await self.verify_previous_step_artifacts("step2_5_sr_optimization", symbol, exchange, timeframe):
+                    if not await self.verify_previous_step_artifacts("step02_5_sr_optimization", symbol, exchange, timeframe):
                         self.logger.error("❌ Previous step artifacts not found for step02.5, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
-                    if not await self.validate_step_dependencies("step2_5_sr_optimization", pipeline_state, self.force_rerun):
+                    if not await self.validate_step_dependencies("step02_5_sr_optimization", pipeline_state, self.force_rerun):
                         self.logger.error("❌ Step 2.5 dependencies not met, stopping pipeline")
                         return False
 
@@ -1877,7 +1877,7 @@ class EnhancedTrainingManager:
                         "success": bool(step2_5_success),
                         "completed": bool(step2_5_success),
                     }
-                    self._save_checkpoint("step2_5_sr_optimization", pipeline_state)
+                    self._save_checkpoint("step02_5_sr_optimization", pipeline_state)
 
                 if not step2_5_success:
                     return False
@@ -1896,7 +1896,7 @@ class EnhancedTrainingManager:
                 }
 
                 step3_success = await self._execute_pipeline_step(
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     step_function=_step3.run_step_enhanced,
                     step_args=step3_args,
                     step_times=step_times,
@@ -1913,7 +1913,7 @@ class EnhancedTrainingManager:
                 # Step 4: Regime Data Splitting (NEW - moved before labeling and feature engineering)
                 self._heartbeat("Step 4: Regime Data Splitting")
 
-                should_run_step4 = _should_run("step4_regime_data_splitting")
+                should_run_step4 = _should_run("step04_regime_data_splitting")
                 step_start_4 = time.time()
 
                 if not should_run_step4:
@@ -1928,12 +1928,12 @@ class EnhancedTrainingManager:
                     }
                 else:
                     # Verify previous step artifacts BEFORE execution
-                    if not await self.verify_previous_step_artifacts("step4_regime_data_splitting", symbol, exchange, timeframe):
+                    if not await self.verify_previous_step_artifacts("step04_regime_data_splitting", symbol, exchange, timeframe):
                         self.logger.error("❌ Previous step artifacts not found for step04, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
-                    if not await self.validate_step_dependencies("step4_regime_data_splitting", pipeline_state, self.force_rerun):
+                    if not await self.validate_step_dependencies("step04_regime_data_splitting", pipeline_state, self.force_rerun):
                         self.logger.error("❌ Step 4 dependencies not met, stopping pipeline")
                         return False
 
@@ -1973,13 +1973,13 @@ class EnhancedTrainingManager:
                         "success": bool(step4_success),
                         "completed": bool(step4_success),
                     }
-                    self._save_checkpoint("step4_regime_data_splitting", pipeline_state)
-                    step_times["step4_regime_data_splitting"] = time.time() - step_start_4
+                    self._save_checkpoint("step04_regime_data_splitting", pipeline_state)
+                    step_times["step04_regime_data_splitting"] = time.time() - step_start_4
 
                     # Run validator for Step 4
                     try:
                         step4_validation = await self._run_step_validator(
-                            "step4_regime_data_splitting", training_input, pipeline_state,
+                            "step04_regime_data_splitting", training_input, pipeline_state,
                         )
                         if step4_validation and step4_validation.get("validation_passed", False):
                             self.logger.info(
@@ -1988,9 +1988,9 @@ class EnhancedTrainingManager:
                             
                             # Run enhanced validation
                             enhanced_validation = await self._run_enhanced_validation(
-                                step_name="step4_regime_data_splitting",
+                                step_name="step04_regime_data_splitting",
                                 pipeline_state=pipeline_state,
-                                previous_step_name="step3_hmm_regime_discovery",
+                                previous_step_name="step03_hmm_regime_discovery",
                                 training_input=training_input
                             )
                             if enhanced_validation.get("validation_passed", False):
@@ -2086,7 +2086,7 @@ class EnhancedTrainingManager:
                             enhanced_validation = await self._run_enhanced_validation(
                                 step_name="step5_triple_barrier_method",
                                 pipeline_state=pipeline_state,
-                                previous_step_name="step4_regime_data_splitting",
+                                previous_step_name="step04_regime_data_splitting",
                                 training_input=training_input
                             )
                             if enhanced_validation.get("validation_passed", False):
@@ -2439,7 +2439,7 @@ class EnhancedTrainingManager:
                         return False
 
                 # Step 9.5: Multi-Timeframe HMM Ensemble Training
-                should_run_step9_5 = _should_run("step9_5_multi_timeframe_hmm_ensemble")
+                should_run_step9_5 = _should_run("step09_5_multi_timeframe_hmm_ensemble")
                 if not should_run_step9_5:
                     self.logger.info(
                         f"⏭️ Skipping Step 9.5: Multi-Timeframe HMM Ensemble Training (starting from '{start_step_key}')",
@@ -2499,7 +2499,7 @@ class EnhancedTrainingManager:
                     }
                     if step9_5_result and isinstance(step9_5_result, dict) and "per_regime" in step9_5_result:
                         pipeline_state["multi_timeframe_hmm_ensemble"]["per_regime"] = step9_5_result["per_regime"]
-                    self._save_checkpoint("step9_5_multi_timeframe_hmm_ensemble", pipeline_state)
+                    self._save_checkpoint("step09_5_multi_timeframe_hmm_ensemble", pipeline_state)
                     self._log_step_completion(
                         "Step 9.5: Multi-Timeframe HMM Ensemble Training",
                         step_start_9_5,
@@ -2510,7 +2510,7 @@ class EnhancedTrainingManager:
                     # Run validator for Step 9.5
                     try:
                         step9_5_validation = await self._run_step_validator(
-                            "step9_5_multi_timeframe_hmm_ensemble", training_input, pipeline_state,
+                            "step09_5_multi_timeframe_hmm_ensemble", training_input, pipeline_state,
                         )
                         if step9_5_validation and step9_5_validation.get("validation_passed", False):
                             self.logger.info(
@@ -3781,9 +3781,9 @@ from src.training.steps import (
         # For backward compatibility, we still identify specific critical steps
         # but they all return CRITICAL level
         critical_steps = [
-            "step1_data_collection",
+            "step01_data_collection",
             "step2_feature_engineering", 
-            "step3_hmm_regime_discovery",
+            "step03_hmm_regime_discovery",
             "step6_hmm_based_training",
             "step7_analyst_enhancement",
             "step9_tactician_specialist_training",
@@ -3792,7 +3792,7 @@ from src.training.steps import (
         ]
         
         comprehensive_steps = [
-            "step1_5_data_converter",
+            "step01_5_data_converter",
             "step4_processing_labeling",
             "step5_regime_data_splitting",
             "step6_5_unified_regime_intelligence",
@@ -3988,7 +3988,7 @@ from src.training.steps import (
         try:
             # Get current step data
             current_data = None
-            if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+            if step_name in ["step01_data_collection", "step01_5_data_converter"]:
                 current_data = pipeline_state.get("market_data")
             elif step_name == "step2_feature_engineering":
                 # Try to load features data
@@ -4004,9 +4004,9 @@ from src.training.steps import (
             # 1. Cross-Step Validation
             if previous_step_name and self.cross_step_validator:
                 prev_data = None
-                if previous_step_name == "step1_data_collection":
+                if previous_step_name == "step01_data_collection":
                     prev_data = pipeline_state.get("market_data")
-                elif previous_step_name == "step1_5_data_converter":
+                elif previous_step_name == "step01_5_data_converter":
                     # Load unified data
                     symbol = training_input.get("symbol", "ETHUSDT")
                     exchange = training_input.get("exchange", "BINANCE")
@@ -4040,7 +4040,7 @@ from src.training.steps import (
             if current_data is not None and isinstance(current_data, pd.DataFrame) and self.statistical_validator:
                 # Determine which columns to validate
                 columns_to_validate = None
-                if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+                if step_name in ["step01_data_collection", "step01_5_data_converter"]:
                     columns_to_validate = ['open', 'high', 'low', 'close', 'volume']
                 elif "feature" in step_name.lower():
                     # Validate all numeric columns for feature steps
@@ -4127,7 +4127,7 @@ from src.training.steps import (
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_5_data_converter"
+        context="step01_5_data_converter"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -4167,7 +4167,7 @@ from src.training.steps import (
 
             # Generate step report
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 result,
                 step_start_time,
                 bool(result),
@@ -4184,7 +4184,7 @@ from src.training.steps import (
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 None,
                 step_start_time,
                 False,

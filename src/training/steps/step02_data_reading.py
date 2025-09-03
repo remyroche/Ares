@@ -282,7 +282,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Prepare report data
             report_data = {
-                "step": "step2_data_reading",
+                "step": "step02_data_reading",
                 "timestamp": datetime.now().isoformat(),
                 "symbol": symbol,
                 "exchange": exchange,
@@ -302,7 +302,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             self.logger.exception(f"❌ Error saving validation report: {e}")
             return False
 
-    # @with_enhanced_mlflow_logging - removed, use traced"step2_data_reading")
+    # @with_enhanced_mlflow_logging - removed, use traced"step02_data_reading")
     @traced(span_name="execute_data_reading_step")
     @handles_errors
     @log_execution_time
@@ -425,7 +425,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -437,7 +437,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 report_data=report_data,
                 report_type="data_reading_report",
                 additional_metadata={
@@ -455,7 +455,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             if unified_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step2_data_reading",
+                    step_name="step02_data_reading",
                     df=unified_data,
                     artifact_type="validated_data",
                     additional_metadata={
@@ -473,7 +473,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             # Log validation results
             validation_report_name = log_step_report(
                 config=self.config,
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 report_data=validation_results,
                 report_type="validation_results",
                 additional_metadata={
@@ -490,7 +490,7 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "data_reading_performance",

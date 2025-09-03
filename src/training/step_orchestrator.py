@@ -109,7 +109,7 @@ class StepOrchestrator:
         """Import and return a step module."
 
         Args:
-            step_name: Name of the step (e.g., 'step1_data_collection')
+            step_name: Name of the step (e.g., 'step01_data_collection')
 
         Returns:
             Step module if found, None otherwise

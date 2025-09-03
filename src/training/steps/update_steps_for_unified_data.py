@@ -216,7 +216,7 @@ def generate_step_update_template(step_name: str) -> str:
 def main() -> None:
     """Main function to generate update guidance."""
     high_complexity_areas = {
-        "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
+        "step01_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
         "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
         "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
         "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",

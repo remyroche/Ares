@@ -286,7 +286,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             # Handle different types of quality metrics based on step
             step_name = step_report['step_name']
             
-            if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+            if step_name in ["step01_data_collection", "step01_5_data_converter"]:
                 if "data_quality" in quality_metrics:
                     data_quality = quality_metrics["data_quality"]
                     summary.append("  Data Quality:")
@@ -407,7 +407,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         if len(zero_var_features) > 10:
                             summary.append(f"      ... and {len(zero_var_features) - 10} more")
             
-            elif step_name == "step3_hmm_regime_discovery":
+            elif step_name == "step03_hmm_regime_discovery":
                 if "regime_analysis" in quality_metrics:
                     regime_analysis = quality_metrics["regime_analysis"]
                     summary.append("  Regime Analysis:")
@@ -422,7 +422,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    BIC Score: {validation_metrics.get('bic_score', 'N/A')}")
                     summary.append(f"    Model Complexity: {validation_metrics.get('model_complexity', 'N/A')}")
             
-            elif step_name == "step4_regime_data_splitting":
+            elif step_name == "step04_regime_data_splitting":
                 if "splitting_analysis" in quality_metrics:
                     splitting = quality_metrics["splitting_analysis"]
                     summary.append("  Splitting Analysis:")
@@ -773,7 +773,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_data_collection"
+        context="step01_data_collection"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_COLLECTION,
@@ -813,7 +813,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step1_data_collection",
+                "step01_data_collection",
                 result,
                 step_start_time,
                 bool(result),
@@ -829,7 +829,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_data_collection",
+                "step01_data_collection",
                 None,
                 step_start_time,
                 False,
@@ -841,7 +841,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_5_data_converter"
+        context="step01_5_data_converter"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -869,7 +869,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+            from src.training.steps.step01_5_data_converter import run_step as step1_5_run_step
             
             result = await step1_5_run_step(
                 symbol=symbol,
@@ -881,7 +881,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 result,
                 step_start_time,
                 bool(result),
@@ -897,7 +897,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 None,
                 step_start_time,
                 False,
@@ -979,7 +979,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step3_hmm_regime_discovery"
+        context="step03_hmm_regime_discovery"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -1021,7 +1021,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 result,
                 step_start_time,
                 bool(result),
@@ -1037,7 +1037,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 None,
                 step_start_time,
                 False,
@@ -1049,7 +1049,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step4_regime_data_splitting"
+        context="step04_regime_data_splitting"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -1084,7 +1084,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step4_regime_data_splitting",
+                "step04_regime_data_splitting",
                 result,
                 step_start_time,
                 bool(result),
@@ -1100,7 +1100,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step4_regime_data_splitting",
+                "step04_regime_data_splitting",
                 None,
                 step_start_time,
                 False,
@@ -1940,15 +1940,15 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get step-specific quality metrics and validation information."""
         
         try:
-            if step_name == "step1_data_collection":
+            if step_name == "step01_data_collection":
                 return await self._get_data_collection_metrics(step_result)
-            elif step_name == "step1_5_data_converter":
+            elif step_name == "step01_5_data_converter":
                 return await self._get_data_converter_metrics(step_result)
             elif step_name == "step2_feature_engineering":
                 return await self._get_feature_engineering_metrics(step_result)
-            elif step_name == "step3_hmm_regime_discovery":
+            elif step_name == "step03_hmm_regime_discovery":
                 return await self._get_hmm_regime_metrics(step_result)
-            elif step_name == "step4_regime_data_splitting":
+            elif step_name == "step04_regime_data_splitting":
                 return await self._get_regime_splitting_metrics(step_result)
             elif step_name == "step5_triple_barrier_method":
                 return await self._get_triple_barrier_metrics(step_result)
@@ -2819,7 +2819,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_data_collection"
+        context="step01_data_collection"
     )
     async def execute_step1_data_collection(
         self,
@@ -2842,7 +2842,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step1_data_collection",
+                "step01_data_collection",
                 result,
                 step_start_time,
                 bool(result),
@@ -2858,7 +2858,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_data_collection",
+                "step01_data_collection",
                 None,
                 step_start_time,
                 False,
@@ -2870,7 +2870,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_5_data_converter"
+        context="step01_5_data_converter"
     )
     async def execute_step1_5_data_converter(
         self,
@@ -2884,7 +2884,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+            from src.training.steps.step01_5_data_converter import run_step as step1_5_run_step
             
             result = await step1_5_run_step(
                 enhanced_training_input=enhanced_training_input,
@@ -2893,7 +2893,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 result,
                 step_start_time,
                 bool(result),
@@ -2909,7 +2909,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 None,
                 step_start_time,
                 False,
@@ -2972,7 +2972,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step3_hmm_regime_discovery"
+        context="step03_hmm_regime_discovery"
     )
     async def execute_step3_hmm_regime_discovery(
         self,
@@ -2995,7 +2995,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 result,
                 step_start_time,
                 bool(result),
@@ -3011,7 +3011,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 None,
                 step_start_time,
                 False,
@@ -3023,7 +3023,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step4_regime_data_splitting"
+        context="step04_regime_data_splitting"
     )
     async def execute_step4_regime_data_splitting(
         self,
@@ -3045,7 +3045,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step4_regime_data_splitting",
+                "step04_regime_data_splitting",
                 result,
                 step_start_time,
                 bool(result),
@@ -3061,7 +3061,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step4_regime_data_splitting",
+                "step04_regime_data_splitting",
                 None,
                 step_start_time,
                 False,

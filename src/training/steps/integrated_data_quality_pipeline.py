@@ -120,10 +120,10 @@ class IntegratedDataQualityPipeline:
                 
                 if step1_result.get("success", False):
                     logger.info("✅ Step 1: Data Collection completed successfully")
-                    results["steps_completed"].append("step1_data_collection")
+                    results["steps_completed"].append("step01_data_collection")
                 else:
                     logger.error("❌ Step 1: Data Collection failed")
-                    results["steps_failed"].append("step1_data_collection")
+                    results["steps_failed"].append("step01_data_collection")
                     results["success"] = False
 
             # Step 1.5: Data Conversion (if requested)
@@ -210,7 +210,7 @@ class IntegratedDataQualityPipeline:
     async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step01 data collection."""
         try:
-            from .step1_data_collection import run_step as run_step1
+            from .step01_data_collection import run_step as run_step1
             
             success = await run_step1(
                 symbol=symbol,
@@ -222,7 +222,7 @@ class IntegratedDataQualityPipeline:
             
             return {
                 "success": success,
-                "step": "step1_data_collection",
+                "step": "step01_data_collection",
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe
@@ -235,7 +235,7 @@ class IntegratedDataQualityPipeline:
     async def _run_step1_5_data_conversion(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step1_5 data conversion."""
         try:
-            from .step1_5_data_converter import run_step as run_step1_5
+            from .step01_5_data_converter import run_step as run_step1_5
             
             success = await run_step1_5(
                 symbol=symbol,
@@ -260,7 +260,7 @@ class IntegratedDataQualityPipeline:
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step03 HMM regime discovery."""
         try:
-            from .step3_hmm_regime_discovery import run_step as run_step3
+            from .step03_hmm_regime_discovery import run_step as run_step3
             
             success = await run_step3(
                 symbol=symbol,

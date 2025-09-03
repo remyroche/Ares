@@ -201,7 +201,7 @@ class HMMRegimeDiscoveryStep:
         max_correlation=0.95,
         required_grade="C"
     )
-    # @with_enhanced_mlflow_logging - removed, use traced"step3_hmm_regime_discovery")
+    # @with_enhanced_mlflow_logging - removed, use traced"step03_hmm_regime_discovery")
     @handles_errors
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
         context="hmm_regime_discovery.execute"
@@ -394,7 +394,7 @@ class HMMRegimeDiscoveryStep:
                 composite_df = regime_results["composite_df"]
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     df=composite_df,
                     artifact_type="composite_clusters",
                     additional_metadata={
@@ -411,7 +411,7 @@ class HMMRegimeDiscoveryStep:
                 intensity_df = regime_results["intensity_df"]
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     df=intensity_df,
                     artifact_type="intensity_clusters",
                     additional_metadata={
@@ -438,7 +438,7 @@ class HMMRegimeDiscoveryStep:
                 
                 report_name = log_step_report(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     report_data=report_data,
                     report_type="regime_discovery_report",
                     additional_metadata={
@@ -461,7 +461,7 @@ class HMMRegimeDiscoveryStep:
                 if numeric_metrics:
                     log_step_metrics(
                         config=self.config,
-                        step_name="step3_hmm_regime_discovery",
+                        step_name="step03_hmm_regime_discovery",
                         metrics=numeric_metrics,
                         additional_metadata={
                             "metrics_type": "regime_discovery",
@@ -475,7 +475,7 @@ class HMMRegimeDiscoveryStep:
                 hmm_model = regime_results["hmm_model"]
                 log_step_model(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     model=hmm_model,
                     model_name="hmm_regime_model",
                     model_type="hmm",
@@ -492,7 +492,7 @@ class HMMRegimeDiscoveryStep:
                 kmeans_model = regime_results["kmeans_model"]
                 log_step_model(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     model=kmeans_model,
                     model_name="kmeans_clustering_model",
                     model_type="clustering",
@@ -611,7 +611,7 @@ class HMMRegimeDiscoveryStep:
             step1_success = False
             try:
                 self.logger.info("📥 Attempting step01 data collection...")
-                from .step1_data_collection import run_step as run_step1
+                from .step01_data_collection import run_step as run_step1
                 step1_success = await run_step1(
                     symbol=symbol,
                     exchange=exchange,
@@ -629,7 +629,7 @@ class HMMRegimeDiscoveryStep:
             step1_5_success = False
             try:
                 self.logger.info("🔄 Attempting step1_5 data conversion...")
-                from .step1_5_data_converter import run_step as run_step1_5
+                from .step01_5_data_converter import run_step as run_step1_5
                 step1_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,

@@ -8,7 +8,7 @@ with explicit imports to avoid namespace pollution.
 
 # Import specific classes from each step module
 try:
-    from .step1_data_collection import DataCollectionStep
+    from .step01_data_collection import DataCollectionStep
 except ImportError:
     DataCollectionStep = None
 
@@ -21,7 +21,7 @@ FeatureEngineeringStep = None
 
 # Temporarily comment out all step imports to avoid syntax errors
 # try:
-#     from .step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
+#     from .step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
 # except ImportError:
 #     HMMRegimeDiscoveryStep, None
 
@@ -36,7 +36,7 @@ FeatureEngineeringStep = None
 #     MarketRegimeClassificationStep, None
 
 # try:
-#     from .step5_labeling import LabelingStep
+#     from .step05_labeling import LabelingStep
 # except ImportError:
 #     LabelingStep, None
 
@@ -46,7 +46,7 @@ FeatureEngineeringStep = None
 #     UnifiedRegimeIntelligenceStep, None
 
 # try:
-#     from .step9_hmm_based_training import HMMBasedTrainingStep
+#     from .step09_hmm_based_training import HMMBasedTrainingStep
 # except ImportError:
 #     HMMBasedTrainingStep, None
 

@@ -30,7 +30,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         """
         super().__init__(config)
         self.logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
-        self.step_name = "step9_5_multi_timeframe_hmm_ensemble"
+        self.step_name = "step09_5_multi_timeframe_hmm_ensemble"
 
     @handles_errors
         default_return={"validation_passed": False, "error": "Unknown error"},

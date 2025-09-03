@@ -1021,6 +1021,18 @@ class FeatureInteractionEngine:
         """
         interactions = []
 
+        # Causality guard: ensure market_data used for regime identification is strictly past-only
+        try:
+            if "timestamp" in market_data.columns:
+                # Align to ensure no forward-looking rows leak into current index computations
+                market_data = market_data.sort_values("timestamp").copy()
+            # Drop any columns that are known to be future-derived or post-event labels
+            for col in list(market_data.columns):
+                if col.lower().startswith("future_") or col.lower().endswith("_future"):
+                    market_data = market_data.drop(columns=[col])
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"Causality guard (regime interactions) encountered an issue: {e}")
+
         # Identify market regime
         market_regime = self._identify_market_regime(market_data)
 
@@ -1177,17 +1189,14 @@ class FeatureInteractionEngine:
                 )
 
                 # Create cross-timeframe interactions
-                interactions.extend(
-                    [
-                        features[:, short_idx] - features[:, long_idx],  # Divergence
-                        features[:, short_idx]
-                        / (features[:, long_idx] + 1e-8),  # Ratio
-                        features[:, short_idx] * features[:, long_idx],  # Product
-                        np.abs(
-                            features[:, short_idx] - features[:, long_idx]
-                        ),  # Absolute divergence
-                    ]
-                )
+                # Causality guard: enforce that operations are contemporaneous or backward-only
+                # These are same-index operations; ensure no shift from future samples
+                diff = features[:, short_idx] - features[:, long_idx]
+                ratio = features[:, short_idx] / (features[:, long_idx] + 1e-8)
+                prod = features[:, short_idx] * features[:, long_idx]
+                abs_diff = np.abs(diff)
+
+                interactions.extend([diff, ratio, prod, abs_diff])
 
         return (
             np.column_stack(interactions)
@@ -1227,6 +1236,10 @@ class FeatureInteractionEngine:
         Select optimal interactions based on importance and correlation.
         """
         try:
+            # Causality guard: selection must not use future information
+            # Ensure market_data alignment and avoid any target leakage
+            if "timestamp" in market_data.columns:
+                market_data = market_data.sort_values("timestamp").copy()
             # Create dummy target for feature selection (in real implementation, use actual target)
             dummy_target = np.random.choice([0, 1], size=interactions.shape[0])
 

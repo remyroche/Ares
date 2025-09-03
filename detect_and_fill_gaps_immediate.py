@@ -5,8 +5,7 @@ Detect and Fill Gaps Immediately
 This script uses the improved gap detection that fills gaps immediately when found,
 rather than detecting all gaps first and then trying to fill them.
 """
-
-    import argparse
+import argparse
 from pathlib import Path
 from src.utils.logger import system_logger
 import asyncio
@@ -15,7 +14,7 @@ import sys
 from src.training.steps.step01.data_gap_detector import DataGapDetector
 
 # Add project root to path
-project_root, Path(__file__).parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 logger=system_logger.getChild("DetectAndFillGapsImmediate")
@@ -48,9 +47,11 @@ async def detect_and_fill_gaps_immediate(symbol: str="ETHUSDT",
     gap_detector=DataGapDetector("data_cache")
     
     # Run detection and filling
-    results=await gap_detector.detect_and_fill_aggtrades_gaps(
-        symbol, symbol=exchange=exchange,
-        min_gap_seconds, min_gap_seconds=auto_fill=auto_fill
+    results = await gap_detector.detect_and_fill_aggtrades_gaps(
+        symbol=symbol,
+        exchange=exchange,
+        min_gap_seconds=min_gap_seconds,
+        auto_fill=auto_fill,
     )
     
     # Print final summary

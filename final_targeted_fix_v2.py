@@ -11,32 +11,32 @@ def fix_specific_issues(content):
     """Fix specific syntax issues."""
 
     # Fix function parameter syntax errors
-    content = re.sub(r'def (\w+')\(self, (\w+)\): (\w+)\) -> (\w+):',
+    content = re.sub(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\(self,\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*->\s*([A-Za-z_][A-Za-z0-9_]*)\:",
                     r'def \1(self, \2: \3) -> \4:', content)
 
     # Fix assignment vs comparison issues
-    content = re.sub(r'isinstance\(([^,]+') = ([^)]+)\)', r'isinstance(\1, \2)', content)
-    content = re.sub(r'pd\.DatetimeIndex\')', r'pd.DatetimeIndex)', content)
+    content = re.sub(r"isinstance\(([^,]+),\s*([^\)]+)\)", r'isinstance(\1, \2)', content)
+    content = re.sub(r"pd\.DatetimeIndex\)", r'pd.DatetimeIndex)', content)
 
     # Fix unmatched parentheses
-    content = re.sub(r'handle_specific_errors\')', r'handle_specific_errors', content)
-    content = re.sub(r'handle_file_operations\')', r'handle_file_operations', content)
-    content = re.sub(r'missing\')', r'missing', content)
+    content = re.sub(r"handle_specific_errors\'\)", r'handle_specific_errors', content)
+    content = re.sub(r"handle_file_operations\'\)", r'handle_file_operations', content)
+    content = re.sub(r"missing\'\)", r'missing', content)
 
     # Fix specific patterns
-    content = re.sub(r'(\w+'): (\w+) = (\w+): (\w+),', r'\1: \2, \3: \4,', content)
-    content = re.sub(r'(\w+'): (\w+) \| None, None\)', r'\1: \2 | None=None)', content)
-    content = re.sub(r'(\w+'): (\w+), (\d+)', r'\1: \2=\3', content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\,", r"\\1: \\2, \\3: \\4,", content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*\|\s*None\s*,\s*None\)", r"\\1: \\2 | None=None)", content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*(\d+)", r"\\1: \\2=\\3", content)
 
     # Fix tuple type annotations
-    content=re.sub(r'tuple\[float = float\]', r'tuple[float, float]', content)
-    content = re.sub(r'tuple\[(\w+') = (\w+)\]', r'tuple[\1, \2]', content)
+    content = re.sub(r'tuple\[float\s*=\s*float\]', r'tuple[float, float]', content)
+    content = re.sub(r"tuple\[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\]", r'tuple[\1, \2]', content)
 
     # Fix specific function call patterns
-    content = re.sub(r'(\w+')\((\w+) = (\w+), (\w+)\)', r'\1(\2, \3, \4)', content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\)", r"\\1(\\2, \\3, \\4)", content)
 
     # Fix specific assignment patterns
-    content = re.sub(r'(\w+') = (\w+) = (\w+)', r'\1=\2, \3', content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)", r"\\1=\\2, \\3", content)
 
     # Fix specific return patterns
     content = re.sub(r'return (\w+') = (\w+) = (\w+)', r'return \1, \2, \3', content)

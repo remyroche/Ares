@@ -5,17 +5,64 @@ Call Graph Analyzer - Maps function calls, imports, and dependencies between Pyt
 import os
 import ast
 import json
-import networkx as nx
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Set, Tuple
 from collections import defaultdict, deque
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from minimal_config import CodeQualityConfig, get_default_config
-from minimal_file_utils import find_python_files, get_file_dependencies
+try:
+    import matplotlib.pyplot as plt  # type: ignore
+    import matplotlib.patches as mpatches  # type: ignore
+    HAS_MATPLOTLIB = True
+except Exception:
+    plt = None  # type: ignore
+    mpatches = None  # type: ignore
+    HAS_MATPLOTLIB = False
+
+try:
+    import networkx as nx  # type: ignore
+    HAS_NETWORKX = True
+except Exception:
+    nx = None  # type: ignore
+    HAS_NETWORKX = False
+
+    class MinimalDiGraph:
+        """Minimal directed graph fallback used when networkx is unavailable."""
+        def __init__(self):
+            self._nodes: Dict[str, Dict[str, Any]] = {}
+            self._edges: List[Tuple[str, str, Dict[str, Any]]] = []
+
+        def clear(self) -> None:
+            self._nodes.clear()
+            self._edges.clear()
+
+        def add_node(self, node_id: str, **attrs: Any) -> None:
+            self._nodes[node_id] = {**attrs}
+
+        def add_edge(self, u: str, v: str, **attrs: Any) -> None:
+            self._edges.append((u, v, {**attrs}))
+
+        def number_of_edges(self) -> int:
+            return len(self._edges)
+
+        def nodes(self):
+            # Return an iterable like networkx of node ids
+            return list(self._nodes.keys())
+
+        def edges(self, data: bool = False):
+            if data:
+                return list(self._edges)
+            return [(u, v) for (u, v, _) in self._edges]
+
+        def degree(self):
+            degree_map: Dict[str, int] = defaultdict(int)
+            for u, v, _ in self._edges:
+                degree_map[u] += 1
+                degree_map[v] += 1
+            # Return items() like networkx.degree()
+            return list(degree_map.items())
+
+from ..core.config import CodeQualityConfig, get_default_config
+from ..utils.file_utils import find_python_files, get_file_dependencies
 
 
 class CallNode:
@@ -41,7 +88,7 @@ class CallNode:
             "name": self.name,
             "file_path": self.file_path,
             "node_type": self.node_type,
-            "line": line,
+            "line": self.line,
             "module_path": self.module_path,
             "is_imported": self.is_imported,
             "calls": self.calls,
@@ -57,8 +104,9 @@ class CallGraphAnalyzer:
     def __init__(self, config: Optional[CodeQualityConfig] = None):
         self.config = config or get_default_config()
         self.nodes: Dict[str, CallNode] = {}
-        self.call_graph = nx.DiGraph()
-        self.import_graph = nx.DiGraph()
+        # Use networkx if available, otherwise fallback to minimal graph
+        self.call_graph = nx.DiGraph() if HAS_NETWORKX else MinimalDiGraph()
+        self.import_graph = nx.DiGraph() if HAS_NETWORKX else MinimalDiGraph()
         self.file_dependencies: Dict[str, Dict[str, List[str]]] = {}
         
     def analyze_directory(self, directory: str) -> Dict[str, Any]:
@@ -103,6 +151,7 @@ class CallGraphAnalyzer:
                 content = f.read()
             
             tree = ast.parse(content)
+            self._attach_parents(tree)
             module_name = Path(file_path).stem
             
             # Add module node
@@ -162,6 +211,7 @@ class CallGraphAnalyzer:
                 content = f.read()
             
             tree = ast.parse(content)
+            self._attach_parents(tree)
             module_name = Path(file_path).stem
             
             # Get file dependencies
@@ -230,6 +280,12 @@ class CallGraphAnalyzer:
             if child is target:
                 return True
         return False
+
+    def _attach_parents(self, tree: ast.AST) -> None:
+        """Attach parent references to AST nodes for upward traversal."""
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                setattr(child, 'parent', node)
     
     def _add_call_relationship(self, caller: str, callee: str, file_path: str, module_name: str) -> None:
         """Add a call relationship between two functions."""
@@ -340,20 +396,29 @@ class CallGraphAnalyzer:
                     })
         
         # Find circular dependencies
-        try:
-            cycles = list(nx.simple_cycles(self.call_graph))
-            analysis["circular_dependencies"] = cycles
-        except nx.NetworkXNoCycle:
+        if HAS_NETWORKX:
+            try:
+                cycles = list(nx.simple_cycles(self.call_graph))
+                analysis["circular_dependencies"] = cycles
+            except Exception:
+                analysis["circular_dependencies"] = []
+        else:
             analysis["circular_dependencies"] = []
         
         # Calculate graph metrics
-        if self.call_graph.number_of_nodes() > 0:
-            analysis["graph_metrics"] = {
-                "density": nx.density(self.call_graph),
-                "average_clustering": nx.average_clustering(self.call_graph.to_undirected()),
-                "connected_components": nx.number_strongly_connected_components(self.call_graph),
-                "is_dag": nx.is_directed_acyclic_graph(self.call_graph)
-            }
+        # Compute graph metrics only when networkx is available
+        if HAS_NETWORKX:
+            try:
+                if getattr(self.call_graph, 'number_of_nodes', lambda: 0)() > 0:
+                    undirected = self.call_graph.to_undirected()  # type: ignore[attr-defined]
+                    analysis["graph_metrics"] = {
+                        "density": nx.density(self.call_graph),
+                        "average_clustering": nx.average_clustering(undirected),
+                        "connected_components": nx.number_strongly_connected_components(self.call_graph),
+                        "is_dag": nx.is_directed_acyclic_graph(self.call_graph)
+                    }
+            except Exception:
+                analysis["graph_metrics"] = {}
         
         # Build call relationships list
         for edge in self.call_graph.edges(data=True):
@@ -479,10 +544,15 @@ class CallGraphAnalyzer:
                 json.dump(graph_data, f, indent=2)
                 
         elif format == "dot":
+            if not HAS_NETWORKX:
+                # Fallback to JSON when networkx is unavailable
+                return self.export_graph(output_path if output_path.endswith('.json') else output_path + '.json', "json")
             # Export as DOT format for Graphviz
             nx.drawing.nx_pydot.write_dot(self.call_graph, output_path)
             
         elif format == "gexf":
+            if not HAS_NETWORKX:
+                return self.export_graph(output_path if output_path.endswith('.json') else output_path + '.json', "json")
             # Export as GEXF format for Gephi
             nx.write_gexf(self.call_graph, output_path)
     
@@ -497,6 +567,10 @@ class CallGraphAnalyzer:
         else:
             subgraph = self.call_graph
         
+        if not HAS_MATPLOTLIB or not HAS_NETWORKX:
+            print("Visualization requires matplotlib and networkx; skipping image generation.")
+            return
+
         plt.figure(figsize=(20, 16))
         pos = nx.spring_layout(subgraph, k=1, iterations=50)
         
@@ -525,13 +599,14 @@ class CallGraphAnalyzer:
         nx.draw_networkx_labels(subgraph, pos, labels, font_size=8)
         
         # Add legend
-        legend_elements = [
-            mpatches.Patch(color='lightblue', label='Functions'),
-            mpatches.Patch(color='lightgreen', label='Classes'),
-            mpatches.Patch(color='lightcoral', label='Methods'),
-            mpatches.Patch(color='lightgray', label='Other')
-        ]
-        plt.legend(handles=legend_elements, loc='upper left')
+        if mpatches is not None:
+            legend_elements = [
+                mpatches.Patch(color='lightblue', label='Functions'),
+                mpatches.Patch(color='lightgreen', label='Classes'),
+                mpatches.Patch(color='lightcoral', label='Methods'),
+                mpatches.Patch(color='lightgray', label='Other')
+            ]
+            plt.legend(handles=legend_elements, loc='upper left')
         
         plt.title("Python Call Graph")
         plt.axis('off')

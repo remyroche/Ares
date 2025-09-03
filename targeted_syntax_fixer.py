@@ -133,32 +133,40 @@ class TargetedSyntaxFixer:
         fixes=0
         
         # Fix import statement errors
-        content = re.sub(r'from pathlib import Path')
-import glob', 'from pathlib import Path\nimport glob', content)
-        fixes += len(re.findall(r'from pathlib import Path)
-import glob', content))
+        content = re.sub(
+            r"from pathlib import Path\)\s*\n\s*import glob",
+            'from pathlib import Path\nimport glob',
+            content,
+        )
+        fixes += len(re.findall(r"from pathlib import Path\nimport glob", content))
         
         # Fix function call syntax errors
-        content = re.sub(r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"([^"]*')"\s*\)', 
-                        r'logging.basicConfig(level=logging.INFO, format=r"\1")', content)
-        fixes += len(re.findall(r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"', content))
+        content = re.sub(
+            r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"([^"]*)"\s*\)',
+            r'logging.basicConfig(level=logging.INFO, format=r"\1")',
+            content,
+        )
+        fixes += len(re.findall(r'logging\.basicConfig\(', content))
         
         # Fix max() function calls with syntax errors
-        content = re.sub(r'max\(([^,]+'),\s*key\s*=\s*([^)]+)\)', r'max(\1, key=\2)', content)
-        fixes += len(re.findall(r'max\([^,]+,\s*key\s*=\s*[^)]+\)', content))
+        content = re.sub(r'max\(([^,]+),\s*key\s*=\s*([^\)]+)\)', r'max(\1, key=\2)', content)
+        fixes += len(re.findall(r'max\([^,]+,\s*key\s*=\s*[^\)]+\)', content))
         
         # Fix to_parquet calls with syntax errors
-        content = re.sub(r'\.to_parquet\(([^,]+'),\s*index\s*=\s*False\)', r'.to_parquet(\1, index=False)', content)
+        content = re.sub(r'\.to_parquet\(([^,]+),\s*index\s*=\s*False\)', r'.to_parquet(\1, index=False)', content)
         fixes += len(re.findall(r'\.to_parquet\([^,]+,\s*index\s*=\s*False\)', content))
         
         # Fix re.sub calls with syntax errors
-        content = re.sub(r're\.sub\(pattern\s*=\s*"([^"]*')"\s*,\s*content\s*,\s*flags\s*=\s*re\.IGNORECASE\)', 
-                        r're.sub(r"\1", content, flags=re.IGNORECASE)', content)
+        content = re.sub(
+            r're\.sub\(pattern\s*=\s*"([^"]*)"\s*,\s*content\s*,\s*flags\s*=\s*re\.IGNORECASE\)',
+            r're.sub(r"\1", content, flags=re.IGNORECASE)',
+            content,
+        )
         fixes += len(re.findall(r're\.sub\(pattern\s*=\s*"', content))
         
         # Fix open() calls with syntax errors
-        content=re.sub(r'open\(file_path\s*=\s*"w"', 'open(file_path, "w"', content)
-        fixes += len(re.findall(r'open\(file_path\s*=\s*"w"', content))
+        content = re.sub(r'open\(file_path\s*=\s*"w"', 'open(file_path, "w"', content)
+        fixes += len(re.findall(r'open\(file_path,\s*"w"', content))
         
         return content, fixes
     

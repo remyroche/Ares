@@ -10,28 +10,28 @@ import os
 def fix_type_annotations(content):
     """Fix broken type annotations"""
     # Fix dict type annotations
-    content = re.sub(r'dict\[str = (\w+')\]', r'dict[str, \1]', content)
-    content = re.sub(r'dict\[(\w+') = (\w+)\]', r'dict[\1, \2]', content)
+    content = re.sub(r"dict\[str\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\]", r"dict[str, \\1]", content)
+    content = re.sub(r"dict\[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\]", r"dict[\\1, \\2]", content)
     
     # Fix tuple type annotations
-    content = re.sub(r'tuple\[(\w+') = (\w+)\]', r'tuple[\1, \2]', content)
+    content = re.sub(r"tuple\[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\]", r"tuple[\\1, \\2]", content)
     
     # Fix list type annotations
-    content = re.sub(r'list\[(\w+') = (\w+)\]', r'list[\1, \2]', content)
+    content = re.sub(r"list\[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\]", r"list[\\1, \\2]", content)
     
     return content
 
 def fix_function_signatures(content):
     """Fix broken function signatures"""
     # Fix parameter type annotations
-    content = re.sub(r'(\w+'): (\w+) = (\w+)', r'\1: \2=\3', content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)", r"\\1: \\2=\\3", content)
     
     # Fix function parameter lists
-    content = re.sub(r'def (\w+')\(self=(\w+)\): (\w+)', r'def \1(self, \2: \3)', content)
-    content = re.sub(r'def (\w+')\(self, (\w+)\): (\w+)', r'def \1(self, \2: \3)', content)
+    content = re.sub(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\(self\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)", r"def \\1(self, \\2: \\3)", content)
+    content = re.sub(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\(self\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)", r"def \\1(self, \\2: \\3)", content)
     
     # Fix async function signatures
-    content = re.sub(r'async def (\w+')\(self=(\w+)\): (\w+)', r'async def \1(self, \2: \3)', content)
+    content = re.sub(r"async\s+def\s+([A-Za-z_][A-Za-z0-9_]*)\(self\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)", r"async def \\1(self, \\2: \\3)", content)
     
     return content
 

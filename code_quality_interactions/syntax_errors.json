@@ -1,0 +1,260 @@
+[
+  {
+    "file": "/workspace/GUI/api_server.py",
+    "line": 57,
+    "offset": 4,
+    "msg": "expected an indented block after function definition on line 56"
+  },
+  {
+    "file": "/workspace/auto_syntax_fixer.py",
+    "line": 15,
+    "offset": 46,
+    "msg": "unmatched ')'"
+  },
+  {
+    "file": "/workspace/check_existing_data.py",
+    "line": 38,
+    "offset": 4,
+    "msg": "expected an indented block after 'if' statement on line 37"
+  },
+  {
+    "file": "/workspace/cleanup_script.py",
+    "line": 70,
+    "offset": 61,
+    "msg": "positional argument follows keyword argument"
+  },
+  {
+    "file": "/workspace/comprehensive_fix.py",
+    "line": 13,
+    "offset": 43,
+    "msg": "unexpected character after line continuation character"
+  },
+  {
+    "file": "/workspace/comprehensive_gap_filler.py",
+    "line": 72,
+    "offset": 47,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/comprehensive_gap_filler_v2.py",
+    "line": 329,
+    "offset": 4,
+    "msg": "expected an indented block after 'for' statement on line 328"
+  },
+  {
+    "file": "/workspace/create_30m_hmm_artifacts.py",
+    "line": 7,
+    "offset": 8,
+    "msg": "unexpected indent"
+  },
+  {
+    "file": "/workspace/debug_clustering.py",
+    "line": 79,
+    "offset": 46,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/debug_low_variance_features.py",
+    "line": 22,
+    "offset": 44,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/detect_and_fill_gaps_immediate.py",
+    "line": 9,
+    "offset": 4,
+    "msg": "unexpected indent"
+  },
+  {
+    "file": "/workspace/diagnose_regime_data.py",
+    "line": 7,
+    "offset": 32,
+    "msg": "unexpected indent"
+  },
+  {
+    "file": "/workspace/download_aggtrades_range.py",
+    "line": 8,
+    "offset": 97,
+    "msg": "unmatched ')'"
+  },
+  {
+    "file": "/workspace/download_missing_futures.py",
+    "line": 10,
+    "offset": 97,
+    "msg": "unmatched ')'"
+  },
+  {
+    "file": "/workspace/download_remaining_aggtrades.py",
+    "line": 9,
+    "offset": 97,
+    "msg": "unmatched ')'"
+  },
+  {
+    "file": "/workspace/enhanced_validation_wrapper.py",
+    "line": 5,
+    "offset": 36,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/extract_feature_details.py",
+    "line": 67,
+    "offset": 63,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/feature_specific_validation.py",
+    "line": 2,
+    "offset": 36,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/final_fix.py",
+    "line": 13,
+    "offset": 36,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/final_fix_script.py",
+    "line": 14,
+    "offset": 30,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/final_targeted_fix.py",
+    "line": 26,
+    "offset": 50,
+    "msg": "closing parenthesis ')' does not match opening parenthesis '['"
+  },
+  {
+    "file": "/workspace/final_targeted_fix_v2.py",
+    "line": 14,
+    "offset": 35,
+    "msg": "unexpected character after line continuation character"
+  },
+  {
+    "file": "/workspace/final_utils_fix.py",
+    "line": 54,
+    "offset": 30,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/fix_all_remaining_files.py",
+    "line": 20,
+    "offset": 35,
+    "msg": "unexpected character after line continuation character"
+  },
+  {
+    "file": "/workspace/fix_data_issues.py",
+    "line": 32,
+    "offset": 5,
+    "msg": "expected an indented block after 'if' statement on line 31"
+  },
+  {
+    "file": "/workspace/fix_exception_handling.py",
+    "line": 94,
+    "offset": 26,
+    "msg": "invalid syntax. Maybe you meant '==' or ':=' instead of '='?"
+  },
+  {
+    "file": "/workspace/fix_remaining_25.py",
+    "line": 14,
+    "offset": 35,
+    "msg": "unexpected character after line continuation character"
+  },
+  {
+    "file": "/workspace/fix_remaining_errors.py",
+    "line": 49,
+    "offset": 61,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/fix_remaining_files.py",
+    "line": 19,
+    "offset": 34,
+    "msg": "unexpected character after line continuation character"
+  },
+  {
+    "file": "/workspace/fix_remaining_indentation.py",
+    "line": 77,
+    "offset": 15,
+    "msg": "cannot assign to function call"
+  },
+  {
+    "file": "/workspace/fix_remaining_issues.py",
+    "line": 14,
+    "offset": 30,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/fix_utils_syntax.py",
+    "line": 14,
+    "offset": 61,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/gap_filler_clean.py",
+    "line": 268,
+    "offset": 4,
+    "msg": "expected an indented block after 'for' statement on line 267"
+  },
+  {
+    "file": "/workspace/identify_deleted_aggtrades.py",
+    "line": 96,
+    "offset": 9,
+    "msg": "expected an indented block after 'for' statement on line 95"
+  },
+  {
+    "file": "/workspace/implement_feature_specific_validation.py",
+    "line": 7,
+    "offset": 4,
+    "msg": "unexpected indent"
+  },
+  {
+    "file": "/workspace/run_30m_hmm_step.py",
+    "line": 7,
+    "offset": 12,
+    "msg": "unexpected indent"
+  },
+  {
+    "file": "/workspace/run_fixed_hmm_regime_discovery.py",
+    "line": 42,
+    "offset": 25,
+    "msg": "positional argument follows keyword argument"
+  },
+  {
+    "file": "/workspace/simulate_regime_merging_from_existing_data.py",
+    "line": 46,
+    "offset": 5,
+    "msg": "parameter without a default follows parameter with a default"
+  },
+  {
+    "file": "/workspace/simulate_regime_merging_optimization.py",
+    "line": 20,
+    "offset": 39,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/src/tactician/sr_breakout_predictor.py",
+    "line": 1312,
+    "offset": 17,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/targeted_fix.py",
+    "line": 18,
+    "offset": 40,
+    "msg": "unexpected character after line continuation character"
+  },
+  {
+    "file": "/workspace/targeted_syntax_fixer.py",
+    "line": 137,
+    "offset": 12,
+    "msg": "invalid syntax"
+  },
+  {
+    "file": "/workspace/temp_fixed2.py",
+    "line": 1785,
+    "offset": 20,
+    "msg": "unexpected indent"
+  }
+]

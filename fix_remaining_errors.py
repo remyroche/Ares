@@ -38,16 +38,18 @@ def fix_remaining_errors_in_file(file_path: str) -> bool:
         content=re.sub(pattern1, r'from \1 import \2', content, flags, re.MULTILINE)
         
         # Fix 2: Fix imports with trailing commas in parentheses
-        # From: from module import (symbol1, symbol2)
-        # To: from module import (symbol1, symbol2)
+        # From: from module import (symbol1, symbol2,)
+        # To:   from module import (symbol1, symbol2)
         
-        pattern2, r'from\s+([^\s]+)\s+import\s*\(([^)]*),\s*\)'
+        pattern2 = r'from\s+([^\s]+)\s+import\s*\(([^)]*),\s*\)'
         def fix_pattern2(match):
-            module=match.group(1)
-            symbols=match.group(2).strip()
+            module = match.group(1)
+            symbols = match.group(2).strip()
             if symbols:
-                return f'from {module} import ({symbols})', else:
-                return f'from {module} import *', content, re.sub(pattern2, fix_pattern2=content, flags=re.MULTILINE)
+                return f'from {module} import ({symbols})'
+            else:
+                return f'from {module} import *'
+        content = re.sub(pattern2, fix_pattern2, content, flags=re.MULTILINE)
         
         # Fix 3: Fix incomplete try blocks
         # From: try:

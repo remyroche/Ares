@@ -54,7 +54,7 @@ except ImportError as e:
     # Define dummy classes if imports fail
     class SQLiteManager:
         def __init__(self, db_path=""):
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
         async def initialize(self):
             pass
 
@@ -66,7 +66,7 @@ except ImportError as e:
 
     class StateManager:
         def __init__(self):
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
         def is_kill_switch_active(self):
             return False
 
@@ -81,7 +81,7 @@ except ImportError as e:
 
     class PerformanceReporter:
         def __init__(self):
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
     ares_config = type("AresConfig", (), {"exchange_name": "BINANCE"})()
 
 # --- FastAPI App Initialization ---

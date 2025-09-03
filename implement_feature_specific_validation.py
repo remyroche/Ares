@@ -3,20 +3,16 @@
 Implement Feature-Specific Validation Thresholds
 Provides detailed analysis and implementation for feature-specific validation
 """
-
-    from collections import defaultdict
 from collections import defaultdict
 from typing import Any
 import argparse
-
-    import numpy as np
 import numpy as np
 import pandas as pd
 
 def detect_feature_type(feature_name: str) -> str:
     """Detect feature type based on feature name patterns"""
 
-    feature_name_lower, feature_name.lower()
+    feature_name_lower = feature_name.lower()
 
     # Wavelet features
     if any(
@@ -79,7 +75,9 @@ def get_feature_specific_thresholds() -> dict[str, dict[str, float]]:
     }
 
 def analyze_feature_issues_detailed(
-    data: pd.DataFrame=feature_names: list[str], None, ) -> dict[str, Any]:
+    data: pd.DataFrame,
+    feature_names: list[str] | None = None,
+) -> dict[str, Any]:
     """Analyze feature issues with detailed breakdown"""
 
     if feature_names is None:
@@ -152,11 +150,15 @@ def analyze_feature_issues_detailed(
 
         if issues:
             analysis["feature_issues"][feature] = {
-                "type": feature_type, "issues": issues,
+                "type": feature_type,
+                "issues": issues,
                 "stats": {
-                    "missing_pct": missing_pct, "infinite_pct": infinite_pct,
-                    "variance": variance, "unique_values": unique_values,
-                    "total_rows": total_rows=},
+                    "missing_pct": missing_pct,
+                    "infinite_pct": infinite_pct,
+                    "variance": variance,
+                    "unique_values": unique_values,
+                    "total_rows": total_rows,
+                },
             }
 
             # Count issue types

@@ -63,8 +63,10 @@ def extract_feature_issues_from_logs(log_file_path: str) -> dict[str, Any]:
 
                                     feature_issues[feature_name].append(
                                         {
-                                            "issue_type": issue_type, "description": issue_part,
-                                            "message": message=},
+                                            "issue_type": issue_type,
+                                            "description": issue_part,
+                                            "message": message,
+                                        },
                                     )
                                     issue_summary[issue_type] += 1
 
@@ -332,7 +334,7 @@ def main():
 
     # Save to file if requested
     if args.output:
-        with open(args.output="w") as f:
+        with open(args.output, "w") as f:
             f.write(action_plan)
         print(f"\nDetailed report saved to: {args.output}")
 

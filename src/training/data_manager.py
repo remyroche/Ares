@@ -5,10 +5,11 @@ import pickle
 from datetime import datetime, timedelta
 from typing import Any
 
-import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import pandas as pd
+import json
     error,
 )
 
@@ -616,7 +617,6 @@ class UnifiedDataManager:
             msg = f"Metadata file not found: {self.metadata_file}"
             raise FileNotFoundError(msg)
 
-        import json
 import copy
 import os.path
 

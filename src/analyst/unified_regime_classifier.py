@@ -17,6 +17,11 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 import logging
 from src.utils.warning_symbols import (
+import os
+import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
+import numpy as _np
+import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
+import asyncio
     warning,
 )
 from src.core.decorators import (
@@ -100,7 +105,6 @@ class UnifiedRegimeClassifier:
         )
 
         # Detect BLANK mode and adjust minimum data points accordingly
-        import os
 
         blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         if blank_mode:
@@ -263,7 +267,6 @@ class UnifiedRegimeClassifier:
         ):
             return
         try:
-            import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
             original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
             if original_ctor is None:
@@ -299,12 +302,10 @@ class UnifiedRegimeClassifier:
                         return original_ctor(name_candidate)
                     except Exception as ctor_exc:  # noqa: BLE001
                         try:
-                            import numpy as _np
 
                             bitgen_cls = getattr(_np.random, name_candidate, None)
                             if bitgen_cls is None and name_candidate == "MT19937":
                                 try:
-                                    import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 
                                     bitgen_cls = getattr(_mt, "MT19937", None)
                                 except Exception:
@@ -1500,7 +1501,6 @@ class UnifiedRegimeClassifier:
         """
         if self.sr_predictor and self.enable_sr_integration:
             # Use enhanced classification if SRBreakoutPredictor is available
-            import asyncio
 import copy
 import os.path
 

@@ -2,6 +2,7 @@
 
 
 from src.core.decorators import (, traced
+from src.utils.logger import system_logger
     traced,
     validates
 )
@@ -9,7 +10,6 @@ from src.core.decorators import (, traced
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import system_logger
 
 
 class HMMFeatureEnhancer:

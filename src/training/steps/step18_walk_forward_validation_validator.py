@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 from typing import Any, Tuple
 
-import numpy as np
 
 from src.utils.warning_symbols import (
+import numpy as np
     error,
     failed,
     validation_error,

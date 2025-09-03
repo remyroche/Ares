@@ -1,13 +1,13 @@
 from src.core.decorators import (
+from collections.abc import Callable
+import pandas as pd
     cached,
     compose,
     handles_errors,
     traced,
     validates
 
-from collections.abc import Callable
 
-import pandas as pd
 
     guard_dataframe_nulls,
     validate_call_or_runtime_types,

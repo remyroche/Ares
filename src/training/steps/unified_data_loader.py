@@ -26,6 +26,8 @@ from src.utils.common_operations import (
 try:
     
     from src.utils.logger import system_logger
+except Exception as e:
+    pass  # TODO: Handle exception
 import logging
 from src.training.steps.step01_5_data_converter import ParquetDatasetManager
 import os.path

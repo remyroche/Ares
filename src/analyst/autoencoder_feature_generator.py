@@ -7,9 +7,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yaml
 
 # Check for required dependencies
+import yaml
+from src.utils.logger import system_logger
+import time
+import os.path
 try:
     import numpy as np
     import optuna
@@ -41,7 +44,6 @@ import sys
 
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
 
 from src.config import CONFIG
 from src.core.decorators import handles_errors
@@ -653,7 +655,6 @@ class FeatureFilter:
                 n_jobs=-1,
             )
 
-            import time
 
             start_time = time.time()
             rf_model.fit(X, y)
@@ -1897,6 +1898,8 @@ class AutoencoderFeatureAnalyzer:
 
                 self.logger.info("🌳 Gradient Boosting importance computed")
 
+            except Exception as e:
+                pass  # TODO: Handle exception
             except ImportError:
                 self.logger.warning("⚠️ Gradient Boosting not available")
                 gb_importance = None
@@ -1918,7 +1921,6 @@ class AutoencoderFeatureAnalyzer:
                 # Use a simple model for permutation importance
                 from sklearn.linear_model import LogisticRegression
 
-import os.path
 
 perm_model = LogisticRegression(random_state=42, max_iter=1000)
 perm_model.fit(X_train, y_train)

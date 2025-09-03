@@ -1,6 +1,7 @@
 # src/training/steps/step15_tactician_specialist_training.py
 
 from src.core.decorators import (
+import logging
     cached,
     circuit_breaker,
     log_call,
@@ -73,7 +74,6 @@ pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
-    import logging
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 

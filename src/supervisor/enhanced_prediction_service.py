@@ -5,6 +5,7 @@ This service provides calibrated confidence scores from ML models for both Analy
 It ONLY provides calibrated confidence scores and fails if calibrated confidence doesn't exist.
 """
 
+import json
 import pickle  # TODO: Replace with joblib for security
 
 from pathlib import Path
@@ -253,9 +254,6 @@ class EnhancedPredictionService:
             if optimization_path.exists():
                 for optimization_file in optimization_path.glob("*.json"):
                     try:
-                        import json
-from src.core.decorators import handles_errors
-
                         with open(optimization_file, "r") as f:
                             optimization_data = json.load(f)
 

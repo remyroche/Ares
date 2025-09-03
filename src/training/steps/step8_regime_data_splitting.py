@@ -154,7 +154,7 @@ class RegimeDataSplittingStep:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import numpy as np
-import os.path
+import os
 
 BLANK_TRAINING_LOOKBACK_DAYS,
             )

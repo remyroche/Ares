@@ -1,9 +1,9 @@
-""""
+"""
 Examples of using the core decorator system.
 
 This file demonstrates various decorator usage patterns and
 best practices for the centralized decorator system.
-""""
+"""
 
 import asyncio
 import time
@@ -214,7 +214,7 @@ class UserService:
 @traced()         # Fourth: Create trace span
 @handles_errors(fallback=None)  # Fifth: Handle errors
 def complex_operation(user_id: str, action: str) -> dict:
-    """"
+    """
     Demonstrate decorator stacking order.
     
     Execution order (top to bottom):
@@ -225,7 +225,7 @@ def complex_operation(user_id: str, action: str) -> dict:
     5. Execute function (with error handling)
     6. Cache result
     7. End trace span
-    """"
+    """
     return {
         "user_id": user_id,
         "action": action,

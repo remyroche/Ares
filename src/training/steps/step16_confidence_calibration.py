@@ -86,7 +86,7 @@ class RegimeAwareConfidenceCalibrationStep:
 
         Returns:
             Dict containing regime-specific calibration results
-        """"
+        """
         try:
             self.logger.info("🔄 Executing Regime-Aware Confidence Calibration...")
             self.logger.info(f"📊 Regime configuration: {self.regime_config}")
@@ -746,7 +746,7 @@ class RegimeAwareConfidenceCalibrationStep:
     ) -> dict[str, float]:
         """Helper to calculate baseline accuracy and F1 score for a model/ensemble."
         Returns {} if metrics cannot be computed.
-        """"
+        """
         try:
             if not hasattr(model, "predict"):
                 return {}
@@ -821,7 +821,7 @@ from src.utils.training_pipeline_decorators import (
 )
 from src.utils.enhanced_mlflow_integration import (
 import copy
-import os.path
+import os
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -1119,7 +1119,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

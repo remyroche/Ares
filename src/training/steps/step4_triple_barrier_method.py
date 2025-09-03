@@ -3,7 +3,7 @@
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
-""""
+"""
 
 import asyncio
 import sys
@@ -137,7 +137,7 @@ class TripleBarrierMethodStep:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         step_start = time.time()
         self.logger.info(f"🚀 Executing Triple Barrier Method for {symbol} on {exchange}")
 
@@ -454,7 +454,7 @@ OptimizedTripleBarrierLabeling
             
         Returns:
             DataFrame with enhanced label columns
-        """"
+        """
         try:
             enhanced_data = data.copy()
             
@@ -522,7 +522,7 @@ async def run_step(
 
     Returns:
         True if successful, False otherwise
-    """"
+    """
     if config is None:
         config = {}
 

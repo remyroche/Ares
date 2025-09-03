@@ -39,7 +39,7 @@ class MultiTimeframeTrainingManager:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("MultiTimeframeTrainingManager")
 
@@ -99,7 +99,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if initialization successful = False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Multi-Timeframe Training Manager...")
 
@@ -186,7 +186,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if configuration is valid = False otherwise
 
-        """"
+        """
         try:
             # Validate multi-timeframe interval
             if self.multi_timeframe_interval <= 0:
@@ -407,7 +407,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             Dictionary with timeframe -> features DataFrame mapping
 
-        """"
+        """
         try:
             self.logger.info(f"🎯 Generating multi-timeframe features for {symbol}")
 
@@ -473,7 +473,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if successful = False otherwise
 
-        """"
+        """
         try:
             if not self._validate_multi_timeframe_training_inputs(
                 multi_timeframe_training_input,
@@ -549,7 +549,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if valid = False otherwise
 
-        """"
+        """
         try:
             # Check required multi-timeframe training input fields
             required_fields = [
@@ -598,7 +598,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: Dict[str, Any]: Timeframe analysis results
 
-        """"
+        """
         try:
             results = {}
 
@@ -647,7 +647,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: Dict[str, Any]: Cross timeframe features results
 
-        """"
+        """
         try:
             results = {}
 
@@ -705,7 +705,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: Dict[str, Any]: Timeframe ensemble results
 
-        """"
+        """
         try:
             results = {}
 
@@ -754,7 +754,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: Dict[str, Any]: Timeframe optimization results
 
-        """"
+        """
         try:
             results = {}
 
@@ -1095,7 +1095,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: Dict[str, Any]: Multi-timeframe training results
 
-        """"
+        """
         try:
             if multi_timeframe_training_type:
                 return self.multi_timeframe_training_results.get(
@@ -1125,7 +1125,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: List[Dict[str, Any]]: Multi-timeframe training history
 
-        """"
+        """
         try:
             history = self.multi_timeframe_training_history.copy()
 
@@ -1145,7 +1145,7 @@ class MultiTimeframeTrainingManager:
 
         Returns: Dict[str, Any]: Multi-timeframe training status
 
-        """"
+        """
         return {
             "is_training": self.is_training,
             "multi_timeframe_interval": self.multi_timeframe_interval,
@@ -1202,7 +1202,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if all dependencies are met = False otherwise
 
-        """"
+        """
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
@@ -1247,7 +1247,7 @@ async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None =
     Returns:
         Optional[MultiTimeframeTrainingManager]: Global multi-timeframe training manager instance
 
-    """"
+    """
     try:
         global multi_timeframe_training_manager
 

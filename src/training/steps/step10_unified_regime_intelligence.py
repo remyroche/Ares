@@ -17,7 +17,7 @@ Key Features:
 - Dynamic regime count based on step1_7 data (not hard-coded)
 - Long/short only trading signals (no "hold" as separate class)
 - Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
-""""
+"""
 
 import json
 import os
@@ -176,7 +176,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
 
         Returns: Dict containing regime classification, transition predictions, and S/R detection
 
-        """"
+        """
         batch_size = features.size(0)
         seq_len = features.size(1)
 
@@ -1500,7 +1500,7 @@ class UnifiedRegimeIntelligenceStep:
 
         Returns: Dict containing regime prediction, transition probability, and S/R detection
 
-        """"
+        """
         try:
             if self.model is None:
                 raise ValueError("Model not trained or loaded")
@@ -1574,7 +1574,7 @@ class UnifiedRegimeIntelligenceStep:
         Returns:
             Dict containing predictions with position action logic
 
-        """"
+        """
         try:
             # Get base predictions
             base_prediction = self.predict(hmm_states, features)
@@ -1624,7 +1624,7 @@ class UnifiedRegimeIntelligenceStep:
         Returns:
             Dict with position action and reasoning
 
-        """"
+        """
         try:
             # Determine intended direction from TPSL prediction
             intended_direction = "long" if tpsl_prediction == 1 else "short"
@@ -1740,7 +1740,7 @@ class UnifiedRegimeIntelligenceStep:
         Returns:
             dict: Unified predictions with S/R integration
 
-        """"
+        """
         try:
             # Get base unified predictions
             unified_prediction = self.predict(hmm_states, market_features)
@@ -1798,7 +1798,7 @@ class UnifiedRegimeIntelligenceStep:
         """Optional short hyperparameter optimization using Optuna."
 
         Returns a dict with best_params/best_value or None if Optuna unavailable.
-        """"
+        """
         try:
             import optuna  # type: ignore
         except Exception as ex:
@@ -1972,7 +1972,7 @@ from src.utils.training_pipeline_decorators import (
 from src.utils.enhanced_mlflow_integration import (
 import copy
 import numpy as np
-import os.path
+import os
 import pandas as pd
 
     with_enhanced_mlflow_logging,
@@ -2056,7 +2056,7 @@ async def run_step(
     - Expert activation logic
 
     Replaces step9_5 and step10 with a single, efficient model.
-    """"
+    """
     # Log step parameters for debugging
     logger.info("=" * 80)
     logger.info("🚀 STEP 5_5: Unified Regime Intelligence")

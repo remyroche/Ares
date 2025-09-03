@@ -1,4 +1,4 @@
-""""
+"""
 Data Formatting and Standardization Framework
 
 This module provides standardized data formatting including:
@@ -8,7 +8,7 @@ This module provides standardized data formatting including:
 - Format validation and enforcement
 - Cross-step format consistency
 - Format transformation utilities
-""""
+"""
 
 import json
 import logging
@@ -127,7 +127,7 @@ class DataFormattingFramework:
 
         Returns:
             Standardized data
-        """"
+        """
         if preserve_original is None:
             preserve_original = self.formatting_policies["preserve_original"]
 
@@ -312,7 +312,7 @@ class DataFormattingFramework:
 
         Returns:
             Data with normalized timestamps
-        """"
+        """
         if timestamp_column not in data.columns:
             self.logger.warning(f"Timestamp column '{timestamp_column}' not found")
             return data
@@ -351,7 +351,7 @@ class DataFormattingFramework:
 
         Returns:
             Data with rounded numeric columns
-        """"
+        """
         if precision is None:
             precision = self.formatting_policies["numeric_precision"]
 
@@ -387,7 +387,7 @@ class DataFormattingFramework:
 
         Returns:
             Data with handled missing values
-        """"
+        """
         if strategy == "intelligent":
             # Use enhanced missing value handler for intelligent gap filling
             from .enhanced_missing_value_handler import enhanced_missing_value_handler
@@ -399,7 +399,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
             )
 
         # Fallback to traditional strategies
-        handled_data = data.copy()
+            handled_data = data.copy()
 
         if strategy == "forward_fill":
             handled_data = handled_data.fillna(method="ffill", limit=limit)
@@ -436,7 +436,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
 
         Returns:
             Validation results
-        """"
+        """
         if expected_format not in self.standard_formats:
             return {"valid": False, "error": f"Unknown format: {expected_format}"}
 
@@ -474,7 +474,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
 
         Returns:
             Format specification
-        """"
+        """
         if data_format not in self.standard_formats:
             raise ValueError(f"Unknown data format: {data_format}")
 
@@ -485,7 +485,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
 
         Returns:
             List of available formats
-        """"
+        """
         return [format.value for format in self.standard_formats.keys()]
 
     def add_custom_format(self, format_name: str, format_spec: Dict[str, Any]) -> None:
@@ -494,7 +494,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
         Args:
             format_name: Name of the custom format
             format_spec: Format specification
-        """"
+        """
         # Validate format specification
         required_keys = ["required_columns", "data_types", "column_order"]
         missing_keys = set(required_keys) - set(format_spec.keys())
@@ -515,7 +515,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
 
         Returns:
             Formatting report
-        """"
+        """
         report = {
             "timestamp": datetime.now().isoformat(),
             "data_shape": data.shape,

@@ -9,7 +9,7 @@ Key Enhancements:
 - Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
 - Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available'
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
-""""
+"""
 
 import asyncio
 import sys
@@ -222,7 +222,7 @@ class LabelingStep:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         step_start = time.time()
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
@@ -427,7 +427,7 @@ class LabelingStep:
         Primary Path: Attempts regime-aware labeling using RegimeSpecificTripleBarrierOptimizer
         Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
         Data Source Flexibility: Can work with unified data or step04 output depending on configuration
-        """"
+        """
         try:
             result_data = data.copy()
             
@@ -661,7 +661,7 @@ async def run_step(
 
     Returns:
         True if successful, False otherwise
-    """"
+    """
     if config is None:
         config = {}
 

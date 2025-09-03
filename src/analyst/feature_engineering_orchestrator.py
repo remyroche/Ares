@@ -26,18 +26,18 @@ from src.utils.warning_symbols import (
 
 
 class FeatureEngineeringOrchestrator:
-    """"
+    """
     Comprehensive feature engineering orchestrator that coordinates all feature generation components.
     Integrates advanced feature engineering and autoencoder feature generation.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]):
-        """"
+        """
         Initialize the feature engineering orchestrator.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("FeatureEngineeringOrchestrator")
@@ -94,7 +94,7 @@ class FeatureEngineeringOrchestrator:
         futures_df: pd.DataFrame = None,
         sr_levels: list = None,
     ) -> pd.DataFrame:
-        """"
+        """
         Orchestrate the generation of all features using multiple components.
 
         Args:
@@ -105,7 +105,7 @@ class FeatureEngineeringOrchestrator:
 
         Returns:
             DataFrame with all generated features
-        """"
+        """
         self.logger.info(
             "🎯 Starting comprehensive feature generation orchestration...",
         )
@@ -341,7 +341,7 @@ class FeatureEngineeringOrchestrator:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
-import os.path
+import os
 
 # Convert price data to differences for technical indicators
             close_diff = df["close"].diff().fillna(0)
@@ -631,10 +631,10 @@ import os.path
 
 # Legacy FeatureEngineeringEngine class for backward compatibility
 class FeatureEngineeringEngine:
-    """"
+    """
     Legacy feature engineering engine for backward compatibility.
     Now delegates to the orchestrator.
-    """"
+    """
 
     def __init__(self, config):
         self.config = config.get("analyst", {}).get("feature_engineering", {})
@@ -672,9 +672,9 @@ class FeatureEngineeringEngine:
         futures_df: pd.DataFrame,
         sr_levels: list,
     ):
-        """"
+        """
         Generate all features using the orchestrator.
-        """"
+        """
         return await self.orchestrator.generate_all_features(
             klines_df,
             agg_trades_df,

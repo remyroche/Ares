@@ -4,7 +4,7 @@
 This module performs comprehensive S/R detection optimization before HMM clustering
 to ensure that all subsequent steps use optimized parameters for S/R features.
 Includes detailed reporting and integration with all relevant SR files.
-""""
+"""
 
 import asyncio
 import sys
@@ -1512,7 +1512,7 @@ if __name__ == "__main__":
 import copy
     
     # Load test configuration
-    test_config = {
+test_config = {
         "SYMBOL": "ETHUSDT",
         "EXCHANGE": "BINANCE",
         "TIMEFRAME": "1m",

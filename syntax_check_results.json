@@ -1,0 +1,5700 @@
+{
+  "summary": {
+    "total_files": 807,
+    "valid_files": 600,
+    "invalid_files": 207
+  },
+  "results": [
+    {
+      "file": "./step_formatter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./kelly_criterion_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./check_trade_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./create_regime_splits.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./demo_step_formatting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./create_30m_hmm_artifacts.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_analysis_core.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_metadata_and_naming.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_remaining_steps_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_analysis_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./final_targeted_fix_v3.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_step_formatter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./targeted_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./enhanced_validation_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./example_enhanced_multi_timeframe_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./quick_error_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simulate_regime_merging_from_existing_data.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 134,
+          "offset": 39,
+          "message": "invalid syntax",
+          "text": "\"total_samples\": total_samples=}"
+        }
+      ]
+    },
+    {
+      "file": "./standardize_utility_modules.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_data_quality_and_formatting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./optimize_hmm_regime_parameters.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./final_utils_fix.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 54,
+          "offset": 30,
+          "message": "invalid syntax",
+          "text": "content = re.sub(r'(\\w+'): dict\\[str=Any\\]', r'\\1: dict[str, Any]', content)"
+        }
+      ]
+    },
+    {
+      "file": "./fix_critical_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./download_futures_only.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./update_all_steps_mlflow_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./detect_and_fill_gaps_immediate.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_remaining_25.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 14,
+          "offset": 35,
+          "message": "unexpected character after line continuation character",
+          "text": "content = re.sub(r'def (\\w+')\\(self, (\\w+)\\): (\\w+)\\) -> (\\w+):',"
+        }
+      ]
+    },
+    {
+      "file": "./validate_advanced_sr_methods.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_syntax_errors_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_gap_filler.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 72,
+          "offset": 47,
+          "message": "invalid syntax",
+          "text": "'file': file_path.name='gap_start': gap_start,"
+        }
+      ]
+    },
+    {
+      "file": "./test_tactician_multi_output_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./demo_step_formatter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_plugins.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./download_missing_aggtrades_days.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./download_missing_aggtrades_2023_2024.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./format_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./check_syntax.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./debug_metadata_detection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_30m_hmm_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_quality_auditor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./ares_launcher.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./extract_feature_details.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./debug_low_variance_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./implement_feature_specific_validation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 280,
+          "offset": 19,
+          "message": "expression cannot contain assignment, perhaps you meant \"==\"?",
+          "text": "with open(args.output=\"w\") as f:"
+        }
+      ]
+    },
+    {
+      "file": "./analyze_strict_thresholds.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./consolidate_aggtrades.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_analysis_simplified.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./check_existing_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./automated_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_syntax_check.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./standalone_analyzers.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_comprehensive_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_fix.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 41,
+          "offset": 36,
+          "message": "invalid syntax",
+          "text": "content = re.sub(r'from (\\w+') import (\\w+) = (\\w+)', r'from \\1 import \\2, \\3', content)"
+        }
+      ]
+    },
+    {
+      "file": "./feature_analysis_script.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_enhanced_outlier_handler_and_schema.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./gap_filler_clean.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_professional_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./systematic_code_improver.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./download_missing_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_syntax_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_remaining_16_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_step2_direct.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./core_syntax_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./minimal_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./optimize_hmm_regime_parameters_advanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_simple.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_partially_integrated_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./create_correct_mock_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_syntax_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_import_errors.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./debug_hmm_combinations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./update_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./auto_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./consolidate_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analyst_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analyze_validation_issues.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_comprehensive_security.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./final_fix.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 44,
+          "offset": 15,
+          "message": "cannot assign to function call",
+          "text": "content = re.sub(r'except \\((\\w+') = (\\w+)\\):', r'except (\\1, \\2):', content)"
+        }
+      ]
+    },
+    {
+      "file": "./cleanup_script.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 83,
+          "offset": 60,
+          "message": "invalid syntax. Maybe you meant '==' or ':=' instead of '='?",
+          "text": "issues[\"broad_exceptions\"].append((i=line.strip()))"
+        }
+      ]
+    },
+    {
+      "file": "./download_aggtrades_range.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_remaining_issues.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_syntax_errors.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_data_issues.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./targeted_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./debug_clustering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_fixed_hmm_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./identify_deleted_aggtrades.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./debug_interaction_flow.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./example_matrix_diverse_lookback_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./final_targeted_fix_v2.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 42,
+          "offset": 15,
+          "message": "cannot assign to function call",
+          "text": "content = re.sub(r'return (\\w+') = (\\w+) = (\\w+)', r'return \\1, \\2, \\3', content)"
+        }
+      ]
+    },
+    {
+      "file": "./convert_csv_to_parquet.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_remaining_files.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 64,
+          "offset": 34,
+          "message": "unexpected character after line continuation character",
+          "text": "content = re.sub(r'(\\w+'), (\\w+)', r'\\1=\\2', content)"
+        }
+      ]
+    },
+    {
+      "file": "./diagnose_regime_data.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 21,
+          "offset": 30,
+          "message": "invalid syntax",
+          "text": "def load_test_data(exchange, \"BINANCE\", symbol=\"ETHUSDT\", days=180):"
+        }
+      ]
+    },
+    {
+      "file": "./fix_remaining_errors.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 73,
+          "offset": 61,
+          "message": "invalid syntax",
+          "text": "return f'from {module} import ({symbols})', else:"
+        }
+      ]
+    },
+    {
+      "file": "./fix_aggtrades_gaps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_code_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./enhanced_validation_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./standardize_remaining_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./syntax_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./final_comprehensive_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./style_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_decorator_application.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./syntax_error_count_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_exception_handling.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 94,
+          "offset": 26,
+          "message": "invalid syntax. Maybe you meant '==' or ':=' instead of '='?",
+          "text": "(i=line_stripped, \"handle_errors decorator\"),"
+        }
+      ]
+    },
+    {
+      "file": "./simulate_regime_merging_optimization.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 20,
+          "offset": 39,
+          "message": "invalid syntax",
+          "text": "similarity_threshold=max_regimes, None=None):"
+        }
+      ]
+    },
+    {
+      "file": "./conservative_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./optimize_hmm_regime_parameters_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./final_targeted_fix.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 26,
+          "offset": 50,
+          "message": "closing parenthesis ')' does not match opening parenthesis '['",
+          "text": "content = re.sub(r'isinstance\\(([^,]+') = ([^)]+)\\)', r'isinstance(\\1, \\2)', content)"
+        }
+      ]
+    },
+    {
+      "file": "./multi_objective_hmm_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_remaining_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./temp_fixed2.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 1785,
+          "offset": 20,
+          "message": "unexpected indent",
+          "text": "step3_success = await self._execute_pipeline_step("
+        }
+      ]
+    },
+    {
+      "file": "./syntax_error_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./feature_specific_validation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 2,
+          "offset": 36,
+          "message": "invalid syntax",
+          "text": "data: pd.DataFrame=dataset_name: str = \"features\","
+        }
+      ]
+    },
+    {
+      "file": "./fix_utils_syntax.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 14,
+          "offset": 61,
+          "message": "invalid syntax",
+          "text": "content = re.sub(r'from typing import Any, import (\\w+')', r'from typing import Any\\nimport \\1', content)"
+        }
+      ]
+    },
+    {
+      "file": "./download_missing_futures.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 10,
+          "offset": 97,
+          "message": "unmatched ')'",
+          "text": "from backtesting.ares_data_downloader_optimized import (DownloadConfig), OptimizedDataDownloader)"
+        }
+      ]
+    },
+    {
+      "file": "./test_file.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_multi_timeframe_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_comprehensive_sr_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./download_specific_missing_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./cleanup_actions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./fix_remaining_indentation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 77,
+          "offset": 15,
+          "message": "cannot assign to function call",
+          "text": "content = re.sub(r'return (\\w+') = (\\w+)', r'return \\1, \\2', content)"
+        }
+      ]
+    },
+    {
+      "file": "./fix_all_remaining_files.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 20,
+          "offset": 35,
+          "message": "unexpected character after line continuation character",
+          "text": "content = re.sub(r'def (\\w+')\\((\\w+)\\): (\\w+)\\)', r'def \\1(\\2: \\3)', content)"
+        }
+      ]
+    },
+    {
+      "file": "./minimal_file_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./diagnose_interaction_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_gap_filler_v2.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 329,
+          "offset": 4,
+          "message": "expected an indented block after 'for' statement on line 328",
+          "text": "pass  # TODO: Add proper implementation"
+        }
+      ]
+    },
+    {
+      "file": "./final_fix_script.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 14,
+          "offset": 30,
+          "message": "invalid syntax",
+          "text": "content = re.sub(r'(\\w+'): (\\w+) \\| None, None\\)', r'\\1: \\2 | None=None)', content)"
+        }
+      ]
+    },
+    {
+      "file": "./download_remaining_aggtrades.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 9,
+          "offset": 97,
+          "message": "unmatched ')'",
+          "text": "from backtesting.ares_data_downloader_optimized import (DownloadConfig), OptimizedDataDownloader)"
+        }
+      ]
+    },
+    {
+      "file": "./diagnose_feature_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_code_quality_assessment.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_fractional_differentiation_params.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/verify_timeframe_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/update_entire_repository_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_sr_position.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/diagnose_feature_quality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/verify_feature_calculations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/launch_advanced_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/unified_optuna_optimization_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_enhanced_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/setup_challenger_model.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/post_steps_cleaner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/training_cli.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/train_multi_timeframe_hmm_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/assess_data_quality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/validate_multicollinearity_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/compare_agg_trades_formats.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/demo_enhanced_training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_multicollinearity_issue.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/regenerate_timeframes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/universal_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/download_missing_timeframes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/update_logging_warnings.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/debug_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/launch_with_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/blank_training_run.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/show_timeframe_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_timeframe_incremental.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_consolidated_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_sr_position_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/launch_portfolio_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_scans.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/investigate_high_vif_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_fractional_labeling_params.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_corrupted_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/database_migration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/consolidate_binance_15m.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/configure_optimization_settings.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/advanced_syntax_repair.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_timeframe.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/validate_fractional_differentiation_performance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_hmm_regimes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/regenerate_pickle_files.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_multi_timeframe_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_multicollinearity.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_partitions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_small_files.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/download_mexc_agg_trades.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/migrate_parquet_datasets.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/demo_enhanced_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/surgical_pass2.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/resume_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_feature_diagnostic.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_sr_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_combined_parameters.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/bot_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/mock_baseline_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/syntax_error_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/check_notifications.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/bulk_steps_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/rename_data_files.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/investigate_regime_calculations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/establish_baseline_performance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualize_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/example_usage_extended.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/function_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/verify_test_setup.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/run_common_operations_tests.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/cli.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/merge_conflict_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/comprehensive_code_review.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/quick_start.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/run_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/map_code_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/function_validator_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/example_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/test_tools.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/fix_async_await.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/apply_all_fixes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/extract_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/master_code_quality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/final_code_fixes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/resolve_merge_conflicts.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/add_type_hints.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/robust_async_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/detect_circular_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/advanced_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/enhanced_type_hints.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/fix_common_syntax_patterns.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/safe_import_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/fix_missing_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/simple_interaction_mapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/interaction_summary.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/trend_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/error_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/quality_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/html_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_unified_standalone.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_syntax_imports_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_async_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_unified_integrated.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_unified_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_syntax_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/docformatter_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/isort_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/unify_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/ruff_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/pyre_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/black_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/flake8_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/yapf_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/autopep8_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/sequential_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/auto_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/test_common_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/documentation_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/type_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/syntax_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/error_handling_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/data_flow_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/code_smell_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/call_graph_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/dead_code_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/code_duplication_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/architecture_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/complexity_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/advanced_ast_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/import_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/performance_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/signature_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/test_coverage_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/configuration_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/concurrency_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/metrics_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/linter_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/dependency_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/core/plugins.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/core/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/core/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/progress.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/file_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/report_aggregator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tasks.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/ares_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config_optuna.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/paper_trader.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/error_detection_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/tracking_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/correlation_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/report_scheduler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/fractional_system_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/enhanced_ml_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/performance_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/integration_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/performance_monitor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/monitoring/surrogate_optimization_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/metrics_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/fractional_performance_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/csv_exporter.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/monitoring/regime_sr_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/advanced_tracer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/trade_conditions_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/ml_monitor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/launcher/enhanced_trading_launcher.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/components/modular_analyst.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_supervisor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_strategist.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/event_bus.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/base_interfaces.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/enhanced_event_bus.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 420,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 420)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/trading/live_wavelet_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/live_wavelet_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/live_wavelet_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/sr_trading_intelligence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/enhanced_prediction_service.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/performance_monitor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/supervisor/global_portfolio_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/supervisor/performance_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/dynamic_weighter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/enhanced_model_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/exchange_volume_adapter.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/supervisor/monitoring.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/supervisor/main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/risk_allocator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/pnl_loss_functions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/supervisor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 154,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 154)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/supervisor/model_behavior_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/live_trading_pipeline.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/pipelines/improved_pipeline_executor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 26,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 26)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/pipelines/base_pipeline.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/pipelines/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/components/monitoring_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/pipelines/components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/components/lifecycle_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/pipelines/components/data_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/sentinel/sentinel.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 298,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 298)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/sentinel/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/seq2seq_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/combined_features_builder.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/baseline_rf.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/inference_combiner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/rolling_inference.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/event_trigger_indexer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/multitask_rf.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/rolling_window_dataset.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/path_targets.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/state_sequence_builder.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/event_window_dataset.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/base_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/config_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/trading_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/ml_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/protocol_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/data_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/reports/paper_trading_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/protocols/trading_protocols.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/integration/paper_trading_integration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/position_sizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_weight_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/position_closing.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/ml_target_updater.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/position_division_strategy.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/enhanced_prediction_integrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/tactician.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 19,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 19)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/comprehensive_enhanced_scenario_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/enhanced_execution_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/tactics_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/position_monitor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/enhanced_order_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/sr_data_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/dynamic_barrier_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/scenario_based_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/leverage_sizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/step17_optimized_tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_breakout_predictor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 33,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 33)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/enhanced_scenario_based_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_detection_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/ml_target_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/async_order_executor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/tactician/ml_tactics_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/fully_migrated_tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tracking/trade_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_trainer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 96,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 96)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_lm_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_training_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 112,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 112)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/data_cleaning.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_training_manager_enhanced.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 4,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 4)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_dynamic_feature_selection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/multi_output_probability_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_access_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/gpu_acceleration_m1.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/regularization.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 29,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 29)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/feature_engineering_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/feature_integration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/feature_engineering.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 1,
+          "message": "invalid syntax",
+          "text": "import numpy as np"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/wavelet_integration_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_feature_engineering_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_matrix_operations.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/model_saving_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/probabilistic_model_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_lm_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 11,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 11)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/step_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_training_manager_optimized.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 38,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 38)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/early_stage_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/multi_objective_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 37,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 37)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/data_sharing_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 35,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 35)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/bayesian_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/memory_profiler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/integration_guide.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/matrix_diverse_lookback_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/unified_data_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 15,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 15)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/timeframe_relevance_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/comprehensive_sr_training_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/dual_model_system.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 47,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 47)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/performance_comparison.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 11,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 11)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps_1_7_comprehensive_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_training_manager_backup.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 101,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 101)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/adaptive_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/demo_pipeline_execution.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/launcher_integration_patch.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimized_feature_selection_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 35,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 35)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/feature_selection_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/progress_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/comprehensive_pipeline_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/wavelet_feature_selection_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/multi_output_model_trainer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/calibration_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 23,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 23)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/model_probability_generator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/training_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 23,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 23)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/advanced_neural_models.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/comprehensive_feature_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_specific_pruning.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/matrix_enhancement_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/factory.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 159,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 159)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/training_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 36,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 36)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_matrix_gpu_integration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_coarse_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 58,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 58)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/hmm_regime_barrier_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/ensemble_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 28,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 28)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/data_quality_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_training_integrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 4,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 4)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/di_training_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/probability_calculators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/wavelet_feature_selection_workflow.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 15,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 15)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/data_efficiency_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 38,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 38)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/optimization_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 25,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 25)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 1,
+          "message": "invalid syntax",
+          "text": "import copy"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/tpsl_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/vectorized_training_pipeline.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_optimization_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 31,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 31)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/enhanced_multi_timeframe_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 21,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 21)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/probabilistic_bayesian_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/diverse_lookback_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/wavelet_caching_workflow.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/optimization/cached_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 18,
+          "offset": 1,
+          "message": "invalid syntax",
+          "text": "import os.path"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/optimization/transfer_learning_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimization/progressive_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 16,
+          "offset": 1,
+          "message": "invalid syntax",
+          "text": "import copy"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/optimization/problem_specific_strategies.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimization/parallel_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimization/rollback_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimization/computational_optimization_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/optimization/advanced_surrogate_models.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimization/adaptive_trial_allocator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 15,
+          "offset": 1,
+          "message": "invalid syntax",
+          "text": "import copy"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/optimization/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/multi_timeframe_hmm_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/update_steps_for_unified_data.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1_data_collection_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/fractional_feature_selector.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step13_analyst_ensemble_creation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step9_5_hmm_lm_generalist_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/vectorized_labelling_orchestrator_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step20_ab_testing_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step2_5_sr_optimization.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step14_tactician_labeling_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 47,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 47)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step5_hmm_based_training_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 52,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 52)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step10_unified_regime_intelligence.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 20,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 20)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step18_walk_forward_validation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step14_tactician_labeling.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 13,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 13)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step4_triple_barrier_method.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step5_labeling.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 12,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 12)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/hmm_feature_enhancer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1_5_data_converter.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 165,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 165)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step4_regime_data_splitting_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step2_5_sr_optimization_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step2_data_reading.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step9_hmm_based_training_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step11_analyst_creation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step16_confidence_calibration_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step20_ab_testing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization_new.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/enhanced_step1_data_collection.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step19_monte_carlo_validation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step9_hmm_based_training.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/feature_artifact_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step3_parameter_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_downloader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step9_5_multi_timeframe_hmm_ensemble_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step16_confidence_calibration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 89,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 89)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step21_saving.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step3_parameter_optimization_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1_5_data_converter_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 57,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 57)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step3_5_final_regime_clustering.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step4_triple_barrier_method_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/combined_fractional_system.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step6_feature_interaction_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step5_labeling_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step3_hmm_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step10_unified_regime_intelligence_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/vectorized_advanced_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/precompute_wavelet_features.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step6_feature_engineering.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1_data_collection_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 48,
+          "offset": 6,
+          "message": "unterminated string literal (detected at line 48)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/vectorized_advanced_feature_engineering_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step21_saving_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step6_feature_engineering_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 41,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 41)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step8_regime_data_splitting_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step2_data_reading_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step2_feature_engineering_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step19_monte_carlo_validation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 51,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 51)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step7_enhanced_matrix_operations_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/unified_data_loader.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step11_analyst_creation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 94,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 94)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step12_analyst_enhancement_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 11,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 11)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/vectorized_labelling_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step9_5_hmm_lm_generalist_training_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/integrated_data_quality_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step9_hmm_based_training_enhanced.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/enhanced_step1_5_data_converter.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/sr_outcome_model_trainer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1_data_collection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step16_confidence_calibration_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step3_hmm_regime_discovery_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step12_analyst_enhancement.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 82,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 82)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/raw_data_quality_checker.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step3_5_final_regime_clustering_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/cross_timeframe_interaction_features_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step18_walk_forward_validation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 54,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 54)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step15_tactician_specialist_training.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step15_tactician_specialist_training_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step5_regime_data_splitting_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 74,
+          "offset": 4,
+          "message": "unexpected indent",
+          "text": "async def test_validator() -> None:"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/fractional_differentiation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step4_regime_data_splitting.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step13_analyst_ensemble_creation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 70,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 70)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step8_regime_data_splitting.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 154,
+          "offset": 9,
+          "message": "invalid syntax",
+          "text": "except Exception as e:"
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/optimized_step_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step7_enhanced_matrix_operations.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/evaluation_engine.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 12,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 12)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 12,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 12)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/hyperparameter_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 12,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 12)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 13,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 13)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 16,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 16)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1/missing_data_downloader_and_gap_filler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/data_quality_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/validate_and_fix_aggtrades_format.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/comprehensive_gap_filler.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 4,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 4)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1/aggtrades_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/step1_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/data_resampler.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 9,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 9)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1/run_step1.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 9,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 9)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1/gap_filler_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/data_gap_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/data_quality_monitor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step1/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step1/enhanced_data_quality_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 37,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 37)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 16,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 16)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 42,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 42)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/multi_timeframe_training/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 10,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 10)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/analyst_training_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_preparation_components/aggtrades_data_formatting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_preparation_components/training_validation_config.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/steps/data_preparation_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/core/stage_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/core/checkpoint_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/core/stage_context.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 32,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 32)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/core/pipeline_base.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/core/pipeline_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/training/core/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/exchange/binance.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 29,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 29)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/core/di_integration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/core/injectable_base.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/di_launcher.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/enhanced_factories.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/core/generic_base.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/core/service_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/enhanced_dependency_injection.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/core/dependency_injection.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 48,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 48)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/core/config_service.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/base.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/mapping.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/handlers/http.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/errors.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/cache.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/retry_timeout.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/trace.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/compose.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/validate.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/auth.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/examples/decorator_usage.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/config/sr_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/training_modes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/fractional_implementations_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/constants.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/computational_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/environment.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/label_model_mapping.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_confidence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/multi_timeframe_hmm_ensemble_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_feature_selection_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/m1_gpu_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_tpsl.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_regime_transitions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_position_sizing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_multi_timeframe_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/typed_config.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/config/config_sr.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/matrix_diverse_lookback_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/diverse_lookback_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/computational_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/multi_output_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_two_tier.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_technical_indicators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_reporting_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_system_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_matrix_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_prediction_service_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_training_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/feature_engineering_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_leverage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_feature_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/regime_specific_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/trading.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/observability.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/step_dependency_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_validation_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_quality_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/vif_calculator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/model_performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/state_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/statistical_distribution_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/structured_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/async_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/vif_validation_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_config_management.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/time_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_preprocessing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/feature_output_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/intelligent_feature_cache.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/parallel_processing_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorators.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 17,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 17)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/data_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_memory_management.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 5,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 5)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/standardized_model_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/advanced_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/training_pipeline_decorators.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 4,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 4)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/decorator_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_decorators.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 442,
+          "offset": 4,
+          "message": "unexpected indent",
+          "text": "except ImportError:"
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/standardized_config_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/common_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_mlflow_integration.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 15,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 15)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/purged_kfold.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/centralized_decorators.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 4,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 4)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/warning_symbols.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/config_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/centralized_decorators_v2.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorator_compatibility.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/validation_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_pipeline_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/parquet_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/standardized_error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/validator_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/hmm_composite_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/signal_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/configuration_security.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 10,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 10)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/security_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_missing_value_handler.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 10,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 10)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/trading_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_formatting_framework.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 11,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 11)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/enhanced_data_quality_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/quality_alert_system.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/mlflow_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/base_validator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 3,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 3)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/feature_engineering_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/confidence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/pipeline_standards.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_error_handling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/prometheus_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorator_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/steps_1_7_compatibility_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/model_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/domain_errors.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/database_security.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 11,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 11)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/enhanced_outlier_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/logger.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 6,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 6)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/utils/lookahead_bias_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/cross_step_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_type_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/strategist_backup.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/strategist/strategist.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/strategist/utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/validation/critical_path_validators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/order_book_analyzer.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 20,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 20)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/advanced_feature_engineering.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 7,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 7)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/feature_engineering_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 32,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 32)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/meta_labeling_system.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 32,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 32)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/autoencoder_feature_generator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 192,
+          "offset": 12,
+          "message": "unterminated string literal (detected at line 192)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/enhanced_prediction_integrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 40,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 40)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 32,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 32)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/regime_runtime.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 166,
+          "offset": 0,
+          "message": "expected an indented block after 'except' statement on line 165",
+          "text": "logging.debug(f\"Failed to parse intensity cluster {c}: {e}\")"
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/liquidation_risk_model.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 20,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 20)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/multi_timeframe_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/dynamic_regime_mapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/enhanced_regime_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/decision_aggregator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/data_utils.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 34,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 34)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/regime_expert_orchestrator.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 28,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 28)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/meta_label_relevance.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 36,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 36)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/ml_confidence_predictor.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 38,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 38)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/di_analyst.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/unified_regime_classifier.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 38,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 38)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/analyst.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 44,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 44)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 8,
+          "offset": 4,
+          "message": "unterminated string literal (detected at line 8)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/ensemble_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 39,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 39)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/regime_ensembles/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/efficient_features_database.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 37,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 37)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/database/influxdb_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/precomputed_features_manager.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 23,
+          "offset": 4,
+          "message": "unexpected indent",
+          "text": "INFLUXDB_AVAILABLE = True"
+        }
+      ]
+    },
+    {
+      "file": "./src/database/migration_utils.py",
+      "valid": false,
+      "errors": [
+        {
+          "type": "SyntaxError",
+          "line": 33,
+          "offset": 8,
+          "message": "unterminated string literal (detected at line 33)",
+          "text": "\"\"\"\""
+        }
+      ]
+    },
+    {
+      "file": "./src/database/firestore_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/sqlite_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/model_training_quality_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/missing_values_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/data_collection_quality_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/data_preparation_quality_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./tests/test_strategist.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/api_server.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_analysis_dir/simple_test.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_analysis_dir/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./test_analysis_dir/another_test.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./crypto_analysis/data_downloader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./crypto_analysis/data_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./crypto_analysis/run_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/test_directory_functionality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/generate_unified_report.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/simple_quality_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/example_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/unified_quality_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/data_flow.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/call_graph.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/cli.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/dead_code.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/dependency_graph.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/mexc_optimized.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/okx.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/gateio.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/mexc.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/factory.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/binance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/base_exchange.py",
+      "valid": true,
+      "errors": []
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 
 This module validates the final regime clustering step outputs with comprehensive
 quality checks for regime clustering artifacts and analysis reports.
-""""
+"""
 
 import json
 import os
@@ -44,7 +44,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """"
+        """
         self.logger.info("🔍 Starting Step 3.5: Final Regime Clustering validation")
 
         try:
@@ -379,7 +379,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     logger.info("🔍 Validating Step 3.5: Final Regime Clustering")
     
     try:
@@ -444,7 +444,7 @@ if __name__ == "__main__":
     import asyncio
 import datetime as datetime
     
-    test_input = {
+test_input = {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",

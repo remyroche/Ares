@@ -12,19 +12,19 @@ from copy import copy
 import asyncio
 
 class Tactician:
-    """"
+    """
 Refactored Tactician component with modular architecture and enhanced scenario-based predictions.
 This module orchestrates the tactics pipeline using specialized managers and integrates
 fractal scenario analysis with comprehensive technical indicators.
-""""
+"""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
 Initialize refactored tactician with enhanced scenario-based predictions.
 
 Args:
             config: Configuration dictionary
-""""
+"""
 self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("Tactician")
 
@@ -107,7 +107,7 @@ default_return=False,
 context="tactician initialization",
 )
 async def initialize(self) -> bool:
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Tactician")
 
@@ -144,12 +144,12 @@ async def initialize(self) -> bool:
         context="tactician initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize tactician and all component managers.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("Initializing Refactored Tactician...")
 
@@ -221,12 +221,12 @@ default_return=False,
 context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        """"
+        """
 Validate tactician configuration.
 
 Returns:
     bool: True if configuration is valid, False otherwise
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -268,7 +268,7 @@ context="tactics execution",
 async def execute_tactics(
 self, tactics_input: dict[str, Any]
 ) -> bool:
-        """"
+        """
 Execute the complete tactics pipeline.
 
 Args:
@@ -276,7 +276,7 @@ Args:
 
 Returns:
     bool: True if tactics successful, False otherwise
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -337,12 +337,12 @@ if not self._validate_tactics_input(tactics_input):
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate tactician configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """"
+        """
         try:
             # Validate required configuration sections
             required_sections = ["tactician", "tactics_orchestrator"]
@@ -381,7 +381,7 @@ if not self._validate_tactics_input(tactics_input):
     async def execute_tactics(
         self, tactics_input: dict[str, Any]
     ) -> bool:
-        """"
+        """
         Execute the complete tactics pipeline.
 
         Args:
@@ -389,7 +389,7 @@ if not self._validate_tactics_input(tactics_input):
 
         Returns:
             bool: True if tactics successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("🚀 Starting tactics pipeline execution...")
 
@@ -418,7 +418,7 @@ if not self._validate_tactics_input(tactics_input):
         context="tactics input validation",
     )
     def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
-        """"
+        """
         Validate tactics input parameters.
 
         Args:
@@ -426,7 +426,7 @@ if not self._validate_tactics_input(tactics_input):
 
         Returns:
             bool: True if input is valid, False otherwise
-        """"
+        """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "current_price"]
 
@@ -452,12 +452,12 @@ if not self._validate_tactics_input(tactics_input):
         context="tactics results storage",
     )
     async def _store_tactics_results(self, tactics_input: dict[str, Any]) -> None:
-        """"
+        """
         Store tactics results for later retrieval.
 
         Args:
             tactics_input: Tactics input parameters
-        """"
+        """
         try:
             # Get results from orchestrator
             self.tactics_results = self.tactics_orchestrator.get_tactics_results()
@@ -489,12 +489,12 @@ if not self._validate_tactics_input(tactics_input):
         context="tactician run",
     )
     async def run(self) -> bool:
-        """"
+        """
         Run the tactician.
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("🚀 Starting Tactician...")
             self.is_running = True
@@ -515,12 +515,12 @@ self.logger.info("✅ Tactician run completed successfully")
             return False
 
     def get_status(self) -> dict[str, Any]:
-        """"
+        """
         Get tactician status.
 
         Returns:
             dict: Tactician status
-        """"
+        """
         return {
             "is_running": self.is_running, "status": self.status,
             "history_count": len(self.history),
@@ -528,7 +528,7 @@ self.logger.info("✅ Tactician run completed successfully")
         }
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """"
+        """
         Get tactician history.
 
         Args:
@@ -536,28 +536,28 @@ self.logger.info("✅ Tactician run completed successfully")
 
         Returns:
             list: Tactician history
-        """"
+        """
         history = self.history.copy()
         if limit:
             history = history[-limit:]
         return history
 
     def get_tactics_results(self) -> dict[str, Any]:
-        """"
+        """
         Get the latest tactics results.
 
         Returns:
             dict: Tactics results
-        """"
+        """
         return self.tactics_results.copy()
 
     def get_tactics_modules(self) -> dict[str, Any]:
-        """"
+        """
         Get tactics modules information.
 
         Returns:
             dict: Tactics modules information
-""""
+"""
 return {
 "tactics_orchestrator": self.tactics_orchestrator is not None, "position_sizer": self.position_sizer is not None,
 "leverage_sizer": self.leverage_sizer is not None, "position_division_strategy": self.position_division_strategy is not None,
@@ -581,7 +581,7 @@ symbol: str,
 timeframe: str,
 analyst_confidence: float = 0.5
 ) -> Dict[str, Any]:
-        """"
+        """
 Generate enhanced predictions using scenario-based analysis.
 
 Args:
@@ -593,7 +593,7 @@ analyst_confidence: Analyst's confidence score'
 
 Returns:
     dict: Enhanced predictions and decisions
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -648,7 +648,7 @@ scenario_predictions: Dict[str, Any],
 analyst_confidence: float,
 market_data: pd.DataFrame
 ) -> Dict[str, Any]:
-        """"
+        """
 Make trading decisions based on scenario analysis.
 
 Args:
@@ -658,7 +658,7 @@ market_data: Market data
 
 Returns:
     dict: Trading decisions
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -745,7 +745,7 @@ scenario_predictions: Dict[str, Any],
 trading_decisions: Dict[str, Any],
 analyst_barriers: Dict[str, float]
 ) -> Dict[str, Any]:
-        """"
+        """
 Calculate position sizing and leverage based on scenario analysis.
 
 Args:
@@ -755,7 +755,7 @@ analyst_barriers: Analyst's barrier values'
 
 Returns:
     dict: Position management parameters
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -818,7 +818,7 @@ scenario_analysis: Dict[str, Any],
 model_confidence: float,
 analyst_confidence: float
 ) -> float:
-        """"
+        """
 Calculate decision confidence combining scenario analysis and analyst confidence.
 
 Args:
@@ -828,7 +828,7 @@ analyst_confidence: Analyst confidence
 
 Returns:
     float: Combined decision confidence
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -864,7 +864,7 @@ scenario_analysis: Dict[str, Any],
 model_confidence: float,
 analyst_confidence: float
 ) -> str:
-        """"
+        """
 Generate human-readable reasoning for decisions.
 
 Args:
@@ -876,7 +876,7 @@ analyst_confidence: Analyst confidence
 
 Returns:
     str: Decision reasoning
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -915,7 +915,7 @@ except Exception as e:
     return f"Error generating reasoning: {e}"
 
 def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, Any]:
-        """"
+        """
 Generate error predictions when something goes wrong.
 
 Args:
@@ -924,7 +924,7 @@ timeframe: Timeframe
 
 Returns:
     dict: Error predictions
-""""
+"""
 return {
 "scenario_predictions": {
 "probabilities": {i: 1.0/17 for i in range(17)},
@@ -971,12 +971,12 @@ return {
 }
 
 def update_position(self, position_data: Dict[str, Any]) -> None:
-        """"
+        """
 Update current position information.
 
 Args:
     position_data: Position data
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -995,12 +995,12 @@ except Exception as e:
     self.logger.error(f"❌ Position update failed: {e}")
 
 def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
-        """"
+        """
 Update performance metrics with trade result.
 
 Args:
     trade_result: Trade result data
-""""
+"""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -1025,12 +1025,12 @@ except Exception as e:
     self.logger.error(f"❌ Performance metrics update failed: {e}")
 
 def get_performance_summary(self) -> Dict[str, Any]:
-        """"
+        """
 Get performance summary.
 
 Returns:
     dict: Performance summary
-""""
+"""
 return {
 "performance_metrics": self.performance_metrics,
 "current_position": self.current_position,
@@ -1044,12 +1044,12 @@ return {
 }
 
 def get_configuration_summary(self) -> Dict[str, Any]:
-        """"
+        """
 Get configuration summary for step17 optimization.
 
 Returns:
     dict: Configuration summary
-""""
+"""
 return {
 "decision_thresholds": self.decision_thresholds,
 "risk_management": self.risk_management,
@@ -1127,7 +1127,7 @@ if self.scenario_predictor:
     context="tactician setup",
 )
 async def setup_tactician(config: dict[str, Any] | None = None) -> Tactician | None:
-    """"
+    """
     Setup and return a configured Tactician instance.
 
     Args:
@@ -1135,7 +1135,7 @@ async def setup_tactician(config: dict[str, Any] | None = None) -> Tactician | N
 
     Returns:
         Tactician: Configured tactician instance
-    """"
+    """
     try:
         tactician = Tactician(config or {})
         if await tactician.initialize():

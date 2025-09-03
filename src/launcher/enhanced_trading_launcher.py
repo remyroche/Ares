@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-""""
+"""
 Enhanced Trading Launcher
 
 Provides a comprehensive launcher for paper trading, live trading, and
 backtesting with integrated detailed reporting capabilities.
-""""
+"""
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -38,17 +38,17 @@ if TYPE_CHECKING:
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 class EnhancedTradingLauncher:
-    """"
+    """
     Enhanced trading launcher with comprehensive reporting integration.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize enhanced trading launcher.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("EnhancedTradingLauncher")
 
@@ -86,12 +86,12 @@ class EnhancedTradingLauncher:
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize enhanced trading launcher.
 
         Returns:
             bool: True if initialization successful = False otherwise
-        """"
+        """
         try:
             self.logger.info("Initializing Enhanced Trading Launcher...")
 
@@ -161,7 +161,7 @@ class EnhancedTradingLauncher:
                     from src.backtesting.enhanced_backtester import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly
-import os.path
+import os
 
 setup_enhanced_backtester as _setup_backtester,
                     )
@@ -190,7 +190,7 @@ setup_enhanced_backtester as _setup_backtester,
         self,
         trading_config: dict[str, Any] | None = None,
     ) -> bool:
-        """"
+        """
         Launch paper trading with enhanced reporting.
 
         Args:
@@ -198,7 +198,7 @@ setup_enhanced_backtester as _setup_backtester,
 
         Returns:
             bool: True if successful = False otherwise
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(initialization_error("Launcher not initialized"))
@@ -240,7 +240,7 @@ setup_enhanced_backtester as _setup_backtester,
         self,
         trading_config: dict[str, Any] | None = None,
     ) -> bool:
-        """"
+        """
         Launch live trading with enhanced reporting.
 
         Args:
@@ -248,7 +248,7 @@ setup_enhanced_backtester as _setup_backtester,
 
         Returns:
             bool: True if successful = False otherwise
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(initialization_error("Launcher not initialized"))
@@ -290,7 +290,7 @@ setup_enhanced_backtester as _setup_backtester,
         strategy_signals: pd.DataFrame,
         backtest_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """"
+        """
         Launch enhanced backtest with comprehensive reporting.
 
         Args:
@@ -300,7 +300,7 @@ setup_enhanced_backtester as _setup_backtester,
 
         Returns:
             Dict[str, Any]: Backtest results with detailed metrics
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(initialization_error("Launcher not initialized"))
@@ -354,7 +354,7 @@ setup_enhanced_backtester as _setup_backtester,
         timestamp: datetime,
         trade_metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """"
+        """
         Execute trade with integrated reporting.
 
         Args:
@@ -367,7 +367,7 @@ setup_enhanced_backtester as _setup_backtester,
 
         Returns:
             bool: True if successful = False otherwise
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(initialization_error("Launcher not initialized"))
@@ -566,7 +566,7 @@ setup_enhanced_backtester as _setup_backtester,
 async def setup_enhanced_trading_launcher(
     config: dict[str, Any] | None = None,
 ) -> EnhancedTradingLauncher | None:
-    """"
+    """
     Setup enhanced trading launcher.
 
     Args:
@@ -574,7 +574,7 @@ async def setup_enhanced_trading_launcher(
 
     Returns:
         EnhancedTradingLauncher: Configured launcher instance
-    """"
+    """
     try:
         if config is None:
             config = {}

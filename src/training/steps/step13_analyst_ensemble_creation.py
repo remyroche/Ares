@@ -67,7 +67,7 @@ class AnalystEnsembleCreationStep:
         Returns:
             bool: True if successful
 
-        """"
+        """
         logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
 
         try:
@@ -155,7 +155,7 @@ class AnalystEnsembleCreationStep:
                 pass  # TODO: Handle exception properly
 import copy
 import datetime as datetime
-import os.path
+import os
 
 OptimizedFeatureSelectionManager,
                 )
@@ -359,6 +359,6 @@ def step7_analyst_ensemble_creation(
     Returns:
         bool: True if successful
 
-    """"
+    """
     step = AnalystEnsembleCreationStep(config)
     return step.execute(symbol, exchange, data_dir, training_input)

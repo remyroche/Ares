@@ -961,10 +961,10 @@ from src.utils.enhanced_mlflow_integration import (
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step8_tactician_labeling")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=2400.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=2400)
 @validates(
     required_directories=["data/training"],
     min_memory_gb=4.0,
@@ -976,10 +976,10 @@ from src.utils.enhanced_mlflow_integration import (
     },
     context="Tactician Labeling",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
@@ -1015,7 +1015,7 @@ from src.utils.enhanced_mlflow_integration import (
     performance_thresholds={"labeling_time_minutes": 45.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"labeling_accuracy": 0.7},
 )

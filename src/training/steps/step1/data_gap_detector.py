@@ -35,7 +35,7 @@ class DataGapDetector:
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
                 MissingDataDownloaderAndGapFiller,
             )
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
@@ -43,9 +43,9 @@ from src.core.decorators import handles_errors
             logger.warning("⚠️ MissingDataDownloaderAndGapFiller not available - gap filling disabled")
             self.gap_filler = None
 
-    @validate_data_structure
-    @comprehensive_data_validation
-    @with_tracing_span("detect_missing_data")
+    @validates()
+    @validates()
+    @traced(span_name="detect_missing_data")
     @handles_errors
         default_return={
             "symbol": "",
@@ -300,7 +300,7 @@ from src.core.decorators import handles_errors
             "missing_futures_months": sorted(missing_months),
         }
 
-    @with_tracing_span("detect_aggtrades_gaps")
+    @traced(span_name="detect_aggtrades_gaps")
     @handles_errors(fallback=[])
     def detect_aggtrades_gaps(self, symbol: str, exchange: str, min_gap_seconds: int = 10) -> list[dict]:
         """Detect gaps within aggtrades files.
@@ -366,7 +366,7 @@ from src.core.decorators import handles_errors
         logger.info(f"📊 Found {len(gaps)} aggtrades gaps")
         return gaps
 
-    @with_tracing_span("generate_missing_data_report")
+    @traced(span_name="generate_missing_data_report")
     def generate_missing_data_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive missing data report.
 

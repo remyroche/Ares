@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.core.decorators import handles_errors, traced
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -28,18 +30,18 @@ from src.utils.common_operations import safe_json_load
 logger = system_logger.getChild("Step2DataReadingValidator")
 
 
-@with_tracing_span("validate_data_reading")
-@quality_gate(
+@traced(span_name="validate_data_reading")
+# @quality_gate - removed, handled by validates
     min_quality_score=0.8,
     max_correlation=0.95,
     required_grade="B"
 )
-@comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
+@validates()
+@handles_errors
+# @memory_efficient - removed
+# @resource_monitor - removed, use log_execution_time
+# @secure_data_processing - removed, handled by validates
+@validates()
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],

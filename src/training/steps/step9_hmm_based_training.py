@@ -469,13 +469,13 @@ from src.utils.logger import system_logger
             msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}"
             raise RuntimeError(msg)
 
-    @with_enhanced_mlflow_logging("step9_hmm_based_training")
+    # @with_enhanced_mlflow_logging - removed, use traced"step9_hmm_based_training")
     @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-based training step execution",
     )
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
         """Execute HMM-based model training."
@@ -1594,7 +1594,7 @@ from src.utils.logger import system_logger
             self.logger.exception(f"❌ Failed to train model for {timeframe}: {e}")
             return None
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def _train_regime_specific_models(self, timeframe: str) -> dict[str, Any]:
         """Train regime-specific models using HMM composite regime data."""
         try:
@@ -1741,7 +1741,7 @@ from src.utils.logger import system_logger
             )
             return {}
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def _train_lightgbm_model_regime(
         self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, regime_key: str, ) -> dict[str, Any] | None:
         """Train LightGBM model for a specific regime."""
@@ -3306,7 +3306,7 @@ class CNNTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def train(
         self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray, epochs: int = 50
     ) -> dict[str, list[float]]:
@@ -5145,11 +5145,11 @@ class TransformerTrainer:
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step6_hmm_based_training")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=7200.0)
-@performance_monitor(
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=7200)
+# @performance_monitor - removed, use log_execution_time(
     enable_profiling=True,
     enable_memory_tracking=True,
     enable_cpu_tracking=True,
@@ -5197,10 +5197,10 @@ class TransformerTrainer:
     },
     context="HMM-Based Training",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -5237,7 +5237,7 @@ class TransformerTrainer:
     performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     convergence_checks=True,
@@ -5264,6 +5264,8 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
 import copy
 import numpy as np
 import os.path
+
+from src.core.decorators import cached, circuit_breaker, handles_errors, log_call, log_execution_time, timeout, validates
 
 # Create configuration
 config = {

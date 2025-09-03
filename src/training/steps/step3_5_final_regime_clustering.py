@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
+from src.core.decorators import handles_errors
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -62,7 +64,7 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
             raise
 
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     def _load_optimized_parameters(self) -> None:
         """Load optimized parameters from step03."""
         try:
@@ -85,7 +87,7 @@ class FinalRegimeClusteringStep:
         except Exception as e:
             self.logger.error(f"Failed to load optimized parameters: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="regime_clustering_initialization"
@@ -105,8 +107,8 @@ class FinalRegimeClusteringStep:
 
     @monitor_step_execution
     @secure_step_execution
-    @validate_pipeline_step
-    @handle_errors(
+    @validates()
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="regime_clustering_execution"
@@ -147,12 +149,12 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to execute regime clustering: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_prepare_data"
     )
-    @comprehensive_data_validation
+    @validates()
     @ensure_data_integrity
     async def _load_and_prepare_data(self) -> dict[str, Any]:
         """Load and prepare data for regime clustering."""
@@ -208,13 +210,13 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to load and prepare data: {e}")
             return {"success": False, "error": str(e)}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="prepare_features_with_optimized_params"
     )
     @monitor_feature_engineering()
-    @validate_data_structure
+    @validates()
     async def _prepare_features_with_optimized_params(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features using optimized parameters from step03."""
         try:
@@ -274,13 +276,13 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to prepare features: {e}")
             return pd.DataFrame()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="perform_hmm_regime_discovery"
     )
-    @resource_monitor
-    @secure_data_processing
+    # @resource_monitor - removed, use log_execution_time
+    # @secure_data_processing - removed, handled by validates
     async def _perform_hmm_regime_discovery(self, data: pd.DataFrame) -> dict[str, Any]:
         """Perform HMM regime discovery using optimized parameters."""
         try:
@@ -342,12 +344,12 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to perform HMM regime discovery: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="perform_simple_regime_detection"
     )
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _perform_simple_regime_detection(self, features: pd.DataFrame) -> dict[str, Any]:
         """Perform simple regime detection as fallback."""
         try:
@@ -398,13 +400,13 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to perform simple regime detection: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="perform_final_clustering"
     )
-    @resource_monitor
-    @secure_data_processing
+    # @resource_monitor - removed, use log_execution_time
+    # @secure_data_processing - removed, handled by validates
     async def _perform_final_clustering(self, data: pd.DataFrame, hmm_results: dict[str, Any]) -> dict[str, Any]:
         """Perform final clustering using HMM results and optimized parameters."""
         try:
@@ -477,12 +479,12 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to perform final clustering: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="analyze_regime_characteristics"
     )
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _analyze_regime_characteristics(self, clustering_results: dict[str, Any], data: pd.DataFrame) -> dict[str, Any]:
         """Analyze regime characteristics and patterns."""
         try:
@@ -551,7 +553,7 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to analyze regime characteristics: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="analyze_regime_transitions"
@@ -585,7 +587,7 @@ class FinalRegimeClusteringStep:
             self.logger.warning(f"Failed to analyze regime transitions: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="analyze_regime_persistence"
@@ -629,12 +631,12 @@ class FinalRegimeClusteringStep:
             self.logger.warning(f"Failed to analyze regime persistence: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="generate_comprehensive_reports"
     )
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _generate_comprehensive_reports(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any]) -> dict[str, Any]:
         """Generate comprehensive reports for regime clustering."""
         try:
@@ -686,12 +688,12 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to generate comprehensive reports: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="save_final_results"
     )
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _save_final_results(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any], reports: dict[str, Any]) -> bool:
         """Save final regime clustering results."""
         try:
@@ -770,7 +772,7 @@ class FinalRegimeClusteringStep:
             return False
 
     # Helper methods for technical indicators
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.Series(),
         context="calculate_rsi"
@@ -784,7 +786,7 @@ class FinalRegimeClusteringStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.Series(),
         context="calculate_macd"
@@ -796,7 +798,7 @@ class FinalRegimeClusteringStep:
         macd = ema_fast - ema_slow
         return macd
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.Series(),
         context="calculate_atr"
@@ -815,7 +817,7 @@ class FinalRegimeClusteringStep:
         atr = tr.rolling(window=window).mean()
         return atr
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="regime_clustering_cleanup"
@@ -833,7 +835,7 @@ class FinalRegimeClusteringStep:
             return False
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=False,
     context="step3_5_final_regime_clustering"

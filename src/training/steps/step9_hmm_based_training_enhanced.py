@@ -13,6 +13,8 @@ import warnings
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from src.core.decorators import handles_errors
+
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -134,7 +136,7 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handles_errors(exceptions=(Exception,), default_return=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -529,7 +531,7 @@ class EnhancedHMMBasedTrainingStep:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=None,
         context="enhanced_data_preparation"
@@ -641,12 +643,12 @@ class EnhancedHMMBasedTrainingStep:
         
         return prepared_data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=None,
         context="enhanced_model_training"
     )
-    @performance_monitor
+    # @performance_monitor - removed, use log_execution_time
     async def train_enhanced_model(
         self,
         prepared_data: Dict[str, Any],
@@ -855,7 +857,7 @@ class EnhancedHMMBasedTrainingStep:
             self.logger.exception(f"❌ Failed to train single-output model: {e}")
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=None,
         context="enhanced_regime_specific_training"

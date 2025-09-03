@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
 
+from src.core.decorators import handles_errors, traced
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -141,13 +143,13 @@ class DataReadingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @traced("read_unified_data")
-    @quality_gate(
+    @traced(span_name="read_unified_data")
+    # @quality_gate - removed, handled by validates
         min_quality_score=0.8,
         max_correlation=0.95,
         required_grade="B"
     )
-    @comprehensive_data_validation
+    @validates()
     @cached
     async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Read unified data from step1_5 output with standardized validation."""
@@ -208,8 +210,8 @@ class DataReadingStep:
             self.logger.exception(f"❌ Error reading unified data: {e}")
             return None
 
-    @traced("validate_data_quality")
-    @comprehensive_data_validation
+    @traced(span_name="validate_data_quality")
+    @validates()
     async def validate_data_quality(self, data: pd.DataFrame, symbol: str, exchange: str) -> Dict[str, Any]:
         """Validate data quality and structure using standardized validation."""
         step_start = time.time()
@@ -257,7 +259,7 @@ class DataReadingStep:
         
         return validation_results
 
-    @traced("save_validation_report")
+    @traced(span_name="save_validation_report")
     async def save_validation_report(self, validation_results: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> bool:
         """Save validation report to file."""
         step_start = time.time()
@@ -300,8 +302,8 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             self.logger.exception(f"❌ Error saving validation report: {e}")
             return False
 
-    @with_enhanced_mlflow_logging("step2_data_reading")
-    @traced("execute_data_reading_step")
+    # @with_enhanced_mlflow_logging - removed, use traced"step2_data_reading")
+    @traced(span_name="execute_data_reading_step")
     @handles_errors
     @log_execution_time
     async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:

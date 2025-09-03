@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 
+from src.core.decorators import handles_errors, traced
+
 import pandas as pd
 
 # Add project root to path
@@ -101,8 +103,8 @@ class DataQualityMonitor:
             "average_check_duration": 0.0,
         }
 
-    @with_tracing_span("start_monitoring")
-    @handle_errors(
+    @traced(span_name="start_monitoring")
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="data_quality_monitor.start_monitoring"
@@ -141,13 +143,13 @@ class DataQualityMonitor:
             logger.exception(f"❌ Failed to start monitoring: {e}")
             return False
 
-    @with_tracing_span("stop_monitoring")
+    @traced(span_name="stop_monitoring")
     async def stop_monitoring(self) -> None:
         """Stop real-time monitoring."""
         self.monitoring_active = False
         logger.info("🛑 Data quality monitoring stopped")
 
-    @with_tracing_span("add_alert_callback")
+    @traced(span_name="add_alert_callback")
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
         """Add a callback function to be called when alerts are generated."
         
@@ -157,7 +159,7 @@ class DataQualityMonitor:
         self.alert_callbacks.append(callback)
         logger.info(f"✅ Added alert callback: {callback.__name__}")
 
-    @with_tracing_span("set_quality_thresholds")
+    @traced(span_name="set_quality_thresholds")
     def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
         """Set quality monitoring thresholds."
         
@@ -167,7 +169,7 @@ class DataQualityMonitor:
         self.quality_thresholds.update(thresholds)
         logger.info("✅ Updated quality monitoring thresholds")
 
-    @with_tracing_span("monitoring_loop")
+    @traced(span_name="monitoring_loop")
     async def _monitoring_loop(
         self,
         symbols: List[str],
@@ -207,8 +209,8 @@ class DataQualityMonitor:
                 logger.exception(f"❌ Error in monitoring loop: {e}")
                 await asyncio.sleep(60)  # Wait 1 minute before retrying
 
-    @with_tracing_span("check_data_quality")
-    @resource_monitor
+    @traced(span_name="check_data_quality")
+    # @resource_monitor - removed, use log_execution_time
     async def _check_data_quality(self, symbol: str, exchange: str, timeframe: str) -> None:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
@@ -249,7 +251,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             )
             await self._generate_alert(alert)
 
-    @with_tracing_span("evaluate_quality_results")
+    @traced(span_name="evaluate_quality_results")
     async def _evaluate_quality_results(
         self,
         quality_results: Dict[str, Any],
@@ -306,7 +308,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         except Exception as e:
             logger.exception(f"❌ Error evaluating quality results: {e}")
 
-    @with_tracing_span("check_data_freshness")
+    @traced(span_name="check_data_freshness")
     async def _check_data_freshness(self, symbol: str, exchange: str, timeframe: str) -> None:
         """Check if data is fresh (recently updated)."""
         try:
@@ -338,7 +340,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         except Exception as e:
             logger.exception(f"❌ Error checking data freshness: {e}")
 
-    @with_tracing_span("check_data_completeness")
+    @traced(span_name="check_data_completeness")
     async def _check_data_completeness(
         self,
         symbol: str,
@@ -391,7 +393,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         except Exception as e:
             logger.exception(f"❌ Error checking data completeness: {e}")
 
-    @with_tracing_span("generate_alert")
+    @traced(span_name="generate_alert")
     async def _generate_alert(self, alert: DataQualityAlert) -> None:
         """Generate and process an alert."""
         try:
@@ -415,7 +417,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         except Exception as e:
             logger.exception(f"❌ Error generating alert: {e}")
 
-    @with_tracing_span("save_alert")
+    @traced(span_name="save_alert")
     async def _save_alert(self, alert: DataQualityAlert) -> None:
         """Save alert to persistent storage."""
         try:
@@ -432,7 +434,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         except Exception as e:
             logger.exception(f"❌ Error saving alert: {e}")
 
-    @with_tracing_span("get_alerts")
+    @traced(span_name="get_alerts")
     def get_alerts(
         self,
         symbol: Optional[str] = None,
@@ -481,7 +483,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
                 
         return filtered_alerts
 
-    @with_tracing_span("acknowledge_alert")
+    @traced(span_name="acknowledge_alert")
     def acknowledge_alert(self, alert_index: int) -> bool:
         """Acknowledge an alert by index."
         
@@ -501,7 +503,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.exception(f"❌ Error acknowledging alert: {e}")
             return False
 
-    @with_tracing_span("resolve_alert")
+    @traced(span_name="resolve_alert")
     def resolve_alert(self, alert_index: int) -> bool:
         """Mark an alert as resolved."
         
@@ -521,12 +523,12 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.exception(f"❌ Error resolving alert: {e}")
             return False
 
-    @with_tracing_span("get_performance_metrics")
+    @traced(span_name="get_performance_metrics")
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get monitoring performance metrics."""
         return self.performance_metrics.copy()
 
-    @with_tracing_span("generate_monitoring_report")
+    @traced(span_name="generate_monitoring_report")
     def generate_monitoring_report(self) -> str:
         """Generate a monitoring report."""
         report = []

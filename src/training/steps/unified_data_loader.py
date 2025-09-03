@@ -3,7 +3,7 @@
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
 """
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
 import os
 import sys
@@ -124,7 +124,7 @@ class UnifiedDataLoader:
 
     @secure_file_path(allowed_dirs=["data_cache", "data"])
     @validate_file_size(max_size_mb=100)
-    @traced("UnifiedDataLoader.load_unified_data")
+    @traced(span_name="UnifiedDataLoader.load_unified_data")
     async def load_unified_data(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
     ) -> Optional[pd.DataFrame]:

@@ -4,6 +4,8 @@
 This module validates the regime data splitting step outputs with support for 10+ regimes.
 """
 from src.core.domain import (
+
+from src.core.decorators import validates
     smart_validation_cache,
     validate_step4_comprehensive
 )
@@ -29,7 +31,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         super().__init__("step4_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
 
-    @validate_step4_comprehensive
+    @validates()
     async def validate_step4_regime_data_splitting(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:

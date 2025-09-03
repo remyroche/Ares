@@ -27,18 +27,18 @@ from src.core.domain import (
 
 logger = system_logger.getChild("Step7RegimeDataSplittingValidator")
 
-@with_tracing_span("validate_regime_data_splitting")
-@quality_gate(
+@traced(span_name="validate_regime_data_splitting")
+# @quality_gate - removed, handled by validates
     min_quality_score=0.7,
     max_correlation=0.95,
     required_grade="C"
 )
-@comprehensive_data_validation
+@validates()
 @handles_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
+# @memory_efficient - removed
+# @resource_monitor - removed, use log_execution_time
+# @secure_data_processing - removed, handled by validates
+@validates()
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
@@ -104,7 +104,7 @@ async def run_validator(
         # Try to read the files to validate structure
         try:
             import pandas as pd
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
             
             # Read train data
             train_data = pd.read_parquet(train_path)

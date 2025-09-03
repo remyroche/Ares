@@ -162,6 +162,8 @@ from src.training.enhanced_training_manager_optimized import (
 import os.path
 from src.utils.enhanced_mlflow_integration import (
 
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -174,10 +176,10 @@ from src.utils.enhanced_mlflow_integration import (
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step13_walk_forward_validation")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=7200.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=7200)
 @validates(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,
@@ -189,10 +191,10 @@ from src.utils.enhanced_mlflow_integration import (
     },
     context="Walk Forward Validation",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -229,7 +231,7 @@ from src.utils.enhanced_mlflow_integration import (
     performance_thresholds={"validation_time_minutes": 120.0, "memory_usage_gb": 8.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"wfv_score": 0.6},

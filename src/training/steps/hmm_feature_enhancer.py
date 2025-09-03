@@ -2,7 +2,7 @@
 
 
 <<<<<<< HEAD
-from src.core.decorators import (
+from src.core.decorators import (, traced
     traced,
     validates
 )
@@ -22,7 +22,7 @@ class HMMFeatureEnhancer:
         self.config = config or {}
         self.logger = system_logger.getChild("HMMFeatureEnhancer")
 
-    @traced("HMMFeatureEnhancer.enhance_hmm_features")
+    @traced(span_name="HMMFeatureEnhancer.enhance_hmm_features")
     @validates(mode="warn", arg_index=0)
     def enhance_hmm_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Enhance HMM features with additional derived features.

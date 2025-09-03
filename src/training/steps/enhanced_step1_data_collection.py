@@ -193,7 +193,7 @@ class EnhancedStep1DataCollection:
         # For now, just return True to allow the pipeline to continue
         return True
     
-    @memory_efficient(max_memory_mb=1024)
+    # @memory_efficient - removed(max_memory_mb=1024)
     async def _process_and_validate_data(self, training_input: Dict[str, Any]) -> bool:
         """Process and validate downloaded data."""
         try:

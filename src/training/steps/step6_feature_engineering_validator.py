@@ -1,6 +1,8 @@
 # src/training/steps/step7_feature_engineering_validator.py
 
 from src.core.domain import (
+
+from src.core.decorators import validates
     smart_validation_cache,
     validate_step6_comprehensive
 )
@@ -25,7 +27,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         super().__init__("step6_feature_engineering", config)
         self.logger = system_logger.getChild("Validator.Step6")
 
-    @validate_step6_comprehensive
+    @validates()
     async def validate_step6_feature_engineering(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:

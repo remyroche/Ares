@@ -1,1340 +1,1316 @@
-# src/training/steps/step6_feature_engineering.py
+from __future__ import annotations
 
-"""Step 6: Complete Feature Engineering with Standardized Data Quality Management."
-This step creates comprehensive features including both basic and advanced features,
-with regime-aware optimization after HMM regime discovery.
 """
-import asyncio
-import hashlib
-import json
-import os
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, Dict, List
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing
+Step6: Feature Interaction Engineering
 
-from src.core.decorators import cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
+This module implements comprehensive feature interaction engineering for the Tactician model.
+It creates interaction terms between technical indicators, market features, and derived metrics
+to capture non-linear relationships and improve model performance.
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-import sys
-sys.path.insert(0, str(project_root))
+Key Features:
+- Integrates with DiverseLookbackOptimizer for optimal period selection
+- Ensures non-correlated lookback periods for each indicator
+- Creates meaningful feature interactions
+- Implements stability analysis for feature selection
+"""
 
-# Common utilities
-from src.utils.common_operations import ensure_directory, safe_json_dump
+import logging
+from collections import Counter
+from datetime import datetime
+from typing import Any
 
-# Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
-# Standardized import management
-REQUIRED_MODULES = [
-    "pandas",
-    "numpy",
-    "hashlib",
-    "src.training.steps.vectorized_advanced_feature_engineering",
-    "src.tactician.sr_breakout_predictor",
-    "src.training.optimized_feature_selection_manager",
-    "src.utils.training_pipeline_decorators",
-    "src.utils.logger",
-    "src.utils.error_handler",
-    "src.utils.decorators",
-    "src.utils.enhanced_mlflow_integration"
-]
-
-# Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-
-# Safe imports with fallbacks
-vectorized_feature_engineering = PipelineStandards.safe_import("src.training.steps.vectorized_advanced_feature_engineering", None)
-sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
-optimized_feature_selection = PipelineStandards.safe_import("src.training.optimized_feature_selection_manager", None)
-training_pipeline_decorators = PipelineStandards.safe_import("src.utils.training_pipeline_decorators", None)
-system_logger = PipelineStandards.safe_import("src.utils.logger", None)
-error_handler = PipelineStandards.safe_import("src.utils.error_handler", None)
-decorators = PipelineStandards.safe_import("src.utils.decorators", None)
-enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
-numpy = PipelineStandards.safe_import("numpy", None)
-pandas = PipelineStandards.safe_import("pandas", None)
-
-# Fallback functions if imports fail
-def create_fallback_logger():
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    return logging.getLogger(__name__)
-
-def create_fallback_decorator():
-    def decorator(func):
-        return func
-    return decorator
-
-# Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
-
-if training_pipeline_decorators is None:
-    circuit_breaker_protection = create_fallback_decorator()
-    debug_training_step = create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
-    prevent_data_leakage = create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
-    resource_monitor = create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
-    validate_step_output = create_fallback_decorator()
-    validate_step_prerequisites = create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
-else:
-    circuit_breaker_protection = training_pipeline_decorators.circuit_breaker_protection
-    debug_training_step = training_pipeline_decorators.debug_training_step
-    memory_efficient = training_pipeline_decorators.memory_efficient
-    prevent_data_leakage = training_pipeline_decorators.prevent_data_leakage
-    quality_gate = training_pipeline_decorators.quality_gate
-    resource_monitor = training_pipeline_decorators.resource_monitor
-    secure_data_processing = training_pipeline_decorators.secure_data_processing
-    validate_step_output = training_pipeline_decorators.validate_step_output
-    validate_step_prerequisites = training_pipeline_decorators.validate_step_prerequisites
-    monitor_feature_engineering = training_pipeline_decorators.monitor_feature_engineering
-
-if error_handler is None:
-    handle_errors = create_fallback_decorator()
-else:
-    handle_errors = error_handler.handle_errors
-
-if decorators is None:
-    guard_dataframe_nulls = create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
-else:
-    guard_dataframe_nulls = decorators.guard_dataframe_nulls
-    with_tracing_span = decorators.with_tracing_span
-
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_dataframe = lambda *args, **kwargs: "fallback_dataframe"
-    log_step_metrics = lambda *args, **kwargs: None
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
-    log_step_report = lambda *args, **kwargs: "fallback_report"
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_dataframe = enhanced_mlflow.log_step_dataframe
-    log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_report = enhanced_mlflow.log_step_report
-    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-
-
-@validates(
-    required_directories=["data/training", "data/hmm_regimes"],
-    min_memory_gb=2.0,
-    min_disk_gb=1.0,
-    required_packages=["pandas", "numpy", "hashlib"],
-    data_quality_checks={
-        "min_rows": 1000,
-        "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
-        "data_validation": {
-            "check_negative_prices": True,
-            "check_price_relationships": True,
-            "max_missing_ratio": 0.1,
-            "min_data_points": 100
-        }
-    },
-    context="Complete Feature Engineering",
-)
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
-# @prevent_data_leakage - removed, handled by validates
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    lookahead_bias_prevention=True,
-)
-@log_execution_time(
-    memory_threshold_gb=8.0,
-    cpu_threshold_percent=80.0,
-    disk_threshold_gb=5.0,
-    monitor_interval=10.0,
-    auto_cleanup=True,
-)
-@cached(
-    chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=5,
-)
-# @quality_gate - removed, handled by validates
-    data_quality_threshold=0.9,
-    feature_quality_threshold=0.8,
-    model_quality_threshold=0.7,
-    validation_checks=["data_integrity", "feature_quality", "feature_stability"],
-)
-@circuit_breaker(
-    max_execution_time=7200,  # 2 hours
-    max_memory_usage_gb=16.0,
-    max_cpu_usage_percent=90.0,
-    error_threshold=3,
-    recovery_timeout=600,
-)
-@log_call(
-    enable_debug_logging=True,
-    save_intermediate_results=True,
-    enable_profiling=True,
-    debug_output_dir="debug_output/step06",
-)
-@monitor_feature_engineering(
-    track_feature_importance=True,
-    monitor_feature_correlations=True,
-    track_feature_stability=True,
-    save_feature_analysis=True,
-)
-@validates(
-    output_validation_rules={
-        # Align with regime-specific outputs under data/training/regime_features
-        "required_files": ["regime_features"],  # presence of regime_features directory
-        "required_columns": ["timestamp"],
-        "min_rows": 100,  # per regime file checked separately in validator
-        "max_missing_ratio": 0.20,
-    },
-    validation_timeout=600,
-)
-# @with_enhanced_mlflow_logging - removed, use traced"step6_feature_engineering")
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step6_feature_engineering",
-)
-async def run_step(
-    symbol: str,
-    exchange: str,
-    timeframe: str = "1m",
-    data_dir: str = None,
-    force_rerun: bool = False,
-    **kwargs: Any,
-) -> bool:
-    """
-    Step 6: Complete Feature Engineering with Standardized Data Quality Management.
-    
-    This step creates comprehensive features including both basic and advanced features,
-    with regime-aware optimization after HMM regime discovery.
-    
-    Args:
-        symbol: Trading symbol (e.g., "ETHUSDT")
-        exchange: Exchange name (e.g., "BINANCE")
-        timeframe: Timeframe (e.g., "1m")
-        data_dir: Data directory (will use standardized path if None)
-        force_rerun: Force re-run even if results exist
-        **kwargs: Additional arguments
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    logger = system_logger.getChild("Step6FeatureEngineering")
-    
-    # Use standardized path construction
-    if data_dir is None:
-        data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
-    
-    logger.info("=" * 80)
-    logger.info("🚀 STEP 6: Complete Feature Engineering with Standardized Data Quality Management")
-    logger.info("=" * 80)
-    logger.info(f"🎯 Symbol: {symbol}")
-    logger.info(f"🏢 Exchange: {exchange}")
-    logger.info(f"📊 Timeframe: {timeframe}")
-    logger.info(f"📁 Data directory: {data_dir}")
-    logger.info(f"🔄 Force rerun: {force_rerun}")
-    logger.info("=" * 80)
-    
-    try:
-        # Check for existing artifacts first
-        logger.info("🔍 Checking for existing feature artifacts...")
-        artifacts_exist = _check_feature_artifacts_exist(symbol, exchange, data_dir)
-        
-        if artifacts_exist and not force_rerun:
-            logger.info("📦 Loading existing feature artifacts (use --force-rerun to regenerate)")
-            return True
-
-        if artifacts_exist and force_rerun:
-            logger.info("🔄 Force rerun enabled - regenerating features")
-            logger.info("🗑️  Existing artifacts will be overwritten")
-        else:
-            logger.info("🔧 No existing artifacts found - generating features")
-            logger.info("🆕 Starting fresh feature engineering pipeline")
-
-        # 1) Load unified data from step1_5
-        logger.info("📊 Loading unified data from step1_5...")
-        unified_data = await _load_unified_data(symbol, exchange, timeframe, data_dir)
-        if unified_data is None or unified_data.empty:
-            logger.error("❌ Failed to load unified data")
-            return False
-
-        # Note: Data validation is now handled by decorators (@validates, # @secure_data_processing - removed, handled by validates)
-        logger.info("✅ Data validation passed (handled by decorators)")
-
-        # 2) Load regime information from step03
-        logger.info("📊 Loading regime information from step03...")
-        regime_data = await _load_regime_data(symbol, exchange, timeframe)
-        if regime_data is not None:
-            logger.info(f"✅ Loaded regime data with {len(regime_data)} regimes")
-        else:
-            logger.warning("⚠️ No regime data found - proceeding without regime-aware features")
-
-        # 3) Load labeled data from step05
-        logger.info("📊 Loading labeled data from step05...")
-        labeled_data = await _load_labeled_data(symbol, exchange, timeframe)
-        if labeled_data is None or labeled_data.empty:
-            logger.error("❌ Failed to load labeled data")
-            return False
-
-        # 4) Initialize vectorized feature engineering
-        logger.info("🔧 Initializing vectorized feature engineering...")
-        feature_engineer = VectorizedAdvancedFeatureEngineering(
-            config={
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": timeframe,
-                "enable_regime_aware_features": regime_data is not None,
-                "enable_advanced_features": True,
-                "enable_basic_features": True,
-            }
-        )
-
-        # 5) Create comprehensive features
-        logger.info("🔧 Creating comprehensive features...")
-        features_result = await _create_comprehensive_features(
-            unified_data, labeled_data, regime_data, feature_engineer, symbol, exchange, timeframe
-        )
-        
-        if not features_result:
-            logger.error("❌ Failed to create comprehensive features")
-            return False
-
-        # 6) Monitor feature generation
-        logger.info("📊 Monitoring feature generation...")
-        feature_stats = _monitor_feature_generation(features_result["features_full"])
-        logger.info(f"📈 Feature generation stats: {feature_stats}")
-
-        # 7) Save feature artifacts
-        logger.info("💾 Saving feature artifacts...")
-        save_success = await _save_feature_artifacts(features_result, symbol, exchange, timeframe, data_dir)
-        
-        if not save_success:
-            logger.error("❌ Failed to save feature artifacts")
-            return False
-
-        logger.info("✅ Step 6: Complete Feature Engineering completed successfully")
-        logger.info("📊 Features created with comprehensive engineering")
-        logger.info("=" * 80)
-        return True
-            
-    except Exception as e:
-        logger.exception(f"❌ Unexpected error in Step 6: {e}")
-        return False
-
-
-def _monitor_feature_generation(features: pd.DataFrame) -> dict:
-    """Monitor feature generation process."""
-    stats = {
-        "total_features": len(features.columns),
-        "numeric_features": len(features.select_dtypes(include=[np.number]).columns),
-        "missing_values": features.isnull().sum().sum(),
-        "memory_usage_mb": features.memory_usage(deep=True).sum() / 1024 / 1024,
-        "feature_categories": _categorize_features(features.columns),
-        "data_shape": features.shape
-    }
-    
-    system_logger.info(f"📊 Feature Generation Stats: {stats}")
-    return stats
-
-
-def _categorize_features(feature_columns: List[str]) -> dict:
-    """Categorize features by type."""
-    categories = {
-        "price_features": [],
-        "volume_features": [],
-        "vwap_features": [],
-        "technical_indicators": [],
-        "statistical_features": [],
-        "regime_features": [],
-        "lagged_features": [],
-        "rolling_features": [],
-        "vectorized_features": [],
-        "other_features": []
-    }
-    
-    for col in feature_columns:
-        if any(keyword in col.lower() for keyword in ["return", "price", "close", "open", "high", "low"]):
-            categories["price_features"].append(col)
-        elif "volume" in col.lower():
-            categories["volume_features"].append(col)
-        elif "vwap" in col.lower():
-            categories["vwap_features"].append(col)
-        elif any(keyword in col.lower() for keyword in ["sma", "ema", "rsi", "macd", "bb", "atr", "stoch"]):
-            categories["technical_indicators"].append(col)
-        elif any(keyword in col.lower() for keyword in ["mean", "std", "skew", "kurt", "zscore"]):
-            categories["statistical_features"].append(col)
-        elif "regime" in col.lower():
-            categories["regime_features"].append(col)
-        elif "lag" in col.lower():
-            categories["lagged_features"].append(col)
-        elif any(keyword in col.lower() for keyword in ["rolling", "window"]):
-            categories["rolling_features"].append(col)
-        elif "vectorized" in col.lower():
-            categories["vectorized_features"].append(col)
-        else:
-            categories["other_features"].append(col)
-    
-    return {k: len(v) for k, v in categories.items()}
-
-
-async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
-    """Load unified data from step1_5."""
-    try:
-        from src.training.steps.unified_data_loader import load_unified_data
-        
-        unified_data = await load_unified_data(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            data_dir=data_dir,
-            columns=["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"],
-        )
-        
-        if unified_data is None or unified_data.empty:
-            return None
-            
-        return unified_data
-        
-    except Exception as e:
-        system_logger.error(f"Failed to load unified data: {e}")
-        return None
-
-
-async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-    """Load unified regime data with labels from step04/step08."""
-    try:
-        # Try to load unified regime dataset first (new approach)
-        unified_regime_file = Path(f"data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
-        
-        if unified_regime_file.exists():
-            regime_data = pd.read_parquet(unified_regime_file)
-            system_logger.info(f"✅ Loaded unified regime dataset: {regime_data.shape}")
-            system_logger.info(f"   Regime column: composite_cluster_id")
-            system_logger.info(f"   Unique regimes: {regime_data['composite_cluster_id'].nunique()}")
-            return regime_data
-        
-        # Fallback to old approach for backward compatibility
-        regime_file = Path(f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet")
-        
-        if regime_file.exists():
-            regime_data = pd.read_parquet(regime_file)
-            system_logger.info(f"⚠️ Loaded legacy regime data: {regime_data.shape}")
-            system_logger.info(f"   Note: Consider running step04/step08 for unified approach")
-            return regime_data
-        else:
-            system_logger.warning(f"⚠️ No regime data found (neither unified nor legacy)")
-            system_logger.warning(f"   Expected files:")
-            system_logger.warning(f"     - {unified_regime_file}")
-            system_logger.warning(f"     - {regime_file}")
-            return None
-            
-    except Exception as e:
-        system_logger.error(f"Failed to load regime data: {e}")
-        return None
-
-
-async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-    """Load labeled data from step05."""
-    try:
-        labeled_file = Path(f"data/training/{exchange}_{symbol}_{timeframe}_labeled_data.parquet")
-        
-        if labeled_file.exists():
-            labeled_data = pd.read_parquet(labeled_file)
-            system_logger.info(f"Loaded labeled data: {labeled_data.shape}")
-            return labeled_data
-        else:
-            system_logger.warning(f"Labeled file not found: {labeled_file}")
-            return None
-            
-    except Exception as e:
-        system_logger.error(f"Failed to load labeled data: {e}")
-        return None
-
-
-async def _create_comprehensive_features(
-    unified_data: pd.DataFrame,
-    labeled_data: pd.DataFrame,
-    regime_data: pd.DataFrame,
-    feature_engineer: VectorizedAdvancedFeatureEngineering,
-    symbol: str,
-    exchange: str,
-    timeframe: str
-) -> Dict[str, Any]:
-    """Create comprehensive features using vectorized feature engineering."""
-    
-    try:
-        # Create proper config for SR features
-        config = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "sr_breakout_predictor": {
-                "enable_detailed_reporting": True,
-                "sr_proximity_threshold": 0.02,
-                "breakout_confidence_threshold": 0.6,
-                "sr_detection_method": "fractal",
-                "min_sr_strength": 0.3,
-                "max_sr_levels": 10,
-                "enable_dbscan_clustering": True,
-                "enable_enhanced_strength": True,
-                "enable_sr_features": True,
-                "replace_existing_sr": False
-            }
-        }
-        
-        # Merge data
-        merged_data = unified_data.copy()
-        
-        if regime_data is not None:
-            # Check if this is unified regime data or legacy regime data
-            if "composite_cluster_id" in regime_data.columns:
-                # Unified regime dataset - regime info is already included
-                if "composite_cluster_id" not in merged_data.columns:
-                    # Merge regime information from unified dataset
-                    regime_columns = ["composite_cluster_id"]
-                    if "timestamp" in regime_data.columns:
-                        regime_columns.insert(0, "timestamp")
-                    
-                    merged_data = merged_data.merge(
-                        regime_data[regime_columns], 
-                        on="timestamp" if "timestamp" in regime_columns else merged_data.index,
-                        how="left"
-                    )
-                    system_logger.info("✅ Merged regime data from unified dataset")
-                else:
-                    system_logger.info("✅ Regime data already present in unified dataset")
-            else:
-                # Legacy regime data - merge regime information
-                regime_columns = ["regime"] if "regime" in regime_data.columns else []
-                if "timestamp" in regime_data.columns:
-                    regime_columns.insert(0, "timestamp")
-                
-                if regime_columns:
-                    merged_data = merged_data.merge(
-                        regime_data[regime_columns], 
-                        on="timestamp", 
-                        how="left"
-                    )
-                    system_logger.info("✅ Merged legacy regime data")
-                else:
-                    system_logger.warning("⚠️ No valid regime columns found in regime data")
-        
-        if labeled_data is not None:
-            # Merge labeled data
-            label_columns = [col for col in labeled_data.columns if col.startswith("label_")]
-            if label_columns:
-                merged_data = merged_data.merge(
-                    labeled_data[["timestamp"] + label_columns], 
-                    on="timestamp", 
-                    how="left"
-                )
-                system_logger.info(f"✅ Merged labeled data with {len(label_columns)} label columns")
-        
-        # Create features using parallel processing
-        system_logger.info("🔧 Creating features with parallel processing...")
-        
-        # Create basic features
-        features_df = await _create_basic_features(merged_data)
-        
-        # Add technical indicators
-        features_df = _add_technical_indicators(features_df)
-        
-        # Add statistical features
-        features_df = _add_statistical_features(features_df)
-        
-        # Add lagged features
-        features_df = _create_lagged_features(features_df)
-        
-        # Add rolling window features
-        features_df = _create_rolling_window_features(features_df)
-        
-        # Add regime-aware features if regime data is available
-        if regime_data is not None:
-            features_df = _add_regime_aware_features(features_df, merged_data)
-        
-        # Add HMM feature enhancement if regime data is available
-        if regime_data is not None:
-            features_df = _enhance_hmm_features(features_df, regime_data)
-        
-        # Add comprehensive S/R features using centralized logic
-        if config.get("sr_breakout_predictor", {}).get("enable_sr_features", True):
-            features_df = await _add_sr_features(features_df, merged_data, config)
-        else:
-            system_logger.info("⏭️ Skipping SR feature generation (disabled in config)")
-        
-        # Add SR-aware feature selection
-        features_df = await _add_sr_aware_feature_selection(features_df, merged_data, config)
-        
-        # Add SR detection optimization features
-        features_df = await _add_sr_optimization_features(features_df, merged_data, config)
-        
-        # Better integration with vectorized advanced features
-        features_df = await _enhanced_integration_with_vectorized_features(features_df, feature_engineer, symbol, exchange, timeframe)
-        
-        # Validate and clean features
-        features_df = _validate_and_clean_features(features_df)
-        
-        # Split into train/validation
-        split_point = int(len(features_df) * 0.8)
-        features_train = features_df.iloc[:split_point]
-        features_val = features_df.iloc[split_point:]
-        
-        return {
-            "features_train": features_train,
-            "features_val": features_val,
-            "features_full": features_df,
-            "metadata": {
-                "total_features": len(features_df.columns),
-                "train_samples": len(features_train),
-                "val_samples": len(features_val),
-                "feature_columns": list(features_df.columns),
-                "regime_aware": regime_data is not None,
-                "sr_features_enabled": config.get("sr_breakout_predictor", {}).get("enable_sr_features", True),
-                "timestamp": datetime.now().isoformat()
-            }
-        }
-        
-    except Exception as e:
-        system_logger.error(f"Failed to create comprehensive features: {e}")
-        return None
-
-
-def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
-    """Create basic features."""
-    features = data.copy()
-    
-    # Price-based features
-    features["returns"] = data["close"].pct_change()
-    features["log_returns"] = np.log(data["close"] / data["close"].shift(1))
-    features["price_range"] = (data["high"] - data["low"]) / data["close"]
-    features["body_size"] = abs(data["close"] - data["open"]) / data["close"]
-    
-    # VWAP calculation and VWAP-based features
-    features["vwap"] = (data["close"] * data["volume"]).rolling(window=20).sum() / data["volume"].rolling(window=20).sum()
-    features["vwap_returns"] = features["vwap"].pct_change()
-    features["vwap_log_returns"] = np.log(features["vwap"] / features["vwap"].shift(1))
-    
-    # VWAP vs Price features
-    features["price_vwap_ratio"] = data["close"] / features["vwap"]
-    features["price_vwap_deviation"] = (data["close"] - features["vwap"]) / features["vwap"]
-    features["price_vwap_spread"] = data["close"] - features["vwap"]
-    
-    # VWAP momentum features
-    features["vwap_momentum_5"] = features["vwap"] / features["vwap"].shift(5) - 1
-    features["vwap_momentum_10"] = features["vwap"] / features["vwap"].shift(10) - 1
-    features["vwap_momentum_20"] = features["vwap"] / features["vwap"].shift(20) - 1
-    
-    # VWAP acceleration features
-    features["vwap_acceleration_5"] = features["vwap_momentum_5"] - features["vwap_momentum_5"].shift(5)
-    features["vwap_acceleration_10"] = features["vwap_momentum_10"] - features["vwap_momentum_10"].shift(10)
-    features["vwap_acceleration_20"] = features["vwap_momentum_20"] - features["vwap_momentum_20"].shift(20)
-    
-    # VWAP volatility features
-    features["vwap_volatility_5"] = features["vwap_returns"].rolling(window=5).std()
-    features["vwap_volatility_10"] = features["vwap_returns"].rolling(window=10).std()
-    features["vwap_volatility_20"] = features["vwap_returns"].rolling(window=20).std()
-    
-    # VWAP momentum volatility features
-    features["vwap_momentum_volatility_5"] = features["vwap_momentum_5"].rolling(window=5).std()
-    features["vwap_momentum_volatility_10"] = features["vwap_momentum_10"].rolling(window=10).std()
-    features["vwap_momentum_volatility_20"] = features["vwap_momentum_20"].rolling(window=20).std()
-    
-    # Volume features
-    features["volume_ratio"] = data["volume"] / data["volume"].rolling(window=20).mean()
-    features["volume_std"] = data["volume"].rolling(window=20).std()
-    
-    # Volatility features
-    features["volatility"] = features["returns"].rolling(window=20).std()
-    features["volatility_ratio"] = features["volatility"] / features["volatility"].rolling(window=50).mean()
-    
-    return features
-
-
-def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10]) -> pd.DataFrame:
-    """Create lagged versions of important features."""
-    important_features = ["returns", "volume_ratio", "volatility", "rsi"]
-    
-    # Add VWAP-based features to important features list
-    if "vwap_returns" in features.columns:
-        important_features.extend(["vwap_returns", "vwap_momentum_20", "vwap_volatility_20"])
-    if "price_vwap_ratio" in features.columns:
-        important_features.extend(["price_vwap_ratio", "price_vwap_deviation"])
-    
-    for feature in important_features:
-        if feature in features.columns:
-            for lag in lags:
-                features[f"{feature}_lag_{lag}"] = features[feature].shift(lag)
-    
-    system_logger.info(f"✅ Created {len(important_features) * len(lags)} lagged features")
-    return features
-
-
-def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
-    """Create advanced rolling window features."""
-    windows = [5, 10, 20, 50]
-    
-    for window in windows:
-        # Rolling statistics
-        features[f"returns_skew_{window}"] = features["returns"].rolling(window).skew()
-        features[f"returns_kurt_{window}"] = features["returns"].rolling(window).kurt()
-        
-        # Rolling quantiles
-        features[f"returns_q25_{window}"] = features["returns"].rolling(window).quantile(0.25)
-        features[f"returns_q75_{window}"] = features["returns"].rolling(window).quantile(0.75)
-        
-        # Rolling extremes
-        features[f"returns_max_{window}"] = features["returns"].rolling(window).max()
-        features[f"returns_min_{window}"] = features["returns"].rolling(window).min()
-        
-        # Volume rolling features
-        if "volume_ratio" in features.columns:
-            features[f"volume_skew_{window}"] = features["volume_ratio"].rolling(window).skew()
-            features[f"volume_kurt_{window}"] = features["volume_ratio"].rolling(window).kurt()
-    
-    # VWAP-based rolling window features
-    if "vwap_returns" in features.columns:
-        for window in windows:
-            # VWAP returns rolling statistics
-            features[f"vwap_returns_skew_{window}"] = features["vwap_returns"].rolling(window).skew()
-            features[f"vwap_returns_kurt_{window}"] = features["vwap_returns"].rolling(window).kurt()
-            features[f"vwap_returns_q25_{window}"] = features["vwap_returns"].rolling(window).quantile(0.25)
-            features[f"vwap_returns_q75_{window}"] = features["vwap_returns"].rolling(window).quantile(0.75)
-            features[f"vwap_returns_max_{window}"] = features["vwap_returns"].rolling(window).max()
-            features[f"vwap_returns_min_{window}"] = features["vwap_returns"].rolling(window).min()
-    
-    # VWAP momentum rolling window features
-    if "vwap_momentum_20" in features.columns:
-        for window in [5, 10, 20]:
-            features[f"vwap_momentum_skew_{window}"] = features["vwap_momentum_20"].rolling(window).skew()
-            features[f"vwap_momentum_kurt_{window}"] = features["vwap_momentum_20"].rolling(window).kurt()
-            features[f"vwap_momentum_q25_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.25)
-            features[f"vwap_momentum_q75_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.75)
-    
-    system_logger.info(f"✅ Created {len(windows) * 7 + (len(windows) * 6 if 'vwap_returns' in features.columns else 0) + (3 * 5 if 'vwap_momentum_20' in features.columns else 0)} rolling window features")
-    return features
-
-
-def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
-    """Add regime-aware features."""
-    if "regime" not in data.columns:
-        return features
-    
-    # Regime-specific features
-    features["regime"] = data["regime"]
-    features["regime_change"] = data["regime"].diff()
-    features["regime_duration"] = data["regime"].groupby((data["regime"] != data["regime"].shift()).cumsum()).cumcount()
-    
-    # Regime-specific statistics
-    for regime in data["regime"].unique():
-        if pd.notna(regime):
-            regime_mask = data["regime"] == regime
-            features[f"regime_{regime}_returns_mean"] = features["returns"].where(regime_mask).rolling(20).mean()
-            features[f"regime_{regime}_volatility_mean"] = features["volatility"].where(regime_mask).rolling(20).mean()
-            
-            # VWAP-based regime features
-            if "vwap_returns" in features.columns:
-                features[f"regime_{regime}_vwap_returns_mean"] = features["vwap_returns"].where(regime_mask).rolling(20).mean()
-                features[f"regime_{regime}_vwap_volatility_mean"] = features["vwap_volatility_20"].where(regime_mask).rolling(20).mean()
-                features[f"regime_{regime}_vwap_momentum_mean"] = features["vwap_momentum_20"].where(regime_mask).rolling(20).mean()
-    
-    return features
-
-
-def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> pd.DataFrame:
-    """Enhance features with HMM feature enhancer."""
-    try:
-        from src.training.steps.hmm_feature_enhancer import HMMFeatureEnhancer
-        
-        # Initialize HMM feature enhancer
-        enhancer = HMMFeatureEnhancer()
-        
-        # Merge regime data with features for enhancement
-        enhanced_features = features.copy()
-        
-        # Add regime information if not already present
-        if "composite_cluster_id" not in enhanced_features.columns and "regime" in regime_data.columns:
-            enhanced_features = enhanced_features.merge(
-                regime_data[["timestamp", "regime"]].rename(columns={"regime": "composite_cluster_id"}),
-                on="timestamp",
-                how="left"
-            )
-        
-        # Enhance features with HMM feature enhancer
-        enhanced_features = enhancer.enhance_hmm_features(enhanced_features)
-        
-        system_logger.info(f"✅ Enhanced features with HMM feature enhancer: {len(enhanced_features.columns)} total features")
-        return enhanced_features
-        
-    except Exception as e:
-        system_logger.error(f"Failed to enhance HMM features: {e}")
-        return features
-
-
-def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
-    """Add technical indicators."""
-    # Moving averages
-    features["sma_20"] = features["close"].rolling(window=20).mean()
-    features["sma_50"] = features["close"].rolling(window=50).mean()
-    features["ema_12"] = features["close"].ewm(span=12).mean()
-    features["ema_26"] = features["close"].ewm(span=26).mean()
-    
-    # VWAP-based moving averages
-    if "vwap" in features.columns:
-        features["vwap_sma_20"] = features["vwap"].rolling(window=20).mean()
-        features["vwap_sma_50"] = features["vwap"].rolling(window=50).mean()
-        features["vwap_ema_12"] = features["vwap"].ewm(span=12).mean()
-        features["vwap_ema_26"] = features["vwap"].ewm(span=26).mean()
-        
-        # VWAP Bollinger Bands
-        vwap_bb_middle = features["vwap"].rolling(window=20).mean()
-        vwap_bb_std = features["vwap"].rolling(window=20).std()
-        features["vwap_bb_upper"] = vwap_bb_middle + (vwap_bb_std * 2)
-        features["vwap_bb_lower"] = vwap_bb_middle - (vwap_bb_std * 2)
-        features["vwap_bb_width"] = features["vwap_bb_upper"] - features["vwap_bb_lower"]
-        features["vwap_bb_position"] = (features["vwap"] - features["vwap_bb_lower"]) / features["vwap_bb_width"]
-        
-        # VWAP RSI
-        vwap_delta = features["vwap"].diff()
-        vwap_gain = (vwap_delta.where(vwap_delta > 0, 0)).rolling(window=14).mean()
-        vwap_loss = (-vwap_delta.where(vwap_delta < 0, 0)).rolling(window=14).mean()
-        vwap_rs = vwap_gain / vwap_loss
-        features["vwap_rsi"] = 100 - (100 / (1 + vwap_rs))
-        
-        # VWAP MACD
-        features["vwap_macd"] = features["vwap_ema_12"] - features["vwap_ema_26"]
-        features["vwap_macd_signal"] = features["vwap_macd"].ewm(span=9).mean()
-        features["vwap_macd_histogram"] = features["vwap_macd"] - features["vwap_macd_signal"]
-    
-    # RSI
-    delta = features["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    features["rsi"] = 100 - (100 / (1 + rs))
-    
-    # MACD
-    features["macd"] = features["ema_12"] - features["ema_26"]
-    features["macd_signal"] = features["macd"].ewm(span=9).mean()
-    features["macd_histogram"] = features["macd"] - features["macd_signal"]
-    
-    # Bollinger Bands
-    features["bb_middle"] = features["close"].rolling(window=20).mean()
-    bb_std = features["close"].rolling(window=20).std()
-    features["bb_upper"] = features["bb_middle"] + (bb_std * 2)
-    features["bb_lower"] = features["bb_middle"] - (bb_std * 2)
-    features["bb_width"] = features["bb_upper"] - features["bb_lower"]
-    features["bb_position"] = (features["close"] - features["bb_lower"]) / features["bb_width"]
-    
-    return features
-
-
-def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
-    """Add statistical features."""
-    # Rolling statistics
-    for window in [5, 10, 20, 50]:
-        features[f"returns_mean_{window}"] = features["returns"].rolling(window=window).mean()
-        features[f"returns_std_{window}"] = features["returns"].rolling(window=window).std()
-        features[f"returns_skew_{window}"] = features["returns"].rolling(window=window).skew()
-        features[f"returns_kurt_{window}"] = features["returns"].rolling(window=window).kurt()
-    
-    # VWAP-based rolling statistics
-    if "vwap_returns" in features.columns:
-        for window in [5, 10, 20, 50]:
-            features[f"vwap_returns_mean_{window}"] = features["vwap_returns"].rolling(window=window).mean()
-            features[f"vwap_returns_std_{window}"] = features["vwap_returns"].rolling(window=window).std()
-            features[f"vwap_returns_skew_{window}"] = features["vwap_returns"].rolling(window=window).skew()
-            features[f"vwap_returns_kurt_{window}"] = features["vwap_returns"].rolling(window=window).kurt()
-    
-    # VWAP momentum rolling statistics
-    if "vwap_momentum_20" in features.columns:
-        for window in [5, 10, 20]:
-            features[f"vwap_momentum_mean_{window}"] = features["vwap_momentum_20"].rolling(window=window).mean()
-            features[f"vwap_momentum_std_{window}"] = features["vwap_momentum_20"].rolling(window=window).std()
-            features[f"vwap_momentum_skew_{window}"] = features["vwap_momentum_20"].rolling(window=window).skew()
-            features[f"vwap_momentum_kurt_{window}"] = features["vwap_momentum_20"].rolling(window=window).kurt()
-    
-    # Z-score features
-    features["returns_zscore"] = (features["returns"] - features["returns"].rolling(20).mean()) / features["returns"].rolling(20).std()
-    features["volume_zscore"] = (features["volume"] - features["volume"].rolling(20).mean()) / features["volume"].rolling(20).std()
-    
-    # VWAP Z-score features
-    if "vwap_returns" in features.columns:
-        features["vwap_returns_zscore"] = (features["vwap_returns"] - features["vwap_returns"].rolling(20).mean()) / features["vwap_returns"].rolling(20).std()
-        features["vwap_momentum_zscore"] = (features["vwap_momentum_20"] - features["vwap_momentum_20"].rolling(20).mean()) / features["vwap_momentum_20"].rolling(20).std()
-    
-    return features
-
-
-async def _add_sr_features(
-    features: pd.DataFrame, 
-    market_data: pd.DataFrame,
-    config: dict[str, Any]
-) -> pd.DataFrame:
-    """Add comprehensive S/R features using all features from SR breakout predictor."""
-    try:
-        # Check for existing SR features to avoid redundancy
-        existing_sr_features = [col for col in features.columns if any(keyword in col.lower() for keyword in [
-            "sr_", "support", "resistance", "pivot", "breakout", "proximity"
-        ])]
-        
-        if existing_sr_features:
-            system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features, will enhance rather than replace")
-            system_logger.info(f"   Existing features: {existing_sr_features[:5]}...")
-        
-        from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-        
-        # Initialize S/R predictor with optimized parameters
-        sr_config = config.copy()
-        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        sr_predictor = SRBreakoutPredictor(sr_config)
-        await sr_predictor.initialize()
-        
-        # Get comprehensive S/R context with all advanced features
-        current_price = market_data['close'].iloc[-1]
-        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
-        
-        # Calculate comprehensive S/R features using all available methods
-        sr_features = await sr_predictor.calculate_comprehensive_sr_features(market_data)
-        
-        # Add all S/R context features including advanced analysis
-        context_features = {
-            # Basic SR features
-            "sr_support_proximity": sr_context.get("support_proximity", 1.0),
-            "sr_resistance_proximity": sr_context.get("resistance_proximity", 1.0),
-            "sr_support_strength": sr_context.get("support_strength", 0.5),
-            "sr_resistance_strength": sr_context.get("resistance_strength", 0.5),
-            "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
-            "sr_nearest_support": sr_context.get("nearest_support", current_price),
-            "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
-            "sr_total_support_levels": len(sr_context.get("support_levels", [])),
-            "sr_total_resistance_levels": len(sr_context.get("resistance_levels", [])),
-            
-            # Enhanced strength features
-            "sr_enhanced_support_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("support_levels", [])]) if sr_context.get("support_levels") else 0.5,
-            "sr_enhanced_resistance_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("resistance_levels", [])]) if sr_context.get("resistance_levels") else 0.5,
-            
-            # Clustering features
-            "sr_clusters_detected": sr_context.get("clustering_result", {}).get("n_clusters", 0),
-            "sr_noise_points": sr_context.get("clustering_result", {}).get("noise_points", 0),
-            "sr_clustering_quality": 1.0 if sr_context.get("clustering_result", {}).get("n_clusters", 0) > 0 else 0.0,
-            
-            # Advanced analysis features
-            "sr_fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
-            "sr_elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
-            "sr_order_flow_poc": 1.0 if sr_context.get("order_flow_analysis", {}).get("poc") else 0.0,
-            "sr_order_flow_hvns": len(sr_context.get("order_flow_analysis", {}).get("volume_profile", {}).get("high_volume_nodes", [])),
-            "sr_order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
-        }
-        
-        # Add pivot levels features (as percentages relative to current price)
-        pivot_levels = sr_context.get("pivot_levels", {})
-        if pivot_levels and current_price > 0:
-            context_features.update({
-                "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price,
-                "sr_support_1_pct": (pivot_levels.get("s1", current_price) - current_price) / current_price,
-                "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price,
-                "sr_resistance_1_pct": (pivot_levels.get("r1", current_price) - current_price) / current_price,
-                "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price,
-            })
-        
-        # Add all features to DataFrame with conflict resolution
-        all_sr_features = {**sr_features, **context_features}
-        features_added = 0
-        
-        for feature_name, feature_value in all_sr_features.items():
-            new_feature_name = f"sr_{feature_name}"
-            
-            # Check if feature already exists
-            if new_feature_name in features.columns:
-                if config.get("sr_breakout_predictor", {}).get("replace_existing_sr", False):
-                    system_logger.info(f"🔄 Replacing existing feature: {new_feature_name}")
-                else:
-                    system_logger.warning(f"⚠️ Feature {new_feature_name} already exists, skipping")
-                    continue
-                
-            if isinstance(feature_value, pd.Series) and len(feature_value) == len(features):
-                features[new_feature_name] = feature_value
-                features_added += 1
-            elif isinstance(feature_value, (int, float)):
-                # If it's a scalar, broadcast to all rows'
-                features[new_feature_name] = feature_value
-                features_added += 1
-        
-        system_logger.info(f"✅ Added {features_added} new S/R features (avoided {len(existing_sr_features)} existing)")
-        
-        # Generate detailed report if enabled
-        if sr_predictor.reporting_enabled:
-            await sr_predictor.generate_manual_report(market_data, sr_context)
-        
-        # Cleanup
-        await sr_predictor.cleanup()
-        
-        return features
-        
-    except Exception as e:
-        system_logger.warning(f"S/R feature integration failed: {e}")
-        return features
-
-async def _add_sr_aware_feature_selection(
-    features: pd.DataFrame,
-    market_data: pd.DataFrame,
-    config: dict[str, Any]
-) -> pd.DataFrame:
-    """Add SR-aware feature selection and engineering."""
-    try:
-        from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-        
-        # Initialize SRBreakoutPredictor with optimized parameters
-        sr_config = config.copy()
-        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        sr_predictor = SRBreakoutPredictor(sr_config)
-        await sr_predictor.initialize()
-        
-        # Get SR context for feature selection
-        current_price = market_data['close'].iloc[-1]
-        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
-        
-        # Create SR-aware features based on proximity
-        support_proximity = sr_context.get("support_proximity", 1.0)
-        resistance_proximity = sr_context.get("resistance_proximity", 1.0)
-        
-        # Add proximity-based feature weights (using percentages)
-        features["sr_proximity_weight"] = 1.0 / (1.0 + min(support_proximity, resistance_proximity))
-        
-        # Add SR strength features (already as percentages/ratios)
-        features["sr_combined_strength"] = (
-            sr_context.get("support_strength", 0.5) + 
-            sr_context.get("resistance_strength", 0.5)
-        ) / 2
-        
-        # Add SR zone features (using percentages)
-        sr_zone_width = sr_context.get("sr_zone_width", 0.0)
-        if sr_zone_width > 0 and current_price > 0:
-            zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
-        else:
-            zone_position_pct = 0.5
-        features["sr_zone_position_pct"] = zone_position_pct
-        
-        # Add SR momentum features (as percentage returns)
-        features["sr_momentum_pct"] = market_data['close'].pct_change().iloc[-5:].mean()
-        
-        # Add SR volatility features (as percentage returns)
-        features["sr_volatility_pct"] = market_data['close'].pct_change().rolling(20).std().iloc[-1]
-        
-        # Add SR volume features (as ratio/percentage)
-        features["sr_volume_ratio"] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1]
-        
-        # Add SR trend features (as percentage change)
-        features["sr_trend_pct"] = (market_data['close'].iloc[-1] - market_data['close'].iloc[-20]) / market_data['close'].iloc[-20]
-        
-        await sr_predictor.cleanup()
-        system_logger.info("✅ Added SR-aware feature selection features")
-        return features
-        
-    except Exception as e:
-        system_logger.warning(f"SR-aware feature selection failed: {e}")
-        return features
-
-async def _add_sr_optimization_features(
-    features: pd.DataFrame,
-    market_data: pd.DataFrame,
-    config: dict[str, Any]
-) -> pd.DataFrame:
-    """Add SR detection optimization features using all optimization capabilities."""
-    try:
-        from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
-    except Exception as e:
-        pass  # TODO: Handle exception properly
-import copy
 import numpy as np
 import pandas as pd
-        
-# Initialize SR detection optimizer
-optimizer = await setup_sr_detection_optimizer(config)
-if not optimizer:
-            system_logger.warning("⚠️ SR detection optimizer not available, skipping optimization features")
-            return features
-        
-        # Get optimized parameters if available
-        optimized_params = optimizer.get_optimized_parameters()
-        if optimized_params:
-            system_logger.info("✅ Using optimized SR parameters")
-            
-            # Add optimization-based features
-            features["sr_optimized_method_weights"] = np.mean(list(optimized_params.get("method_weights", {}).values()))
-            features["sr_optimized_strength_weights"] = np.mean(list(optimized_params.get("strength_weights", {}).values()))
-            features["sr_optimized_dbscan_eps"] = optimized_params.get("dbscan_params", {}).get("eps", 0.01)
-            features["sr_optimized_dbscan_min_samples"] = optimized_params.get("dbscan_params", {}).get("min_samples", 3)
-            features["sr_optimized_fibonacci_sensitivity"] = optimized_params.get("advanced_params", {}).get("fibonacci_sensitivity", 0.7)
-            features["sr_optimized_elliott_confidence"] = optimized_params.get("advanced_params", {}).get("elliott_confidence_threshold", 0.6)
-            features["sr_optimized_order_flow_threshold"] = optimized_params.get("advanced_params", {}).get("order_flow_hvn_threshold", 1.5)
-            
-            # Add timeframe optimization features
-            timeframe_weights = optimized_params.get("timeframe_weights", {})
-            for tf, weight in timeframe_weights.items():
-                features[f"sr_optimized_tf_{tf}_weight"] = weight
-        else:
-            system_logger.info("ℹ️ No optimized parameters available, using default values")
-            # Add default optimization features
-            features["sr_optimized_method_weights"] = 0.25  # Default average
-            features["sr_optimized_strength_weights"] = 0.2  # Default average
-            features["sr_optimized_dbscan_eps"] = 0.01
-            features["sr_optimized_dbscan_min_samples"] = 3
-            features["sr_optimized_fibonacci_sensitivity"] = 0.7
-            features["sr_optimized_elliott_confidence"] = 0.6
-            features["sr_optimized_order_flow_threshold"] = 1.5
-        
-        # Add optimization score if available (keeping only the main optimization score)
-        if hasattr(optimizer, 'best_result') and optimizer.best_result:
-            features["sr_optimization_score"] = optimizer.best_result.optimization_score
-        else:
-            # Add default optimization score
-            features["sr_optimization_score"] = 0.5
-        
-        system_logger.info("✅ Added SR optimization features")
-        return features
-        
-    except Exception as e:
-        system_logger.warning(f"SR optimization feature integration failed: {e}")
-        return features
+import talib
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.preprocessing import StandardScaler
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
-async def _enhanced_integration_with_vectorized_features(
-    features: pd.DataFrame, 
-    feature_engineer: VectorizedAdvancedFeatureEngineering,
-    symbol: str,
-    exchange: str,
-    timeframe: str
-) -> pd.DataFrame:
-    """Better integration with vectorized advanced feature engineering."""
-    try:
-        # Initialize vectorized feature engineering with more configuration
-        vectorized_config = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "enable_regime_aware_features": "regime" in features.columns,
-            "enable_advanced_features": True,
-            "enable_basic_features": False,  # Already done in step06
-            "feature_engineering_parameters": {
-                "enable_wavelet_transforms": True,
-                "enable_multi_timeframe": True,
-                "enable_profit_based_features": True
-            }
-        }
-        
-        # Initialize the feature engineer
-        await feature_engineer.initialize()
-        
-        # Get additional features
-        additional_features = await feature_engineer.engineer_features(
-            price_data=features[["open", "high", "low", "close"]],
-            volume_data=features[["volume"]]
-        )
-        
-        # Merge additional features
-        for key, value in additional_features.items():
-            if isinstance(value, pd.Series):
-                features[f"vectorized_{key}"] = value
-        
-        system_logger.info(f"✅ Integrated {len(additional_features)} vectorized features")
-        return features
-        
-    except Exception as e:
-        system_logger.warning(f"Vectorized feature integration failed: {e}")
-        return features
+class FeatureInteractionEngine:
+    """
+    Advanced feature interaction engineering for step06.
 
+    Creates interaction terms between:
+    - Technical indicators (RSI, MACD, Bollinger Bands, etc.)
+    - Market features (price, volume, volatility)
+    - Derived metrics (momentum, acceleration, regime indicators)
+    - Cross-timeframe features
+    - Regime-dependent interactions
 
-def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
-    """Validate and clean features."""
-    # Remove constant features
-    constant_features = features.columns[features.nunique() <= 1]
-    if len(constant_features) > 0:
-        features = features.drop(columns=constant_features)
-        system_logger.info(f"🗑️ Removed {len(constant_features)} constant features")
-    
-    # Remove highly correlated features
-    correlation_matrix = features.select_dtypes(include=[np.number]).corr().abs()
-    upper_tri = correlation_matrix.where(
-        np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-    )
-    high_corr_features = [column for column in upper_tri.columns 
-    if any(upper_tri[column] > 0.95)]
-    if len(high_corr_features) > 0:
-        features = features.drop(columns=high_corr_features)
-        system_logger.info(f"🗑️ Removed {len(high_corr_features)} highly correlated features")
-    
-    # Handle infinite values
-    features = features.replace([np.inf, -np.inf], np.nan)
-    
-    # Fill remaining NaN values
-    features = features.fillna(method="ffill").fillna(method="bfill").fillna(0)
-    
-    system_logger.info(f"✅ Feature validation and cleaning completed. Final shape: {features.shape}")
-    return features
+    Integrates with DiverseLookbackOptimizer to ensure optimal, non-correlated lookback periods.
+    """
 
+    def __init__(self, config: dict[str, Any]):
+        """
+        Initialize feature interaction engine.
 
-async def _save_feature_artifacts(
-    features_result: Dict[str, Any], 
-    symbol: str, 
-    exchange: str, 
-    timeframe: str, 
-    data_dir: str
-) -> bool:
-    """Save feature artifacts."""
-    try:
-        output_dir = ensure_directory("data/training")
-        
-        # Save feature files
-        train_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_features_train.parquet"
-        val_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_features_val.parquet"
-        metadata_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_feature_metadata.json"
-        
-        features_result["features_train"].to_parquet(train_file_path)
-        features_result["features_val"].to_parquet(val_file_path)
-        
-        # Save metadata
-        safe_json_dump(features_result["metadata"], metadata_file_path, indent=2, default=str)
-        
-        # Log artifacts to MLflow with standardized naming
+        Args:
+            config: Configuration dictionary with interaction parameters
+        """
+        self.config = config
+        self.logger = logger
+
+        # Load interaction configuration
+        step6_config = config.get("step6_feature_interaction_engineering", {})
+
+        # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
-            # Create a config dict for MLflow logging
-            config = {
-                "trading_symbol": symbol,
-                "exchange_name": exchange,
-                "lookback_years": 2,  # Default value
+            from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+
+            self.diverse_optimizer = DiverseLookbackOptimizer(config)
+            self.use_dynamic_periods = True
+            self.logger.info(
+                "✅ Integrated with DiverseLookbackOptimizer for dynamic period selection"
+            )
+        except ImportError:
+            self.diverse_optimizer = None
+            self.use_dynamic_periods = False
+            self.logger.warning(
+                "⚠️ DiverseLookbackOptimizer not available, using fallback periods"
+            )
+
+        # Optionally initialize MatrixDiverseLookbackOptimizer (vectorized) when enabled
+        self.matrix_optimizer = None
+        # Default to True per request
+        self.use_matrix_optimizer = bool(step6_config.get("use_matrix_optimizer", True))
+        if self.use_matrix_optimizer:
+            try:
+                from src.training.matrix_diverse_lookback_optimizer import (
+                    MatrixDiverseLookbackOptimizer,
+                )
+
+                self.matrix_optimizer = MatrixDiverseLookbackOptimizer(config)
+                # Even if classic optimizer import failed, matrix optimizer enables dynamic periods
+                self.use_dynamic_periods = True
+                self.logger.info(
+                    "✅ Integrated with MatrixDiverseLookbackOptimizer for vectorized period selection"
+                )
+            except Exception as e:
+                # Disable matrix path if import or construction fails
+                self.matrix_optimizer = None
+                self.use_matrix_optimizer = False
+                self.logger.warning(
+                    f"⚠️ MatrixDiverseLookbackOptimizer unavailable ({e}), falling back to classic optimization"
+                )
+
+        # Fallback optimal lookback periods (used if dynamic optimization fails)
+        self.fallback_lookback_periods = {
+            "RSI": {
+                "periods": [7, 21, 50],  # Short, medium, long - different market cycles
+                "correlation_threshold": 0.7,  # Maximum allowed correlation
+                "description": "Short (7) for momentum, Medium (21) for trend, Long (50) for major cycles",
+            },
+            "MACD": {
+                "periods": [12, 26, 52],  # Standard, extended, long-term
+                "correlation_threshold": 0.75,
+                "description": "Standard (12,26), Extended (20,40), Long-term (26,52)",
+            },
+            "Bollinger_Bands": {
+                "periods": [10, 20, 50],  # Short, standard, long
+                "correlation_threshold": 0.8,
+                "description": "Short (10) for volatility, Standard (20) for trend, Long (50) for major moves",
+            },
+            "SMA": {
+                "periods": [5, 20, 100],  # Very short, medium, very long
+                "correlation_threshold": 0.85,
+                "description": "Very short (5) for immediate trend, Medium (20) for trend, Long (100) for major trend",
+            },
+            "EMA": {
+                "periods": [8, 21, 55],  # Short, medium, long (different from SMA)
+                "correlation_threshold": 0.8,
+                "description": "Short (8) for momentum, Medium (21) for trend, Long (55) for major trend",
+            },
+            "ATR": {
+                "periods": [7, 14, 30],  # Short, standard, long volatility
+                "correlation_threshold": 0.75,
+                "description": "Short (7) for immediate volatility, Standard (14) for trend volatility, Long (30) for major volatility",
+            },
+            "Stochastic": {
+                "periods": [7, 14, 30],  # Short, standard, long momentum
+                "correlation_threshold": 0.7,
+                "description": "Short (7) for immediate momentum, Standard (14) for trend momentum, Long (30) for major momentum",
+            },
+            "ADX": {
+                "periods": [7, 14, 25],  # Short, standard, long trend strength
+                "correlation_threshold": 0.75,
+                "description": "Short (7) for immediate trend, Standard (14) for trend, Long (25) for major trend",
+            },
+            "CCI": {
+                "periods": [10, 20, 40],  # Short, medium, long cycles
+                "correlation_threshold": 0.7,
+                "description": "Short (10) for immediate cycles, Medium (20) for trend cycles, Long (40) for major cycles",
+            },
+            "Williams_R": {
+                "periods": [7, 14, 28],  # Short, standard, long overbought/oversold
+                "correlation_threshold": 0.7,
+                "description": "Short (7) for immediate signals, Standard (14) for trend signals, Long (28) for major signals",
+            },
+            "ROC": {
+                "periods": [5, 10, 25],  # Very short, short, medium momentum
+                "correlation_threshold": 0.75,
+                "description": "Very short (5) for immediate momentum, Short (10) for momentum, Medium (25) for trend momentum",
+            },
+            "OBV": {
+                "periods": [10, 20, 50],  # Short, medium, long volume trend
+                "correlation_threshold": 0.8,
+                "description": "Short (10) for immediate volume, Medium (20) for volume trend, Long (50) for major volume trend",
+            },
+            "MFI": {
+                "periods": [7, 14, 30],  # Short, standard, long money flow
+                "correlation_threshold": 0.75,
+                "description": "Short (7) for immediate flow, Standard (14) for flow trend, Long (30) for major flow trend",
+            },
+        }
+
+        # Store dynamically selected periods
+        self.dynamic_lookback_periods = {}
+        self.period_optimization_results = {}
+        # Flag to force consuming regime-specific optimized periods when available
+        self.force_regime_specific_periods = bool(
+            step6_config.get("force_regime_specific_periods", False)
+        )
+
+        # Interaction patterns and weights
+        self.interaction_patterns = {
+            "momentum_volume": {
+                "features": ["RSI_7", "RSI_21", "MACD_12_26", "Volume_Ratio"],
+                "weight": step6_config.get("momentum_volume_weight", 1.5),
+                "enabled": step6_config.get("momentum_volume_enabled", True),
+            },
+            "trend_volatility": {
+                "features": ["SMA_5", "SMA_100", "BB_Position_20", "ATR_14"],
+                "weight": step6_config.get("trend_volatility_weight", 1.8),
+                "enabled": step6_config.get("trend_volatility_enabled", True),
+            },
+            "oscillator_trend": {
+                "features": ["RSI_7", "Williams_R_14", "CCI_20", "EMA_21"],
+                "weight": step6_config.get("oscillator_trend_weight", 1.3),
+                "enabled": step6_config.get("oscillator_trend_enabled", True),
+            },
+            "volume_price": {
+                "features": ["OBV_20", "MFI_14", "Price_Momentum", "Volume_Ratio"],
+                "weight": step6_config.get("volume_price_weight", 1.6),
+                "enabled": step6_config.get("volume_price_enabled", True),
+            },
+            "volatility_regime": {
+                "features": ["ATR_7", "BB_Squeeze_20", "Volatility", "Market_Regime"],
+                "weight": step6_config.get("volatility_regime_weight", 1.4),
+                "enabled": step6_config.get("volatility_regime_enabled", True),
+            },
+            "cross_timeframe": {
+                "features": ["RSI_7", "RSI_50", "MACD_12_26", "MACD_20_40"],
+                "weight": step6_config.get("cross_timeframe_weight", 1.2),
+                "enabled": step6_config.get("cross_timeframe_enabled", True),
+            },
+            "regime_dependent": {
+                "features": [
+                    "Trend_Strength",
+                    "Volatility_Regime",
+                    "Volume_Regime",
+                    "Momentum_Regime",
+                ],
+                "weight": step6_config.get("regime_dependent_weight", 1.7),
+                "enabled": step6_config.get("regime_dependent_enabled", True),
+            },
+        }
+
+        # Interaction strength thresholds
+        self.interaction_thresholds = {
+            "strong": step6_config.get("strong_interaction_threshold", 0.7),
+            "medium": step6_config.get("medium_interaction_threshold", 0.5),
+            "weak": step6_config.get("weak_interaction_threshold", 0.3),
+        }
+
+        # Feature selection parameters
+        self.selection_params = {
+            "max_interactions": step6_config.get("max_interactions", 100),
+            "min_importance": step6_config.get("min_importance", 0.01),
+            "correlation_threshold": step6_config.get("correlation_threshold", 0.8),
+            "mutual_info_threshold": step6_config.get("mutual_info_threshold", 0.05),
+        }
+
+        # Performance tracking
+        self.interaction_performance = {}
+        self.feature_importance_history = []
+        self.selected_interactions_history = []
+        self.correlation_analysis_history = []
+
+        # Initialize scaler for interaction features
+        self.scaler = StandardScaler()
+        self.is_fitted = False
+
+        # Validate lookback periods
+        self._validate_lookback_periods()
+
+    async def optimize_lookback_periods(
+        self,
+        market_data: pd.DataFrame,
+        target: pd.Series,
+        regimes: pd.Series | None = None,
+    ) -> dict[str, Any]:
+        """
+        Optimize lookback periods using DiverseLookbackOptimizer.
+
+        Args:
+            market_data: OHLCV market data
+            target: Target variable for optimization
+            regimes: Market regime labels (optional)
+
+        Returns:
+            Dictionary with optimized lookback periods
+        """
+        if not self.use_dynamic_periods:
+            self.logger.warning(
+                "⚠️ Dynamic period optimization not available, using fallback periods"
+            )
+            return {"status": "fallback", "periods": self.fallback_lookback_periods}
+
+        try:
+            self.logger.info("🎯 Starting dynamic lookback period optimization...")
+
+            # Choose optimizer path based on configuration and availability
+            if self.use_matrix_optimizer and self.matrix_optimizer is not None:
+                self.logger.info("🧮 Using MatrixDiverseLookbackOptimizer (vectorized)")
+                optimization_results = (
+                    await self.matrix_optimizer.find_diverse_lookback_periods_matrix(
+                        market_data,
+                        target,
+                        regimes,
+                    )
+                )
+            else:
+                self.logger.info("📈 Using DiverseLookbackOptimizer (classic)")
+                optimization_results = (
+                    await self.diverse_optimizer.find_diverse_lookback_periods(
+                        market_data,
+                        target,
+                        regimes,
+                    )
+                )
+
+            # Extract optimized periods (optionally force regime-specific)
+            self.dynamic_lookback_periods = self._extract_optimized_periods(
+                optimization_results
+            )
+            self.period_optimization_results = optimization_results
+
+            # Update interaction patterns with optimized periods
+            self._update_interaction_patterns_with_optimized_periods()
+
+            self.logger.info(
+                f"✅ Dynamic period optimization completed. Selected {len(self.dynamic_lookback_periods)} indicators with optimized periods"
+            )
+
+            return {
+                "status": "optimized",
+                "periods": self.dynamic_lookback_periods,
+                "optimization_results": optimization_results,
             }
-            
-            # Log training features DataFrame with standardized naming
-            train_artifact_name = log_step_dataframe_with_standardized_name(
-                config=config,
-                step_name="step6_feature_engineering",
-                df=features_result["features_train"],
-                artifact_type="features_train",
-                additional_metadata={
-                    "artifact_type": "training_features",
-                    "feature_count": len(features_result["features_train"].columns),
-                    "sample_count": len(features_result["features_train"]),
-                    "timeframe": timeframe,
-                }
-            )
-            system_logger.info(f"✅ Logged training features: {train_artifact_name}")
-            
-            # Log validation features DataFrame with standardized naming
-            val_artifact_name = log_step_dataframe_with_standardized_name(
-                config=config,
-                step_name="step6_feature_engineering",
-                df=features_result["features_val"],
-                artifact_type="features_val",
-                additional_metadata={
-                    "artifact_type": "validation_features",
-                    "feature_count": len(features_result["features_val"].columns),
-                    "sample_count": len(features_result["features_val"]),
-                    "timeframe": timeframe,
-                }
-            )
-            system_logger.info(f"✅ Logged validation features: {val_artifact_name}")
-            
-            # Log feature metadata with standardized naming
-            metadata_artifact_name = log_step_artifact_with_standardized_name(
-                config=config,
-                step_name="step6_feature_engineering",
-                artifact_path=str(metadata_file_path),
-                artifact_type="feature_metadata",
-                additional_metadata={
-                    "metadata_keys": list(features_result["metadata"].keys()),
-                    "feature_count": features_result["metadata"].get("feature_count", 0),
-                    "timeframe": timeframe,
-                }
-            )
-            system_logger.info(f"✅ Logged feature metadata: {metadata_artifact_name}")
-            
-            # Log feature engineering report
-            report_data = {
-                "feature_engineering_summary": {
-                    "total_features": len(features_result["features_train"].columns),
-                    "training_samples": len(features_result["features_train"]),
-                    "validation_samples": len(features_result["features_val"]),
-                    "feature_categories": features_result["metadata"].get("feature_categories", {}),
-                    "feature_importance": features_result["metadata"].get("feature_importance", {}),
-                },
-                "metadata": features_result["metadata"],
-                "training_input": {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": timeframe,
-                },
-                "execution_timestamp": datetime.now().isoformat(),
-            }
-            
-            report_name = log_step_report(
-                config=config,
-                step_name="step6_feature_engineering",
-                report_data=report_data,
-                report_type="feature_engineering_report",
-                additional_metadata={
-                    "total_features": len(features_result["features_train"].columns),
-                    "feature_categories": len(features_result["metadata"].get("feature_categories", {})),
-                    "timeframe": timeframe,
-                }
-            )
-            system_logger.info(f"✅ Logged feature engineering report: {report_name}")
-            
-            # Log feature engineering metrics
-            if "metadata" in features_result and "metrics" in features_result["metadata"]:
-                metrics = features_result["metadata"]["metrics"]
-                numeric_metrics = {}
-                for key, value in metrics.items():
-                    if isinstance(value, (int, float)):
-                        numeric_metrics[f"step6_{key}"] = float(value)
-                
-                if numeric_metrics:
-                    log_step_metrics(
-                        config=config,
-                        step_name="step6_feature_engineering",
-                        metrics=numeric_metrics,
-                        additional_metadata={
-                            "metrics_type": "feature_engineering",
-                            "feature_count": len(features_result["features_train"].columns),
-                            "timeframe": timeframe,
+
+        except Exception as e:
+            self.logger.exception(f"❌ Dynamic period optimization failed: {e}")
+            self.logger.info("🔄 Falling back to predefined periods")
+            return {"status": "fallback", "periods": self.fallback_lookback_periods}
+
+    def _extract_optimized_periods(
+        self, optimization_results: dict[str, Any]
+    ) -> dict[str, list[int]]:
+        """
+        Extract optimized periods from DiverseLookbackOptimizer results.
+        """
+        optimized_periods = {}
+
+        # If forcing regime-specific periods and they exist, aggregate across regimes
+        if self.force_regime_specific_periods and optimization_results.get(
+            "regime_specific_periods"
+        ):
+            regime_results = optimization_results.get("regime_specific_periods", {})
+            indicator_to_counter: dict[str, Counter] = {}
+
+            for regime_data in regime_results.values():
+                # regime_data is expected to be {indicator: {selected_periods: [...], ...}, ...}
+                for indicator, res in regime_data.items():
+                    periods = res.get("selected_periods", [])
+                    if not periods:
+                        continue
+                    if indicator not in indicator_to_counter:
+                        indicator_to_counter[indicator] = Counter()
+                    indicator_to_counter[indicator].update(periods)
+
+            # Choose top-k periods per indicator by frequency (stable by smaller period value)
+            for indicator, counter in indicator_to_counter.items():
+                # Sort by (-count, period) and cap at 3
+                ranked = sorted(counter.items(), key=lambda x: (-x[1], x[0]))
+                optimized_periods[indicator] = [p for p, _c in ranked[:3]]
+
+            # If some indicators missing from regime aggregation, fall back to global
+            diverse_periods = optimization_results.get("diverse_lookback_periods", {})
+            for indicator, res in diverse_periods.items():
+                if indicator not in optimized_periods and "selected_periods" in res:
+                    optimized_periods[indicator] = res["selected_periods"]
+
+            return optimized_periods
+
+        # Default: use global diverse lookback periods
+        diverse_periods = optimization_results.get("diverse_lookback_periods", {})
+        for indicator, results in diverse_periods.items():
+            if "selected_periods" in results:
+                optimized_periods[indicator] = results["selected_periods"]
+        return optimized_periods
+
+    def _update_interaction_patterns_with_optimized_periods(self):
+        """
+        Update interaction patterns to use optimized periods.
+        """
+        if not self.dynamic_lookback_periods:
+            return
+
+        # Update interaction patterns with optimized periods
+        for pattern_config in self.interaction_patterns.values():
+            updated_features = []
+
+            for feature in pattern_config["features"]:
+                # Check if this feature has an optimized period
+                base_indicator = feature.split("_")[0]
+
+                if base_indicator in self.dynamic_lookback_periods:
+                    # Use the first optimized period for this pattern
+                    optimized_period = self.dynamic_lookback_periods[base_indicator][0]
+                    updated_feature = f"{base_indicator}_{optimized_period}"
+                    updated_features.append(updated_feature)
+                else:
+                    # Keep original feature if no optimization available
+                    updated_features.append(feature)
+
+            pattern_config["features"] = updated_features
+
+        self.logger.info("🔄 Updated interaction patterns with optimized periods")
+
+    def _validate_lookback_periods(self):
+        """
+        Validate that the selected lookback periods are not too correlated.
+        """
+        self.logger.info("🔍 Validating lookback periods for non-correlation...")
+
+        # Use dynamic periods if available, otherwise fallback
+        periods_to_validate = (
+            self.dynamic_lookback_periods
+            if self.dynamic_lookback_periods
+            else self.fallback_lookback_periods
+        )
+
+        for indicator, config in periods_to_validate.items():
+            if isinstance(config, dict) and "periods" in config:
+                periods = config["periods"]
+                config.get("correlation_threshold", 0.8)
+            elif isinstance(config, list):
+                periods = config
+            else:
+                continue
+
+            # Check if periods are too close (which would cause high correlation)
+            for i in range(len(periods)):
+                for j in range(i + 1, len(periods)):
+                    period1, period2 = periods[i], periods[j]
+
+                    # Calculate ratio to ensure periods are sufficiently different
+                    ratio = max(period1, period2) / min(period1, period2)
+
+                    if ratio < 1.5:  # Periods should be at least 1.5x different
+                        self.logger.warning(
+                            f"⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})"
+                        )
+
+                    # Log the selected periods
+                    if isinstance(config, dict) and "description" in config:
+                        self.logger.info(
+                            f"✅ {indicator}: Selected periods {periods} - {config['description']}"
+                        )
+                    else:
+                        self.logger.info(f"✅ {indicator}: Selected periods {periods}")
+
+    def extract_optimal_technical_indicators(
+        self, market_data: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Extract technical indicators using optimal, non-correlated lookback periods.
+
+        Args:
+            market_data: OHLCV market data
+
+        Returns:
+            pd.DataFrame: Technical indicators with optimal lookback periods
+        """
+        self.logger.info(
+            "🔧 Extracting optimal technical indicators with non-correlated lookback periods..."
+        )
+
+        # Use dynamic periods if available, otherwise fallback
+        periods_to_use = (
+            self.dynamic_lookback_periods
+            if self.dynamic_lookback_periods
+            else self.fallback_lookback_periods
+        )
+
+        indicators = {}
+
+        # Extract RSI with optimal periods
+        if "RSI" in periods_to_use:
+            rsi_periods = periods_to_use["RSI"]
+            if isinstance(rsi_periods, dict):
+                rsi_periods = rsi_periods["periods"]
+
+            for period in rsi_periods:
+                rsi = talib.RSI(market_data["close"].values, timeperiod=period)
+                indicators[f"RSI_{period}"] = rsi
+
+        # Extract MACD with optimal periods
+        if "MACD" in periods_to_use:
+            macd_periods = periods_to_use["MACD"]
+            if isinstance(macd_periods, dict):
+                macd_periods = macd_periods["periods"]
+
+            # Use first two periods for fast/slow
+            if len(macd_periods) >= 2:
+                macd, macd_signal, macd_hist = talib.MACD(
+                    market_data["close"].values,
+                    fastperiod=macd_periods[0],
+                    slowperiod=macd_periods[1],
+                    signalperiod=9,
+                )
+                indicators[f"MACD_{macd_periods[0]}_{macd_periods[1]}"] = macd
+                indicators[f"MACD_Signal_{macd_periods[0]}_{macd_periods[1]}"] = (
+                    macd_signal
+                )
+                indicators[f"MACD_Hist_{macd_periods[0]}_{macd_periods[1]}"] = macd_hist
+
+                # Add extended MACD if we have 3 periods
+                if len(macd_periods) >= 3:
+                    macd_ext, macd_signal_ext, macd_hist_ext = talib.MACD(
+                        market_data["close"].values,
+                        fastperiod=macd_periods[1],
+                        slowperiod=macd_periods[2],
+                        signalperiod=9,
+                    )
+                    indicators[f"MACD_{macd_periods[1]}_{macd_periods[2]}"] = macd_ext
+                    indicators[f"MACD_Signal_{macd_periods[1]}_{macd_periods[2]}"] = (
+                        macd_signal_ext
+                    )
+                    indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"] = (
+                        macd_hist_ext
+                    )
+
+        # Extract Bollinger Bands with optimal periods
+        if "Bollinger_Bands" in periods_to_use:
+            bb_periods = periods_to_use["Bollinger_Bands"]
+            if isinstance(bb_periods, dict):
+                bb_periods = bb_periods["periods"]
+
+            for period in bb_periods:
+                bb_upper, bb_middle, bb_lower = talib.BBANDS(
+                    market_data["close"].values,
+                    timeperiod=period,
+                    nbdevup=2,
+                    nbdevdn=2,
+                )
+                bb_position = (market_data["close"] - bb_lower) / (bb_upper - bb_lower)
+                bb_squeeze = (bb_upper - bb_lower) / bb_middle
+
+                indicators[f"BB_Upper_{period}"] = bb_upper
+                indicators[f"BB_Middle_{period}"] = bb_middle
+                indicators[f"BB_Lower_{period}"] = bb_lower
+                indicators[f"BB_Position_{period}"] = bb_position
+                indicators[f"BB_Squeeze_{period}"] = bb_squeeze
+
+        # Extract SMA with optimal periods
+        if "SMA" in periods_to_use:
+            sma_periods = periods_to_use["SMA"]
+            if isinstance(sma_periods, dict):
+                sma_periods = sma_periods["periods"]
+
+            for period in sma_periods:
+                sma = talib.SMA(market_data["close"].values, timeperiod=period)
+                indicators[f"SMA_{period}"] = sma
+
+        # Extract EMA with optimal periods
+        if "EMA" in periods_to_use:
+            ema_periods = periods_to_use["EMA"]
+            if isinstance(ema_periods, dict):
+                ema_periods = ema_periods["periods"]
+
+            for period in ema_periods:
+                ema = talib.EMA(market_data["close"].values, timeperiod=period)
+                indicators[f"EMA_{period}"] = ema
+
+        # Extract ATR with optimal periods
+        if "ATR" in periods_to_use:
+            atr_periods = periods_to_use["ATR"]
+            if isinstance(atr_periods, dict):
+                atr_periods = atr_periods["periods"]
+
+            for period in atr_periods:
+                atr = talib.ATR(
+                    market_data["high"].values,
+                    market_data["low"].values,
+                    market_data["close"].values,
+                    timeperiod=period,
+                )
+                # Normalize ATR by price
+                atr_normalized = atr / market_data["close"]
+                indicators[f"ATR_{period}"] = atr
+                indicators[f"ATR_Normalized_{period}"] = atr_normalized
+
+        # Extract Stochastic with optimal periods
+        if "Stochastic" in periods_to_use:
+            stoch_periods = periods_to_use["Stochastic"]
+            if isinstance(stoch_periods, dict):
+                stoch_periods = stoch_periods["periods"]
+
+            for period in stoch_periods:
+                stoch_k, stoch_d = talib.STOCH(
+                    market_data["high"].values,
+                    market_data["low"].values,
+                    market_data["close"].values,
+                    fastk_period=period,
+                    slowk_period=3,
+                    slowd_period=3,
+                )
+                indicators[f"Stoch_K_{period}"] = stoch_k
+                indicators[f"Stoch_D_{period}"] = stoch_d
+
+        # Extract ADX with optimal periods
+        if "ADX" in periods_to_use:
+            adx_periods = periods_to_use["ADX"]
+            if isinstance(adx_periods, dict):
+                adx_periods = adx_periods["periods"]
+
+            for period in adx_periods:
+                adx = talib.ADX(
+                    market_data["high"].values,
+                    market_data["low"].values,
+                    market_data["close"].values,
+                    timeperiod=period,
+                )
+                indicators[f"ADX_{period}"] = adx
+
+        # Extract CCI with optimal periods
+        if "CCI" in periods_to_use:
+            cci_periods = periods_to_use["CCI"]
+            if isinstance(cci_periods, dict):
+                cci_periods = cci_periods["periods"]
+
+            for period in cci_periods:
+                cci = talib.CCI(
+                    market_data["high"].values,
+                    market_data["low"].values,
+                    market_data["close"].values,
+                    timeperiod=period,
+                )
+                indicators[f"CCI_{period}"] = cci
+
+        # Extract Williams %R with optimal periods
+        if "Williams_R" in periods_to_use:
+            williams_periods = periods_to_use["Williams_R"]
+            if isinstance(williams_periods, dict):
+                williams_periods = williams_periods["periods"]
+
+            for period in williams_periods:
+                williams_r = talib.WILLR(
+                    market_data["high"].values,
+                    market_data["low"].values,
+                    market_data["close"].values,
+                    timeperiod=period,
+                )
+                indicators[f"Williams_R_{period}"] = williams_r
+
+        # Extract ROC with optimal periods
+        if "ROC" in periods_to_use:
+            roc_periods = periods_to_use["ROC"]
+            if isinstance(roc_periods, dict):
+                roc_periods = roc_periods["periods"]
+
+            for period in roc_periods:
+                roc = talib.ROC(market_data["close"].values, timeperiod=period)
+                indicators[f"ROC_{period}"] = roc
+
+        # Extract OBV with optimal periods
+        if "OBV" in periods_to_use:
+            obv = talib.OBV(market_data["close"].values, market_data["volume"].values)
+            # Normalize OBV
+            obv_normalized = (obv - obv.rolling(20).mean()) / obv.rolling(20).std()
+            indicators["OBV"] = obv
+            indicators["OBV_Normalized"] = obv_normalized
+
+        # Extract MFI with optimal periods
+        if "MFI" in periods_to_use:
+            mfi_periods = periods_to_use["MFI"]
+            if isinstance(mfi_periods, dict):
+                mfi_periods = mfi_periods["periods"]
+
+            for period in mfi_periods:
+                mfi = talib.MFI(
+                    market_data["high"].values,
+                    market_data["low"].values,
+                    market_data["close"].values,
+                    market_data["volume"].values,
+                    timeperiod=period,
+                )
+                indicators[f"MFI_{period}"] = mfi
+
+        # Create DataFrame
+        indicators_df = pd.DataFrame(indicators, index=market_data.index)
+
+        # Remove any NaN values
+        indicators_df = indicators_df.fillna(method="ffill").fillna(0)
+
+        self.logger.info(
+            f"✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods"
+        )
+
+        return indicators_df
+
+    def analyze_feature_correlations(self, features: pd.DataFrame) -> dict[str, Any]:
+        """
+        Analyze correlations between features to ensure non-correlation.
+
+        Args:
+            features: Feature DataFrame
+
+        Returns:
+            Dict with correlation analysis results
+        """
+        self.logger.info(
+            "🔍 Analyzing feature correlations to ensure non-correlation..."
+        )
+
+        correlation_matrix = features.corr()
+
+        # Find highly correlated feature pairs
+        high_correlations = []
+        for i in range(len(correlation_matrix.columns)):
+            for j in range(i + 1, len(correlation_matrix.columns)):
+                corr_value = correlation_matrix.iloc[i, j]
+                if abs(corr_value) > 0.8:  # High correlation threshold
+                    high_correlations.append(
+                        {
+                            "feature1": correlation_matrix.columns[i],
+                            "feature2": correlation_matrix.columns[j],
+                            "correlation": corr_value,
                         }
                     )
-            
-            system_logger.info("✅ Feature artifacts logged to MLflow with standardized naming successfully")
-            
+
+        # Group correlations by indicator type
+        correlation_groups = {}
+        for corr in high_correlations:
+            indicator_type = corr["feature1"].split("_")[0]
+            if indicator_type not in correlation_groups:
+                correlation_groups[indicator_type] = []
+            correlation_groups[indicator_type].append(corr)
+
+        # Analysis results
+        analysis_results = {
+            "correlation_matrix": correlation_matrix,
+            "high_correlations": high_correlations,
+            "correlation_groups": correlation_groups,
+            "n_high_correlations": len(high_correlations),
+            "mean_correlation": correlation_matrix.values[
+                np.triu_indices_from(correlation_matrix.values, k=1)
+            ].mean(),
+            "max_correlation": correlation_matrix.values[
+                np.triu_indices_from(correlation_matrix.values, k=1)
+            ].max(),
+        }
+
+        # Log findings
+        if high_correlations:
+            self.logger.warning(
+                f"⚠️ Found {len(high_correlations)} highly correlated feature pairs"
+            )
+            for corr in high_correlations[:5]:  # Show first 5
+                self.logger.warning(
+                    f"   {corr['feature1']} vs {corr['feature2']}: {corr['correlation']:.3f}"
+                )
+        else:
+            self.logger.info(
+                "✅ No highly correlated features found - optimal lookback periods working correctly"
+            )
+
+        # Store analysis history
+        self.correlation_analysis_history.append(
+            {
+                "timestamp": datetime.now(),
+                "results": analysis_results,
+            }
+        )
+
+        return analysis_results
+
+    def extract_interaction_features(
+        self, features: np.ndarray, feature_names: list[str], market_data: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        Extract comprehensive interaction features.
+
+        Args:
+            features: Base feature array
+            feature_names: Names of base features
+            market_data: Market data for regime analysis
+
+        Returns:
+            np.ndarray: Interaction features
+        """
+        try:
+            self.logger.info("Extracting feature interactions...")
+
+            # 1. Create basic interaction features
+            basic_interactions = self._create_basic_interactions(
+                features, feature_names
+            )
+
+            # 2. Create pattern-based interactions
+            pattern_interactions = self._create_pattern_interactions(
+                features, feature_names
+            )
+
+            # 3. Create regime-dependent interactions
+            regime_interactions = self._create_regime_interactions(
+                features, feature_names, market_data
+            )
+
+            # 4. Create cross-timeframe interactions
+            timeframe_interactions = self._create_cross_timeframe_interactions(
+                features, feature_names
+            )
+
+            # 5. Combine all interactions
+            all_interactions = np.concatenate(
+                [
+                    basic_interactions,
+                    pattern_interactions,
+                    regime_interactions,
+                    timeframe_interactions,
+                ],
+                axis=1,
+            )
+
+            # 6. Select optimal interactions
+            selected_interactions = self._select_optimal_interactions(
+                all_interactions, market_data
+            )
+
+            # 7. Scale interaction features
+            if not self.is_fitted:
+                selected_interactions = self.scaler.fit_transform(selected_interactions)
+                self.is_fitted = True
+            else:
+                selected_interactions = self.scaler.transform(selected_interactions)
+
+            self.logger.info(
+                f"Extracted {selected_interactions.shape[1]} interaction features"
+            )
+
+            return selected_interactions
+
         except Exception as e:
-            system_logger.warning(f"⚠️ MLflow logging failed for step 6: {e}")
-            # Don't fail the step if MLflow logging fails'
-        
-        system_logger.info(f"✅ Saved feature artifacts to {output_dir}")
-        return True
-        
-    except Exception as e:
-        system_logger.error(f"Failed to save feature artifacts: {e}")
-        return False
+            self.logger.exception(f"Feature interaction extraction failed: {e}")
+            return np.zeros((features.shape[0], 50))  # Return default interactions
 
+    def _create_basic_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> np.ndarray:
+        """
+        Create basic pairwise interactions between features.
+        """
+        interactions = []
 
-def _check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> bool:
-    """Check if feature artifacts already exist."""
-    try:
-        output_dir = Path("data/training")
-        
-        train_file = output_dir / f"{exchange}_{symbol}_1m_features_train.parquet"
-        val_file = output_dir / f"{exchange}_{symbol}_1m_features_val.parquet"
-        metadata_file = output_dir / f"{exchange}_{symbol}_1m_feature_metadata.json"
-        
-        return train_file.exists() and val_file.exists() and metadata_file.exists()
-        
-    except Exception:
-        return False
+        # Create feature name to index mapping
+        feature_map = {name: i for i, name in enumerate(feature_names)}
 
+        # Define important feature pairs for interactions
+        important_pairs = [
+            ("RSI", "MACD"),
+            ("RSI", "Volume_Ratio"),
+            ("MACD", "Volume_Ratio"),
+            ("BB_Position", "ATR_Normalized"),
+            ("SMA_Ratio", "EMA_Ratio"),
+            ("Price_Momentum", "Volume_Ratio"),
+            ("OBV_Normalized", "Price_Momentum"),
+            ("Stochastic", "RSI"),
+            ("Williams_R", "RSI"),
+            ("CCI", "RSI"),
+        ]
 
-# Export the main function for external use
-__all__ = ["run_step"]
+        for feature1, feature2 in important_pairs:
+            if feature1 in feature_map and feature2 in feature_map:
+                idx1, idx2 = feature_map[feature1], feature_map[feature2]
+
+                # Create interaction
+                interaction = features[:, idx1] * features[:, idx2]
+                interactions.append(interaction)
+
+                # Create ratio interaction
+                ratio_interaction = features[:, idx1] / (features[:, idx2] + 1e-8)
+                interactions.append(ratio_interaction)
+
+                # Create difference interaction
+                diff_interaction = features[:, idx1] - features[:, idx2]
+                interactions.append(diff_interaction)
+
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
+
+    def _create_pattern_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> np.ndarray:
+        """
+        Create pattern-based interactions using predefined patterns.
+        """
+        interactions = []
+        feature_map = {name: i for i, name in enumerate(feature_names)}
+
+        for pattern_name, pattern_config in self.interaction_patterns.items():
+            if not pattern_config["enabled"]:
+                continue
+
+            pattern_features = pattern_config["features"]
+            weight = pattern_config["weight"]
+
+            # Find feature indices for this pattern
+            pattern_indices = []
+            for feature_name in pattern_features:
+                if feature_name in feature_map:
+                    pattern_indices.append(feature_map[feature_name])
+
+            if len(pattern_indices) >= 2:
+                # Create pattern-specific interactions
+                pattern_interactions = self._create_pattern_specific_interactions(
+                    features,
+                    pattern_indices,
+                    pattern_name,
+                    weight,
+                )
+                interactions.extend(pattern_interactions)
+
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
+
+    def _create_pattern_specific_interactions(
+        self,
+        features: np.ndarray,
+        pattern_indices: list[int],
+        pattern_name: str,
+        weight: float,
+    ) -> list[np.ndarray]:
+        """
+        Create pattern-specific interactions.
+        """
+        interactions = []
+        pattern_features = features[:, pattern_indices]
+
+        if pattern_name == "momentum_volume":
+            # Momentum × Volume interactions
+            momentum_avg = np.mean(
+                pattern_features[:, :3], axis=1
+            )  # RSI, MACD, Stochastic
+            volume_feature = pattern_features[:, 3]  # Volume_Ratio
+
+            interactions.extend(
+                [
+                    momentum_avg * volume_feature * weight,  # Momentum × Volume
+                    momentum_avg
+                    / (volume_feature + 1e-8)
+                    * weight,  # Momentum / Volume
+                    np.std(pattern_features[:, :3], axis=1)
+                    * volume_feature
+                    * weight,  # Momentum divergence × Volume
+                ]
+            )
+
+        elif pattern_name == "trend_volatility":
+            # Trend × Volatility interactions
+            trend_avg = np.mean(pattern_features[:, :2], axis=1)  # SMA_Ratio, EMA_Ratio
+            volatility_avg = np.mean(
+                pattern_features[:, 2:], axis=1
+            )  # BB_Position, ATR_Normalized
+
+            interactions.extend(
+                [
+                    trend_avg * volatility_avg * weight,  # Trend × Volatility
+                    trend_avg / (volatility_avg + 1e-8) * weight,  # Trend / Volatility
+                    np.abs(trend_avg)
+                    * volatility_avg
+                    * weight,  # Trend strength × Volatility
+                ]
+            )
+
+        elif pattern_name == "oscillator_trend":
+            # Oscillator × Trend interactions
+            oscillator_avg = np.mean(
+                pattern_features[:, :3], axis=1
+            )  # RSI, Williams_R, CCI
+            trend_feature = pattern_features[:, 3]  # SMA_Ratio
+
+            interactions.extend(
+                [
+                    oscillator_avg * trend_feature * weight,  # Oscillator × Trend
+                    oscillator_avg
+                    / (trend_feature + 1e-8)
+                    * weight,  # Oscillator / Trend
+                    np.std(pattern_features[:, :3], axis=1)
+                    * trend_feature
+                    * weight,  # Oscillator divergence × Trend
+                ]
+            )
+
+        elif pattern_name == "volume_price":
+            # Volume × Price interactions
+            volume_avg = np.mean(
+                pattern_features[:, [0, 3]], axis=1
+            )  # OBV_Normalized, Volume_Ratio
+            price_feature = pattern_features[:, 2]  # Price_Momentum
+
+            interactions.extend(
+                [
+                    volume_avg * price_feature * weight,  # Volume × Price
+                    volume_avg / (price_feature + 1e-8) * weight,  # Volume / Price
+                    np.sqrt(volume_avg)
+                    * price_feature
+                    * weight,  # Volume-weighted price
+                ]
+            )
+
+        elif pattern_name == "volatility_regime":
+            # Volatility × Regime interactions
+            volatility_avg = np.mean(
+                pattern_features[:, :3], axis=1
+            )  # ATR, BB_Squeeze, Volatility
+            regime_feature = (
+                pattern_features[:, 3]
+                if pattern_features.shape[1] > 3
+                else np.ones(features.shape[0])
+            )
+
+            interactions.extend(
+                [
+                    volatility_avg * regime_feature * weight,  # Volatility × Regime
+                    volatility_avg
+                    / (regime_feature + 1e-8)
+                    * weight,  # Volatility / Regime
+                    np.square(volatility_avg)
+                    * regime_feature
+                    * weight,  # Volatility² × Regime
+                ]
+            )
+
+        return interactions
+
+    def _create_regime_interactions(
+        self, features: np.ndarray, feature_names: list[str], market_data: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        Create regime-dependent interactions.
+        """
+        interactions = []
+
+        # Identify market regime
+        market_regime = self._identify_market_regime(market_data)
+
+        # Create regime-specific interactions
+        if market_regime == "trending":
+            # Trending market interactions
+            trend_interactions = self._create_trending_interactions(
+                features, feature_names
+            )
+            interactions.extend(trend_interactions)
+
+        elif market_regime == "ranging":
+            # Ranging market interactions
+            ranging_interactions = self._create_ranging_interactions(
+                features, feature_names
+            )
+            interactions.extend(ranging_interactions)
+
+        elif market_regime == "volatile":
+            # Volatile market interactions
+            volatile_interactions = self._create_volatile_interactions(
+                features, feature_names
+            )
+            interactions.extend(volatile_interactions)
+
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
+
+    def _create_trending_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> list[np.ndarray]:
+        """
+        Create interactions specific to trending markets.
+        """
+        interactions = []
+        feature_map = {name: i for i, name in enumerate(feature_names)}
+
+        # Trend-following interactions
+        trend_features = ["SMA_Ratio", "EMA_Ratio", "MACD", "ADX"]
+        momentum_features = ["RSI", "Stochastic", "CCI"]
+
+        trend_indices = [feature_map.get(f) for f in trend_features if f in feature_map]
+        momentum_indices = [
+            feature_map.get(f) for f in momentum_features if f in feature_map
+        ]
+
+        if trend_indices and momentum_indices:
+            trend_avg = np.mean(features[:, trend_indices], axis=1)
+            momentum_avg = np.mean(features[:, momentum_indices], axis=1)
+
+            interactions.extend(
+                [
+                    trend_avg * momentum_avg * 1.5,  # Trend × Momentum
+                    trend_avg / (momentum_avg + 1e-8) * 1.3,  # Trend / Momentum
+                    np.abs(trend_avg) * momentum_avg * 1.4,  # Trend strength × Momentum
+                ]
+            )
+
+        return interactions
+
+    def _create_ranging_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> list[np.ndarray]:
+        """
+        Create interactions specific to ranging markets.
+        """
+        interactions = []
+        feature_map = {name: i for i, name in enumerate(feature_names)}
+
+        # Range-trading interactions
+        oscillator_features = ["RSI", "Stochastic", "Williams_R", "CCI"]
+        volume_features = ["Volume_Ratio", "OBV_Normalized", "MFI"]
+
+        oscillator_indices = [
+            feature_map.get(f) for f in oscillator_features if f in feature_map
+        ]
+        volume_indices = [
+            feature_map.get(f) for f in volume_features if f in feature_map
+        ]
+
+        if oscillator_indices and volume_indices:
+            oscillator_avg = np.mean(features[:, oscillator_indices], axis=1)
+            volume_avg = np.mean(features[:, volume_indices], axis=1)
+
+            interactions.extend(
+                [
+                    oscillator_avg * volume_avg * 1.6,  # Oscillator × Volume
+                    oscillator_avg / (volume_avg + 1e-8) * 1.4,  # Oscillator / Volume
+                    np.std(features[:, oscillator_indices], axis=1)
+                    * volume_avg
+                    * 1.5,  # Oscillator divergence × Volume
+                ]
+            )
+
+        return interactions
+
+    def _create_volatile_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> list[np.ndarray]:
+        """
+        Create interactions specific to volatile markets.
+        """
+        interactions = []
+        feature_map = {name: i for i, name in enumerate(feature_names)}
+
+        # Volatility-focused interactions
+        volatility_features = ["ATR_Normalized", "BB_Squeeze", "Volatility"]
+        risk_features = ["RSI", "Stochastic", "Williams_R"]
+
+        volatility_indices = [
+            feature_map.get(f) for f in volatility_features if f in feature_map
+        ]
+        risk_indices = [feature_map.get(f) for f in risk_features if f in feature_map]
+
+        if volatility_indices and risk_indices:
+            volatility_avg = np.mean(features[:, volatility_indices], axis=1)
+            risk_avg = np.mean(features[:, risk_indices], axis=1)
+
+            interactions.extend(
+                [
+                    volatility_avg * risk_avg * 1.8,  # Volatility × Risk
+                    volatility_avg / (risk_avg + 1e-8) * 1.6,  # Volatility / Risk
+                    np.square(volatility_avg) * risk_avg * 1.7,  # Volatility² × Risk
+                ]
+            )
+
+        return interactions
+
+    def _create_cross_timeframe_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> np.ndarray:
+        """
+        Create cross-timeframe interactions.
+        """
+        interactions = []
+        feature_map = {name: i for i, name in enumerate(feature_names)}
+
+        # Define timeframe pairs
+        timeframe_pairs = [
+            ("RSI_14", "RSI_30"),
+            ("MACD_12_26", "MACD_20_40"),
+            ("SMA_20", "SMA_50"),
+            ("EMA_12", "EMA_26"),
+        ]
+
+        for short_feature, long_feature in timeframe_pairs:
+            if short_feature in feature_map and long_feature in feature_map:
+                short_idx, long_idx = (
+                    feature_map[short_feature],
+                    feature_map[long_feature],
+                )
+
+                # Create cross-timeframe interactions
+                interactions.extend(
+                    [
+                        features[:, short_idx] - features[:, long_idx],  # Divergence
+                        features[:, short_idx]
+                        / (features[:, long_idx] + 1e-8),  # Ratio
+                        features[:, short_idx] * features[:, long_idx],  # Product
+                        np.abs(
+                            features[:, short_idx] - features[:, long_idx]
+                        ),  # Absolute divergence
+                    ]
+                )
+
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
+
+    def _identify_market_regime(self, market_data: pd.DataFrame) -> str:
+        """
+        Identify current market regime.
+        """
+        try:
+            # Calculate regime indicators
+            volatility = market_data["close"].pct_change().rolling(20).std().iloc[-1]
+            trend_strength = (
+                abs(
+                    market_data["close"].rolling(20).mean().iloc[-1]
+                    - market_data["close"].rolling(50).mean().iloc[-1]
+                )
+                / market_data["close"].iloc[-1]
+            )
+
+            if volatility > 0.03:
+                return "volatile"
+            if trend_strength > 0.02:
+                return "trending"
+            return "ranging"
+
+        except Exception as e:
+            self.logger.warning(f"Market regime identification failed: {e}")
+            return "ranging"  # Default to ranging
+
+    def _select_optimal_interactions(
+        self, interactions: np.ndarray, market_data: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        Select optimal interactions based on importance and correlation.
+        """
+        try:
+            # Create dummy target for feature selection (in real implementation, use actual target)
+            dummy_target = np.random.choice([0, 1], size=interactions.shape[0])
+
+            # Calculate mutual information
+            mi_scores = mutual_info_classif(interactions, dummy_target, random_state=42)
+
+            # Select interactions based on mutual information
+            mi_threshold = self.selection_params["mutual_info_threshold"]
+            important_indices = np.where(mi_scores > mi_threshold)[0]
+
+            # Limit number of interactions
+            max_interactions = self.selection_params["max_interactions"]
+            if len(important_indices) > max_interactions:
+                # Select top interactions by mutual information
+                top_indices = np.argsort(mi_scores)[-max_interactions:]
+                selected_interactions = interactions[:, top_indices]
+            else:
+                selected_interactions = interactions[:, important_indices]
+
+            # Store selection history
+            self.selected_interactions_history.append(
+                {
+                    "timestamp": datetime.now(),
+                    "n_interactions": selected_interactions.shape[1],
+                    "mi_scores": (
+                        mi_scores[important_indices]
+                        if len(important_indices) > 0
+                        else []
+                    ),
+                }
+            )
+
+            return selected_interactions
+
+        except Exception as e:
+            self.logger.exception(f"Interaction selection failed: {e}")
+            return interactions[:, :50]  # Return first 50 interactions as fallback
+
+    def get_interaction_summary(self) -> dict[str, Any]:
+        """
+        Get summary of interaction engineering results.
+        """
+        return {
+            "interaction_patterns": self.interaction_patterns,
+            "selection_params": self.selection_params,
+            "performance_history": self.interaction_performance,
+            "selected_interactions_count": len(self.selected_interactions_history),
+            "is_fitted": self.is_fitted,
+            "scaler_params": {
+                "mean": self.scaler.mean_.tolist() if self.is_fitted else None,
+                "scale": self.scaler.scale_.tolist() if self.is_fitted else None,
+            },
+        }
+
+    def update_performance(self, performance_metrics: dict[str, float]) -> None:
+        """
+        Update interaction performance tracking.
+        """
+        self.interaction_performance[datetime.now()] = performance_metrics
+
+    def get_feature_importance(
+        self, interactions: np.ndarray, target: np.ndarray
+    ) -> np.ndarray:
+        """
+        Calculate importance of interaction features.
+        """
+        try:
+            # Calculate mutual information for interaction importance
+            mi_scores = mutual_info_classif(interactions, target, random_state=42)
+
+            # Store importance history
+            self.feature_importance_history.append(
+                {
+                    "timestamp": datetime.now(),
+                    "importance_scores": mi_scores.tolist(),
+                    "mean_importance": np.mean(mi_scores),
+                    "max_importance": np.max(mi_scores),
+                }
+            )
+
+            return mi_scores
+
+        except Exception as e:
+            self.logger.exception(f"Feature importance calculation failed: {e}")
+            return np.ones(
+                interactions.shape[1]
+            )  # Return uniform importance as fallback

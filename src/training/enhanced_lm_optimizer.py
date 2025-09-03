@@ -8,7 +8,7 @@ This module provides comprehensive optimization for Language Model (LM) componen
 3. Optuna hyperparameter optimization in batches
 4. Vectorized/matrix operations for efficiency
 5. Model-specific optimizations for different architectures
-""""
+"""
 
 import asyncio
 import json
@@ -60,7 +60,7 @@ class EnhancedLMOptimizer:
     - Optuna hyperparameter optimization in batches
     - Vectorized operations for efficiency
     - Model-specific optimizations
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -476,7 +476,7 @@ class EnhancedLMOptimizer:
         Raises:
             RuntimeError: If any optimization step fails
 
-        """"
+        """
         start_time = time.time()
 
         try:
@@ -1360,7 +1360,7 @@ class EnhancedFeatureSelector:
 import copy
 
 feature_stability = dict.fromkeys(features_df.columns, 0)
-            n_folds = 5
+n_folds = 5
 
             # Time series cross-validation for stability analysis
             tscv = TimeSeriesSplit(n_splits=n_folds)

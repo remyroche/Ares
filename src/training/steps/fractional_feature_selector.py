@@ -3,7 +3,7 @@
 """Fractional Feature Selector: Intelligent feature selection for Step 7."
 Implements feature selection based on fractional label alignment, multicollinearity reduction,
 and feature importance ranking.
-""""
+"""
 
 import time
 from pathlib import Path
@@ -36,7 +36,7 @@ class FractionalFeatureSelector:
         
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config or {}
         
         # Selection parameters
@@ -90,7 +90,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Dictionary with selected features and selection metrics
-        """"
+        """
         start_time = time.time()
         
         try:
@@ -165,7 +165,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Tuple of aligned features and labels
-        """"
+        """
         # Find common index
         common_index = features.index.intersection(labels.index)
         
@@ -194,7 +194,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with correlation scores
-        """"
+        """
         try:
             # Calculate absolute correlations
             correlations = []
@@ -225,7 +225,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with importance scores
-        """"
+        """
         try:
             # Use multiple importance methods
             importance_scores = {}
@@ -278,7 +278,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with stability scores
-        """"
+        """
         try:
             stability_scores = []
             
@@ -320,7 +320,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with diversity scores
-        """"
+        """
         try:
             diversity_scores = []
             
@@ -364,7 +364,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Series with label alignment scores
-        """"
+        """
         try:
             alignment_scores = []
             
@@ -413,7 +413,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Combined scores Series
-        """"
+        """
         try:
             combined_scores = pd.Series(0.0, index=list(selection_scores.values())[0].index)
             
@@ -443,7 +443,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Features DataFrame with reduced multicollinearity
-        """"
+        """
         try:
             # Calculate correlation matrix
             corr_matrix = features.corr().abs()
@@ -488,7 +488,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Selected features DataFrame
-        """"
+        """
         try:
             # Align scores with features
             aligned_scores = scores[features.columns]
@@ -531,7 +531,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Dictionary with selection metrics
-        """"
+        """
         try:
             metrics = {
                 'original_feature_count': len(original_features.columns),
@@ -594,7 +594,7 @@ class FractionalFeatureSelector:
             metrics: Selection metrics
             hmm_regime: HMM regime label
             processing_time: Processing time
-        """"
+        """
         try:
             history_entry = {
                 'timestamp': pd.Timestamp.now(),
@@ -617,7 +617,7 @@ class FractionalFeatureSelector:
         
         Returns:
             Dictionary with selection summary
-        """"
+        """
         if not self.selection_history:
             return {'message': 'No selection history available'}
         
@@ -670,7 +670,7 @@ class FractionalFeatureSelector:
             
         Returns:
             Path to the exported report
-        """"
+        """
         try:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -727,7 +727,7 @@ def get_fractional_feature_selector_config(
         
     Returns:
         Configuration dictionary
-    """"
+    """
     if selection_methods is None:
         selection_methods = ['correlation', 'importance', 'stability', 'diversity', 'label_alignment']
     

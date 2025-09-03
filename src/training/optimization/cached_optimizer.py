@@ -15,7 +15,7 @@ import optuna
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-import os.path
+import os
 import asyncio
 
     error,

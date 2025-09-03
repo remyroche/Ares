@@ -3,7 +3,7 @@
 
 This module performs final regime clustering using optimized parameters from step03,
 with comprehensive reporting and analysis of regime characteristics.
-""""
+"""
 
 import asyncio
 import sys
@@ -810,7 +810,7 @@ import copy
 from src.core.decorators import handles_errors
     
     # Load test configuration
-    test_config = {
+test_config = {
         "SYMBOL": "ETHUSDT",
         "EXCHANGE": "BINANCE",
         "TIMEFRAME": "1m",

@@ -14,7 +14,7 @@ from src.utils.warning_symbols import (
 class CalibrationManager:
     """Calibration manager responsible for model calibration and confidence estimation."
     This module handles model calibration to improve prediction reliability.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize calibration manager."
@@ -22,7 +22,7 @@ class CalibrationManager:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CalibrationManager")
 
@@ -63,7 +63,7 @@ class CalibrationManager:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Calibration Manager...")
 
@@ -89,7 +89,7 @@ class CalibrationManager:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate calibration manager specific settings
             if not any(
@@ -159,7 +159,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Calibration results
 
-        """"
+        """
         try:
             self.logger.info("🎯 Starting model calibration...")
             self.is_calibrating = True
@@ -219,7 +219,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             bool: True if inputs are valid, False otherwise
 
-        """"
+        """
         try:
             # Validate ensemble results
             if not ensemble_results:
@@ -259,7 +259,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Analyst calibration results
 
-        """"
+        """
         try:
             self.logger.info("🧠 Calibrating analyst models...")
 
@@ -299,7 +299,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Tactician calibration results
 
-        """"
+        """
         try:
             self.logger.info("🎯 Calibrating tactician models...")
 
@@ -341,7 +341,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Calibrated ensemble
 
-        """"
+        """
         try:
             self.logger.info(
                 f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}",
@@ -404,7 +404,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Temperature scaling calibration result
 
-        """"
+        """
         try:
             # This would implement actual temperature scaling logic
             # For now, return a placeholder result
@@ -431,7 +431,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Isotonic regression calibration result
 
-        """"
+        """
         try:
             # This would implement actual isotonic regression logic
             # For now, return a placeholder result
@@ -458,7 +458,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Confidence calibration result
 
-        """"
+        """
         try:
             # This would implement actual confidence calibration logic
             # For now, return a placeholder result
@@ -482,7 +482,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Args:
             calibration_results: Calibration results to store
 
-        """"
+        """
         try:
             self.logger.info("📁 Storing calibration results...")
 
@@ -501,7 +501,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Calibration status information
 
-        """"
+        """
         return {
             "is_calibrating": self.is_calibrating,
             "has_calibration_results": bool(self.calibration_results),
@@ -516,7 +516,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         Returns:
             dict: Calibration results
 
-        """"
+        """
         return self.calibration_results.copy()
 
     @handles_errors(fallback=None)
@@ -541,7 +541,7 @@ async def setup_calibration_manager(
     Returns:
         CalibrationManager: Configured calibration manager instance
 
-    """"
+    """
     try:
         manager = CalibrationManager(config or {})
         if await manager.initialize():

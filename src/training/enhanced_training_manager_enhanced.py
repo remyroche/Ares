@@ -1,7 +1,7 @@
-""""
+"""
 Enhanced Training Manager with Existing Decorators Integration
 Provides thorough decorators, detailed reports, and consistent storage for all pipeline steps.
-""""
+"""
 
 import asyncio
 import json
@@ -22,14 +22,14 @@ from src.utils.training_pipeline_decorators import (
 )
 
 class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
-    """"
+    """
     Enhanced Training Manager with comprehensive decorators and detailed reporting.
     
     This class extends the base EnhancedTrainingManager to provide:
     1. Thorough decorators for each pipeline step using existing decorators
     2. Detailed reports upon completion
     3. Consistent storage of all reports in a centralized location
-    """"
+    """
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)

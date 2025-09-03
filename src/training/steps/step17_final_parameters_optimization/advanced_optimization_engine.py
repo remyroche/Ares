@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""""
+"""
 Advanced Optimization Engine for Step17
 
 This module implements the core advanced optimization strategies:
@@ -9,7 +9,7 @@ This module implements the core advanced optimization strategies:
 4. Parameter Interaction Detection
 
 These are production-ready implementations with robust error handling and optimization.
-""""
+"""
 
 import asyncio
 import logging
@@ -45,7 +45,7 @@ except Exception as e:
     pass  # TODO: Handle exception properly
 import copy
 
-    MLFLOW_AVAILABLE = True
+MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
 

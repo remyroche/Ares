@@ -31,7 +31,7 @@ class DataSharingManager:
 
     This manager provides a centralized way to load and share data between steps,
     with intelligent caching and memory management.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -245,7 +245,7 @@ class DataSharingManager:
         Returns:
             DataFrame with unified data or None if loading fails
 
-        """"
+        """
         cache_key = self._generate_cache_key(symbol, exchange, timeframe, lookback_days)
 
         # Check if data is already cached and not expired
@@ -325,7 +325,7 @@ class DataSharingManager:
         Returns:
             DataFrame from cache or None if not cached
 
-        """"
+        """
         cache_key = self._generate_cache_key(symbol, exchange, timeframe, lookback_days)
 
         if cache_key in self._data_cache:
@@ -361,7 +361,7 @@ class DataSharingManager:
             data: Data to cache
             data_type: Type of data being cached
 
-        """"
+        """
         cache_key = self._generate_cache_key(
             symbol, exchange, timeframe, lookback_days, data_type,
         )

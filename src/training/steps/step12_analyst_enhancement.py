@@ -154,14 +154,14 @@ class RegimeAwareAnalystEnhancementStep:
     3.  **Regime-Specific Feature Selection:** Employs robust feature selection methods per regime
     4.  **Regime-Specific Final Retraining:** Trains new models using regime-specific optimal parameters
     5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning, and distillation
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initializes the RegimeAwareAnalystEnhancementStep."
 
         Args: config (Dict[str = Any]): Configuration dictionary for the step.
 
-        """"
+        """
         self.config = config
         self.standards = pipeline_standards
         self.logger = system_logger
@@ -286,7 +286,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         Returns:
             Dict[str, Any]: A dictionary containing the results of the regime-specific enhancement process.
-        """"
+        """
         self.logger.info(
             "🚀 Starting Step 12: Regime-Aware Analyst Enhancement - Model Optimization and Feature Selection",
         )
@@ -868,7 +868,7 @@ class RegimeAwareAnalystEnhancementStep:
         Returns:
             bool: True if target was successfully created = False otherwise
 
-        """"
+        """
         try:
             # Look for price-related columns that could be used to create targets
             price_columns = [
@@ -1765,7 +1765,7 @@ class RegimeAwareAnalystEnhancementStep:
         """Compute MI for each feature vs target and warn on near-zero scores."
         Threshold: in blank mode -> absolute threshold 1e-5.
         Full mode -> bottom 20% percentile flagged.
-        """"
+        """
         if X.empty or y is None or len(X.columns) == 0:
             return
         # Detect blank mode
@@ -1795,7 +1795,7 @@ class RegimeAwareAnalystEnhancementStep:
     def _log_feature_stability_warnings(self, X: pd.DataFrame) -> None:
         """Check 4-fold CV stability: warn if std of fold means >> expected standard error."
         Criterion: std_of_means > 3 * (global_std / sqrt(k)).
-        """"
+        """
         if X.empty:
             return
         kf, KFold(n_splits=4, shuffle=True, random_state=42)
@@ -2989,7 +2989,7 @@ class RegimeAwareAnalystEnhancementStep:
     ) -> torch.nn.Module:
         """Applies structured pruning using a simplified WANDA (Weight and Activation-based) method."
         This implementation demonstrates the core concept.
-        """"
+        """
         self.logger.info(f"Applying WANDA-style pruning with {sparsity} sparsity...")
         model.to(self.device)
 
@@ -3663,7 +3663,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     # Import logger for step-level logging
     from src.utils.logger import system_logger
     from src.utils.enhanced_mlflow_integration import (

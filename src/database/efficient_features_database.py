@@ -12,7 +12,7 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import copy
-import os.path
+import os
 import asyncio
 
     error,
@@ -30,10 +30,10 @@ import asyncio
 )
 
 class EfficientFeaturesDatabase:
-    """"
+    """
     Efficient database for storing and retrieving precomputed features with incremental updates.
     Uses naming convention: {token}_{exchange}_{date}_{timestamp}_historical_data_with_precomputed_features
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -87,7 +87,7 @@ class EfficientFeaturesDatabase:
         start_date: str = None,
         timestamp: str = None,
     ) -> str:
-        """"
+        """
         Generate database name using the specified convention.
 
         Args:
@@ -98,7 +98,7 @@ class EfficientFeaturesDatabase:
 
         Returns:
             Database name following the convention
-        """"
+        """
         if start_date is None:
             start_date = datetime.now().strftime("%Y-%m-%d")
         if timestamp is None:
@@ -239,7 +239,7 @@ class EfficientFeaturesDatabase:
         start_time: pd.Timestamp = None,
         end_time: pd.Timestamp = None,
     ) -> tuple[str | None, list[tuple[pd.Timestamp, pd.Timestamp]]]:
-        """"
+        """
         Find existing database for symbol/exchange and determine missing time ranges.
 
         Args:
@@ -250,7 +250,7 @@ class EfficientFeaturesDatabase:
 
         Returns:
             Tuple of (database_name, missing_time_ranges)
-        """"
+        """
         try:
             clean_symbol = symbol.replace("/", "").replace("-", "").upper()
             clean_exchange = exchange.upper()
@@ -352,7 +352,7 @@ class EfficientFeaturesDatabase:
         exchange: str,
         database_name: str = None,
     ) -> bool:
-        """"
+        """
         Save precomputed features to database.
 
         Args:
@@ -363,7 +363,7 @@ class EfficientFeaturesDatabase:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         try:
             if data.empty:
                 self.logger.warning("Cannot save empty database")
@@ -444,7 +444,7 @@ class EfficientFeaturesDatabase:
         new_data: pd.DataFrame,
         existing_database_name: str,
     ) -> bool:
-        """"
+        """
         Update an existing database with new data - only processes new rows.
 
         Args:
@@ -453,7 +453,7 @@ class EfficientFeaturesDatabase:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         try:
             if new_data.empty:
                 self.print(warning("No new data to update database"))
@@ -526,7 +526,7 @@ class EfficientFeaturesDatabase:
         exchange: str,
         database_name: str,
     ) -> bool:
-        """"
+        """
         Save database and explicitly update file timestamp.
 
         Args:
@@ -537,7 +537,7 @@ class EfficientFeaturesDatabase:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         try:
             if data.empty:
                 self.logger.warning("Cannot save empty database")

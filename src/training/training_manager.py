@@ -28,7 +28,7 @@ class TrainingManager:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TrainingManager")
 
@@ -71,7 +71,7 @@ class TrainingManager:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Training Manager...")
 
@@ -129,7 +129,7 @@ class TrainingManager:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate training interval
             if self.training_interval <= 0:
@@ -201,7 +201,7 @@ class TrainingManager:
 import copy
 
 self.feature_integration_manager = FeatureIntegrationManager(self.config)
-            await self.feature_integration_manager.initialize()
+await self.feature_integration_manager.initialize()
             self.logger.info("Feature integration manager initialized successfully")
         except Exception as e:
             self.logger.exception(
@@ -302,7 +302,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         if not self._validate_training_inputs(training_input):
             return False
 
@@ -354,7 +354,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             bool: True if valid, False otherwise
 
-        """"
+        """
         # Check required training input fields
         required_fields = ["training_type", "model_type", "timestamp"]
         for field in required_fields:
@@ -386,7 +386,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             Dict[str, Any]: Model training results
 
-        """"
+        """
         try:
             results = {}
 
@@ -438,7 +438,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             Dict[str, Any]: Hyperparameter optimization results
 
-        """"
+        """
         try:
             results = {}
 
@@ -500,7 +500,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             Dict[str, Any]: Model evaluation results
 
-        """"
+        """
         try:
             results = {}
 
@@ -550,7 +550,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             Dict[str, Any]: Model persistence results
 
-        """"
+        """
         try:
             results = {}
 
@@ -950,7 +950,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             Dict[str, Any]: Training results
 
-        """"
+        """
         try:
             if training_type:
                 return self.training_results.get(training_type, {})
@@ -972,7 +972,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             List[Dict[str, Any]]: Training history
 
-        """"
+        """
         try:
             history = self.training_history.copy()
 
@@ -993,7 +993,7 @@ self.feature_integration_manager = FeatureIntegrationManager(self.config)
         Returns:
             Dict[str, Any]: Training status
 
-        """"
+        """
         return {
             "is_training": self.is_training,
             "training_interval": self.training_interval,
@@ -1048,7 +1048,7 @@ async def setup_training_manager(
     Returns:
         Optional[TrainingManager]: Global training manager instance
 
-    """"
+    """
     try:
         global training_manager
 

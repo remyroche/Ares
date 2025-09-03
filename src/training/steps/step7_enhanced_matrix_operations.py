@@ -2,7 +2,7 @@
 
 """Step 7: Enhanced Matrix Operations with Standardized Data Quality Management."
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
-""""
+"""
 
 import asyncio
 import json
@@ -158,7 +158,7 @@ class Step7EnhancedMatrixOperations:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """"
+        """
         Execute Step 7: Enhanced Matrix Operations.
         
         Args:
@@ -167,7 +167,7 @@ class Step7EnhancedMatrixOperations:
             
         Returns:
             Updated pipeline state with matrix operations results
-        """"
+        """
         try:
             start_time = datetime.now()
             self.logger.info("🚀 Starting Step 7: Enhanced Matrix Operations...")
@@ -1650,7 +1650,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """"
+    """
     Run Step 7: Enhanced Matrix Operations with standardized data quality management.
     
     Args:
@@ -1663,7 +1663,7 @@ async def run_step(
         
     Returns:
         True if successful, False otherwise
-    """"
+    """
     try:
         # Use standardized path construction
         if data_dir is None:
@@ -1681,7 +1681,7 @@ from src.core.decorators import handles_errors
 config = get_training_config()
         
         # Create step instance
-        step = Step7EnhancedMatrixOperations(config)
+step = Step7EnhancedMatrixOperations(config)
         
         # Prepare training input
         training_input = {

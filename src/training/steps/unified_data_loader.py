@@ -2,7 +2,7 @@
 
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
-""""
+"""
 
 import os
 import sys
@@ -81,7 +81,7 @@ class UnifiedDataLoader:
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config or {}
         self.logger = system_logger.getChild("UnifiedDataLoader")
 
@@ -137,7 +137,7 @@ class UnifiedDataLoader:
 
         Returns:
             DataFrame with unified data or None if failed
-        """"
+        """
         try:
             # Sanitize inputs
             symbol = sanitize_string(symbol, max_length=20, allowed_chars="A-Z0-9")
@@ -219,7 +219,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
 
         Returns:
             Validation result dictionary
-        """"
+        """
         try:
             validation_result = {"valid": True, "reason": "OK"}
 
@@ -306,7 +306,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
 
         Returns:
             DataFrame with unified data or None if failed
-        """"
+        """
         try:
             # Find all parquet files in the unified directory
             parquet_files = []
@@ -377,7 +377,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
 
         Returns:
             Path to unified data directory
-        """"
+        """
         return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
     @handles_errors(fallback=None)
@@ -394,7 +394,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
 
         Returns:
             Dictionary with data information or None if failed
-        """"
+        """
         try:
             unified_path = self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
 
@@ -456,7 +456,7 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
 
     Returns:
         UnifiedDataLoader instance
-    """"
+    """
     global _unified_data_loader
     if _unified_data_loader is None:
         _unified_data_loader = UnifiedDataLoader(config)
@@ -479,7 +479,7 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
 
     Returns:
         DataFrame with unified data or None if failed
-    """"
+    """
     loader = get_unified_data_loader()
     return await loader.load_unified_data(
         symbol=symbol,
@@ -504,7 +504,7 @@ async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data
 
     Returns:
         Dictionary with data information or None if failed
-    """"
+    """
     loader = get_unified_data_loader()
     return await loader.get_data_info(
         symbol=symbol,

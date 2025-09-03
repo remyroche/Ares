@@ -14,18 +14,18 @@ from src.utils.warning_symbols import (
 )
 
 class ImprovedPipelineExecutor:
-    """"
+    """
     Improved pipeline executor with enhanced data flow between steps.
     Ensures proper integration and data passing between all pipeline components.
-    """"
+    """
 
     def __init__(self, pipeline_components: Dict[str, Any]) -> None:
-        """"
+        """
         Initialize improved pipeline executor.
 
         Args:
             pipeline_components: Dictionary containing all pipeline components
-        """"
+        """
         self.logger = system_logger.getChild("ImprovedPipelineExecutor")
         
         # Pipeline components
@@ -51,12 +51,12 @@ class ImprovedPipelineExecutor:
         context="pipeline executor initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize pipeline executor.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("Initializing Improved Pipeline Executor...")
 
@@ -103,7 +103,7 @@ class ImprovedPipelineExecutor:
         context="market data retrieval",
     )
     async def _get_market_data(self, symbol: str = "ETHUSDT", timeframe: str = "1h", limit: int = 100) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Get market data from exchange or generate mock data.
 
         Args:
@@ -113,7 +113,7 @@ class ImprovedPipelineExecutor:
 
         Returns:
             Dict containing market data and current price
-        """"
+        """
         try:
             if self.exchange_client:
                 # Try to get real market data
@@ -181,7 +181,7 @@ import copy
         context="step 1 market analysis",
     )
     async def execute_step_1_market_analysis(self, market_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Execute Step 1: Market Analysis.
 
         Args:
@@ -189,7 +189,7 @@ import copy
 
         Returns:
             Analysis results or None if failed
-        """"
+        """
         try:
             self.logger.info("📊 Executing Step 1: Market Analysis")
 
@@ -248,7 +248,7 @@ import copy
         market_context: Dict[str, Any], 
         analysis_results: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Execute Step 2: Strategy Development.
 
         Args:
@@ -257,7 +257,7 @@ import copy
 
         Returns:
             Strategy results or None if failed
-        """"
+        """
         try:
             self.logger.info("🧠 Executing Step 2: Strategy Development")
 
@@ -316,7 +316,7 @@ import copy
         analysis_results: Optional[Dict[str, Any]],
         strategy_results: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Execute Step 3: Tactical Execution.
 
         Args:
@@ -326,7 +326,7 @@ import copy
 
         Returns:
             Tactical results or None if failed
-        """"
+        """
         try:
             self.logger.info("🎯 Executing Step 3: Tactical Execution")
 
@@ -388,7 +388,7 @@ import copy
         strategy_results: Optional[Dict[str, Any]],
         tactical_results: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Execute Step 4: Dual Model System Decision Making.
 
         Args:
@@ -399,7 +399,7 @@ import copy
 
         Returns:
             Dual model results or None if failed
-        """"
+        """
         try:
             self.logger.info("🤖 Executing Step 4: Dual Model System Decision Making")
 
@@ -473,7 +473,7 @@ import copy
         market_context: Dict[str, Any],
         strategy_results: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """"
+        """
         Integrate dual model system decisions with tactician.
 
         Args:
@@ -483,7 +483,7 @@ import copy
 
         Returns:
             Integrated tactical decision
-        """"
+        """
         try:
             if not self.tactician or not dual_model_decision:
                 return {"error": "Tactician or dual model decision not available"}
@@ -584,7 +584,7 @@ import copy
         context="complete pipeline execution",
     )
     async def execute_complete_pipeline(self, symbol: str = "ETHUSDT") -> Optional[Dict[str, Any]]:
-        """"
+        """
         Execute complete pipeline with improved data flow.
 
         Args:
@@ -592,7 +592,7 @@ import copy
 
         Returns:
             Complete pipeline results or None if failed
-        """"
+        """
         try:
             self.cycle_count += 1
             cycle_start = datetime.now()

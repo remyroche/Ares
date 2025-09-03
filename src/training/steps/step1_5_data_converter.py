@@ -152,7 +152,7 @@ class ColumnVerifier:
         }
     
     def verify_missing_columns(self, df: pd.DataFrame, data_type: str = "unified") -> dict[str, Any]:
-        """"
+        """
         Verify which columns are missing from the dataframe.
         
         Args:
@@ -161,7 +161,7 @@ class ColumnVerifier:
             
         Returns:
             Dictionary with missing columns information
-        """"
+        """
         try:
             self.logger.info(f"🔍 Verifying missing columns for {data_type} data...")
             
@@ -221,7 +221,7 @@ class ColumnVerifier:
             }
     
     def _check_calculation_feasibility(self, df: pd.DataFrame, category: str, missing_columns: list[str]) -> list[str]:
-        """"
+        """
         Check which missing columns can be calculated based on available data.
         
         Args:
@@ -231,7 +231,7 @@ class ColumnVerifier:
             
         Returns:
             List of columns that can be calculated
-        """"
+        """
         can_calculate = []
         
         if category == "price_returns":
@@ -263,7 +263,7 @@ class ColumnVerifier:
         return can_calculate
     
     def calculate_missing_columns(self, df: pd.DataFrame, missing_info: dict[str, Any]) -> pd.DataFrame:
-        """"
+        """
         Calculate missing columns that can be computed.
         
         Args:
@@ -272,7 +272,7 @@ class ColumnVerifier:
             
         Returns:
             Enhanced DataFrame with calculated columns
-        """"
+        """
         try:
             self.logger.info("🔄 Calculating missing columns...")
             
@@ -1698,7 +1698,7 @@ class UnifiedDataConverter:
 			return unified
 
 	async def _verify_and_calculate_missing_columns(self, unified: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-		""""
+		"""
 		Step 1.5 Enhancement: Verify missing columns and calculate them if possible.
 		
 		Args:
@@ -1709,7 +1709,7 @@ class UnifiedDataConverter:
 			
 		Returns:
 			Enhanced DataFrame with calculated columns
-		""""
+		"""
 		try:
 			self.logger.info("🔍 Step 1.5 Enhancement: Verifying and calculating missing columns...")
 			

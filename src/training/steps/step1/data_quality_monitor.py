@@ -3,7 +3,7 @@
 
 This module provides real-time monitoring of data quality metrics and alerting
 capabilities for the enhanced data quality system.
-""""
+"""
 
 import asyncio
 import json
@@ -119,7 +119,7 @@ class DataQualityMonitor:
             
         Returns:
             bool: True if monitoring started successfully
-        """"
+        """
         try:
             self.monitoring_active = True
             self.monitoring_interval = interval_seconds
@@ -148,7 +148,7 @@ class DataQualityMonitor:
         
         Args:
             callback: Function to call with alert data
-        """"
+        """
         self.alert_callbacks.append(callback)
         logger.info(f"✅ Added alert callback: {callback.__name__}")
 
@@ -158,7 +158,7 @@ class DataQualityMonitor:
         
         Args:
             thresholds: Dictionary of threshold values
-        """"
+        """
         self.quality_thresholds.update(thresholds)
         logger.info("✅ Updated quality monitoring thresholds")
 
@@ -217,7 +217,7 @@ from src.core.decorators import handles_errors
 manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
             # Run quality check
-            quality_results = await manager.comprehensive_quality_check(
+quality_results = await manager.comprehensive_quality_check(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -452,7 +452,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
         Returns:
             List of filtered alerts
-        """"
+        """
         filtered_alerts = []
         
         for alert in self.alerts:
@@ -486,7 +486,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
         Returns:
             bool: True if alert was acknowledged
-        """"
+        """
         try:
             if 0 <= alert_index < len(self.alerts):
                 self.alerts[alert_index].acknowledged = True
@@ -506,7 +506,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
         Returns:
             bool: True if alert was resolved
-        """"
+        """
         try:
             if 0 <= alert_index < len(self.alerts):
                 self.alerts[alert_index].resolved = True

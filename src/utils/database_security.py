@@ -1,4 +1,4 @@
-""""
+"""
 Database Security Module
 
 This module provides comprehensive database security including:
@@ -8,7 +8,7 @@ This module provides comprehensive database security including:
 - Sensitive data encryption
 - Database access auditing
 - Connection pooling with security limits
-""""
+"""
 
 import hashlib
 import json
@@ -120,7 +120,7 @@ class DatabaseSecurityManager:
 
         Yields:
             Database connection object
-        """"
+        """
         connection = None
         connection_id = None
 
@@ -381,7 +381,7 @@ connection_params = {
 
         Returns:
             Query results
-        """"
+        """
         try:
             # Validate query security
             if not self._validate_query_security(query):
@@ -572,7 +572,7 @@ connection_params = {
 
         Returns:
             Data with encrypted sensitive fields
-        """"
+        """
         encrypted_data = data.copy()
 
         for field in sensitive_fields:
@@ -592,7 +592,7 @@ connection_params = {
 
         Returns:
             Data with decrypted sensitive fields
-        """"
+        """
         decrypted_data = data.copy()
 
         for field in sensitive_fields:
@@ -610,7 +610,7 @@ connection_params = {
 
         Returns:
             Database security report
-        """"
+        """
         try:
             # Count recent queries
             recent_queries = len(self.query_audit_log)

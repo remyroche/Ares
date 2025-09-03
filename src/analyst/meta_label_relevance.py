@@ -30,7 +30,7 @@ def compute_mutual_information(
 
     Returns:
         Dict feature_name -> MI score
-    """"
+    """
     Xn = X.select_dtypes(include=[np.number]).copy()
     if Xn.empty:
         return {}
@@ -67,7 +67,7 @@ def compute_shap_importance(
     """Compute approximate SHAP mean(|value|) per feature."
 
     If model is None, fits a lightweight LightGBM model for speed.
-    """"
+    """
     import shap  # type: ignore
     from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
 
@@ -124,7 +124,7 @@ def evaluate_sharpe_lift(
         returns_series: realized per-period returns
         gating_series: boolean/int indicator where 1 means include trade/period
         risk_free_rate: per-period risk free
-    """"
+    """
     r = returns_series.fillna(0.0)
     g = gating_series.fillna(0).astype(int)
     base_excess = r - risk_free_rate
@@ -149,7 +149,7 @@ class MetaLabelRelevanceEvaluator:
     """Evaluate meta-label relevance with complementarity checks and persist active labels."
 
     Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.'
-    """"
+    """
 
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)

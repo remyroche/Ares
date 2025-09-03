@@ -2,7 +2,7 @@
 
 """Combined Fractional System: Integration of fractional labeling and fractional differentiation."
 Designed to work with existing HMM regime system without redundant regime tuning.
-""""
+"""
 
 import asyncio
 import time
@@ -33,7 +33,7 @@ class HMMFractionalIntegration:
         
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config or {}
         self.regime_metrics = {}  # Track performance per regime
         self.feature_enhancement = self.config.get('feature_enhancement', True)
@@ -49,7 +49,7 @@ class HMMFractionalIntegration:
             
         Returns:
             Enhanced features DataFrame
-        """"
+        """
         enhanced_features = features.copy()
         
         if self.feature_enhancement and hmm_regime:
@@ -86,7 +86,7 @@ class HMMFractionalIntegration:
             
         Returns:
             Quality score (0-1)
-        """"
+        """
         try:
             # Calculate various quality metrics
             variance_scores = []
@@ -162,7 +162,7 @@ class HMMFractionalIntegration:
             
         Returns:
             Stability score (0-1)
-        """"
+        """
         try:
             stability_scores = []
             
@@ -199,21 +199,21 @@ class HMMFractionalIntegration:
         
         Returns:
             Dictionary of regime metrics
-        """"
+        """
         return self.regime_metrics.copy()
 
 class CombinedFractionalSystem:
     """Unified system combining fractional labeling and differentiation."
     
     Designed to work with existing HMM regime system without redundant regime tuning.
-    """"
+    """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize combined fractional system."
         
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config or {}
         
         # Initialize components
@@ -253,7 +253,7 @@ class CombinedFractionalSystem:
             
         Returns:
             Dictionary containing processed features, labels, and metrics
-        """"
+        """
         start_time = time.time()
         
         try:
@@ -318,7 +318,7 @@ class CombinedFractionalSystem:
             
         Returns:
             Dictionary of performance metrics
-        """"
+        """
         try:
             metrics = {
                 'processing_time': processing_time,
@@ -393,7 +393,7 @@ class CombinedFractionalSystem:
         
         Returns:
             Dictionary with performance summary
-        """"
+        """
         if not self.performance_history:
             return {'message': 'No performance data available'}
         
@@ -442,7 +442,7 @@ class CombinedFractionalSystem:
             
         Returns:
             Path to the exported report
-        """"
+        """
         try:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -488,7 +488,7 @@ def get_combined_fractional_config(
         
     Returns:
         Combined configuration dictionary
-    """"
+    """
     return {
         'labeling': labeling_config or {
             'enable_distance_scaling': True,

@@ -1,6 +1,8 @@
 """
 Lifecycle manager for pipeline components (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
     compose,
@@ -8,14 +10,11 @@ from src.core.decorators import (
     log_execution_time,
     traced,
     validates
+)
 
 from src.core.domain import PerformanceLevel
 
-from __future__ import annotations
-
 from typing import Any
-
-    handle_specific_errors,
     performance_monitor,
 from src.utils.logger import system_logger
 

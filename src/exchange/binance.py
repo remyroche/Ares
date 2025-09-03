@@ -1,9 +1,8 @@
 from src.core.decorators import handles_errors, retry, timeout
 
 from src.core.domain import (
-    handle_network_operations,
-    handle_specific_errors
-
+    handle_network_operations
+)
 import hashlib
 import hmac
 import time
@@ -13,15 +12,14 @@ from urllib.parse import urlencode
 import aiohttp
 
     handle_network_operations,
-    handle_specific_errors,
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,
     error,
     failed,
     invalid,
-    missing,
-
+    missing
+)
 
 class BinanceExchange:
     """
@@ -842,10 +840,8 @@ class BinanceExchange:
         except Exception:
             self.print(error("Error stopping Binance exchange: {e}"))
 
-
 # Global Binance exchange instance
 binance_exchange: BinanceExchange | None = None
-
 
 @handles_errors(Exception,, fallback=None,
     context="Binance exchange setup",

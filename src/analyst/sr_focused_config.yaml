@@ -1,0 +1,76 @@
+# S/R-Focused Classifier Configuration
+
+analyst:
+  unified_regime_classifier:
+    # PRIMARY FOCUS: S/R Detection using Returns
+    sr_detection_config:
+      # Return-based detection thresholds
+      min_return_reversal: 0.002  # 0.2% minimum reversal to identify S/R
+      return_lookback: 100  # Analyze last 100 periods for return patterns
+      
+      # S/R validation criteria
+      min_touches: 2  # Minimum times price must test level
+      touch_tolerance: 0.001  # 0.1% tolerance for considering as same level
+      return_significance: 0.01  # 1% return threshold for significant moves
+      
+      # Relevance scoring weights (must sum to 1.0)
+      relevance_weights:
+        return_magnitude: 0.3   # How strong were the return reversals
+        touch_count: 0.2       # How many times has level been tested
+        recency: 0.2          # How recent are the tests
+        volume_confirmation: 0.15  # Was there volume at reversals
+        success_rate: 0.15    # How often did level hold
+      
+      # Return analysis windows
+      return_windows: [5, 10, 20, 50]  # Multiple timeframes for return analysis
+      volatility_adjusted: true  # Normalize returns by volatility
+    
+    # Fractal timeframes for S/R detection
+    # Fewer timeframes, focused on quality over quantity
+    fractal_timeframes:
+      - name: "1h"
+        weight: 0.25
+        min_touches: 2  # Minimum touches at this timeframe
+      - name: "4h"
+        weight: 0.35
+        min_touches: 3
+      - name: "1d"
+        weight: 0.40
+        min_touches: 4
+    
+    # SECONDARY: Distance normalization
+    distance_normalization: "returns"  # Use returns, not percentage
+    
+    # Detection methods priority
+    detection_methods:
+      - return_reversals      # Primary: Significant return reversals
+      - multiple_tests       # Secondary: Levels tested multiple times
+      - return_clusters      # Tertiary: Statistical return clusters
+      - volume_reversals     # Quaternary: Volume-confirmed reversals
+    
+    # S/R Quality Thresholds
+    high_relevance_threshold: 0.7  # Score above this is high relevance
+    min_relevance_threshold: 0.3   # Score below this is ignored
+    
+    # Output Configuration
+    max_sr_levels_per_side: 10  # Maximum support/resistance levels to track
+    
+    # Performance
+    enable_caching: true
+    cache_ttl_seconds: 300  # 5 minutes cache
+
+# Interpretation Guide:
+# 
+# Primary Outputs:
+# - support_relevance: 0-1 score of how relevant the nearest support is
+# - resistance_relevance: 0-1 score of how relevant the nearest resistance is
+# - sr_quality: Overall quality of S/R structure
+#
+# Distance Outputs (normalized by returns):
+# - support_distance_returns: Distance in terms of expected volatility
+# - support_distance_periods: Distance in terms of average return periods
+#
+# S/R Analysis:
+# - detected_levels: All detected S/R levels with metadata
+# - relevance_scores: Detailed scoring for each level
+# - high_relevance_count: Number of highly relevant levels

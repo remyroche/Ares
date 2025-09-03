@@ -46,10 +46,10 @@ class ConservativeAutoFixer:
         self.skip_broken_files = True
         self.max_file_size_mb = 10
         
-        # Conservative tool list (only the safest tools)
-        self.safe_tools = ["isort"]  # Start with only isort
-        self.moderate_tools = ["autopep8"]  # Requires installation
-        self.aggressive_tools = ["black", "yapf"]  # More risky
+        # Conservative tool list (categorized by safety)
+        self.safe_tools = ["isort", "autoflake", "pyupgrade", "yesqa"]  # Safe tools
+        self.moderate_tools = ["autopep8", "ruff"]  # Moderate risk
+        self.aggressive_tools = ["black", "yapf", "docformatter"]  # More risky
         
         # Current tool set (can be expanded based on config)
         self.enabled_tools = self._get_enabled_tools()
@@ -58,8 +58,9 @@ class ConservativeAutoFixer:
         """Get list of enabled tools based on configuration."""
         if hasattr(self.config, 'auto_fix') and hasattr(self.config.auto_fix, 'tools'):
             configured_tools = self.config.auto_fix.tools
-            # Filter to only include safe tools by default
-            return [tool for tool in configured_tools if tool in self.safe_tools]
+            # Filter to only include safe and moderate tools by default
+            allowed_tools = self.safe_tools + self.moderate_tools
+            return [tool for tool in configured_tools if tool in allowed_tools]
         return self.safe_tools.copy()
     
     def _validate_syntax(self, file_path: str) -> tuple[bool, Optional[str]]:
@@ -163,6 +164,65 @@ class ConservativeAutoFixer:
         except Exception as e:
             return {"status": "error", "error": str(e)}
     
+    def _run_autoflake(self, file_path: str) -> Dict[str, Any]:
+        """Run autoflake to remove unused imports and variables."""
+        try:
+            cmd = [
+                sys.executable, "-m", "autoflake",
+                "--in-place",
+                "--remove-unused-variables",
+                "--remove-all-unused-imports",
+                "--ignore-init-module-imports",  # Don't remove __init__ imports
+                file_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return {"status": "success", "message": "Unused imports/variables removed"}
+            else:
+                return {"status": "failed", "error": result.stderr}
+                
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    
+    def _run_pyupgrade(self, file_path: str) -> Dict[str, Any]:
+        """Run pyupgrade to modernize Python syntax."""
+        try:
+            cmd = [
+                sys.executable, "-m", "pyupgrade",
+                "--py39-plus",  # Target Python 3.9+
+                file_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return {"status": "success", "message": "Python syntax upgraded"}
+            else:
+                return {"status": "failed", "error": result.stderr}
+                
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    
+    def _run_yesqa(self, file_path: str) -> Dict[str, Any]:
+        """Run yesqa to remove unnecessary noqa comments."""
+        try:
+            cmd = [
+                sys.executable, "-m", "yesqa",
+                file_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return {"status": "success", "message": "Unnecessary noqa comments removed"}
+            else:
+                return {"status": "failed", "error": result.stderr}
+                
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    
     def fix_file(self, file_path: str, tools: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Fix a single file with maximum safety.
@@ -217,6 +277,12 @@ class ConservativeAutoFixer:
                 tool_result = self._run_isort(file_path)
             elif tool == "autopep8":
                 tool_result = self._run_autopep8(file_path)
+            elif tool == "autoflake":
+                tool_result = self._run_autoflake(file_path)
+            elif tool == "pyupgrade":
+                tool_result = self._run_pyupgrade(file_path)
+            elif tool == "yesqa":
+                tool_result = self._run_yesqa(file_path)
             else:
                 tool_result = {
                     "status": "skipped",

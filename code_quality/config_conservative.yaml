@@ -3,11 +3,22 @@
 
 auto_fix:
   enabled: true
-  # Only use the most reliable and safe formatters
+  # Use a balanced set of reliable formatters
   tools:
-    - "isort"  # Import sorting - generally safe
-    # - "black"  # Temporarily disabled - can be too aggressive
-    # - "autopep8"  # More conservative than black, but not installed
+    - "isort"      # Import sorting - very safe
+    - "autoflake"  # Remove unused imports/variables - mostly safe
+    - "pyupgrade"  # Upgrade Python syntax - fairly safe
+    - "yesqa"      # Remove unnecessary noqa comments - safe
+    # Optionally enable these more moderate tools:
+    # - "autopep8"  # More conservative formatter (enable after installing)
+    # - "ruff"      # Fast linter/formatter (enable after installing)
+    
+    # Aggressive tools - NOT recommended:
+    # - "black"     # Can be too aggressive with formatting
+    # - "yapf"      # Another aggressive formatter
+    # - "docformatter"  # Can break docstrings
+    # - "flynt"     # f-string conversion can be risky
+    # - "unify"     # Quote changes can be problematic
   
   # Conservative settings
   max_line_length: 120  # More permissive line length

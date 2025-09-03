@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import A, Callableny
 
-from src.interfaces.base_interfaces import IExchangeClient, MarketData
+from src.interfaces.base_interfaces import IExchangeClient as IExchangeClient_src_interfaces_base_interfaces, MarketData
 
 
 class BaseExchange(IExchangeClient, ABC):

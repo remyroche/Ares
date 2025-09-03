@@ -10,9 +10,8 @@ automatic correlation ID propagation and sensitive data masking.
 import logging
 import time
 import uuid
-from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Any
+from typing import A, Callableny
 
 from .compose import P, R, uniform_wrapper
 

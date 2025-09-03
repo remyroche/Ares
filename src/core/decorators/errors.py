@@ -8,8 +8,7 @@ logging, and optional recovery strategies.
 """
 
 import logging
-from collections.abc import Callable
-from typing import Any
+from typing import A, Callableny
 
 from src.core.errors.base import AppError
 from src.core.errors.mapping import error_mapper

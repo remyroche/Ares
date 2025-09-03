@@ -8,11 +8,10 @@ compatible with OpenTelemetry and other tracing systems.
 """
 
 import time
-from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import A, Callableny, Optional
 
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id

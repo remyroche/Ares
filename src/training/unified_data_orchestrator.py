@@ -8,7 +8,7 @@ from src.core.decorators import (
     log_execution_time,
     validates,
 )
-from src.core.domain import prevent_data_leakage, quality_gate, secure_data_processing
+from src.core.domain import prevent_data_leakage as prevent_data_leakage_src_core_domain, quality_gate, secure_data_processing
 
 # src/training/unified_data_orchestrator.py
 

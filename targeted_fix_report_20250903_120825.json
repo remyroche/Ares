@@ -1,0 +1,189 @@
+{
+  "timestamp": "2025-09-03T12:08:25.824151",
+  "files_processed": 525,
+  "import_fixes": 42,
+  "signature_fixes": 4,
+  "import_changes": {
+    "./code_quality/scripts/enhanced_type_hints.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./code_quality/scripts/final_code_fixes.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./exchange/base_exchange.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./fix_critical_imports.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./scripts/assess_data_quality.py": [
+      "Standardized system_logger import to src.utils.logger"
+    ],
+    "./scripts/diagnose_feature_quality.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./scripts/optimize_partitions.py": [
+      "Standardized system_logger import to src.utils.logger"
+    ],
+    "./src/core/decorators/auth.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/cache.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/compose.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/errors.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/logging.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/retry_timeout.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/trace.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/decorators/validate.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/dependency_injection.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/domain/decorators.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/domain/decorators_extended.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/errors/handlers/http.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/errors/mapping.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/core/generic_base.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/custom_types/validation.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/database/firestore_manager.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/interfaces/event_bus.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/strategist/utils.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/tactician/ml_tactics_manager.py": [
+      "Added alias core_handles_errors for handles_errors from src.core.decorators",
+      "Added alias core_handles_errors for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/ml_target_validator.py": [
+      "Added alias core_handles_errors for handles_errors from src.core.decorators",
+      "Added alias core_handles_errors for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/position_sizer.py": [
+      "Added alias core_handles_errors for handles_errors from src.core.decorators",
+      "Added alias core_handles_errors for handles_errors from src.core.decorators"
+    ],
+    "./src/training/bayesian_optimizer.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/training/launcher_integration_patch.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/training/optimization/problem_specific_strategies.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/training/optimization/transfer_learning_system.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/training/probabilistic_bayesian_optimizer.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/common_operations.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/compat.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/decorator_registry.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/feature_engineering_validation.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/logger.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/parallel_processing_optimizer.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/utils/signal_handler.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ],
+    "./src/validation/critical_path_validators.py": [
+      "Added Callable to typing imports",
+      "Removed collections.abc.Callable in favor of typing.Callable"
+    ]
+  },
+  "signature_changes": {
+    "./run_sequential_fixer_simple.py": [
+      "Added self. to print call at line 40",
+      "Added self. to print call at line 37"
+    ],
+    "./src/config/config_manager.py": [
+      "Added self. to get_static_config call at line 55"
+    ],
+    "./src/core/config_service.py": [
+      "Added self. to print call at line 206"
+    ],
+    "./src/utils/state_manager.py": [
+      "Added self. to print call at line 237"
+    ]
+  }
+}

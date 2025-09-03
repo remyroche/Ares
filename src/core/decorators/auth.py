@@ -8,11 +8,10 @@ policies in a framework-agnostic way.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import A, Callableny, Optional
 
 from src.core.errors.base import AuthenticationError, AuthorizationError
 

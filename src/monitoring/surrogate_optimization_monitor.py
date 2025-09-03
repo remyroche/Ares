@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 
 # Utilities
 from src.utils.logger import system_logger

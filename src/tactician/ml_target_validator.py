@@ -1,8 +1,8 @@
 # src/tactician/ml_target_validator.py
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors
 
-from src.core.domain import validate_data_quality
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 
 """
 ML Target Validator for validating machine learning targets and predictions.
@@ -10,7 +10,7 @@ ML Target Validator for validating machine learning targets and predictions.
 from datetime import datetime
 from typing import Any
 
-from src.core.decorators import handles_errors, validates
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors, validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -49,7 +49,7 @@ class MLTargetValidator:
         self.min_target_value = self.validator_config.get("min_target_value", -1.0)
         self.max_target_value = self.validator_config.get("max_target_value", 1.0)
 
-    @handles_errors(
+    @core_handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="ML target validator initialization",
@@ -126,7 +126,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML target validation",
     )
-    @handles_errors(
+    @core_handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="target validation",
@@ -229,7 +229,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML prediction validation",
     )
-    @handles_errors(
+    @core_handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="prediction validation",

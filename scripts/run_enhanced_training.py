@@ -25,7 +25,7 @@ from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed
+from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols
 
 # Add project root to path
 project_root=Path(__file__).parent.parent

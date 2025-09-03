@@ -30,23 +30,23 @@ code_quality_path = Path(__file__).parent / "code_quality"
 sys.path.insert(0, str(code_quality_path))
 
 try:
-    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
+    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer as AdvancedASTAnalyzer_2
     from code_quality.analyzers.architecture_analyzer import ArchitectureAnalyzer
     from code_quality.analyzers.call_graph_analyzer import CallGraphAnalyzer
     from code_quality.analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
-    from code_quality.analyzers.complexity_analyzer import ComplexityAnalyzer
-    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer
-    from code_quality.analyzers.dead_code_analyzer import DeadCodeAnalyzer
+    from code_quality.analyzers.complexity_analyzer import ComplexityAnalyzer as ComplexityAnalyzer_3
+    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer as ConcurrencyAnalyzer_2
+    from code_quality.analyzers.dead_code_analyzer import DeadCodeAnalyzer as DeadCodeAnalyzer_3
     from code_quality.analyzers.dependency_analyzer import DependencyAnalyzer
-    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
+    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer as ErrorHandlingAnalyzer_2
     from code_quality.analyzers.import_analyzer import ImportAnalyzer
-    from code_quality.analyzers.signature_analyzer import SignatureAnalyzer
-    from code_quality.analyzers.syntax_validator import SyntaxValidator
-    from code_quality.analyzers.type_checker import TypeChecker
-    from code_quality.core.config import get_default_config
-    from code_quality.core.plugins import PluginManager
-    from code_quality.fixers.auto_fixer import AutoFixer
-    from code_quality.fixers.sequential_fixer import SequentialFixer
+    from code_quality.analyzers.signature_analyzer import SignatureAnalyzer as SignatureAnalyzer_2
+    from code_quality.analyzers.syntax_validator import SyntaxValidator as SyntaxValidator_3
+    from code_quality.analyzers.type_checker import TypeChecker as TypeChecker_code_quality_analyzers_type_checker
+    from code_quality.core.config import get_default_config as get_default_config_code_quality_core_config
+    from code_quality.core.plugins import PluginManager as PluginManager_code_quality_core_plugins
+    from code_quality.fixers.auto_fixer import AutoFixer as AutoFixer_code_quality_fixers_auto_fixer
+    from code_quality.fixers.sequential_fixer import SequentialFixer as SequentialFixer_3
     CODE_QUALITY_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Code quality tools not available: {e}")

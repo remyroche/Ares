@@ -16,12 +16,11 @@ import json
 import logging
 import time
 from collections import Counter, defaultdict, deque
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from typing import (
-    Any,
+    A, Callableny,
 )
 
 import numpy as np

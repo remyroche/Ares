@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import critical
+from src.utils.warning_symbols import critical as critical_src_utils_warning_symbols
 
 warnings.filterwarnings("ignore")
 

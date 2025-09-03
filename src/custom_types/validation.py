@@ -9,11 +9,10 @@ Runtime type validation utilities for critical paths.
 import inspect
 import logging
 import types
-from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar, Union, get_args, get_origin
+from typing import A, Callableny, TypeVar, Union, get_args, get_origin
 
-from src.utils.warning_symbols import validation_error
+from src.utils.warning_symbols import validation_error as validation_error_src_utils_warning_symbols
 
 from .base_types import Price, Symbol, Volume
 from .config_types import ConfigDict

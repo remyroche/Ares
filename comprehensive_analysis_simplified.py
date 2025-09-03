@@ -35,26 +35,26 @@ from pathlib import Path
 from typing import Any
 
 # Import minimal modules
-from minimal_config import get_default_config
+from minimal_config import get_default_config as get_default_config_minimal_config
 
 # Add code_quality to path
 code_quality_path = Path(__file__).parent / "code_quality"
 sys.path.insert(0, str(code_quality_path))
 
 try:
-    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
+    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer as AdvancedASTAnalyzer_2
     from code_quality.analyzers.architecture_analyzer import ArchitectureAnalyzer
     from code_quality.analyzers.call_graph_analyzer import CallGraphAnalyzer
     from code_quality.analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
-    from code_quality.analyzers.complexity_analyzer import ComplexityAnalyzer
-    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer
-    from code_quality.analyzers.dead_code_analyzer import DeadCodeAnalyzer
+    from code_quality.analyzers.complexity_analyzer import ComplexityAnalyzer as ComplexityAnalyzer_3
+    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer as ConcurrencyAnalyzer_2
+    from code_quality.analyzers.dead_code_analyzer import DeadCodeAnalyzer as DeadCodeAnalyzer_3
     from code_quality.analyzers.dependency_analyzer import DependencyAnalyzer
-    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
+    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer as ErrorHandlingAnalyzer_2
     from code_quality.analyzers.import_analyzer import ImportAnalyzer
-    from code_quality.analyzers.signature_analyzer import SignatureAnalyzer
-    from code_quality.analyzers.syntax_validator import SyntaxValidator
-    from code_quality.analyzers.type_checker import TypeChecker
+    from code_quality.analyzers.signature_analyzer import SignatureAnalyzer as SignatureAnalyzer_2
+    from code_quality.analyzers.syntax_validator import SyntaxValidator as SyntaxValidator_3
+    from code_quality.analyzers.type_checker import TypeChecker as TypeChecker_code_quality_analyzers_type_checker
     ANALYZERS_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Some analyzers not available: {e}")

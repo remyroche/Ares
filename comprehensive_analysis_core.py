@@ -28,16 +28,16 @@ from pathlib import Path
 from typing import Any
 
 # Import minimal modules
-from minimal_config import get_default_config
+from minimal_config import get_default_config as get_default_config_minimal_config
 
 # Import only the analyzers we created
 try:
-    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
+    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer as AdvancedASTAnalyzer_2
     from code_quality.analyzers.architecture_analyzer import ArchitectureAnalyzer
     from code_quality.analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
-    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer
-    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
-    from code_quality.analyzers.type_checker import TypeChecker
+    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer as ConcurrencyAnalyzer_2
+    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer as ErrorHandlingAnalyzer_2
+    from code_quality.analyzers.type_checker import TypeChecker as TypeChecker_code_quality_analyzers_type_checker
     ANALYZERS_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Some analyzers not available: {e}")

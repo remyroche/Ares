@@ -68,6 +68,11 @@ class DataReadingStep(BaseStep):
         if data_path and not Path(data_path).exists():
             errors.append(f"Data file does not exist: {data_path}")
         
+        # Validate key training inputs present
+        for key in ["symbol", "exchange", "timeframe"]:
+            if key not in training_input:
+                errors.append(f"Missing required input: {key}")
+        
         return len(errors) == 0, errors
     
     @handles_errors(
@@ -104,6 +109,24 @@ class DataReadingStep(BaseStep):
         except Exception as e:
             self.logger.error(f"❌ Failed to read data: {e}")
             raise
+        
+        # Normalize index if needed
+        try:
+            if not isinstance(data.index, (pd.DatetimeIndex,)):
+                self.logger.warning("Index is not DatetimeIndex; attempting auto-conversion from timestamp/date/time column")
+                for ts_col in ["timestamp", "date", "time"]:
+                    if ts_col in data.columns:
+                        data[ts_col] = pd.to_datetime(data[ts_col], errors='coerce')
+                        data.set_index(ts_col, inplace=True)
+                        break
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not normalize index: {e}")
+        
+        # Basic OHLCV presence log
+        required_cols = ["open", "high", "low", "close", "volume"]
+        missing_cols = [c for c in required_cols if c not in data.columns]
+        if missing_cols:
+            self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_cols}")
         
         # Perform data quality validation
         validation_results = self._validate_data_quality(data)
@@ -239,6 +262,15 @@ class DataReadingStep(BaseStep):
                 if zero_volume_pct > 10:
                     results["issues"].append(f"Zero volume: {zero_volume} rows ({zero_volume_pct:.1f}%)")
                     results["data_quality_score"] -= min(10, zero_volume_pct)
+        
+        # Additional index checks
+        try:
+            if isinstance(data.index, pd.DatetimeIndex):
+                if not data.index.is_monotonic_increasing:
+                    results["issues"].append("Non-monotonic datetime index")
+                    results["data_quality_score"] -= 5
+        except Exception:
+            pass
         
         # Ensure score doesn't go below 0
         results["data_quality_score"] = max(0, results["data_quality_score"])

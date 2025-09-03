@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
+from copy import copy
+
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )

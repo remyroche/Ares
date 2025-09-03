@@ -1,6 +1,9 @@
 # src/training/model_trainer.py
 
 from src.core.decorators import (
+from copy import copy
+import numpy as np
+
     cached,
     circuit_breaker,
     handles_errors,

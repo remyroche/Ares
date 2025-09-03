@@ -1,6 +1,8 @@
 # src/training/enhanced_matrix_gpu_integration.py
 
 from src.core.decorators import (
+from copy import copy
+
     cached,
     circuit_breaker,
     handles_errors,

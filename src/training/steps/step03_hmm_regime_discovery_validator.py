@@ -16,6 +16,7 @@ import pandas as pd
 
 from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
+import asyncio
 
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 

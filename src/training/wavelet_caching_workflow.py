@@ -17,6 +17,8 @@ import pandas as pd
 import yaml
 
 from src.training.steps.backtesting_with_cached_features import (
+from copy import copy
+
     BacktestingWithCachedFeatures,
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer

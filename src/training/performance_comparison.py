@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 
 from src.utils.warning_symbols import (
+import asyncio
+
     error,
     initialization_error,
 )

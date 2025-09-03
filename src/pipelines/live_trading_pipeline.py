@@ -5,6 +5,8 @@ Live trading pipeline implementation (minimal scaffold).
 """
 
 from src.core.decorators import (
+import asyncio
+
     cached,
     compose,
     handles_errors,

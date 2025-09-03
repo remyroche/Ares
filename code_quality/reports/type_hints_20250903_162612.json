@@ -1,0 +1,3050 @@
+{
+  "fixed_files": [
+    {
+      "file": "/workspace/src/tasks.py",
+      "changes": [
+        "Added return type None for run_training"
+      ]
+    },
+    {
+      "file": "/workspace/src/ares_pipeline.py",
+      "changes": [
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/config_optuna.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/monitoring/fractional_system_monitor.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for start_monitoring",
+        "Added return type None for stop_monitoring",
+        "Added return type None for track_performance",
+        "Added return type None for _store_metrics",
+        "Added return type None for _trigger_alerts",
+        "Added return type None for _log_alert",
+        "Added return type None for _file_alert",
+        "Added return type None for _update_regime_performance",
+        "Added return type None for _store_performance_record"
+      ]
+    },
+    {
+      "file": "/workspace/src/monitoring/surrogate_optimization_monitor.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __del__"
+      ]
+    },
+    {
+      "file": "/workspace/src/monitoring/regime_performance_tracker.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _init_database",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/monitoring/fractional_performance_tracker.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _initialize_tracking",
+        "Added return type None for _load_existing_data",
+        "Added return type None for set_baseline_metrics",
+        "Added return type None for update_current_metrics",
+        "Added return type None for _check_performance_alerts",
+        "Added return type None for _save_metrics",
+        "Added return type None for _create_dashboard",
+        "Added return type None for _create_html_dashboard"
+      ]
+    },
+    {
+      "file": "/workspace/src/monitoring/regime_monitoring_dashboard.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for start",
+        "Added return type None for stop",
+        "Added return type None for _monitor_regimes",
+        "Added return type None for _handle_regime_transition",
+        "Added return type None for _update_metrics",
+        "Added return type None for _check_performance_degradation",
+        "Added return type None for _check_alerts",
+        "Added return type None for _create_alert",
+        "Added return type None for _handle_console_alert",
+        "Added return type None for _handle_file_alert",
+        "Added return type None for _handle_webhook_alert",
+        "Added return type None for _save_dashboard_state",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter websocket",
+        "Added type hint Union[str, Path] for parameter path",
+        "Added return type None for handler",
+        "Added return type None for start",
+        "Added return type None for start_regime_monitoring",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/interfaces/base_interfaces.py",
+      "changes": [
+        "Added type hint Callable for parameter callback",
+        "Added type hint Callable for parameter callback"
+      ]
+    },
+    {
+      "file": "/workspace/src/trading/live_wavelet_demo.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/trading/sr_trading_intelligence.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _start_real_time_updates",
+        "Added return type None for _real_time_update_loop",
+        "Added return type None for _update_sr_levels_with_market_data",
+        "Added return type None for update_position",
+        "Added return type None for close_position",
+        "Added return type None for _update_performance_metrics",
+        "Added return type None for _load_trading_history",
+        "Added return type None for save_trading_history",
+        "Added return type None for shutdown"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/dependency_container.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for factory",
+        "Added return type None for factory",
+        "Added return type None for factory",
+        "Added return type None for factory"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/pnl_loss_functions_backup.py",
+      "changes": [
+        "Added type hint Any for parameter y_true",
+        "Added type hint Any for parameter y_pred",
+        "Added return type None for pnl_aware_loss",
+        "Added type hint Any for parameter pnl_multiplier",
+        "Added type hint Any for parameter liquidation_penalty",
+        "Added type hint Any for parameter reward_boost",
+        "Added return type Any for create_pnl_aware_loss"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_model_monitor.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/main.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _wire_component_queues",
+        "Added return type None for start",
+        "Added return type None for _synchronize_exchange_state"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/system_coordinator_backup.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for call"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/model_behavior_tracker.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/transition/seq2seq_trainer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for configure_optimizers",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/custom_types/validation.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for wrapper"
+      ]
+    },
+    {
+      "file": "/workspace/src/optimization/regime_parameter_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for _save_regime_results",
+        "Added return type None for _save_optimization_results",
+        "Added type hint Dict[str, Any] for parameter params",
+        "Added return type None for __init__",
+        "Added type hint Union[pd.DataFrame, Dict[str, Any]] for parameter data",
+        "Added return type None for predict",
+        "Added return type Any for get_params",
+        "Added return type None for continuous_optimization",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/comprehensive_enhanced_scenario_predictor.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for handle_errors"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/tactics_orchestrator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/sr_data_integration.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/sr_levels_manager.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for update_touch",
+        "Added return type None for __init__",
+        "Added return type None for _cleanup_old_levels",
+        "Added return type None for save_levels",
+        "Added return type Any for load_levels",
+        "Added return type None for _save_to_history"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_scenario_based_predictor.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for handle_errors"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/sr_detection_optimization.py",
+      "changes": [
+        "Added type hint Any for parameter backtest_result"
+      ]
+    },
+    {
+      "file": "/workspace/src/tactician/fully_migrated_tactician.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for handle_errors"
+      ]
+    },
+    {
+      "file": "/workspace/src/tracking/trade_tracker.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_config.py",
+      "changes": [
+        "Added type hint Any for parameter v",
+        "Added return type bool for validate_methods",
+        "Added type hint Any for parameter v",
+        "Added return type bool for validate_ranges",
+        "Added type hint Any for parameter v",
+        "Added return type bool for validate_timeout"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager.py",
+      "changes": [
+        "Added return type None for _timed_step",
+        "Added type hint Dict[str, Any] for parameter params",
+        "Added return type None for optimization_objective",
+        "Added type hint Any for parameter data_subset",
+        "Added type hint Dict[str, Any] for parameter params",
+        "Added return type None for progressive_evaluator_func",
+        "Added type hint Any for parameter evaluator_func",
+        "Added return type None for _generate_step_report"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/base_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/migration_script.py",
+      "changes": [
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/multi_output_probability_trainer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for _create_model",
+        "Added type hint Union[List[float], np.ndarray] for parameter weights",
+        "Added return type None for objective",
+        "Added return type None for __init__",
+        "Added return type None for _configure_models_for_timeframe"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/migration_quickstart.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _save_optimization_results"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/feature_integration.py",
+      "changes": [
+        "Added type hint Any for parameter model"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/enhanced_feature_engineering_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type float for objective",
+        "Added return type None for _save_enhanced_optimization_results"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/probabilistic_model_integration.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for factory",
+        "Added return type None for _create_tactician_model_factory",
+        "Added return type None for factory",
+        "Added return type None for _create_analyst_model_factory",
+        "Added return type None for _apply_tactician_optimization_results",
+        "Added return type None for _apply_analyst_optimization_results",
+        "Added return type None for plot_optimization_results",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_optimized.py",
+      "changes": [
+        "Added return type None for __enter__",
+        "Added type hint Any for parameter exc_type",
+        "Added type hint Any for parameter exc",
+        "Added type hint Any for parameter tb",
+        "Added return type bool for __exit__",
+        "Added return type None for process_data_stream",
+        "Added return type None for _iter_parquet_chunks",
+        "Added return type None for _iter_csv_chunks",
+        "Added type hint Any for parameter chunks_iter",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for _build_filter"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/early_stage_optimization.py",
+      "changes": [
+        "Added type hint Any for parameter training_manager",
+        "Added return type None for __init__",
+        "Added return type Any for get_triple_barrier_labeler",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for _create_sr_objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for _create_regime_barrier_objective",
+        "Added return type None for _log_sr_optimization_to_mlflow",
+        "Added return type None for _log_regime_optimization_to_mlflow",
+        "Added type hint Any for parameter training_manager",
+        "Added return type Any for create_early_stage_optimizer"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/matrix_diverse_lookback_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type float for objective",
+        "Added type hint Any for parameter x",
+        "Added return type None for constraint",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for _log_file_paths"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/timeframe_relevance_analyzer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _save_analysis_results"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps_1_7_comprehensive_executor.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/adaptive_optimizer.py",
+      "changes": [
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/demo_pipeline_execution.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/comprehensive_pipeline_executor.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint List[Any] for parameter quality_metrics",
+        "Added type hint List[Any] for parameter compatibility_metrics",
+        "Added type hint List[Any] for parameter format_metrics",
+        "Added type hint List[Any] for parameter index_metrics",
+        "Added type hint List[Any] for parameter quality_metrics",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/model_probability_generator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/update_imports.py",
+      "changes": [
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/advanced_neural_models.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter x",
+        "Added return type None for forward",
+        "Added return type None for __init__",
+        "Added return type None for _get_device",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added type hint Union[pd.Series, np.ndarray] for parameter y",
+        "Added type hint Any for parameter sample_weight",
+        "Added return type None for fit",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added return type None for predict",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added return type np.ndarray for predict_proba"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/comprehensive_feature_optimizer.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/enhanced_coarse_optimizer.py",
+      "changes": [
+        "Added type hint Any for parameter model",
+        "Added return type None for _create_model",
+        "Added type hint Any for parameter trial",
+        "Added return type float for objective",
+        "Added type hint Any for parameter study",
+        "Added type hint Any for parameter trial"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/hmm_regime_barrier_optimizer.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/data_quality_monitor.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/cleanup_duplicates.py",
+      "changes": [
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/probability_calculators.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter model"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/enhanced_multi_timeframe_optimizer.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/probabilistic_bayesian_optimizer.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __init__",
+        "Added return type None for _log_mlflow_experiment",
+        "Added return type None for plot_optimization_results",
+        "Added return type Any for create_tactician_model",
+        "Added return type Any for create_analyst_model"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/diverse_lookback_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _save_diverse_lookback_results"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/injectable_base.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/di_launcher.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/service_registry.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/config_service.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter event",
+        "Added return type None for on_modified",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter event",
+        "Added return type None for on_modified"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/environment.py",
+      "changes": [
+        "Added return type Any for load_dotenv",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter default",
+        "Added return type None for Field"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/label_model_mapping.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for select_model_for_label_timeframe"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/config_tpsl.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/config_position_sizing.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/typed_config.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/config_sr.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/config_two_tier.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/config_system_monitoring.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/config_leverage.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/config/regime_specific_optimization_config.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for _initialize_regime_mapping",
+        "Added return type None for add_regime_constraints",
+        "Added return type None for update_regime_constraints"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/step_dependency_validator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/data_quality_framework.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/statistical_distribution_validation.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/structured_logging.py",
+      "changes": [
+        "Added return type None for correlation_context",
+        "Added type hint Any for parameter app",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter call_next",
+        "Added return type None for dispatch"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_config_management.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for save_config",
+        "Added return type bool for validate_and_save_config"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/feature_output_validator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/intelligent_feature_cache.py",
+      "changes": [
+        "Added return type None for async_wrapper",
+        "Added return type None for sync_wrapper",
+        "Added return type None for decorator",
+        "Added return type None for cache_feature_engineering"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/parallel_processing_optimizer.py",
+      "changes": [
+        "Added return type None for wrapper"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/data_loader.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_memory_management.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for log_memory_status",
+        "Added return type None for async_wrapper",
+        "Added return type None for memory_efficient",
+        "Added return type None for __init__",
+        "Added return type None for log_memory_status"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/standardized_model_manager.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/standardized_config_manager.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/common_operations.py",
+      "changes": [
+        "Added return type None for safe_gather",
+        "Added type hint Any for parameter coroutine",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for timed_operation"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/purged_kfold.py",
+      "changes": [
+        "Added type hint Union[pd.Series, np.ndarray] for parameter y",
+        "Added type hint List[Any] for parameter groups",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added type hint Union[pd.Series, np.ndarray] for parameter y",
+        "Added type hint List[Any] for parameter groups"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/config_loader.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/validator_orchestrator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for clear_results"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/signal_handler.py",
+      "changes": [
+        "Added type hint Any for parameter frame",
+        "Added type hint Any for parameter frame",
+        "Added type hint Any for parameter frame",
+        "Added return type None for __init__",
+        "Added return type None for __enter__",
+        "Added type hint Any for parameter exc_type",
+        "Added type hint Any for parameter exc_val",
+        "Added type hint Any for parameter exc_tb",
+        "Added return type None for __exit__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/configuration_security.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/security_framework.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_missing_value_handler.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __str__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/data_formatting_framework.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_data_quality_validator.py",
+      "changes": [
+        "Added return type None for add_issue",
+        "Added return type None for add_warning",
+        "Added return type None for add_metric",
+        "Added return type None for __init__",
+        "Added return type None for _validate_nan_values",
+        "Added return type None for _validate_infinite_values",
+        "Added return type None for _validate_constant_features",
+        "Added return type None for _validate_price_anomalies",
+        "Added return type None for _validate_timestamp_consistency",
+        "Added return type None for _validate_data_types",
+        "Added return type None for _validate_correlations",
+        "Added return type None for _log_validation_results",
+        "Added return type None for _validate_unified_structure",
+        "Added return type None for _validate_data_consistency"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/quality_alert_system.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/mlflow_utils.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for with_enhanced_metadata",
+        "Added type hint Any for parameter model"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/feature_engineering_validation.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/confidence.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/pipeline_standards.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/prometheus_metrics.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _start_metrics_server",
+        "Added return type None for record_step_execution",
+        "Added return type None for record_data_quality",
+        "Added return type None for record_data_size",
+        "Added return type None for record_data_completeness",
+        "Added return type None for record_model_performance",
+        "Added return type None for record_system_metrics",
+        "Added return type None for record_validation_result",
+        "Added return type Any for get_metrics"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/decorator_registry.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __repr__",
+        "Added return type None for __init__",
+        "Added return type None for register_decorator"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/steps_1_7_compatibility_framework.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/database_security.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type Any for get_secure_connection"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_outlier_handler.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __str__",
+        "Added return type None for __repr__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/logger.py",
+      "changes": [
+        "Added type hint Any for parameter record",
+        "Added return type bool for filter",
+        "Added return type Any for create_fallback_correlation_filter",
+        "Added type hint Any for parameter record",
+        "Added return type None for formatter",
+        "Added return type Any for create_fallback_json_formatter",
+        "Added type hint Any for parameter msg",
+        "Added return type None for critical",
+        "Added type hint Any for parameter msg",
+        "Added return type None for error",
+        "Added type hint Any for parameter msg",
+        "Added return type None for failed",
+        "Added type hint Any for parameter msg",
+        "Added return type None for warning",
+        "Added return type None for __init__",
+        "Added return type None for _enhanced_error",
+        "Added return type None for _enhanced_warning",
+        "Added return type None for _enhanced_critical",
+        "Added return type None for _enhanced_exception",
+        "Added type hint Any for parameter name",
+        "Added return type None for __getattr__",
+        "Added type hint Any for parameter base_logger",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter name",
+        "Added return type None for __getattr__",
+        "Added return type None for initialize_comprehensive_integration",
+        "Added return type bool for ensure_comprehensive_logging_available",
+        "Added return type None for log_io_operation",
+        "Added return type None for heartbeat"
+      ]
+    },
+    {
+      "file": "/workspace/src/utils/cross_step_validation.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/strategist/config.py",
+      "changes": [
+        "Added type hint Any for parameter v",
+        "Added type hint List[Any] for parameter values",
+        "Added return type bool for validate_sma_windows"
+      ]
+    },
+    {
+      "file": "/workspace/src/strategist/utils.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __del__",
+        "Added return type None for wrapper"
+      ]
+    },
+    {
+      "file": "/workspace/src/validation/walk_forward_validator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter regime",
+        "Added return type None for __init__",
+        "Added type hint Union[pd.DataFrame, Dict[str, Any]] for parameter data",
+        "Added return type None for predict",
+        "Added return type Any for get_params",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/feature_engineering_orchestrator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter vol",
+        "Added return type int for classify_vol_regime",
+        "Added type hint Dict[str, Any] for parameter config",
+        "Added return type None for __init__",
+        "Added return type None for generate_all_features",
+        "Added type hint Any for parameter wavelet",
+        "Added type hint Any for parameter level",
+        "Added return type None for apply_wavelet_transforms",
+        "Added return type Any for train_autoencoder",
+        "Added return type Any for load_autoencoder"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/autoencoder_feature_generator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter signum",
+        "Added type hint Any for parameter frame",
+        "Added return type None for timeout_handler",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _run_optuna_optimization"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/dynamic_regime_mapper.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_regime_predictor.py",
+      "changes": [
+        "Added type hint Any for parameter pdf_func"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/regime_expert_orchestrator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type Any for initialize"
+      ]
+    },
+    {
+      "file": "/workspace/src/database/precomputed_features_manager.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/database/migration_utils.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _clean_for_trading",
+        "Added return type None for cleanup_old_migrations",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/database/firestore_manager.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for initialize",
+        "Added return type None for _blocking_initialize",
+        "Added return type None for _determine_user_id",
+        "Added return type None for _blocking_op",
+        "Added return type None for _blocking_op",
+        "Added return type None for _blocking_op",
+        "Added return type None for _blocking_op",
+        "Added return type None for _blocking_op"
+      ]
+    },
+    {
+      "file": "/workspace/src/database/sqlite_manager.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/ensemble_orchestrator.py",
+      "changes": [
+        "Added type hint Dict[str, Any] for parameter config",
+        "Added return type None for __init__",
+        "Added return type Any for train_all_models",
+        "Added return type None for _train_global_meta_learner",
+        "Added return type None for _save_global_meta_learner",
+        "Added return type None for _load_global_meta_learner",
+        "Added return type None for save_model",
+        "Added return type Any for load_weights"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _train_base_models",
+        "Added return type None for _prepare_sequence_data",
+        "Added type hint Any for parameter X_seq",
+        "Added type hint Any for parameter y_seq_encoded",
+        "Added type hint List[Any] for parameter num_classes",
+        "Added type hint bool for parameter is_transformer",
+        "Added return type None for _train_dl_model",
+        "Added type hint Any for parameter input_shape",
+        "Added type hint List[Any] for parameter num_classes",
+        "Added type hint Any for parameter X_seq",
+        "Added type hint Any for parameter y_seq_encoded",
+        "Added return type None for _build_lstm_model",
+        "Added type hint Any for parameter input_shape",
+        "Added type hint List[Any] for parameter num_classes",
+        "Added type hint Any for parameter X_seq",
+        "Added type hint Any for parameter y_seq_encoded",
+        "Added return type None for _build_transformer_model",
+        "Added type hint Any for parameter X_flat",
+        "Added type hint Any for parameter y_flat_encoded",
+        "Added return type None for _train_tabnet_model",
+        "Added type hint Any for parameter aligned_data",
+        "Added type hint Any for parameter y_encoded",
+        "Added return type None for _train_garch_model"
+      ]
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _train_base_models"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/errors/base.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/errors/mapping.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/domain/decorators.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/domain/decorators_extended.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper",
+        "Added return type None for wrapper"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/domain/__init__.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/decorators/cache.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/decorators/retry_timeout.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/decorators/auth.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/core/errors/handlers/http.py",
+      "changes": [
+        "Added return type None for handle_app_error",
+        "Added return type Any for create_flask_error_handler",
+        "Added type hint Any for parameter request",
+        "Added return type Any for handle_app_error",
+        "Added return type Any for create_fastapi_exception_handler",
+        "Added type hint Any for parameter request",
+        "Added type hint Exception for parameter exception",
+        "Added return type None for process_exception",
+        "Added return type Any for create_django_middleware",
+        "Added type hint Any for parameter request",
+        "Added type hint Any for parameter handler",
+        "Added return type None for error_middleware",
+        "Added return type Any for create_aiohttp_middleware",
+        "Added return type None for middleware",
+        "Added return type Any for create_generic_wsgi_middleware"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/optimization/transfer_learning_system.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/optimization/problem_specific_strategies.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/optimization/parallel_optimizer.py",
+      "changes": [
+        "Added type hint Any for parameter trial",
+        "Added return type None for confidence_objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for sizing_objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for risk_objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/optimization/computational_optimization_manager.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for _get_executor",
+        "Added type hint Any for parameter objective_func",
+        "Added type hint Any for parameter objective_func",
+        "Added type hint Any for parameter objective_func",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/tests/conftest.py",
+      "changes": [
+        "Added return type None for event_loop",
+        "Added return type None for test_data_dir",
+        "Added type hint Any for parameter sample_market_data",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added type hint List[Any] for parameter sample_regime_labels",
+        "Added type hint Any for parameter test_data_dir",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/tests/test_pipeline_integration.py",
+      "changes": [
+        "Added type hint Dict[str, Any] for parameter config",
+        "Added type hint Any for parameter step_num",
+        "Added type hint Any for parameter step_name",
+        "Added return type None for __init__",
+        "Added return type None for _initialize_step",
+        "Added type hint Any for parameter training_input",
+        "Added type hint Any for parameter pipeline_state",
+        "Added return type bool for validate_inputs",
+        "Added type hint Any for parameter training_input",
+        "Added type hint Any for parameter pipeline_state",
+        "Added return type Any for execute_logic",
+        "Added type hint Any for parameter pipeline_state",
+        "Added return type bool for validate_outputs",
+        "Added return type Any for get_required_inputs",
+        "Added return type Any for get_produced_outputs",
+        "Added return type Any for get_dependencies",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added return type None for test_step_execution_order",
+        "Added type hint Dict[str, Any] for parameter config",
+        "Added return type None for __init__",
+        "Added return type None for _initialize_step",
+        "Added type hint Any for parameter training_input",
+        "Added type hint Any for parameter pipeline_state",
+        "Added return type bool for validate_inputs",
+        "Added type hint Any for parameter training_input",
+        "Added type hint Any for parameter pipeline_state",
+        "Added return type None for execute_logic",
+        "Added type hint Any for parameter pipeline_state",
+        "Added return type bool for validate_outputs",
+        "Added return type Any for get_required_inputs",
+        "Added return type Any for get_produced_outputs",
+        "Added return type Any for get_dependencies",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added return type None for test_step_error_propagation",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint Any for parameter sample_market_data",
+        "Added type hint Any for parameter test_data_dir",
+        "Added return type None for test_step_data_flow",
+        "Added return type None for test_step_dependencies",
+        "Added return type None for test_step_input_output_contracts",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint Any for parameter sample_pipeline_state",
+        "Added type hint Any for parameter test_data_dir",
+        "Added return type None for test_checkpoint_recovery",
+        "Added type hint Any for parameter sample_config",
+        "Added return type None for test_data_collection_validation",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_pipeline_state",
+        "Added return type None for test_feature_engineering_validation",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_pipeline_state",
+        "Added return type None for test_matrix_operations_validation",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_step_execution_time",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_memory_usage",
+        "Added type hint Any for parameter sample_config",
+        "Added return type None for test_parallel_step_execution"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/tests/test_step_migrations.py",
+      "changes": [
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint Any for parameter sample_market_data",
+        "Added type hint Any for parameter test_data_dir",
+        "Added return type None for test_data_reading_with_valid_data",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added return type None for test_data_reading_with_missing_file",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_hmm_regime_discovery",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_hmm_with_invalid_regimes",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added type hint List[Any] for parameter sample_regime_labels",
+        "Added return type None for test_regime_data_splitting",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added type hint List[Any] for parameter sample_regime_labels",
+        "Added return type None for test_stratified_splitting",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_triple_barrier_labeling",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added type hint List[Any] for parameter sample_regime_labels",
+        "Added return type None for test_regime_aware_labeling",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint Any for parameter sample_market_data",
+        "Added return type None for test_feature_engineering",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_feature_selection",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added return type None for test_matrix_operations",
+        "Added type hint Any for parameter sample_config",
+        "Added type hint Any for parameter sample_training_input",
+        "Added type hint List[Any] for parameter sample_features",
+        "Added type hint List[Any] for parameter sample_regime_labels",
+        "Added return type None for test_regime_transition_matrix"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/integrate_regime_processing.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for integrate",
+        "Added return type None for _backup_existing_files",
+        "Added return type None for _update_step5_labeling",
+        "Added return type None for _update_step6_features",
+        "Added return type None for _update_step7_matrix",
+        "Added return type None for _update_configurations",
+        "Added return type None for _test_regime_labeling",
+        "Added return type None for _test_regime_features",
+        "Added return type None for _test_regime_matrix_ops",
+        "Added return type None for _test_end_to_end_pipeline",
+        "Added return type None for _rollback",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step03_hmm_regime_discovery_1h.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step09_hmm_based_training_validator.py",
+      "changes": [
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/enhanced_step1_data_collection.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _initialize_directories",
+        "Added return type None for _log_detailed_data_extract",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step04_5_triple_barrier_method_validator.py",
+      "changes": [
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step05_labeling.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator",
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step02_data_reading_validator.py",
+      "changes": [
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step07_enhanced_matrix_operations.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step03_hmm_regime_discovery.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator",
+        "Added type hint Any for parameter pdf_func"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/cross_timeframe_interaction_features.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step01_data_collection.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator",
+        "Added return type None for log_step_report",
+        "Added return type Any for create_detailed_step_report",
+        "Added return type None for log_step_metrics",
+        "Added return type None for log_step_artifact_with_standardized_name",
+        "Added return type None for log_step_dataframe_with_standardized_name"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/unified_data_loader.py",
+      "changes": [
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for handles_errors",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for validates",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for traced",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for secure_file_path",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type bool for validate_dataframe_schema",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type bool for validate_file_size",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for sanitize_string"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step02_data_reading.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator",
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/vectorized_labelling_orchestrator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step04_regime_data_splitting.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator",
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/enhanced_step1_5_data_converter.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for _initialize_directories",
+        "Added return type None for _backup_existing_data",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/sr_outcome_model_trainer.py",
+      "changes": [
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step06_feature_engineering.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _update_interaction_patterns_with_optimized_periods",
+        "Added return type None for _validate_lookback_periods"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step12_analyst_enhancement.py",
+      "changes": [
+        "Added type hint Any for parameter bit_generator_name",
+        "Added type hint Any for parameter state",
+        "Added return type None for _normalized_numpy_bitgen_ctor",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for _get_model_instance",
+        "Added type hint Any for parameter signum",
+        "Added type hint Any for parameter frame",
+        "Added type hint Any for parameter study",
+        "Added type hint Any for parameter trial",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter input",
+        "Added type hint Any for parameter output",
+        "Added type hint Any for parameter name",
+        "Added return type Any for get_activation",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _optimize_tcn_hyperparameters",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _select_temporal_features",
+        "Added type hint List[Any] for parameter best_params",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added return type None for _apply_tcn_optimizations",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _optimize_transformer_hyperparameters",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _select_attention_features",
+        "Added type hint List[Any] for parameter best_params",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added return type None for _apply_transformer_optimizations",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _optimize_lightgbm_hyperparameters",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _select_tree_features",
+        "Added type hint List[Any] for parameter best_params",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added return type None for _apply_lightgbm_optimizations",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _optimize_cnn_hyperparameters",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val",
+        "Added return type None for _select_spatial_features",
+        "Added type hint List[Any] for parameter best_params",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_train",
+        "Added type hint Any for parameter y_train",
+        "Added return type None for _apply_cnn_optimizations",
+        "Added type hint Any for parameter model",
+        "Added type hint Any for parameter X_val",
+        "Added type hint Any for parameter y_val"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/raw_data_quality_checker.py",
+      "changes": [
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for ensure_datetime_index",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type bool for validate_data_structure",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for handle_validation_errors",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for log_validation_progress",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for handle_async_context",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for ensure_data_types",
+        "Added return type None for wrapper",
+        "Added type hint Callable for parameter func",
+        "Added return type None for auto_fix_data_quality_issues"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_differentiation.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/examples/simplified_pipeline_example.py",
+      "changes": [
+        "Added return type None for run_basic_training_example",
+        "Added return type None for run_partial_pipeline_example",
+        "Added return type None for run_custom_step_example",
+        "Added return type None for inspect_pipeline_state",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/core/step_executor.py",
+      "changes": [
+        "Added type hint Any for parameter progress_manager",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/core/training_manager.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/core/optimization_manager.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type None for optuna_objective",
+        "Added type hint Union[List[float], np.ndarray] for parameter weights",
+        "Added return type None for neg_sharpe",
+        "Added type hint Union[List[float], np.ndarray] for parameter weights",
+        "Added return type None for portfolio_variance"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/simplified_architecture/integrated_example.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type Any for create_example_config",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/simplified_architecture/config_driven_architecture.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__",
+        "Added return type None for __post_init__",
+        "Added return type None for __init__",
+        "Added return type None for save",
+        "Added type hint Any for parameter obj",
+        "Added type hint Any for parameter container",
+        "Added return type None for __init__",
+        "Added return type None for initialize",
+        "Added return type None for execute",
+        "Added return type None for example_usage"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/simplified_architecture/modular_components.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for register_exchange",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter lgb_model",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter xgb_model",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter rf_model",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter nn_model",
+        "Added type hint Any for parameter scaler",
+        "Added return type None for __init__",
+        "Added return type None for register_trainer",
+        "Added return type None for __init__",
+        "Added return type None for example_usage"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/simplified_architecture/dependency_injection.py",
+      "changes": [
+        "Added return type None for __post_init__",
+        "Added return type None for __init__",
+        "Added return type None for new_init",
+        "Added return type None for decorator",
+        "Added return type None for inject",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added type hint Union[pd.DataFrame, Dict[str, Any]] for parameter data",
+        "Added return type None for process"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/simplified_architecture/standard_interfaces.py",
+      "changes": [
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for example_usage"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/simplified_architecture/example_new_exchange.py",
+      "changes": [
+        "Added type hint Any for parameter catboost_model",
+        "Added return type None for __init__",
+        "Added return type None for register_new_components",
+        "Added return type None for example_usage"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/utils/feature_engineering/wavelet_features.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/utils/feature_engineering/resampling.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/utils/feature_engineering/technical_indicators.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type Any for create_multi_objective_study",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type Any for create_multi_objective_objective_function",
+        "Added type hint Any for parameter trial",
+        "Added type hint Any for parameter study",
+        "Added type hint List[Any] for parameter pareto_solutions",
+        "Added type hint List[Any] for parameter pareto_solutions",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for _safe_rf_class"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter training_manager",
+        "Added return type None for __init__",
+        "Added return type None for _create_multi_objective_study",
+        "Added return type None for _create_single_objective_study",
+        "Added type hint Any for parameter phase_idx",
+        "Added type hint Any for parameter optimizer",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter study",
+        "Added type hint Any for parameter trial",
+        "Added return type None for __call__",
+        "Added return type None for _create_adaptive_learning_callback",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for _create_advanced_group_objective",
+        "Added type hint Any for parameter training_manager",
+        "Added return type Any for create_hierarchical_optimizer"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "changes": [
+        "Added type hint Any for parameter training_manager",
+        "Added return type None for __init__",
+        "Added return type None for _log_parameter_application_to_mlflow",
+        "Added return type None for _store_integration_results",
+        "Added type hint Any for parameter training_manager",
+        "Added return type Any for create_comprehensive_parameter_integration"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for objective",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "changes": [
+        "Added type hint Any for parameter objective_function",
+        "Added type hint Any for parameter objective_function",
+        "Added type hint Any for parameter objective_function",
+        "Added type hint Dict[str, Any] for parameter params",
+        "Added return type None for test_objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "changes": [
+        "Added type hint Any for parameter training_manager",
+        "Added return type None for __init__",
+        "Added return type None for _initialize_optimization_components",
+        "Added type hint Dict[str, Any] for parameter params",
+        "Added return type None for tactician_factory",
+        "Added type hint Dict[str, Any] for parameter params",
+        "Added return type None for analyst_factory",
+        "Added return type None for _apply_tactician_parameters",
+        "Added return type None for _apply_analyst_parameters",
+        "Added return type None for _store_optimization_results",
+        "Added type hint Any for parameter training_manager",
+        "Added return type Any for create_step17_probabilistic_bayesian_optimization"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_specialist_components/model_selector.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_specialist_components/regime_tactics.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_specialist_components/tactician_specialist_training_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_specialist_components/specialist_trainer.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_specialist_components/performance_evaluator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step10_unified_regime_intelligence_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step02_data_reading_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step06_feature_engineering_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step12_analyst_enhancement_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step17_final_parameters_optimization_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step01_5_data_converter_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step07_enhanced_matrix_operations_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step13_analyst_ensemble_creation_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step20_ab_testing_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step03_hmm_regime_discovery_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step04_5_triple_barrier_method_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step14_tactician_labeling_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step05_labeling_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step11_analyst_creation_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step09_5_multi_timeframe_hmm_ensemble_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step02_5_sr_optimization_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step08_feature_selection_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step15_tactician_specialist_training_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step01_data_collection_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step09_hmm_based_training_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step03_5_final_regime_clustering_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step21_saving_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step18_walk_forward_validation_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step19_monte_carlo_validation_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step04_regime_data_splitting_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/migration_templates/step16_confidence_calibration_template.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_enhancement_components/feature_selector.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_enhancement_components/ensemble_creator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_enhancement_components/hyperparameter_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type float for objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_enhancement_components/model_optimizer.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_enhancement_components/analyst_enhancement_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/missing_data_downloader_and_gap_filler.py",
+      "changes": [
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for handle_errors",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for with_tracing_span",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type bool for validate_data_quality",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type bool for validate_data_structure",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for guard_dataframe_nulls",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Dict[str, Any] for optimize_memory_usage",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for comprehensive_data_validation",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type None for secure_data_processing"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_quality_dashboard.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for dashboard_home",
+        "Added return type Any for get_status",
+        "Added return type Any for get_metrics",
+        "Added return type Any for get_alerts",
+        "Added return type None for acknowledge_alert",
+        "Added return type None for resolve_alert",
+        "Added return type Any for run_quality_check",
+        "Added return type Any for get_monitoring_status",
+        "Added return type None for start_monitoring",
+        "Added return type None for stop_monitoring",
+        "Added return type None for websocket_endpoint",
+        "Added return type None for main"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/gap_filler_pipeline.py",
+      "changes": [
+        "Added return type Any for run_gap_filling_pipeline"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_quality_monitor.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py",
+      "changes": [
+        "Added type hint Any for parameter training_manager",
+        "Added return type None for __init__",
+        "Added return type None for _create_triple_barrier_labeler",
+        "Added return type None for _update_triple_barrier_labeler",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for _create_regime_objective",
+        "Added return type None for _log_regime_optimization_to_mlflow",
+        "Added return type Any for get_triple_barrier_labeler",
+        "Added type hint Any for parameter training_manager",
+        "Added return type Any for create_regime_specific_triple_barrier_optimizer"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+      "changes": [
+        "Added return type None for __post_init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/feature_engineering/feature_components.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/feature_engineering/step06_advanced_features.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_persistence_components/model_serializer.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_persistence_components/version_manager.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_persistence_components/model_registry.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_persistence_components/model_persistence_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_persistence_components/metadata_tracker.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation/step01_5_data_converter.py",
+      "changes": [
+        "Added return type Any for create_fallback_logger",
+        "Added type hint Callable for parameter func",
+        "Added return type None for decorator",
+        "Added return type Any for create_fallback_decorator",
+        "Added return type None for download_all_data_with_consolidation",
+        "Added type hint logging.Logger for parameter logger",
+        "Added return type None for __init__",
+        "Added type hint logging.Logger for parameter logger"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation/step01_data_collection.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_labeling_components/quality_filter.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_labeling_components/labeling_strategy.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_labeling_components/tactician_labeling_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_labeling_components/precision_optimizer.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/tactician_labeling_components/barrier_calculator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "changes": [
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_ensemble_components/analyst_ensemble_creation_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_ensemble_components/weight_optimizer.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Union[List[float], np.ndarray] for parameter weights",
+        "Added return type float for objective",
+        "Added type hint Any for parameter remaining",
+        "Added type hint List[Any] for parameter current_weights",
+        "Added type hint Any for parameter n_remaining",
+        "Added return type None for generate_weights"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_ensemble_components/voting_mechanism.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint List[Any] for parameter base_models",
+        "Added type hint List[Any] for parameter initial_weights",
+        "Added return type None for __init__",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added type hint Union[pd.Series, np.ndarray] for parameter y",
+        "Added return type None for fit",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added return type None for predict",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added return type np.ndarray for predict_proba"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_ensemble_components/ensemble_aggregator.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint List[Any] for parameter base_models",
+        "Added type hint Any for parameter meta_learner",
+        "Added type hint float for parameter holdout_ratio",
+        "Added return type None for __init__",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added type hint Union[pd.Series, np.ndarray] for parameter y",
+        "Added return type None for fit",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added return type None for predict",
+        "Added type hint Union[pd.DataFrame, np.ndarray] for parameter X",
+        "Added return type np.ndarray for predict_proba"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_ensemble_components/ensemble_evaluator.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/hmm_components.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step04_regime_data_splitting.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/validation_components/monte_carlo_validation_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/validation_components/confidence_calibration_step.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter t",
+        "Added return type None for temperature_loss"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/validation_components/walk_forward_validation_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/validation_components/base_validation_step.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step10_unified_regime_intelligence.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/hmm_training_components.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter y_true",
+        "Added type hint Any for parameter y_pred",
+        "Added return type float for _safe_precision",
+        "Added type hint Any for parameter y_true",
+        "Added type hint Any for parameter y_pred",
+        "Added return type float for _safe_recall",
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type float for objective"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/labeling_components.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step05_labeling.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step11_analyst_creation.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step12_analyst_enhancement.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/matrix_components.py",
+      "changes": [
+        "Added return type None for __init__",
+        "Added return type None for __init__",
+        "Added return type None for __init__"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation_components/aggtrades_data_formatting.py",
+      "changes": [
+        "Added type hint Union[str, Path] for parameter file_path",
+        "Added type hint Union[str, Path] for parameter file_path",
+        "Added type hint Any for parameter infile",
+        "Added type hint Any for parameter writer",
+        "Added type hint Any for parameter infile",
+        "Added type hint Any for parameter writer",
+        "Added type hint Any for parameter infile",
+        "Added type hint Any for parameter writer",
+        "Added type hint Any for parameter input_dir",
+        "Added type hint Any for parameter infile",
+        "Added type hint Any for parameter infile",
+        "Added type hint Any for parameter writer",
+        "Added type hint Any for parameter infile",
+        "Added type hint Any for parameter writer"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation_components/training_validation_config.py",
+      "changes": [
+        "Added type hint List[Any] for parameter klines",
+        "Added type hint List[Any] for parameter agg_trades",
+        "Added type hint List[Any] for parameter futures"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step16_confidence_calibration.py",
+      "changes": [
+        "Added type hint Any for parameter base",
+        "Added return type None for fit"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/loss_functions/pnl_aware.py",
+      "changes": [
+        "Added type hint Any for parameter y_true",
+        "Added type hint Any for parameter y_pred",
+        "Added return type None for pnl_aware_loss",
+        "Added type hint Any for parameter pnl_multiplier",
+        "Added type hint Any for parameter liquidation_penalty",
+        "Added type hint Any for parameter reward_boost",
+        "Added return type Any for create_pnl_aware_loss"
+      ]
+    },
+    {
+      "file": "/workspace/src/supervisor/coordinator/circuit_breaker.py",
+      "changes": [
+        "Added return type None for __init__"
+      ]
+    }
+  ],
+  "failed_files": [
+    {
+      "file": "/workspace/src/config.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/paper_trader.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/components/modular_analyst.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/components/modular_supervisor.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/interfaces/event_bus.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/supervisor/exchange_volume_adapter.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/sentinel/sentinel.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/tactician/sr_weight_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/tactician/position_closing.py",
+      "error": "invalid syntax (<unknown>, line 15)"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_updater.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "error": "invalid syntax (<unknown>, line 13)"
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "error": "invalid syntax (<unknown>, line 23)"
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_order_manager.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/tactician/step17_optimized_tactician.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_validator.py",
+      "error": "invalid syntax (<unknown>, line 15)"
+    },
+    {
+      "file": "/workspace/src/tactician/async_order_executor.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/simplified_training_manager.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "error": "invalid syntax (<unknown>, line 6)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_operations.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 29)"
+    },
+    {
+      "file": "/workspace/src/training/step_orchestrator.py",
+      "error": "unmatched ')' (<unknown>, line 89)"
+    },
+    {
+      "file": "/workspace/src/training/data_sharing_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/integration_guide.py",
+      "error": "unterminated string literal (detected at line 230) (<unknown>, line 230)"
+    },
+    {
+      "file": "/workspace/src/training/unified_data_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/comprehensive_sr_training_pipeline.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/training/dual_model_system.py",
+      "error": "invalid syntax (<unknown>, line 13)"
+    },
+    {
+      "file": "/workspace/src/training/performance_comparison.py",
+      "error": "invalid syntax (<unknown>, line 24)"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_feature_selection_demo.py",
+      "error": "invalid syntax (<unknown>, line 24)"
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/training/calibration_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/training_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_gpu_integration.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/ensemble_manager.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/training/model_training_integrator.py",
+      "error": "invalid syntax (<unknown>, line 26)"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_feature_selection_workflow.py",
+      "error": "invalid syntax (<unknown>, line 34)"
+    },
+    {
+      "file": "/workspace/src/training/data_efficiency_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 21)"
+    },
+    {
+      "file": "/workspace/src/training/optimization_manager.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/training/validator.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/training/vectorized_training_pipeline.py",
+      "error": "invalid syntax (<unknown>, line 19)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_optimization_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/data_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_caching_workflow.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/core/di_integration.py",
+      "error": "invalid syntax (<unknown>, line 19)"
+    },
+    {
+      "file": "/workspace/src/core/enhanced_factories.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/core/generic_base.py",
+      "error": "invalid syntax (<unknown>, line 10)"
+    },
+    {
+      "file": "/workspace/src/core/dependency_injection.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/config/config_manager.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/utils/vif_calculator.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_mlflow_integration.py",
+      "error": "invalid syntax (<unknown>, line 32)"
+    },
+    {
+      "file": "/workspace/src/utils/model_manager.py",
+      "error": "invalid syntax (<unknown>, line 234)"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist_backup.py",
+      "error": "invalid syntax (<unknown>, line 21)"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist.py",
+      "error": "invalid syntax (<unknown>, line 22)"
+    },
+    {
+      "file": "/workspace/src/validation/critical_path_validators.py",
+      "error": "invalid syntax (<unknown>, line 15)"
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_prediction_integrator.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles.py",
+      "error": "invalid syntax (<unknown>, line 10)"
+    },
+    {
+      "file": "/workspace/src/analyst/liquidation_risk_model.py",
+      "error": "invalid syntax (<unknown>, line 3)"
+    },
+    {
+      "file": "/workspace/src/analyst/data_utils.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/analyst/ml_confidence_predictor.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/analyst/di_analyst.py",
+      "error": "invalid syntax (<unknown>, line 22)"
+    },
+    {
+      "file": "/workspace/src/analyst/unified_regime_classifier.py",
+      "error": "invalid syntax (<unknown>, line 26)"
+    },
+    {
+      "file": "/workspace/src/analyst/analyst.py",
+      "error": "invalid syntax (<unknown>, line 6)"
+    },
+    {
+      "file": "/workspace/src/database/efficient_features_database.py",
+      "error": "invalid syntax (<unknown>, line 13)"
+    },
+    {
+      "file": "/workspace/src/database/influxdb_manager.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "error": "invalid syntax (<unknown>, line 27)"
+    },
+    {
+      "file": "/workspace/src/core/examples/decorator_usage.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/cached_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/progressive_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/advanced_surrogate_models.py",
+      "error": "invalid syntax (<unknown>, line 23)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/adaptive_trial_allocator.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_feature_selector.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization_new.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "error": "invalid syntax (<unknown>, line 120)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step21_saving.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/steps/combined_fractional_system.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/precompute_wavelet_features.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step09_hmm_based_training.py",
+      "error": "invalid syntax (<unknown>, line 25)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step16_confidence_calibration_validator.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+      "error": "invalid syntax (<unknown>, line 6)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/training/core/checkpoint_manager.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/steps/feature_engineering/step06_feature_engineering.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation/step02_data_reading.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step03_hmm_regime_discovery.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py",
+      "error": "unexpected indent (<unknown>, line 881)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step07_enhanced_matrix_operations.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step09_hmm_based_training.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "error": "unmatched ')' (<unknown>, line 340)"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step19_monte_carlo_validation.py",
+      "error": "unmatched ')' (<unknown>, line 243)"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step17_final_parameters_optimization.py",
+      "error": "unmatched ')' (<unknown>, line 1686)"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step18_walk_forward_validation.py",
+      "error": "unmatched ')' (<unknown>, line 196)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step11_analyst_creation.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step12_analyst_enhancement.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/monitoring_manager.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/lifecycle_manager.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/data_manager.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    }
+  ],
+  "total_fixed": 262,
+  "total_failed": 105,
+  "execution_time": 2.2889132499694824
+}

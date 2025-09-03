@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 37, in <module>
+    from scripts.simple_interaction_mapper import extract_interactions, generate_report
+ImportError: cannot import name 'generate_report' from 'scripts.simple_interaction_mapper' (/workspace/code_quality/scripts/simple_interaction_mapper.py)

@@ -11,6 +11,8 @@ import pandas as pd
 from src.core.decorators import validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import invalid, warning
+from copy import copy
+import asyncio
 
 
 class MLTacticsManager:

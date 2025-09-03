@@ -1,6 +1,8 @@
 # src/training/steps/step11_analyst_creation.py
 
 from src.core.decorators import (
+from copy import copy
+
     handles_errors,
     traced,
     validates

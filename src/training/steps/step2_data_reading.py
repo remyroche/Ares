@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Step 2: Data Reading and Validation.
+"""Step 2: Data Reading and Validation."
 
 This module handles reading the unified data from step1_5 and performs comprehensive
 data quality validation before proceeding to HMM regime discovery.
-"""
+""""
 
 import asyncio
 import os
@@ -16,8 +16,15 @@ import time
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import common operations
+from src.utils.common_operations import (
+    safe_read_parquet, safe_to_parquet, ensure_directory,
+    validate_dataframe_schema, validate_data_quality
+)
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -169,7 +176,7 @@ class DataReadingStep:
             dataframes = []
             for file_path in sorted(parquet_files):
                 self.logger.info(f"📖 Reading {file_path.name}")
-                df = pd.read_parquet(file_path)
+                df = safe_read_parquet(file_path)
                 
                 # Standardize timestamps and validate schema
                 df = self.standards.standardize_timestamp(df, "timestamp")
@@ -260,11 +267,12 @@ class DataReadingStep:
         try:
             import json
             from datetime import datetime
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import pandas as pd
             
-            # Create reports directory
-            reports_dir = Path(data_dir) / "reports" / "data_quality"
-            reports_dir.mkdir(parents=True, exist_ok=True)
+# Create reports directory
+            reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Create report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -282,8 +290,7 @@ import pandas as pd
             }
             
             # Save report
-            with open(report_path, 'w') as f:
-                json.dump(report_data, f, indent=2, default=str)
+            safe_json_dump(report_data, report_path, indent=2, default=str)
             
             self.logger.info(f"✅ Validation report saved to {report_path}")
             self._log_step_timing("save_validation_report", step_start)
@@ -328,7 +335,7 @@ import pandas as pd
             
             # Save processed data for next step using standardized paths
             processed_dir = self.standards.build_path("processed_data", exchange, symbol)
-            os.makedirs(processed_dir, exist_ok=True)
+            ensure_directory(processed_dir)
             
             output_file = f"{exchange}_{symbol}_{timeframe}_validated_data.parquet"
             output_path = Path(processed_dir) / output_file
@@ -497,7 +504,7 @@ import pandas as pd
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 2 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
 
 async def run_step_enhanced(

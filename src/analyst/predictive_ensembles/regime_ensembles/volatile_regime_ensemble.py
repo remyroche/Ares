@@ -1,6 +1,6 @@
 import numpy as np
-from src.utils.warning_symbols import (
 import logging
+from src.utils.warning_symbols import (
     error,
     warning,
     critical,
@@ -33,10 +33,10 @@ from .base_ensemble import BaseEnsemble
 
 
 class VolatileRegimeEnsemble(BaseEnsemble):
-    """
+    """"
     This ensemble specializes in detecting and predicting during volatile market conditions.
     It combines signals from multiple models optimized for high volatility periods.
-    """
+    """"
 
     def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -117,7 +117,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.info("Training GARCH model for volatility modeling...")
             self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
         except Exception as e:
-            self.logger.error(failed("GARCH training failed: {e}"))
+            self.logger.error(failed(f"GARCH training failed: {e}"))
 
 
         self.logger.info("✅ VolatileRegime base models training completed")
@@ -145,7 +145,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return np.array([]), np.array([])
 
         except Exception as e:
-            self.logger.error("Error preparing sequence data: {e}")
+            self.logger.error(f"Error preparing sequence data: {e}")
 
             return np.array([]), np.array([])
 
@@ -166,7 +166,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
 
         except Exception as e:
-            self.logger.error("Error training DL model: {e}")
+            self.logger.error(f"Error training DL model: {e}")
 
             return None
 
@@ -209,7 +209,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.logger.error("Error building LSTM model: {e}")
+            self.logger.error(f"Error building LSTM model: {e}")
 
             return None
 
@@ -261,7 +261,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.logger.error("Error building Transformer model: {e}")
+            self.logger.error(f"Error building Transformer model: {e}")
 
             return None
 
@@ -278,7 +278,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
             return tabnet
         except Exception as e:
-            self.logger.error(failed("TabNet training failed: {e}"))
+            self.logger.error(failed(f"TabNet training failed: {e}"))
 
             return None
 
@@ -293,7 +293,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return garch_model.fit(disp="off")
 
         except Exception as e:
-            self.logger.error(failed("GARCH model training failed: {e}"))
+            self.logger.error(failed(f"GARCH model training failed: {e}"))
 
             return None
 

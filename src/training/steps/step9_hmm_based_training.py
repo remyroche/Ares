@@ -1,10 +1,10 @@
 # src/training/steps/step9_hmm_based_training.py
 
-"""Step 9: HMM-Based Model Training with Standardized Data Quality Management.
+"""Step 9: HMM-Based Model Training with Standardized Data Quality Management."
 
 This step performs HMM-based model training with timeframe-specific architectures
 and S/R integration, using standardized data quality management patterns.
-"""
+""""
 
 import json
 import os
@@ -19,6 +19,12 @@ import asyncio
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Import common operations
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_read_parquet, safe_to_parquet, safe_copy, safe_json_dump
+)
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -112,12 +118,12 @@ warnings.filterwarnings("ignore")
 
 
 class HMMBasedTrainingStep:
-    """Step 9: HMM-Based Model Training with Standardized Data Quality Management.
+    """Step 9: HMM-Based Model Training with Standardized Data Quality Management."
 
     Includes an optional forecasting head that emits next-regime probabilities
     and simple exit-within-H-bars signals leveraging Step 3 HMM posteriors and
     transition probabilities.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -387,7 +393,7 @@ class HMMBasedTrainingStep:
 
     async def _apply_enhanced_optimization(
         self, features_df: pd.DataFrame, target: pd.Series, timeframe: str, architecture: str, ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply enhanced optimization for Step 6 models including feature selection, regularization, and hyperparameter optimization.
+        """Apply enhanced optimization for Step 6 models including feature selection, regularization, and hyperparameter optimization."
 
         Args:
             features_df: Input features DataFrame
@@ -397,7 +403,7 @@ class HMMBasedTrainingStep:
 
         Returns: Tuple of (optimized_features_df = optimization_metadata)
 
-        """
+        """"
         try:
             # Enhanced LM optimizer is required - no fallbacks
             if self.enhanced_lm_optimizer is None:
@@ -444,7 +450,7 @@ class HMMBasedTrainingStep:
     @validate_feature_engineering_with_lookahead_bias_detection
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Execute HMM-based model training.
+        """Execute HMM-based model training."
 
         Args:
             training_input: Training input parameters
@@ -453,7 +459,7 @@ class HMMBasedTrainingStep:
         Returns:
             Dict containing training results
 
-        """
+        """"
         try:
             self.logger.info("🔄 Executing HMM-Based Training...")
 
@@ -592,7 +598,7 @@ class HMMBasedTrainingStep:
                 import pandas as _pd
 
                 rf_dir = os.path.join(data_dir, "regime_forecasting")
-                os.makedirs(rf_dir, exist_ok=True)
+                ensure_directory(rf_dir)
 
                 regime_forecasting_summary: dict[str, dict] = {}
                 for tf in timeframes:
@@ -638,8 +644,7 @@ class HMMBasedTrainingStep:
                         rf_path = os.path.join(
                             rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json",
                         )
-                        with open(rf_path, "w") as f:
-                            json.dump(artifact, f, indent=2)
+                        safe_json_dump(artifact, rf_path, indent=2)
                         self.logger.info(f"💾 Saved regime forecasting artifact -> {rf_path}")
                     except Exception as _inner:
                         self.logger.warning(
@@ -747,11 +752,11 @@ class HMMBasedTrainingStep:
     async def _load_feature_data(
         self, exchange: str, symbol: str, data_dir: str, timeframes: list[str],
     ) -> dict[str, pd.DataFrame]:
-        """Load feature data for all timeframes with multiple source support and validation.
+        """Load feature data for all timeframes with multiple source support and validation."
 
         Prefer centralized artifact loader for 1m features to ensure column alignment via metadata,
         then resample to target timeframes.
-        """
+        """"
         feature_data: dict[str, pd.DataFrame] = {}
 
         # 1) Try centralized artifact loader for 1m and resample others
@@ -1139,7 +1144,7 @@ class HMMBasedTrainingStep:
                 include=[np.number],
             ).columns.tolist()
 
-            # For features, we'll use mean aggregation for most columns
+            # For features, we'll use mean aggregation for most columns'
             # But for some specific features, we might want different aggregation
             agg_dict: dict[str, str] = {}
             for col in numeric_columns:
@@ -2078,7 +2083,7 @@ class HMMBasedTrainingStep:
             )
 
             # Reshape for CNN (samples, channels, sequence_length)
-            # For 1m data, we'll use a window of recent features
+            # For 1m data, we'll use a window of recent features'
             sequence_length = 60  # 60 minutes of history,
             X_sequences, self._create_sequences(X, sequence_length)
 
@@ -2355,7 +2360,7 @@ class HMMBasedTrainingStep:
                 "label_encoder": label_encoder,
                 "feature_columns": self.specialist_features,
                 "timeframe": timeframe,
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "hyperparameters": multi_output_config,
                 "metrics": overall_metrics,
                 "price_action_probabilities": price_action_probabilities
@@ -2430,7 +2435,7 @@ class HMMBasedTrainingStep:
         try:
             # Create models directory
             models_dir = f"{data_dir}/models"
-            os.makedirs(models_dir, exist_ok=True)
+            ensure_directory(models_dir)
 
             # Save each model with enhanced metadata
             for timeframe, result in training_results.items():
@@ -2442,7 +2447,7 @@ class HMMBasedTrainingStep:
                     "model": result.get("best_model"),
                     "architecture": result.get("architecture"),
                     "timeframe": timeframe,
-                    "training_date": datetime.now().isoformat(),
+                    "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                     "feature_importance": result.get("feature_importance", {}),
                     "training_history": result.get("training_history", {}),
                     "cv_results": result.get("cv_results", []),
@@ -2489,7 +2494,7 @@ class HMMBasedTrainingStep:
             summary = {
                 "exchange": exchange,
                 "symbol": symbol,
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "models_trained": len(training_results),
                 "timeframes": list(training_results.keys()),
                 "model_architectures": self.model_architectures,
@@ -2516,8 +2521,7 @@ class HMMBasedTrainingStep:
                 },
             }
 
-            with open(summary_path, "w") as f:
-                json.dump(summary, f, indent=2, default=str)
+            safe_json_dump(summary, summary_path, indent=2, default=str)
 
             self.logger.info(
                 f"✅ Saved comprehensive training summary to {summary_path}",
@@ -2545,7 +2549,7 @@ class HMMBasedTrainingStep:
                     "validation_config": self.validation_config,
                     "data_source_config": self.data_source_config,
                     "training_results": training_results,
-                    "execution_timestamp": datetime.now().isoformat(),
+                    "execution_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 }
                 
                 report_name = log_step_report(
@@ -2596,8 +2600,7 @@ class HMMBasedTrainingStep:
             if feature_summary:
                 feature_path = (f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
                 )
-                with open(feature_path, "w") as f:
-                    json.dump(feature_summary, f, indent=2, default=str)
+                safe_json_dump(feature_summary, feature_path, indent=2, default=str)
                 self.logger.info(
                     f"✅ Saved feature importance summary to {feature_path}",
                 )
@@ -2607,7 +2610,7 @@ class HMMBasedTrainingStep:
 
     async def _save_enhanced_artifacts(
         self, training_results: dict[str, Any], data_dir: str, exchange: str, symbol: str, combined_data: pd.DataFrame, feature_columns: list, ) -> dict[str, Any]:
-        """Save enhanced artifacts with comprehensive metadata and training history.
+        """Save enhanced artifacts with comprehensive metadata and training history."
 
         Args:
             training_results: Results from model training
@@ -2620,13 +2623,13 @@ class HMMBasedTrainingStep:
         Returns:
             Dict containing artifact paths and metadata
 
-        """
+        """"
         try:
             self.logger.info("💾 Saving enhanced artifacts and metadata...")
 
             # Create artifacts directory
             artifacts_dir = f"{data_dir}/{exchange}_{symbol}_hmm_models"
-            os.makedirs(artifacts_dir, exist_ok=True)
+            ensure_directory(artifacts_dir)
 
             # Save main model (first available)
             main_model_artifact = None
@@ -2667,19 +2670,18 @@ class HMMBasedTrainingStep:
             # Save model metadata
             metadata_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_model_metadata.json"
             )
-            with open(metadata_file, "w") as f:
-                json.dump(model_metadata, f, indent=2)
+            safe_json_dump(model_metadata, metadata_file, indent=2)
 
             self.logger.info(f"✅ Saved model metadata to {metadata_file}")
 
             # Save per-timeframe models
             timeframe_models_dir = f"{artifacts_dir}/timeframes"
-            os.makedirs(timeframe_models_dir, exist_ok=True)
+            ensure_directory(timeframe_models_dir)
 
             for timeframe, models in training_results.items():
                 if models and isinstance(models, dict):
                     timeframe_dir = f"{timeframe_models_dir}/{timeframe}"
-                    os.makedirs(timeframe_dir, exist_ok=True)
+                    ensure_directory(timeframe_dir)
 
             for model_name, model_data in models.items():
                 if model_data:
@@ -2695,8 +2697,7 @@ class HMMBasedTrainingStep:
             # Save training history
             history_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_history.json"
             )
-            with open(history_file, "w") as f:
-                json.dump(training_history, f, indent=2)
+            safe_json_dump(training_history, history_file, indent=2)
 
             self.logger.info(f"✅ Saved training history to {history_file}")
 
@@ -2708,8 +2709,7 @@ class HMMBasedTrainingStep:
             # Save feature report
             feature_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_feature_report.json"
             )
-            with open(feature_file, "w") as f:
-                json.dump(feature_report, f, indent=2)
+            safe_json_dump(feature_report, feature_file, indent=2)
 
             self.logger.info(f"✅ Saved feature analysis report to {feature_file}")
 
@@ -2720,8 +2720,7 @@ class HMMBasedTrainingStep:
                 training_results, exchange, symbol, combined_data, feature_columns,
             )
 
-            with open(summary_file, "w") as f:
-                json.dump(summary_data, f, indent=2)
+            safe_json_dump(summary_data, summary_file, indent=2)
 
             self.logger.info(f"✅ Saved training summary to {summary_file}")
 
@@ -2744,7 +2743,7 @@ class HMMBasedTrainingStep:
         try:
             metadata = {
                 "model_type": model_name,
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "symbol": symbol,
                 "exchange": exchange,
                 "model_file": os.path.basename(model_file),
@@ -2798,14 +2797,16 @@ class HMMBasedTrainingStep:
         """Create comprehensive training history."""
         try:
             history = {
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframes_trained": list(training_results.keys()),
                 "total_models": sum(
                     len(models) if isinstance(models, dict) else 0
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         for models in training_results.values()
-                ),
+        ),
                 "data_statistics": {
                     "total_samples": len(combined_data),
                     "feature_count": len(feature_columns),
@@ -2958,18 +2959,20 @@ class HMMBasedTrainingStep:
                     "total_timeframes": len(training_results),
                     "total_models_trained": sum(
                         len(models) if isinstance(models, dict) else 0
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         for models in training_results.values()
-                    ),
+        ),
                     "successful_timeframes": [
                         tf
         for tf, models in training_results.items()
         if models and isinstance(models, dict) and len(models) > 0
-                    ],
+        ],
                     "failed_timeframes": [
                         tf
         for tf, models in training_results.items()
         if not models
-                        or not isinstance(models, dict)
+        or not isinstance(models, dict)
                         or len(models) == 0
                     ],
                 },
@@ -2987,7 +2990,7 @@ class HMMBasedTrainingStep:
                     "data_completeness": 0.0,
                 },
                 "training_metadata": {
-                    "training_date": datetime.now().isoformat(),
+                    "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                     "symbol": symbol,
                     "exchange": exchange,
                     "model_architectures": self.model_architectures,
@@ -3042,14 +3045,14 @@ class HMMBasedTrainingStep:
             return {"error": str(e)}
 
     def _extract_estimator_from_artifact(self, artifact: Any) -> Any:
-        """Extract the underlying estimator from a saved artifact.
+        """Extract the underlying estimator from a saved artifact."
 
         This method supports several common wrapping patterns:
         - Dict with one of the keys: 'model', 'estimator', 'clf', 'pipeline'
         - Objects with attribute 'best_estimator_' (e.g., GridSearchCV)
         - Tuple/list where the first element is the estimator
         - If the artifact itself implements a 'predict' method, return as-is
-        """
+        """"
         try:
             predict_attr = getattr(artifact, "predict", None)
             if callable(predict_attr):
@@ -3422,6 +3425,8 @@ class TCNTrainer:
                 recall_score,
             )
 
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
@@ -3497,6 +3502,8 @@ class TCNTrainer:
                 recall_score,
             )
 
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
@@ -3573,6 +3580,8 @@ class TCNTrainer:
                 recall_score,
             )
 
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
@@ -3650,6 +3659,8 @@ class TCNTrainer:
                 recall_score,
             )
 
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
@@ -3759,6 +3770,8 @@ class TCNTrainer:
             if "timestamp" in regime_weights.columns:
                 merged_data = data.merge(regime_weights, on="timestamp", how="left")
 
+        except Exception as e:
+            pass  # TODO: Handle exception properly
         # Initialize SR predictor if not already done
             if not hasattr(self, "sr_predictor_initialized"):
                 try:
@@ -3925,9 +3938,9 @@ class TCNTrainer:
 
     async def _train_and_optionally_refit(
         self, model_key: str, train_coro, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
-        """Train a model using provided coroutine, then optionally refit with sample weights.
+        """Train a model using provided coroutine, then optionally refit with sample weights."
         Returns (model_key, model_package_or_None).
-        """
+        """"
         try:
             pkg = await train_coro(X_train, X_test, y_train, y_test, regime_name)
             if not pkg:
@@ -3968,7 +3981,7 @@ class TCNTrainer:
     async def _apply_smart_feature_selection(
         self, data: pd.DataFrame, feature_columns: list, target_column: str, max_features: int = 100
     ) -> list:
-        """Apply comprehensive feature selection using multiple methods:
+        """Apply comprehensive feature selection using multiple methods:"
         1. Mutual Information for feature-target relevance
         2. Collinearity analysis with correlation
         3. Random Forest importance
@@ -3984,7 +3997,7 @@ class TCNTrainer:
         Returns:
             List of selected feature names
 
-        """
+        """"
         try:
             self.logger.info(
                 f"🔍 Applying comprehensive feature selection on {len(feature_columns)} features...",
@@ -4419,7 +4432,7 @@ class TCNTrainer:
                     n_estimators=100, random_state=42, verbose=-1,
                 )
             else: lgb_model = lgb.LGBMRegressor(
-                    n_estimators=100, random_state=42, verbose=-1,
+            n_estimators=100, random_state=42, verbose=-1,
                 )
 
             lgb_model.fit(X_clean, y_clean)
@@ -4784,9 +4797,9 @@ class TransformerTrainer:
 
     async def _train_sr_outcome_model(
         self, training_data: dict[str, pd.DataFrame], ) -> bool:
-        """Train S/R outcome model using all available features from step04.
+        """Train S/R outcome model using all available features from step04."
         Trains specifically on data near S/R levels using the pruning logic from step05.
-        """
+        """"
         try:
             self.logger.info("🔄 Training S/R outcome model...")
 
@@ -4824,9 +4837,9 @@ class TransformerTrainer:
 
     async def _prepare_sr_training_data(
         self, training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
-        """Prepare training data specifically for S/R outcome prediction.
+        """Prepare training data specifically for S/R outcome prediction."
         Uses all available features from step04 and filters for data near S/R levels.
-        """
+        """"
         try:
             self.logger.info("🔄 Preparing S/R-specific training data...")
 
@@ -4875,9 +4888,9 @@ class TransformerTrainer:
 
     def _get_all_available_features(
         self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
-        """Get all available features from step04 for comprehensive S/R analysis.
+        """Get all available features from step04 for comprehensive S/R analysis."
         Uses the same feature engineering logic as the main HMM training.
-        """
+        """"
         try:
             # Start with base data
             features_df = data.copy()
@@ -5055,7 +5068,7 @@ class TransformerTrainer:
     async def run_step(
         self, symbol: str = "ETHUSDT", data_dir: str = None, method_a_mixture_of_experts: dict | None = None,
         **kwargs, ) -> bool:
-        """Run the HMM-based training step with standardized data quality management.
+        """Run the HMM-based training step with standardized data quality management."
 
         Args:
             symbol: Trading symbol
@@ -5065,7 +5078,7 @@ class TransformerTrainer:
 
         Returns: True if successful, False otherwise
 
-        """
+        """"
         try:
             from src.utils.logger import system_logger
 
@@ -5234,7 +5247,7 @@ from src.utils.training_pipeline_decorators import (
 )
 async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", method_a_mixture_of_experts: dict | None = None
     **kwargs, ) -> bool:
-    """Run the HMM-based training step.
+    """Run the HMM-based training step."
 
     Args:
         symbol: Trading symbol
@@ -5244,14 +5257,16 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
 
     Returns: True if successful = False otherwise
 
-    """
+    """"
     try:
         from src.utils.logger import system_logger
+    except Exception as e:
+        pass  # TODO: Handle exception properly
 import copy
 import numpy as np
 import os.path
 
-        # Create configuration
+# Create configuration
         config = {
             "symbol": symbol,
             "data_dir": data_dir,

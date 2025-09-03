@@ -18,17 +18,17 @@ from src.utils.warning_symbols import (
 
 
 class CalibrationManager:
-    """Calibration manager responsible for model calibration and confidence estimation.
+    """Calibration manager responsible for model calibration and confidence estimation."
     This module handles model calibration to improve prediction reliability.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize calibration manager.
+        """Initialize calibration manager."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CalibrationManager")
 
@@ -64,12 +64,12 @@ class CalibrationManager:
         context="calibration manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize calibration manager.
+        """Initialize calibration manager."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Calibration Manager...")
 
@@ -94,12 +94,12 @@ class CalibrationManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate calibration manager configuration.
+        """Validate calibration manager configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate calibration manager specific settings
             if not any(
@@ -128,9 +128,11 @@ class CalibrationManager:
         try:
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-            self.ml_confidence_predictor = MLConfidencePredictor(self.config)
+self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             await self.ml_confidence_predictor.initialize()
 
             # Initialize calibration methods
@@ -162,7 +164,7 @@ import copy
         ensemble_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Calibrate models to improve prediction reliability.
+        """Calibrate models to improve prediction reliability."
 
         Args:
             ensemble_results: Results from ensemble creation
@@ -171,7 +173,7 @@ import copy
         Returns:
             dict: Calibration results
 
-        """
+        """"
         try:
             self.logger.info("🎯 Starting model calibration...")
             self.is_calibrating = True
@@ -226,7 +228,7 @@ import copy
         ensemble_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> bool:
-        """Validate calibration input parameters.
+        """Validate calibration input parameters."
 
         Args:
             ensemble_results: Results from ensemble creation
@@ -235,7 +237,7 @@ import copy
         Returns:
             bool: True if inputs are valid, False otherwise
 
-        """
+        """"
         try:
             # Validate ensemble results
             if not ensemble_results:
@@ -270,7 +272,7 @@ import copy
         analyst_ensembles: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Calibrate analyst model ensembles.
+        """Calibrate analyst model ensembles."
 
         Args:
             analyst_ensembles: Analyst ensemble results
@@ -279,7 +281,7 @@ import copy
         Returns:
             dict: Analyst calibration results
 
-        """
+        """"
         try:
             self.logger.info("🧠 Calibrating analyst models...")
 
@@ -314,7 +316,7 @@ import copy
         tactician_ensembles: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Calibrate tactician model ensembles.
+        """Calibrate tactician model ensembles."
 
         Args:
             tactician_ensembles: Tactician ensemble results
@@ -323,7 +325,7 @@ import copy
         Returns:
             dict: Tactician calibration results
 
-        """
+        """"
         try:
             self.logger.info("🎯 Calibrating tactician models...")
 
@@ -359,7 +361,7 @@ import copy
         ensemble_name: str,
         ensemble_type: str,
     ) -> dict[str, Any] | None:
-        """Calibrate a single ensemble.
+        """Calibrate a single ensemble."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -369,7 +371,7 @@ import copy
         Returns:
             dict: Calibrated ensemble
 
-        """
+        """"
         try:
             self.logger.info(
                 f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}",
@@ -428,7 +430,7 @@ import copy
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Apply temperature scaling calibration.
+        """Apply temperature scaling calibration."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -436,7 +438,7 @@ import copy
         Returns:
             dict: Temperature scaling calibration result
 
-        """
+        """"
         try:
             # This would implement actual temperature scaling logic
             # For now, return a placeholder result
@@ -459,7 +461,7 @@ import copy
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Apply isotonic regression calibration.
+        """Apply isotonic regression calibration."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -467,7 +469,7 @@ import copy
         Returns:
             dict: Isotonic regression calibration result
 
-        """
+        """"
         try:
             # This would implement actual isotonic regression logic
             # For now, return a placeholder result
@@ -490,7 +492,7 @@ import copy
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Apply confidence calibration.
+        """Apply confidence calibration."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -498,7 +500,7 @@ import copy
         Returns:
             dict: Confidence calibration result
 
-        """
+        """"
         try:
             # This would implement actual confidence calibration logic
             # For now, return a placeholder result
@@ -521,12 +523,12 @@ import copy
         self,
         calibration_results: dict[str, Any],
     ) -> None:
-        """Store calibration results.
+        """Store calibration results."
 
         Args:
             calibration_results: Calibration results to store
 
-        """
+        """"
         try:
             self.logger.info("📁 Storing calibration results...")
 
@@ -540,12 +542,12 @@ import copy
             self.print(failed("❌ Failed to store calibration results: {e}"))
 
     def get_calibration_status(self) -> dict[str, Any]:
-        """Get current calibration status.
+        """Get current calibration status."
 
         Returns:
             dict: Calibration status information
 
-        """
+        """"
         return {
             "is_calibrating": self.is_calibrating,
             "has_calibration_results": bool(self.calibration_results),
@@ -555,12 +557,12 @@ import copy
         }
 
     def get_calibration_results(self) -> dict[str, Any]:
-        """Get the latest calibration results.
+        """Get the latest calibration results."
 
         Returns:
             dict: Calibration results
 
-        """
+        """"
         return self.calibration_results.copy()
 
     @handle_errors(
@@ -586,7 +588,7 @@ import copy
 async def setup_calibration_manager(
     config: dict[str, Any] | None = None,
 ) -> CalibrationManager | None:
-    """Setup and return a configured CalibrationManager instance.
+    """Setup and return a configured CalibrationManager instance."
 
     Args:
         config: Configuration dictionary
@@ -594,7 +596,7 @@ async def setup_calibration_manager(
     Returns:
         CalibrationManager: Configured calibration manager instance
 
-    """
+    """"
     try:
         manager = CalibrationManager(config or {})
         if await manager.initialize():

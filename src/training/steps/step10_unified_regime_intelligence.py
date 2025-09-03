@@ -1,6 +1,6 @@
 # src/training/steps/step10_unified_regime_intelligence.py
 
-"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management.
+"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management."
 
 This unified step consolidates:
 1. Multi-timeframe HMM state analysis with intensity scores for regime detection
@@ -17,7 +17,7 @@ Key Features:
 - Dynamic regime count based on step1_7 data (not hard-coded)
 - Long/short only trading signals (no "hold" as separate class)
 - Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
-"""
+""""
 
 import json
 import os
@@ -29,6 +29,9 @@ from datetime import datetime
 from typing import Any
 from pathlib import Path
 import asyncio
+
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -165,7 +168,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
     def forward(
         self, hmm_states: dict[str, torch.Tensor], features: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        """Forward pass through the unified regime intelligence model.
+        """Forward pass through the unified regime intelligence model."
 
         Args:
             hmm_states: Dict of HMM state sequences per timeframe
@@ -173,7 +176,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
 
         Returns: Dict containing regime classification, transition predictions, and S/R detection
 
-        """
+        """"
         batch_size = features.size(0)
         seq_len = features.size(1)
 
@@ -273,7 +276,7 @@ class UnifiedRegimeIntelligenceStep:
         self.artifacts_dir = config.get(
             "artifacts_dir", "checkpoints/unified_regime_intelligence",
         )
-        os.makedirs(self.artifacts_dir, exist_ok=True)
+        ensure_directory(self.artifacts_dir)
 
         # Enhancement-related config (optional)
         self.enhancement_config = config.get("enhancement", {})
@@ -634,7 +637,7 @@ class UnifiedRegimeIntelligenceStep:
             # Regime persistence features
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
-                # Calculate how long we've been in this regime
+                # Calculate how long we've been in this regime'
                 persistence = cluster_mask.groupby((cluster_mask != cluster_mask.shift()).cumsum()).cumsum()
                 intensity_df[f"persistence_cluster_{cluster_id}"] = persistence
 
@@ -1479,8 +1482,7 @@ class UnifiedRegimeIntelligenceStep:
                 "training_timestamp": datetime.now().isoformat(),
             }
 
-            with open(os.path.join(self.artifacts_dir, "config.json"), "w") as f:
-                json.dump(config_save, f, indent=2)
+            safe_json_dump(config_save, os.path.join(self.artifacts_dir, "config.json"), indent=2)
 
             self.logger.info(f"💾 Artifacts saved to {self.artifacts_dir}")
 
@@ -1490,7 +1492,7 @@ class UnifiedRegimeIntelligenceStep:
     def predict(
         self, hmm_states: dict[str, np.ndarray], features: np.ndarray,
     ) -> dict[str, Any] | None:
-        """Make predictions using the trained unified model.
+        """Make predictions using the trained unified model."
 
         Args:
             hmm_states: HMM state sequences for each timeframe
@@ -1498,7 +1500,7 @@ class UnifiedRegimeIntelligenceStep:
 
         Returns: Dict containing regime prediction, transition probability, and S/R detection
 
-        """
+        """"
         try:
             if self.model is None:
                 raise ValueError("Model not trained or loaded")
@@ -1561,7 +1563,7 @@ class UnifiedRegimeIntelligenceStep:
     def predict_with_position_logic(
         self, hmm_states: dict[str, np.ndarray], features: np.ndarray, current_position: str = "none", confidence_threshold: float = 0.7
     ) -> dict[str, Any] | None:
-        """Make predictions with position logic integration.
+        """Make predictions with position logic integration."
 
         Args:
             hmm_states: HMM state sequences for each timeframe
@@ -1572,7 +1574,7 @@ class UnifiedRegimeIntelligenceStep:
         Returns:
             Dict containing predictions with position action logic
 
-        """
+        """"
         try:
             # Get base predictions
             base_prediction = self.predict(hmm_states, features)
@@ -1611,7 +1613,7 @@ class UnifiedRegimeIntelligenceStep:
     def _determine_position_action(
         self, tpsl_prediction: int, confidence_score: float, current_position: str = "none", confidence_threshold: float = 0.7
     ) -> dict[str, Any]:
-        """Determine position action based on TPSL prediction, confidence, and current position.
+        """Determine position action based on TPSL prediction, confidence, and current position."
 
         Args:
             tpsl_prediction: 0 for short/no position, 1 for long
@@ -1622,7 +1624,7 @@ class UnifiedRegimeIntelligenceStep:
         Returns:
             Dict with position action and reasoning
 
-        """
+        """"
         try:
             # Determine intended direction from TPSL prediction
             intended_direction = "long" if tpsl_prediction == 1 else "short"
@@ -1727,7 +1729,7 @@ class UnifiedRegimeIntelligenceStep:
     )
     async def predict_with_sr_integration(
         self, hmm_states: dict[str, np.ndarray], market_features: np.ndarray, market_data: pd.DataFrame, current_price: float, ) -> dict[str, Any]:
-        """Make unified predictions with S/R level integration.
+        """Make unified predictions with S/R level integration."
 
         Args:
             hmm_states: HMM states for each timeframe
@@ -1738,7 +1740,7 @@ class UnifiedRegimeIntelligenceStep:
         Returns:
             dict: Unified predictions with S/R integration
 
-        """
+        """"
         try:
             # Get base unified predictions
             unified_prediction = self.predict(hmm_states, market_features)
@@ -1793,10 +1795,10 @@ class UnifiedRegimeIntelligenceStep:
             }
 
     async def _run_hyperparameter_optimization(self) -> dict[str, Any] | None:
-        """Optional short hyperparameter optimization using Optuna.
+        """Optional short hyperparameter optimization using Optuna."
 
         Returns a dict with best_params/best_value or None if Optuna unavailable.
-        """
+        """"
         try:
             import optuna  # type: ignore
         except Exception as ex:
@@ -2045,7 +2047,7 @@ async def run_step(
     training_config: dict[str, Any] | None = None,
     force_rerun: bool = False,
 ) -> bool:
-    """Run the unified regime intelligence step.
+    """Run the unified regime intelligence step."
 
     This step consolidates:
     - Multi-timeframe HMM state analysis
@@ -2054,7 +2056,7 @@ async def run_step(
     - Expert activation logic
 
     Replaces step9_5 and step10 with a single, efficient model.
-    """
+    """"
     # Log step parameters for debugging
     logger.info("=" * 80)
     logger.info("🚀 STEP 5_5: Unified Regime Intelligence")

@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .compose import uniform_wrapper, P, R
 from .logging import get_correlation_id
+import asyncio
 
 # Context variable for current trace
 current_trace_var: ContextVar[Optional['TraceContext']] = ContextVar('current_trace', default=None)

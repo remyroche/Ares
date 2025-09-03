@@ -20,6 +20,7 @@ if str(project_root) not in sys.path:
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
+from src.utils.common_operations import safe_json_load
 
 
 class Step1_5DataConverterValidator(BaseValidator):
@@ -45,7 +46,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """Validate the data converter step.
+        """Validate the data converter step."
 
         Args:
             training_input: Training input parameters
@@ -53,7 +54,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
-        """
+        """"
         symbol: str = str(training_input.get("symbol", "ETHUSDT"))
         exchange: str = str(training_input.get("exchange", "BINANCE"))
         timeframe: str = str(training_input.get("timeframe", "1m"))
@@ -100,7 +101,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     async def _check_unified_data_structure(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str
     ) -> dict[str, Any]:
-        """Check for unified data structure in the data directory.
+        """Check for unified data structure in the data directory."
 
         Args:
             symbol: Trading symbol
@@ -110,7 +111,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         Returns:
             Dictionary with structure information
-        """
+        """"
         # Expected unified data path: data_cache/unified/{exchange}/{symbol}/{timeframe}/
         unified_base = os.path.join(
             data_dir, "unified", exchange.lower(), symbol, timeframe
@@ -137,7 +138,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     async def _validate_unified_files(
         self, base_path: str, symbol: str, exchange: str, timeframe: str
     ) -> bool:
-        """Validate the unified data files.
+        """Validate the unified data files."
 
         Args:
             base_path: Base path to unified data
@@ -147,7 +148,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed
-        """
+        """"
         try:
             # Find all parquet files
             parquet_files = glob.glob(os.path.join(base_path, "*.parquet"), recursive=True)
@@ -197,14 +198,14 @@ class Step1_5DataConverterValidator(BaseValidator):
         exchange: str,
         timeframe: str,
     ) -> dict[str, Any]:
-        """Validate a single unified data file.
+        """Validate a single unified data file."
 
         Args:
             file_path: Path to the parquet file
 
         Returns:
             Dictionary with validation results
-        """
+        """"
         try:
             # Load the file
             df = pd.read_parquet(file_path)
@@ -316,7 +317,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     async def _validate_unified_config(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str
     ) -> bool:
-        """Validate the unified data configuration file.
+        """Validate the unified data configuration file."
 
         Args:
             symbol: Trading symbol
@@ -326,7 +327,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed
-        """
+        """"
         try:
             # Expected config path: data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json
             config_path = os.path.join(
@@ -338,8 +339,7 @@ class Step1_5DataConverterValidator(BaseValidator):
                 return False
 
             # Load and validate config
-            with open(config_path, "r") as f:
-                config: Dict[str, Any] = json.load(f)
+            config: Dict[str, Any] = safe_json_load(config_path)
 
             # Check required config fields
             required_fields = ["symbol", "exchange", "timeframe", "data_path", "created_at"]
@@ -391,7 +391,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the Step 1.5 Data Converter validator.
+    """Run the Step 1.5 Data Converter validator."
 
     Args:
         training_input: Training input parameters
@@ -399,7 +399,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """
+    """"
     validator = Step1_5DataConverterValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
 

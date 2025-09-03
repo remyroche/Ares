@@ -13,6 +13,7 @@ from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from .compose import uniform_wrapper, P, R
+import asyncio
 
 # Context variable for correlation ID
 correlation_id_var: ContextVar[Optional[str]] = ContextVar('correlation_id', default=None)

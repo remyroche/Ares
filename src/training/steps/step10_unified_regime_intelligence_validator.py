@@ -1,9 +1,9 @@
 # src/training/steps/step5_5_unified_regime_intelligence_validator.py
 
-"""Step 5.5 Unified Regime Intelligence Validator.
+"""Step 5.5 Unified Regime Intelligence Validator."
 
 This validator ensures quality insurance for the Unified Regime Intelligence step.
-"""
+""""
 
 import json
 import os
@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 warnings.filterwarnings("ignore")
 
@@ -544,6 +545,8 @@ class UnifiedRegimeIntelligenceValidator:
 			# Check if SRBreakoutPredictor is available
 			try:
 				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
+   except Exception as e:
+       pass  # TODO: Handle exception properly
 import os.path
 
 				validation_results["sr_predictor_initialization"] = True
@@ -573,7 +576,7 @@ import os.path
 			self.logger.warning(
 				f"⚠️ S/R integration validation partial: {validation_results['overall_score']:.3f}",
 			)
-			return True  # Don't fail the entire validation for S/R issues
+			return True  # Don't fail the entire validation for S/R issues'
 
 		except Exception as e:
 			self.logger.exception(f"S/R integration validation failed: {e}")
@@ -685,10 +688,9 @@ import os.path
 			report_path = (
 				"validation_reports/step5_5_unified_regime_intelligence_validation.json"
 			)
-			os.makedirs("validation_reports", exist_ok=True)
+			ensure_directory("validation_reports")
 
-			with open(report_path, "w") as f:
-				json.dump(report, f, indent=2)
+			safe_json_dump(report, report_path, indent=2)
 
 			self.logger.info(f"Validation report saved to {report_path}")
 
@@ -705,7 +707,7 @@ async def run_step5_5_validation(
 	timeframe: str = "1m",
 	training_config: Dict[str, Any] | None = None,
 ) -> bool:
-	"""Run validation for step5_5_unified_regime_intelligence.
+	"""Run validation for step5_5_unified_regime_intelligence."
 
 	Args:
 		symbol: Trading symbol
@@ -716,7 +718,7 @@ async def run_step5_5_validation(
 	Returns:
 		bool: True if validation passed, False otherwise
 
-	"""
+	""""
 	try:
 		logger.info(
 			f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})",

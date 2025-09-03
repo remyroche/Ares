@@ -1,9 +1,9 @@
 # src/training/steps/step6_feature_engineering.py
 
-"""Step 6: Complete Feature Engineering with Standardized Data Quality Management.
+"""Step 6: Complete Feature Engineering with Standardized Data Quality Management."
 This step creates comprehensive features including both basic and advanced features,
 with regime-aware optimization after HMM regime discovery.
-"""
+""""
 
 import asyncio
 import hashlib
@@ -19,6 +19,9 @@ import multiprocessing
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
+
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -203,7 +206,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """
+    """"
     Step 6: Complete Feature Engineering with Standardized Data Quality Management.
     
     This step creates comprehensive features including both basic and advanced features,
@@ -219,7 +222,7 @@ async def run_step(
         
     Returns:
         bool: True if successful, False otherwise
-    """
+    """"
     logger = system_logger.getChild("Step6FeatureEngineering")
     
     # Use standardized path construction
@@ -958,7 +961,7 @@ async def _add_sr_features(
                 features[new_feature_name] = feature_value
                 features_added += 1
             elif isinstance(feature_value, (int, float)):
-                # If it's a scalar, broadcast to all rows
+                # If it's a scalar, broadcast to all rows'
                 features[new_feature_name] = feature_value
                 features_added += 1
         
@@ -1046,11 +1049,13 @@ async def _add_sr_optimization_features(
     """Add SR detection optimization features using all optimization capabilities."""
     try:
         from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
+    except Exception as e:
+        pass  # TODO: Handle exception properly
 import copy
 import numpy as np
 import pandas as pd
         
-        # Initialize SR detection optimizer
+# Initialize SR detection optimizer
         optimizer = await setup_sr_detection_optimizer(config)
         if not optimizer:
             system_logger.warning("⚠️ SR detection optimizer not available, skipping optimization features")
@@ -1160,7 +1165,7 @@ def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
         np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
     )
     high_corr_features = [column for column in upper_tri.columns 
-                         if any(upper_tri[column] > 0.95)]
+    if any(upper_tri[column] > 0.95)]
     if len(high_corr_features) > 0:
         features = features.drop(columns=high_corr_features)
         system_logger.info(f"🗑️ Removed {len(high_corr_features)} highly correlated features")
@@ -1184,8 +1189,7 @@ async def _save_feature_artifacts(
 ) -> bool:
     """Save feature artifacts."""
     try:
-        output_dir = Path("data/training")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = ensure_directory("data/training")
         
         # Save feature files
         train_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_features_train.parquet"
@@ -1196,8 +1200,7 @@ async def _save_feature_artifacts(
         features_result["features_val"].to_parquet(val_file_path)
         
         # Save metadata
-        with open(metadata_file_path, "w") as f:
-            json.dump(features_result["metadata"], f, indent=2, default=str)
+        safe_json_dump(features_result["metadata"], metadata_file_path, indent=2, default=str)
         
         # Log artifacts to MLflow with standardized naming
         try:
@@ -1307,7 +1310,7 @@ async def _save_feature_artifacts(
             
         except Exception as e:
             system_logger.warning(f"⚠️ MLflow logging failed for step 6: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
         
         system_logger.info(f"✅ Saved feature artifacts to {output_dir}")
         return True

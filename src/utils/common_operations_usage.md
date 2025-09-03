@@ -240,3 +240,124 @@ To migrate existing code to use this module:
    ```
 
 This module helps maintain consistency across the codebase and reduces errors from undefined functions.
+
+## Parquet Operations
+
+```python
+from src.utils.common_operations import safe_read_parquet, safe_to_parquet, list_parquet_files
+
+# Read parquet file safely
+df = safe_read_parquet("data.parquet", columns=["col1", "col2"])
+
+# Write parquet file safely
+success = safe_to_parquet(df, "output.parquet", compression="snappy")
+
+# List all parquet files
+parquet_files = list_parquet_files("data/", recursive=True)
+```
+
+## Hashing and Caching
+
+```python
+from src.utils.common_operations import generate_hash, generate_cache_key
+
+# Generate hash for different data types
+hash1 = generate_hash("my_string")  # MD5 by default
+hash2 = generate_hash(df, algorithm="sha256")  # SHA256 for DataFrame
+
+# Generate cache keys
+cache_key = generate_cache_key("features", symbol, timeframe, df.shape[0])
+```
+
+## Enhanced DataFrame Operations
+
+```python
+from src.utils.common_operations import safe_copy, safe_resample, align_dataframes
+
+# Safe copy
+df_copy = safe_copy(df, deep=True)
+
+# Resample time series data
+resampled = safe_resample(df, "1H")  # Hourly resampling
+
+# Align multiple DataFrames
+df1, df2, df3 = align_dataframes(df1, df2, df3, method="inner")
+```
+
+## File System Operations
+
+```python
+from src.utils.common_operations import safe_glob, list_files, get_latest_file
+
+# Glob for files
+files = safe_glob("data/*.csv", recursive=True)
+
+# List files with pattern
+csv_files = list_files("data/", pattern="*.csv")
+parquet_files = list_files("data/", suffix=".parquet")
+
+# Get most recent file
+latest = get_latest_file("logs/", pattern="*.log")
+```
+
+## Data Validation Extensions
+
+```python
+from src.utils.common_operations import validate_dataframe_schema, validate_data_quality
+
+# Validate schema
+is_valid, errors = validate_dataframe_schema(
+    df, 
+    required_columns=["open", "high", "low", "close"],
+    column_types={"close": np.floating}
+)
+
+# Validate data quality
+quality = validate_data_quality(df, max_nan_ratio=0.05, check_duplicates=True)
+if not quality["is_valid"]:
+    print(f"Quality issues: {quality['issues']}")
+```
+
+## Progress and Timing
+
+```python
+from src.utils.common_operations import timed_operation, format_bytes
+
+@timed_operation("feature_engineering")
+def process_features():
+    # Your code here
+    pass
+
+# Format bytes
+size = format_bytes(1024 * 1024 * 512)  # "512.00 MB"
+```
+
+## Batch Processing
+
+```python
+from src.utils.common_operations import chunked_iterable, parallel_map
+
+# Process in chunks
+items = list(range(1000))
+for chunk in chunked_iterable(items, chunk_size=100):
+    process_chunk(chunk)
+
+# Parallel processing
+results = parallel_map(expensive_function, items, max_workers=8)
+```
+
+## MLflow Integration
+
+```python
+from src.utils.common_operations import safe_log_metric, safe_log_params, safe_log_artifact
+
+# Log metrics safely (won't fail if MLflow not available)
+safe_log_metric("accuracy", 0.95)
+safe_log_metric("loss", 0.05, step=100)
+
+# Log parameters
+safe_log_params({"learning_rate": 0.01, "batch_size": 32})
+
+# Log artifacts
+safe_log_artifact("model.pkl")
+```

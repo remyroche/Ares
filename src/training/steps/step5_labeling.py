@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 5: Labeling with Standardized Data Quality Management.
+"""Step 5: Labeling with Standardized Data Quality Management."
 
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
@@ -7,9 +7,9 @@ labels with additional labeling strategies and meta-labeling features.
 Key Enhancements:
 - Dynamic Label Generation: Added the ability to generate triple barrier labels directly within step05 using regime-aware methods
 - Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
-- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available
+- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available'
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
-"""
+""""
 
 import asyncio
 import sys
@@ -21,6 +21,9 @@ from datetime import datetime
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -208,7 +211,7 @@ class LabelingStep:
         data_dir: str = "data_cache",
         force_rerun: bool = False,
     ) -> bool:
-        """Execute the labeling step.
+        """Execute the labeling step."
 
         Args:
             symbol: Trading symbol
@@ -219,7 +222,7 @@ class LabelingStep:
 
         Returns:
             True if successful, False otherwise
-        """
+        """"
         step_start = time.time()
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
@@ -242,8 +245,7 @@ class LabelingStep:
                 return False
 
             # Save results under standardized labeled_data directory
-            labeled_dir = Path(data_dir) / "training" / "labeled_data"
-            labeled_dir.mkdir(parents=True, exist_ok=True)
+            labeled_dir = ensure_directory(Path(data_dir) / "training" / "labeled_data")
             output_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
             
             labeled_data.to_parquet(output_path)
@@ -262,9 +264,7 @@ class LabelingStep:
                 "labeling_config": self.config.get("labeling", {})
             }
             
-            import json
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+            safe_json_dump(metadata, metadata_path, indent=2)
             
             self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 
@@ -418,16 +418,16 @@ class LabelingStep:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
-        """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method.
+        """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method."
         
         New Labeling Flow:
         Primary Path: Attempts regime-aware labeling using RegimeSpecificTripleBarrierOptimizer
         Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
         Data Source Flexibility: Can work with unified data or step04 output depending on configuration
-        """
+        """"
         try:
             result_data = data.copy()
             
@@ -602,11 +602,13 @@ class LabelingStep:
             try:
                 # Use the regime-aware triple barrier labeling
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+            except Exception as e:
+                pass  # TODO: Handle exception properly
 import copy
 import numpy as np
 import pandas as pd
 
-                    RegimeAwareTripleBarrierLabeling
+RegimeAwareTripleBarrierLabeling
                 )
                 
                 regime_labeler = RegimeAwareTripleBarrierLabeling(
@@ -647,7 +649,7 @@ async def run_step(
     force_rerun: bool = False,
     config: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Run the labeling step with standardized data quality management.
+    """Run the labeling step with standardized data quality management."
 
     Args:
         symbol: Trading symbol
@@ -659,7 +661,7 @@ async def run_step(
 
     Returns:
         True if successful, False otherwise
-    """
+    """"
     if config is None:
         config = {}
 

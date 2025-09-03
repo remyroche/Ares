@@ -13,8 +13,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
-from src.utils.error_handler import (
 import logging
+from src.utils.error_handler import (
     handle_errors,
 )
 from src.utils.warning_symbols import (
@@ -28,14 +28,14 @@ from src.utils.centralized_decorators_simple import (
 
 
 class UnifiedRegimeClassifier:
-    """
+    """"
     Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 
     Approach:
     1. HMM-based labeling for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE)
     2. Ensemble prediction with majority voting for basic regimes
     3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
-    """
+    """"
 
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -46,7 +46,7 @@ class UnifiedRegimeClassifier:
     ):
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
-        self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
+        self.config = config.get("analystf", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
         self.exchange = exchange
@@ -225,7 +225,7 @@ class UnifiedRegimeClassifier:
     # Some pickles created with older/newer NumPy versions may store the BitGenerator
     # as a class object instead of a simple string (e.g.,
     # <class 'numpy.random._mt19937.MT19937'>). Newer NumPy expects a string name.
-    # We normalize the argument before delegating to NumPy's constructor.
+    # We normalize the argument before delegating to NumPy's constructor.'
     _NUMPY_RNG_UNPICKLE_PATCHED = False
 
     async def initialize_sr_predictor(self) -> bool:
@@ -254,11 +254,11 @@ class UnifiedRegimeClassifier:
 
     @staticmethod
     def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
-        """Enable compatibility for unpickling NumPy RNG BitGenerators.
+        """Enable compatibility for unpickling NumPy RNG BitGenerators."
 
         Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to
         accept class objects or repr strings by converting them to their class name.
-        """
+        """"
         # Use an attribute on the function to avoid double patching within this class
         if getattr(
             UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat, "_patched", False
@@ -285,7 +285,7 @@ class UnifiedRegimeClassifier:
                     elif isinstance(name_candidate, str) and name_candidate.startswith(
                         "<class "
                     ):
-                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
                 except Exception as _name_exc:
                     if logger is not None:
                         logger.debug(
@@ -335,21 +335,21 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="UnifiedRegimeClassifier.initialize",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize the UnifiedRegimeClassifier.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         self.logger.info(
             f"Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}",
         )
 
-        # Create model directory if it doesn't exist
+        # Create model directory if it doesn't exist'
         os.makedirs(self.model_dir, exist_ok=True)
 
         # Try to load existing models
@@ -368,7 +368,7 @@ class UnifiedRegimeClassifier:
         klines_df: pd.DataFrame,
         min_data_points: int = None,
     ) -> pd.DataFrame:
-        """
+        """"
         Calculate comprehensive features for regime and location classification.
 
         Args:
@@ -377,7 +377,7 @@ class UnifiedRegimeClassifier:
 
         Returns:
             DataFrame with calculated features
-        """
+        """"
         if min_data_points is None:
             min_data_points = self.min_data_points
 
@@ -545,9 +545,9 @@ class UnifiedRegimeClassifier:
         return features_df
 
     def _calculate_volatility_regime(self, features_df: pd.DataFrame) -> pd.Series:
-        """
+        """"
         Calculate volatility regime for VOLATILE classification.
-        """
+        """"
         # Calculate rolling volatility percentiles (prefer smoothed EWMA if present)
         vol_baseline = (
             features_df["ewma_volatility_20"]
@@ -585,9 +585,9 @@ class UnifiedRegimeClassifier:
         return volatile_regime.astype(int)
 
     async def _add_enhanced_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """
+        """"
         Add enhanced S/R features using SRBreakoutPredictor for improved regime analysis.
-        """
+        """"
         try:
             self.logger.info("🔧 Adding enhanced S/R features...")
             
@@ -700,7 +700,7 @@ class UnifiedRegimeClassifier:
                                 features_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
                 
                 except Exception as e:
-                    # Continue with next data point if there's an error
+                    # Continue with next data point if there's an error'
                     self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
                     continue
             
@@ -712,9 +712,9 @@ class UnifiedRegimeClassifier:
             return self._add_basic_sr_features(features_df)
 
     def _add_basic_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """
+        """"
         Add basic S/R features as fallback when enhanced analysis is not available.
-        """
+        """"
         try:
             self.logger.info("🔧 Adding basic S/R features...")
             
@@ -774,7 +774,7 @@ class UnifiedRegimeClassifier:
                     features_df.loc[features_df.index[i], "sr_isolation_score"] = 0.5
                 
                 except Exception as e:
-                    # Continue with next data point if there's an error
+                    # Continue with next data point if there's an error'
                     self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
                     continue
             
@@ -787,7 +787,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_rsi",
     )
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
@@ -802,7 +802,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_macd",
     )
     def _calculate_macd(
@@ -824,7 +824,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_adx",
     )
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
@@ -862,7 +862,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_bollinger_bands",
     )
     def _calculate_bollinger_bands(
@@ -886,7 +886,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_atr",
     )
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
@@ -912,7 +912,7 @@ class UnifiedRegimeClassifier:
         features_df: pd.DataFrame,
         state_sequence: np.ndarray,
     ) -> dict:
-        """
+        """"
         Interpret HMM states and map them to basic market regimes.
         Now uses simplified logic focusing on directional trends only.
 
@@ -920,7 +920,7 @@ class UnifiedRegimeClassifier:
         1. BULL: Positive returns above noise threshold
         2. BEAR: Negative returns below noise threshold
         3. SIDEWAYS: Low ADX (indicating lack of directional strength) or very small returns
-        """
+        """"
         analysis_df = features_df.copy()
         analysis_df["state"] = state_sequence
         state_analysis = {}
@@ -946,7 +946,7 @@ class UnifiedRegimeClassifier:
             # Check for sideways movement (moderate directional strength)
             is_sideways = mean_adx < adx_sideways_threshold
 
-            # First check if it's clearly sideways (low ADX and small returns)
+            # First check if it's clearly sideways (low ADX and small returns)'
             if is_sideways and abs(mean_return) < 0.0003:  # Reduced sideways return threshold
                 regime = "SIDEWAYS"
             # Then check for strong directional movements (reduced ADX requirement)
@@ -1021,7 +1021,7 @@ class UnifiedRegimeClassifier:
         return state_analysis
 
     async def _calculate_enhanced_sr_levels(self, df_window: pd.DataFrame) -> dict:
-        """
+        """"
         Calculate enhanced S/R levels using centralized SRBreakoutPredictor.
 
         Args:
@@ -1029,7 +1029,7 @@ class UnifiedRegimeClassifier:
 
         Returns:
             Dict containing enhanced S/R levels with comprehensive metrics
-        """
+        """"
         try:
             if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic pivot calculation if SRBreakoutPredictor not available
@@ -1104,7 +1104,7 @@ class UnifiedRegimeClassifier:
             return await self._calculate_basic_pivots(df_window)
 
     async def _calculate_basic_pivots(self, df_window: pd.DataFrame) -> dict:
-        """
+        """"
         Calculate basic pivot points as fallback when SRBreakoutPredictor is not available.
 
         Args:
@@ -1112,7 +1112,7 @@ class UnifiedRegimeClassifier:
 
         Returns:
             Dict containing basic pivot levels
-        """
+        """"
         try:
             if len(df_window) < 5:
                 return {
@@ -1167,9 +1167,9 @@ class UnifiedRegimeClassifier:
             }
 
     async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
-        """
-        Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.
-        """
+        """"
+        Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.'
+        """"
         try:
             if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic volume analysis
@@ -1255,9 +1255,9 @@ class UnifiedRegimeClassifier:
             return self._analyze_basic_volume_levels(df_window)
 
     def _analyze_basic_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
-        """
+        """"
         Basic volume level analysis as fallback when SRBreakoutPredictor is not available.
-        """
+        """"
         if df_window.empty or len(df_window) < 20:
             return None
 
@@ -1349,9 +1349,9 @@ class UnifiedRegimeClassifier:
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("enhanced_location_classification")
     async def _classify_enhanced_location(self, features_df: pd.DataFrame) -> list[str]:
-        """
+        """"
         Enhanced location classification using centralized SRBreakoutPredictor with advanced S/R analysis.
-        """
+        """"
         self.logger.info(
             "Classifying location with enhanced S/R analysis using SRBreakoutPredictor...",
         )
@@ -1497,16 +1497,16 @@ class UnifiedRegimeClassifier:
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("location_classification")
     def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
-        """
+        """"
         Legacy location classification method - now calls enhanced version if available.
-        """
+        """"
         if self.sr_predictor and self.enable_sr_integration:
             # Use enhanced classification if SRBreakoutPredictor is available
             import asyncio
 import copy
 import os.path
 
-            try:
+try:
                 # Create event loop if none exists
                 try:
                     loop = asyncio.get_event_loop()
@@ -1522,9 +1522,9 @@ import os.path
             return self._classify_basic_location(features_df)
 
     def _classify_basic_location(self, features_df: pd.DataFrame) -> list[str]:
-        """
+        """"
         Basic location classification as fallback when enhanced analysis is not available.
-        """
+        """"
         self.logger.info("Using basic location classification...")
 
         # --- Configuration for dual-timeframe analysis ---
@@ -1627,9 +1627,9 @@ import os.path
         return final_locations
 
     async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
-        """
+        """"
         Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE) with enhanced S/R integration.
-        """
+        """"
         try:
             self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
 
@@ -1694,9 +1694,9 @@ import os.path
             return False
 
     async def train_location_classifier(self, historical_klines: pd.DataFrame) -> bool:
-        """
+        """"
         Train location classifier for OPEN_RANGE, PIVOT_S, PIVOT_R, HVN_SUPPORT, HVN_RESISTANCE, CONFLUENCE_S, CONFLUENCE_R.
-        """
+        """"
         try:
             self.logger.info("🎓 Training Location Classifier...")
 
@@ -1759,9 +1759,9 @@ import os.path
             return False
 
     async def train_basic_ensemble(self, historical_klines: pd.DataFrame) -> bool:
-        """
+        """"
         Train ensemble for basic regime classification (BULL, BEAR, SIDEWAYS, VOLATILE).
-        """
+        """"
         try:
             self.logger.info("🎓 Training Basic Regime Ensemble...")
 
@@ -1840,9 +1840,9 @@ import os.path
             return False
 
     async def train_complete_system(self, historical_klines: pd.DataFrame) -> bool:
-        """
+        """"
         Train the complete regime and location classification system.
-        """
+        """"
         try:
             self.logger.info("🎓 Training Complete Regime Classification System...")
 
@@ -1879,7 +1879,7 @@ import os.path
         self,
         current_klines: pd.DataFrame,
     ) -> tuple[str, float, dict]:
-        """
+        """"
         Predict only the regime (for backward compatibility).
 
         Args:
@@ -1887,7 +1887,7 @@ import os.path
 
         Returns:
             Tuple of (regime, confidence, additional_info)
-        """
+        """"
         try:
             if not self.trained:
                 self.logger.warning("Models not trained, returning default prediction")
@@ -1947,7 +1947,7 @@ import os.path
         self,
         current_klines: pd.DataFrame,
     ) -> tuple[str, str, float, dict]:
-        """
+        """"
         Predict both regime and location.
 
         Args:
@@ -1955,7 +1955,7 @@ import os.path
 
         Returns:
             Tuple of (regime, location, confidence, additional_info)
-        """
+        """"
         try:
             if not self.trained:
                 self.logger.warning("Models not trained, returning default predictions")
@@ -2174,7 +2174,7 @@ import os.path
     @comprehensive_data_validation
     @with_tracing_span("regime_classification")
     async def classify_regimes(self, historical_klines: pd.DataFrame) -> dict[str, Any]:
-        """
+        """"
         Classify regimes for historical data (for training purposes).
 
         Args:
@@ -2182,7 +2182,7 @@ import os.path
 
         Returns:
             Dict containing regime classification results
-        """
+        """"
         try:
             if not self.trained:
                 self.logger.info(
@@ -2281,7 +2281,7 @@ import os.path
                     self.state_to_regime_map.get(state, "SIDEWAYS")
                     for state in state_sequence
                 ]
-                # For HMM, use a default confidence score since we don't have probabilities
+                # For HMM, use a default confidence score since we don't have probabilities'
                 confidence_scores = [0.8] * len(
                     regimes
                 )  # Default high confidence for HMM

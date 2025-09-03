@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Validator for Step 3: Parameter Optimization.
+"""Validator for Step 3: Parameter Optimization."
 
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
-"""
+""""
 
 import json
 import os
@@ -18,6 +18,7 @@ from src.utils.enhanced_validation_decorators import (
     validate_step3_comprehensive,
     smart_validation_cache
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step3ParameterOptimizationValidator")
 
@@ -33,7 +34,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     async def validate_step3_parameter_optimization(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:
-        """Validate Step 3: Parameter Optimization.
+        """Validate Step 3: Parameter Optimization."
 
         Args:
             symbol: Trading symbol
@@ -43,7 +44,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """
+        """"
         self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
 
         try:
@@ -113,13 +114,12 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization results: {results_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(results_file), "optimization results")
             if not file_exists:
                 return False
 
-            with open(results_file, 'r') as f:
-                results_data = json.load(f)
+            results_data = safe_json_load(results_file)
 
             # Check required fields
             required_fields = ["best_parameters", "optimization_history", "final_score"]
@@ -192,13 +192,12 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization config: {config_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(config_file), "optimization config")
             if not file_exists:
                 return False
 
-            with open(config_file, 'r') as f:
-                config_data = json.load(f)
+            config_data = safe_json_load(config_file)
 
             # Check required fields
             required_fields = ["parameter_ranges", "optimization_method", "max_iterations"]
@@ -260,15 +259,14 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(logs_file), "optimization logs")
             if not file_exists:
                 return False
 
-            with open(logs_file, 'r') as f:
-                logs_data = json.load(f)
+            logs_data = safe_json_load(logs_file)
 
-            # Check if it's a list
+            # Check if it's a list'
             if not isinstance(logs_data, list):
                 self.logger.warning("⚠️ Optimization logs should be a list")
                 return False
@@ -307,15 +305,14 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(metrics_file), "optimization metrics")
             if not file_exists:
                 return False
 
-            with open(metrics_file, 'r') as f:
-                metrics_data = json.load(f)
+            metrics_data = safe_json_load(metrics_file)
 
-            # Check if it's a dictionary
+            # Check if it's a dictionary'
             if not isinstance(metrics_data, dict):
                 self.logger.warning("⚠️ Optimization metrics should be a dictionary")
                 return False
@@ -445,8 +442,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             if existing_files:
                 for file_path in existing_files:
                     try:
-                        with open(file_path, 'r') as f:
-                            data = json.load(f)
+                        data = safe_json_load(file_path)
                         validation_result["details"][f"{Path(file_path).stem}_keys"] = list(data.keys())
                         validation_result["details"][f"{Path(file_path).stem}_valid"] = True
                     except Exception as e:
@@ -464,7 +460,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 3: Parameter Optimization.
+    """Run validation for Step 3: Parameter Optimization."
 
     Args:
         training_input: Training input parameters
@@ -472,7 +468,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """
+    """"
     logger.info("🔍 Validating Step 3: Parameter Optimization")
     
     try:

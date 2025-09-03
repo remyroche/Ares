@@ -1,5 +1,6 @@
 # src/analyst/autoencoder_feature_generator.py
 
+import copy
 import logging
 import os
 import time
@@ -179,7 +180,7 @@ class PriceReturnConverter:
     def convert_price_features_to_returns(
         self, features_df: pd.DataFrame
     ) -> pd.DataFrame:
-        """
+        """"
         Convert price features to returns (price differences) to improve autoencoder training.
         Optimized to select only one representative price feature and one volume feature
         to avoid redundancy.
@@ -189,7 +190,7 @@ class PriceReturnConverter:
 
         Returns:
             DataFrame with optimized price features converted to returns
-        """
+        """"
         if not self.use_price_returns:
             self.logger.info(
                 "📊 Price return conversion disabled, using original features"
@@ -1170,7 +1171,7 @@ class FeatureFilter:
             self.logger.info(f"   📊 Final cutoff: {cutoff_index} features")
             self.logger.info("📊 Initial selection results:")
             self.logger.info(f"   📊 Features selected: {cutoff_index}")
-            # Ensure we don't exceed array bounds
+            # Ensure we don't exceed array bounds'
             actual_cutoff = min(cutoff_index, len(cumulative_importance))
             self.logger.info(
                 f"   📊 Cumulative importance at cutoff: {cumulative_importance[actual_cutoff-1]:.6f}"
@@ -1187,7 +1188,7 @@ class FeatureFilter:
                 self.logger.info(
                     "🔄 Expanding selection to meet minimum requirement..."
                 )
-                # Ensure we don't exceed the available features
+                # Ensure we don't exceed the available features'
                 actual_min_features = min(min_features, len(sorted_indices))
                 selected_indices = sorted_indices[:actual_min_features]
                 actual_importance = (
@@ -1199,7 +1200,7 @@ class FeatureFilter:
                     f"📊 Expanded to {len(selected_indices)} features (importance: {actual_importance/total_importance*100:.1f}%)"
                 )
 
-                # If we still don't have enough features, we need to map back to original features
+                # If we still don't have enough features, we need to map back to original features'
                 if len(selected_indices) < min_features and hasattr(
                     self, "_prefiltered_features"
                 ):
@@ -1579,7 +1580,7 @@ class SequenceAwareAutoencoder:
             batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
             self.logger.info(f"📊 Trial batch size: {batch_size}")
         else:
-            batch_size = self.config.get("best_params", {}).get("batch_size", 32)
+            batch_size = self.config.get("best_paramsf", {}).get("batch_size", 32)
             self.logger.info(f"📊 Final training batch size: {batch_size}")
 
         epochs = self.config.get("autoencoder.epochs", 100)
@@ -1684,7 +1685,7 @@ class AutoencoderFeatureAnalyzer:
         original_features: pd.DataFrame | None = None,
         regime_labels: np.ndarray | None = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Comprehensive analysis of autoencoder feature importance.
 
         Args:
@@ -1695,7 +1696,7 @@ class AutoencoderFeatureAnalyzer:
 
         Returns:
             Dictionary containing all analysis results
-        """
+        """"
         try:
             self.logger.info(
                 "🔍 Starting comprehensive autoencoder feature importance analysis..."
@@ -1925,10 +1926,10 @@ class AutoencoderFeatureAnalyzer:
 
                 # Use a simple model for permutation importance
                 from sklearn.linear_model import LogisticRegression
-import copy
+
 import os.path
 
-                perm_model = LogisticRegression(random_state=42, max_iter=1000)
+perm_model = LogisticRegression(random_state=42, max_iter=1000)
                 perm_model.fit(X_train, y_train)
 
                 # Compute permutation importance
@@ -2427,12 +2428,12 @@ class AutoencoderFeatureGenerator:
         regime_labels: np.ndarray | None = None,
         enable_analysis: bool | None = None,
     ) -> pd.DataFrame:
-        """
+        """"
         Generate autoencoder features from input features.
 
         CRITICAL: This method should only receive engineered features, not raw OHLCV data.
         Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
-        """
+        """"
         # CRITICAL: Filter out raw OHLCV data that should not be used as features
         raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
         raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]

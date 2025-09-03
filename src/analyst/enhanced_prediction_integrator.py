@@ -14,9 +14,9 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, missing
-from src.utils.centralized_decorators import (
 import logging
 import copy
+from src.utils.centralized_decorators import (
     validate_data_quality,
     with_tracing_span,
     comprehensive_validation,
@@ -28,7 +28,7 @@ import copy
 
 
 class EnhancedPredictionIntegrator:
-    """
+    """"
     Enhanced Prediction Integrator for Analyst that integrates price and confidence predictions
     from the enhanced training manager steps 6-14.
     
@@ -37,15 +37,15 @@ class EnhancedPredictionIntegrator:
     - Analyst enhancement predictions (step 9)
     - Confidence calibration results (step 11)
     - Final parameter optimization results (step 12-14)
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize the enhanced prediction integrator.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("EnhancedPredictionIntegrator")
@@ -72,18 +72,18 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="enhanced prediction integrator initialization",
     )
     @comprehensive_validation(validation_level=ValidationLevel.STRICT)
     @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize the enhanced prediction integrator.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         try:
             self.logger.info("🚀 Initializing Enhanced Prediction Integrator...")
 
@@ -112,7 +112,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="loading HMM models",
     )
     @with_tracing_span("load_hmm_models")
@@ -142,7 +142,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="loading analyst enhanced models",
     )
     async def _load_analyst_enhanced_models(self) -> None:
@@ -177,7 +177,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="loading calibration results",
     )
     async def _load_calibration_results(self) -> None:
@@ -205,7 +205,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="loading optimization results",
     )
     async def _load_optimization_results(self) -> None:
@@ -233,7 +233,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="applying optimized parameters",
     )
     @with_tracing_span("apply_optimized_parameters")
@@ -265,7 +265,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="generating enhanced predictions",
     )
     @validate_data_quality(validation_level="WARNING")
@@ -279,7 +279,7 @@ class EnhancedPredictionIntegrator:
         exchange: str,
         timeframe: str
     ) -> dict[str, Any]:
-        """
+        """"
         Generate enhanced predictions using all loaded models and calibration.
 
         Args:
@@ -291,7 +291,7 @@ class EnhancedPredictionIntegrator:
 
         Returns:
             dict: Enhanced predictions with confidence scores
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.logger.error(error("❌ Enhanced Prediction Integrator not initialized"))
@@ -344,7 +344,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="generating HMM predictions",
     )
     async def _generate_hmm_predictions(
@@ -386,7 +386,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="generating analyst predictions",
     )
     async def _generate_analyst_predictions(
@@ -431,7 +431,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="applying confidence calibration",
     )
     async def _apply_confidence_calibration(
@@ -467,7 +467,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="applying optimization weights",
     )
     async def _apply_optimization_weights(
@@ -502,7 +502,7 @@ class EnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="generating final confidence scores",
     )
     async def _generate_final_confidence_scores(

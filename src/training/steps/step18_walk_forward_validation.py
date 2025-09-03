@@ -43,7 +43,7 @@ class WalkForwardValidationStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Execute walk-forward validation.
+        """Execute walk-forward validation."
 
         Args:
             training_input: Training input parameters
@@ -51,7 +51,7 @@ class WalkForwardValidationStep:
 
         Returns:
             Dict containing validation results
-        """
+        """"
         try:
             self.logger.info("🔄 Executing Walk-Forward Validation...")
 
@@ -61,7 +61,7 @@ class WalkForwardValidationStep:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Execute walk-forward validation logic (self-contained)
-            # In a full implementation, this would call the prior step's core routine.
+            # In a full implementation, this would call the prior step's core routine.'
 
             # Load walk-forward validation results
             wfv_results_file = (
@@ -72,7 +72,7 @@ class WalkForwardValidationStep:
                 with open(wfv_results_file) as f:
                     wfv_results: Dict[str, Any] = json.load(f)
             else:
-                # Create results if file doesn't exist
+                # Create results if file doesn't exist'
                 wfv_results = {
                     "symbol": symbol,
                     "exchange": exchange,
@@ -242,7 +242,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the walk-forward validation step.
+    """Run the walk-forward validation step."
 
     Args:
         symbol: Trading symbol
@@ -252,7 +252,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """
+    """"
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

@@ -1,11 +1,11 @@
 # src/core/di_integration.py
 
-"""
+""""
 Integration module for dependency injection patterns.
 
 This module demonstrates how to integrate all dependency injection patterns
 throughout the Ares trading system.
-"""
+""""
 
 from src.core.dependency_injection import DependencyContainer, ServiceLifetime
 from src.core.enhanced_factories import TradingSystemFactory
@@ -27,10 +27,10 @@ import asyncio
 
 
 class DIIntegration:
-    """
+    """"
     Integration class that demonstrates proper dependency injection usage
     throughout the Ares trading system.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or CONFIG
@@ -48,11 +48,11 @@ class DIIntegration:
         self.system_components: dict[str, Any] = {}
 
     async def demonstrate_full_di_integration(self) -> dict[str, Any]:
-        """
+        """"
         Demonstrate complete dependency injection integration.
 
         This method shows how all DI patterns work together in practice.
-        """
+        """"
         try:
             self.logger.info("Demonstrating full dependency injection integration")
 

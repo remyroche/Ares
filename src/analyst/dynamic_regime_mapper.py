@@ -46,7 +46,7 @@ class DynamicRegimeMapper:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="dynamic regime mapper initialization",
     )
     async def initialize(self) -> bool:
@@ -66,7 +66,7 @@ class DynamicRegimeMapper:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="regime discovery from step1_7",
     )
     async def _discover_regimes_from_step1_7(self) -> bool:
@@ -99,7 +99,7 @@ class DynamicRegimeMapper:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="meta file processing",
     )
     async def _process_meta_file(self, meta_file: str) -> bool:

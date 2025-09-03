@@ -16,9 +16,9 @@ from src.utils.logger import system_logger
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+from src.core.decorators import handles_errors
 
 from src.utils.centralized_decorators import (
-from src.core.decorators import handles_errors
     handle_errors,
     validate_data_quality,
     validate_data_structure,

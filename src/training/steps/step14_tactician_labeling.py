@@ -617,12 +617,12 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
-from src.training.enhanced_training_manager_optimized import (
 from src.utils.logger import log_dataframe_overview, log_io_operation
 from src.training.enhanced_training_manager_optimized import (
 from src.utils.logger import log_dataframe_overview, log_io_operation
 from src.utils.centralized_decorators import (
-            from src.config.constants import (
+from src.config.constants import (
+from src.training.enhanced_training_manager_optimized import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
 

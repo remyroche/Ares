@@ -843,7 +843,6 @@ class MLConfidencePredictor:
         """Initialize feature engineering integration."""
         try:
             # Import feature engineering components
-from src.analyst.feature_engineering_orchestrator import (
 from src.analyst.multi_timeframe_feature_engineering import (
 from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 import os
@@ -853,7 +852,8 @@ from src.tactician.enhanced_order_manager import (
 from src.tactician.async_order_executor import (
 import copy
 import os.path
-            from src.analyst.advanced_feature_engineering import (
+from src.analyst.advanced_feature_engineering import (
+from src.analyst.feature_engineering_orchestrator import (
                 AdvancedFeatureEngineering,
             )
                 FeatureEngineeringOrchestrator,

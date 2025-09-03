@@ -610,13 +610,13 @@ class RawDataQualityChecker:
 
         try:
             # Import the unified data downloader
-from src.training.steps.data_downloader import (
 import glob
 import os
 import copy
 import numpy as np
 import os.path
-            from src.training.steps.data_downloader import (
+from src.training.steps.data_downloader import (
+from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
             )
 

@@ -252,7 +252,6 @@ import json
 import os
 import pandas as _pd
 from src.utils.hmm_composite_manager import get_hmm_composite_manager
-from src.training.steps.feature_artifact_loader import (
 from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
 from ..model_saving_utils import save_multi_output_model_with_probabilities
 from sklearn.metrics import (
@@ -274,7 +273,8 @@ import shap
 from src.training.steps.sr_outcome_model_trainer import (
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
-            from src.training.optimized_feature_selection_manager import (
+from src.training.optimized_feature_selection_manager import (
+from src.training.steps.feature_artifact_loader import (
                 OptimizedFeatureSelectionManager,
             )
             self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)

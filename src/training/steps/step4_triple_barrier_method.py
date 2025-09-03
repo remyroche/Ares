@@ -77,9 +77,9 @@ class TripleBarrierMethodStep:
         """Initialize triple barrier method components."""
         self.logger.info("🔧 Initializing triple barrier method components...")
         try:
-from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
 import copy
-            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()

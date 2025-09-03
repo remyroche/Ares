@@ -645,8 +645,8 @@ from sklearn.kernel_approximation import RBFSampler
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
+from src.config.constants import (
 from src.utils.training_pipeline_decorators import (
-                from src.config.constants import (
                     BLANK_TRAINING_LOOKBACK_DAYS,
                 )
 

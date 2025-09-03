@@ -3,6 +3,8 @@
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
 """
+from src.core.decorators import handles_errors, traced
+
 import os
 import sys
 from pathlib import Path
@@ -22,32 +24,32 @@ from src.utils.common_operations import (
 )
 
 try:
-    from src.utils.error_handler import handle_errors
+    
     from src.utils.logger import system_logger
 import logging
 from src.training.steps.step1_5_data_converter import ParquetDatasetManager
 import os.path
-    from src.utils.centralized_decorators import (
-        guard_dataframe_nulls,
-        with_tracing_span,
-        secure_file_path,
-        validate_dataframe_schema,
-        validate_file_size,
-        sanitize_string,
-    )
+    from src.core.domain import (
+    guard_dataframe_nulls,
+    secure_file_path,
+    validate_dataframe_schema,
+    validate_file_size,
+    with_tracing_span,
+    sanitize_string
+)
 except ImportError:
     # Fallback imports
-    def handle_errors(*args, **kwargs):
+    def handles_errors(*args, **kwargs):
         def decorator(func):
             return func
         return decorator
 
-    def guard_dataframe_nulls(*args, **kwargs):
+    def validates(*args, **kwargs):
         def decorator(func):
             return func
         return decorator
 
-    def with_tracing_span(*args, **kwargs):
+    def traced(*args, **kwargs):
         def decorator(func):
             return func
         return decorator
@@ -122,7 +124,7 @@ class UnifiedDataLoader:
 
     @secure_file_path(allowed_dirs=["data_cache", "data"])
     @validate_file_size(max_size_mb=100)
-    @with_tracing_span("UnifiedDataLoader.load_unified_data")
+    @traced(span_name="UnifiedDataLoader.load_unified_data")
     async def load_unified_data(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
     ) -> Optional[pd.DataFrame]:
@@ -204,7 +206,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
             self.logger.exception(f"❌ Failed to load unified data: {e}")
             return None
 
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates(mode="warn", arg_index=1)
     @validate_dataframe_schema(expected_columns=["timestamp", "open", "high", "low", "close", "volume"])
     async def _validate_unified_data(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str
@@ -380,7 +382,7 @@ pdm = ParquetDatasetManager(logger=self.logger)
         """
         return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="unified_data_loader.get_data_info",
@@ -469,7 +471,7 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
 
 
 # Convenience functions for backward compatibility
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="load_unified_data",
@@ -502,7 +504,7 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
     )
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="get_unified_data_info",

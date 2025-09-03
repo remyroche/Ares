@@ -1,11 +1,18 @@
 # src/tactician/enhanced_order_manager.py
 
+from src.core.decorators import handles_errors
+
 """
 Enhanced Order Manager for Tactician
 Handles sophisticated order management including stop-limit orders and leveraged limit orders
 with partial fill management.
 """
 
+<<<<<<< HEAD
+from src.utils.logger import system_logger
+
+=======
+>>>>>>> origin/main
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
 import uuid
 from dataclasses import dataclass, field
@@ -13,7 +20,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from src.utils.error_handler import handle_errors
+# Removed handle_errors import - not used in this file
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -136,7 +143,7 @@ class EnhancedOrderManager:
         # Metrics
         self.metrics = metrics
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order manager initialization",
@@ -162,7 +169,7 @@ class EnhancedOrderManager:
             self.logger.exception(failed(f"❌ Enhanced Order Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order creation",
@@ -244,7 +251,7 @@ class EnhancedOrderManager:
             self.logger.exception(failed(f"❌ Order validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order update",
@@ -281,7 +288,7 @@ class EnhancedOrderManager:
             self.logger.exception(failed(f"❌ Order update failed: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order cancellation",
@@ -319,7 +326,7 @@ class EnhancedOrderManager:
             self.logger.exception(failed(f"❌ Order cancellation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order fill processing",

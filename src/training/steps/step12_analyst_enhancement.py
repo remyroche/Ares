@@ -1,5 +1,13 @@
 # src/training/steps/step12_analyst_enhancement.py
 
+from src.core.decorators import (, traced
+    handles_errors,
+    traced,
+    validates
+)
+
+from src.core.domain import BLANK_TRAINING_LOOKBACK_DAYS
+
 import asyncio
 import json
 import os
@@ -44,8 +52,6 @@ import contextlib
 
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
@@ -268,7 +274,7 @@ class RegimeAwareAnalystEnhancementStep:
             self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
             return "cpu"
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="analyst enhancement step initialization",
@@ -278,7 +284,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info("Initializing Analyst Enhancement Step...")
         self.logger.info("Analyst Enhancement Step initialized successfully.")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="regime-aware analyst enhancement step execution",
@@ -646,9 +652,6 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 from src.config.constants import (
-from src.utils.training_pipeline_decorators import (
-                    BLANK_TRAINING_LOOKBACK_DAYS,
-                )
 
                 # Use lookback_days from config (should be passed from enhanced training manager)
                 config_lookback: int = int(self.config.get(
@@ -894,8 +897,8 @@ from src.utils.training_pipeline_decorators import (
             )
             raise
 
-    @with_tracing_span("Step6._create_target_from_data", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @traced(span_name="Step6._create_target_from_data")
+    @validates(mode="warn", arg_index=1)
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
         """Attempts to create a meaningful target column from available data."
 
@@ -3600,11 +3603,11 @@ from src.utils.training_pipeline_decorators import (
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step7_analyst_enhancement")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=5400.0)
-@validate_step_prerequisites(
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=5400)
+@validates(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,
     min_disk_gb=5.0,
@@ -3615,38 +3618,38 @@ from src.utils.training_pipeline_decorators import (
     },
     context="Analyst Enhancement",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
     monitor_interval=60.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=300.0,
     expected_exception=Exception,
     monitor_interval=60.0,
 )
-@validate_step_output(
+@validates(
     required_files=["models/{exchange}_{symbol}_analyst_enhanced.pkl"],
     data_quality_checks={
         "min_rows": 100,
@@ -3655,7 +3658,7 @@ from src.utils.training_pipeline_decorators import (
     performance_thresholds={"enhancement_time_minutes": 90.0, "memory_usage_gb": 8.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     convergence_checks=True,

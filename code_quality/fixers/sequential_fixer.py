@@ -40,7 +40,8 @@ class SequentialFixer:
 
     def run_pipeline(self, target: str | list[str],
                     output_dir: str | None = None,
-                    create_backups: bool = True) -> dict[str, Any]:
+                    create_backups: bool = True,
+                    run_pre_commit: bool = False) -> dict[str, Any]:
         """
         Run the complete sequential fixing pipeline.
 
@@ -74,6 +75,7 @@ class SequentialFixer:
         print(f"Files to process: {len(target_files)}")
         print(f"Backups enabled: {create_backups}")
         print(f"Output directory: {output_dir or 'None'}")
+        print(f"Pre-commit: {'enabled' if run_pre_commit else 'disabled'}")
         print(f"Timestamp: {self.timestamp}")
 
         # Initialize results
@@ -129,6 +131,14 @@ class SequentialFixer:
             print("-"*50)
             signature_results = self._run_signature_analysis(target_files)
             self.results["step_results"]["signature_analysis"] = signature_results
+
+            # Optional: Pre-commit integration
+            if run_pre_commit:
+                print("\n" + "-"*50)
+                print("OPTIONAL STEP: PRE-COMMIT INTEGRATION")
+                print("-"*50)
+                pre_commit_results = self._run_pre_commit(target_files)
+                self.results["step_results"]["pre_commit"] = pre_commit_results
 
             # Step 6: Generate comprehensive summary
             print("\n" + "-"*50)
@@ -277,6 +287,30 @@ class SequentialFixer:
 
         except Exception as e:
             print(f"Error running linter analysis: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _run_pre_commit(self, files: list[str]) -> dict[str, Any]:
+        """Run pre-commit hooks across repository or scoped directory."""
+        try:
+            import subprocess
+            import os as _os
+
+            if len(files) == 1:
+                target_dir = str(Path(files[0]).parent)
+            else:
+                paths = [Path(f) for f in files]
+                target_dir = str(Path(_os.path.commonpath([str(p) for p in paths])))
+
+            cmd = [sys.executable, "-m", "pre_commit", "run", "--all-files"]
+            result = subprocess.run(cmd, cwd=target_dir, check=False, capture_output=True, text=True)
+
+            return {
+                "status": "success" if result.returncode in (0, 1) else "failed",
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "return_code": result.returncode,
+            }
+        except Exception as e:
             return {"status": "error", "error": str(e)}
 
     def _run_syntax_validation(self, files: list[str]) -> dict[str, Any]:
@@ -504,6 +538,7 @@ class SequentialFixer:
             "invalid_files": syntax.get("results", {}).get("summary", {}).get("invalid_files", 0) if syntax.get("status") == "success" else 0,
             "import_issues": imports.get("results", {}).get("summary", {}).get("total_issues", 0) if imports.get("status") == "success" else 0,
             "signature_issues": signatures.get("results", {}).get("summary", {}).get("total_issues", 0) if signatures.get("status") == "success" else 0,
+            "pre_commit_return_code": self.results.get("step_results", {}).get("pre_commit", {}).get("return_code"),
         }
 
         # Generate recommendations
@@ -573,6 +608,27 @@ class SequentialFixer:
                     json.dump(step_results, f, indent=2)
                 print(f"{step_name} report saved: {step_file}")
 
+        # Save compact HTML summary
+        try:
+            html_path = output_path / f"sequential_fixer_summary_{self.timestamp}.html"
+            html = [
+                "<html><head><meta charset='utf-8'><title>Sequential Fixer Summary</title></head><body>",
+                f"<h1>Sequential Fixer Summary ({self.timestamp})</h1>",
+                f"<p>Status: {self.results['summary'].get('overall_status','unknown')}</p>",
+                "<h2>Metrics</h2><ul>",
+            ]
+            for k, v in self.results["summary"].get("metrics", {}).items():
+                html.append(f"<li>{k}: {v}</li>")
+            html.append("</ul><h2>Recommendations</h2><ol>")
+            for rec in self.results["summary"].get("recommendations", []):
+                html.append(f"<li>[{rec.get('priority','')}] {rec.get('message','')}</li>")
+            html.append("</ol></body></html>")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(html))
+            print(f"HTML summary saved: {html_path}")
+        except Exception:
+            pass
+
     def _print_final_summary(self) -> None:
         """Print the final pipeline summary."""
         summary = self.results["summary"]
@@ -620,6 +676,7 @@ def main():
     parser.add_argument("--config", help="Path to configuration file")
     parser.add_argument("--output", help="Output directory for reports")
     parser.add_argument("--no-backups", action="store_true", help="Disable backup creation")
+    parser.add_argument("--pre-commit", action="store_true", help="Run pre-commit hooks after fixes")
 
     args = parser.parse_args()
 
@@ -643,6 +700,7 @@ def main():
         target=target,
         output_dir=args.output,
         create_backups=not args.no_backups,
+        run_pre_commit=args.pre_commit,
     )
 
     # Exit with appropriate code

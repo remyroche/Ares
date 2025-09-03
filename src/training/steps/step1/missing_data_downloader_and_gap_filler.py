@@ -17,16 +17,16 @@ sys.path.insert(0, str(project_root))
 
 # Try to import required modules
 try:
-    from src.utils.centralized_decorators import (
-        handle_errors,
-        validate_data_quality,
-        validate_data_structure,
-        guard_dataframe_nulls,
-        optimize_memory_usage,
-        comprehensive_data_validation,
-        secure_data_processing,
-        with_tracing_span,
-    )
+    from src.core.domain import (
+    comprehensive_data_validation,
+    guard_dataframe_nulls,
+    handle_errors,
+    optimize_memory_usage,
+    secure_data_processing,
+    validate_data_quality,
+    validate_data_structure,
+    with_tracing_span
+)
     from src.utils.logger import system_logger
     from src.training.steps.step01.data_gap_detector import DataGapDetector
     from src.exchange.binance_exchange import BinanceExchange
@@ -91,7 +91,7 @@ except ImportError as e:
 
     # Fallback logger
     import logging
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
 
@@ -148,7 +148,7 @@ class MissingDataDownloaderAndGapFiller:
                 return False
         return True
 
-    @with_tracing_span("download_aggtrades_data")
+    @traced(span_name="download_aggtrades_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_aggtrades_data"
@@ -301,7 +301,7 @@ class MissingDataDownloaderAndGapFiller:
             logger.exception(f"❌ Error counting rows: {e}")
             return 0
 
-    @with_tracing_span("download_klines_data")
+    @traced(span_name="download_klines_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_klines_data"
@@ -448,7 +448,7 @@ class MissingDataDownloaderAndGapFiller:
             logger.exception(f"❌ Error counting rows: {e}")
             return 0
 
-    @with_tracing_span("download_futures_data")
+    @traced(span_name="download_futures_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_futures_data"
@@ -598,7 +598,7 @@ class MissingDataDownloaderAndGapFiller:
             logger.exception(f"❌ Error counting rows: {e}")
             return 0
 
-    @with_tracing_span("download_all_missing_data")
+    @traced(span_name="download_all_missing_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_all_missing_data"

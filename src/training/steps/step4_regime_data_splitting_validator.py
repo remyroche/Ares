@@ -3,6 +3,13 @@
 
 This module validates the regime data splitting step outputs with support for 10+ regimes.
 """
+from src.core.domain import (
+
+from src.core.decorators import validates
+    smart_validation_cache,
+    validate_step4_comprehensive
+)
+
 import json
 import os
 from pathlib import Path
@@ -12,10 +19,6 @@ import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
-from src.utils.enhanced_validation_decorators import (
-    validate_step4_comprehensive,
-    smart_validation_cache
-)
 from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step4RegimeDataSplittingValidator")
@@ -28,7 +31,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         super().__init__("step4_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
 
-    @validate_step4_comprehensive
+    @validates()
     async def validate_step4_regime_data_splitting(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:
@@ -190,7 +193,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate statistics file: {error_context}")
             return False
 
-    def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 4 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -225,7 +228,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
 
         return validation_result
 
-    def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 4 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,

@@ -1,3 +1,10 @@
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    handle_network_operations,
+    handle_specific_errors
+)
+
 import hashlib
 import hmac
 import time
@@ -6,11 +13,14 @@ from urllib.parse import urlencode
 
 import aiohttp
 
+<<<<<<< HEAD
+=======
 from src.utils.error_handler import (
     handle_errors,
     handle_network_operations,
     handle_specific_errors,
 )
+>>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,
@@ -86,7 +96,7 @@ class BinanceExchange:
         )
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="exchange configuration loading",
@@ -110,7 +120,7 @@ class BinanceExchange:
 
         self.logger.info("Exchange configuration loaded successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -853,7 +863,7 @@ class BinanceExchange:
             "api_secret_configured": bool(self.api_secret),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="Binance exchange cleanup",
@@ -878,7 +888,7 @@ class BinanceExchange:
 binance_exchange: BinanceExchange | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="Binance exchange setup",

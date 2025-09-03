@@ -1,5 +1,9 @@
 # src/training/regime_specific_tpsl_optimizer.py
 
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 """Regime-Specific SL/TP Optimizer."
 
 This module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
@@ -25,7 +29,6 @@ sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -299,7 +302,7 @@ with open(results_file, "w") as f:
         except Exception:
             self.print(failed("Failed to save optimization results: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="regime identification",
@@ -378,7 +381,7 @@ with open(results_file, "w") as f:
             self.print(error(f"Error identifying regime: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="regime-specific TP/SL optimization",
@@ -574,7 +577,7 @@ with open(results_file, "w") as f:
 
         return trades
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="regime-specific TP/SL prediction",

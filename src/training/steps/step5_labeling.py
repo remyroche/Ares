@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
+from src.core.decorators import handles_errors, traced
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -193,19 +195,19 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @with_tracing_span("execute_labeling")
-    @quality_gate(
+    @traced(span_name="execute_labeling")
+    # @quality_gate - removed, handled by validates
         min_quality_score=0.7,
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step5_labeling")
-    @comprehensive_data_validation
-    @handle_errors
-    @memory_efficient
-    @resource_monitor
-    @secure_data_processing
-    @validate_data_structure
+    # @with_enhanced_mlflow_logging - removed, use traced"step5_labeling")
+    @validates()
+    @handles_errors
+    @cached
+    @log_execution_time
+    # @secure_data_processing - removed, handled by validates
+    @validates()
     async def execute_labeling(
         self,
         symbol: str,
@@ -513,7 +515,6 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
         except Exception as e:
             self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
             return None
-
 
 
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:

@@ -3,15 +3,19 @@
 This module provides the main orchestrator that coordinates the execution
 of pipeline stages, handles dependencies, and manages the overall pipeline flow.
 """
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any
 
+<<<<<<< HEAD
+=======
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
+>>>>>>> origin/main
 from src.utils.logger import system_logger
-
 
 class PipelineOrchestrator:
     """Pipeline orchestrator with comprehensive error handling and type safety."""
@@ -53,7 +57,7 @@ class PipelineOrchestrator:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline orchestrator configuration"),
             AttributeError: (
@@ -97,7 +101,7 @@ class PipelineOrchestrator:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline configuration loading",
@@ -129,7 +133,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error loading pipeline configuration: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -171,7 +175,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline modules initialization",
@@ -200,7 +204,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline modules: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline execution initialization",
@@ -221,7 +225,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline execution: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline monitoring initialization",
@@ -242,7 +246,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline monitoring: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline optimization initialization",
@@ -263,7 +267,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline optimization: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline validation initialization",
@@ -284,7 +288,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline validation: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline parameters"),
             AttributeError: (False, "Missing pipeline components"),
@@ -350,7 +354,7 @@ class PipelineOrchestrator:
             self.is_orchestrating = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="pipeline inputs validation",
@@ -388,7 +392,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error validating pipeline inputs: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline execution",
@@ -438,7 +442,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline execution: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline monitoring",
@@ -490,7 +494,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline monitoring: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline optimization",
@@ -554,7 +558,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline optimization: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline validation",
@@ -879,7 +883,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline validation core: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline results storage",
@@ -902,7 +906,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error storing pipeline results: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline results getting",
@@ -929,7 +933,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error getting pipeline results: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="pipeline history getting",
@@ -980,7 +984,7 @@ class PipelineOrchestrator:
             "pipeline_history_count": len(self.pipeline_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="pipeline orchestrator cleanup",
@@ -1004,12 +1008,10 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error stopping pipeline orchestrator: {e}")
 
-
 # Global pipeline orchestrator instance
 pipeline_orchestrator: PipelineOrchestrator | None = None
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="pipeline orchestrator setup",

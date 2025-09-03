@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
+from src.core.decorators import handles_errors, traced
+
 # Handle optional dependencies
 try:
     import psutil
@@ -38,16 +40,16 @@ except ImportError:
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
+    quality_gate,
     resource_monitor,
     secure_data_processing,
     validate_data_structure,
     with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
+    monitor_feature_engineering
 )
 from src.utils.logger import system_logger
 
@@ -106,19 +108,19 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @with_tracing_span("execute_triple_barrier_method")
-    @quality_gate(
+    @traced(span_name="execute_triple_barrier_method")
+    # @quality_gate - removed, handled by validates
         min_quality_score=0.7,
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step4_triple_barrier_method")
-    @comprehensive_data_validation
-    @handle_errors
-    @memory_efficient
-    @resource_monitor
-    @secure_data_processing
-    @validate_data_structure
+    # @with_enhanced_mlflow_logging - removed, use traced"step4_triple_barrier_method")
+    @validates()
+    @handles_errors
+    # @memory_efficient - removed
+    # @resource_monitor - removed, use log_execution_time
+    # @secure_data_processing - removed, handled by validates
+    @validates()
     async def execute_triple_barrier_method(
         self,
         symbol: str,

@@ -1,5 +1,7 @@
 # src/training/steps/step13_analyst_ensemble_creation.py
 
+from src.core.decorators import handles_errors
+
 import json
 import os
 from typing import Any, Optional, Tuple
@@ -7,7 +9,6 @@ from typing import Any, Optional, Tuple
 import joblib
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -52,7 +53,7 @@ class AnalystEnsembleCreationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    @handle_errors
+    @handles_errors
     def execute(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:

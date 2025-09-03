@@ -5,16 +5,17 @@ Monitoring Integration Manager (minimal scaffold)
 Coordinates monitoring components.
 """
 
+from src.core.decorators import log_execution_time
+
+from src.core.domain import PerformanceLevel
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    performance_monitor,
-)
+
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ class MonitoringIntegrationManager:
         self.is_integrated: bool = False
         self.integration_task: asyncio.Task | None = None
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time(level=PerformanceLevel.DETAILED)
     @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),

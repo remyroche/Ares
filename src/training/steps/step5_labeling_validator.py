@@ -3,6 +3,13 @@
 
 This module validates the labeling step outputs.
 """
+from src.core.domain import (
+
+from src.core.decorators import validates
+    smart_validation_cache,
+    validate_step5_comprehensive
+)
+
 import json
 import os
 from pathlib import Path
@@ -12,10 +19,6 @@ import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
-from src.utils.enhanced_validation_decorators import (
-    validate_step5_comprehensive,
-    smart_validation_cache
-)
 from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step5LabelingValidator")
@@ -28,7 +31,7 @@ class Step5LabelingValidator(BaseValidator):
         super().__init__("step5_labeling", config)
         self.logger = system_logger.getChild("Validator.Step5")
 
-    @validate_step5_comprehensive
+    @validates()
     async def validate_step5_labeling(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:
@@ -194,7 +197,7 @@ class Step5LabelingValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate metadata file: {error_context}")
             return False
 
-    def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 5 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -229,7 +232,7 @@ class Step5LabelingValidator(BaseValidator):
 
         return validation_result
 
-    def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 5 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,

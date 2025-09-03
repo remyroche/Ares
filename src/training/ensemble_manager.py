@@ -1,26 +1,24 @@
 # src/training/ensemble_manager.py
 
+from src.core.decorators import (
+    handles_errors,
+    retry,
+    log_execution_time,
+    traced,
+)
+
 from datetime import datetime
 from typing import Any
 import asyncio
 
-from src.utils.error_handler import (
-
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
-from src.utils.trading_decorators import (
-    comprehensive_model_decorator,
-    get_trade_tracker,
-)
+# Removed trading_decorators imports - using core decorators instead
 from src.utils.warning_symbols import (
     error,
     failed,
     invalid,
     warning,
 )
-
 
 class EnsembleManager:
     """Ensemble manager responsible for creating and managing model ensembles."
@@ -58,7 +56,7 @@ class EnsembleManager:
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid ensemble manager configuration"),
             AttributeError: (False, "Missing required ensemble parameters"),
@@ -94,7 +92,7 @@ class EnsembleManager:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -122,7 +120,7 @@ class EnsembleManager:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble components initialization",
@@ -132,12 +130,9 @@ class EnsembleManager:
         try:
             # Initialize ensemble creator
             from src.training.ensemble_creator import EnsembleCreator
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-self.ensemble_creator = EnsembleCreator(self.config)
-await self.ensemble_creator.initialize()
+            
+            self.ensemble_creator = EnsembleCreator(self.config)
+            await self.ensemble_creator.initialize()
 
             # Initialize ensemble optimization components
             if self.enable_ensemble_optimization:
@@ -151,18 +146,10 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             raise
 
-    @comprehensive_model_decorator(
-        enable_error_handling=True,
-        enable_tracking=True,
-        enable_performance_monitoring=True,
-        enable_retry=True,
-        model_name="EnsembleManager",
-        capture_predictions=True,
-        capture_feature_importance=True,
-        capture_confidence=True,
-        retry_attempts=3,
-        alert_threshold_ms=20000.0,  # 20 seconds for ensemble creation
-    )
+    @handles_errors(fallback=None)
+    @retry(max_attempts=3, delay=1.0, exponential_backoff=True)
+    @log_execution_time()
+    @traced(span_name="create_ensembles")
     async def create_ensembles(
         self,
         optimization_results: dict[str, Any],
@@ -237,7 +224,7 @@ await self.ensemble_creator.initialize()
             self.is_creating_ensembles = False
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="ensemble inputs validation",
@@ -281,7 +268,7 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analyst ensemble creation",
@@ -347,7 +334,7 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactician ensemble creation",
@@ -401,7 +388,7 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="multi-timeframe ensemble creation",
@@ -449,7 +436,7 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe ensemble creation",
@@ -499,7 +486,7 @@ await self.ensemble_creator.initialize()
             )
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactician single ensemble creation",
@@ -547,7 +534,7 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble optimization",
@@ -592,7 +579,7 @@ await self.ensemble_creator.initialize()
             )
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="single ensemble optimization",
@@ -635,7 +622,7 @@ await self.ensemble_creator.initialize()
             )
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble results storage",
@@ -685,7 +672,7 @@ await self.ensemble_creator.initialize()
         """
         return self.ensemble_results.copy()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="ensemble manager cleanup",
@@ -701,8 +688,7 @@ await self.ensemble_creator.initialize()
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="ensemble manager setup",

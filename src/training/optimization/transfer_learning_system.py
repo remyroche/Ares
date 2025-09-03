@@ -10,7 +10,8 @@ This module provides transfer learning capabilities for surrogate optimization:
 - Warm-start strategies
 """
 
-import hashlib
+from src.core.decorators import handles_errors
+from typing import Dict
 import json
 import os
 import os.path
@@ -29,6 +30,7 @@ from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 # Utilities
 from src.utils.logger import system_logger
 
+import os.path
 
 @dataclass
 class ProblemSignature:
@@ -43,7 +45,6 @@ class ProblemSignature:
     feature_vector: np.ndarray
     metadata: dict[str, Any]
 
-
 @dataclass
 class TransferKnowledge:
     """Knowledge transferred from previous optimization problems."""
@@ -56,7 +57,6 @@ class TransferKnowledge:
     adaptation_weights: dict[str, float]
     transfer_timestamp: float
     transfer_effectiveness: float
-
 
 @dataclass
 class OptimizationHistory:
@@ -72,7 +72,6 @@ class OptimizationHistory:
     convergence_history: list[float]
     training_time: float
     completion_timestamp: float
-
 
 class ProblemSimilarityDetector:
     """Detects similarity between optimization problems."""
@@ -188,7 +187,6 @@ class ProblemSimilarityDetector:
         if domain1 in ["unknown", "general"] or domain2 in ["unknown", "general"]:
             return 0.5
         return 0.0
-
 
 class KnowledgeTransferManager:
     """Manages knowledge transfer between optimization problems."""
@@ -394,7 +392,6 @@ class KnowledgeTransferManager:
         self._save_history()
         self.logger.info(f"Updated transfer effectiveness: {effectiveness:.3f}")
 
-
 class MetaLearner:
     """Meta-learning system for optimization strategy selection."""
 
@@ -513,7 +510,6 @@ class MetaLearner:
         expected_performance = self.performance_predictor.predict(features)[0]
 
         return strategy, hyperparameters, expected_performance
-
 
 class TransferLearningOptimizer:
     """Main transfer learning optimizer that combines all components."""

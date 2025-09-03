@@ -5,6 +5,14 @@ Enhanced Trading Launcher
 Provides a comprehensive launcher for paper trading, live trading, and
 backtesting with integrated detailed reporting capabilities.
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    PerformanceLevel,
+    handle_specific_errors,
+    performance_monitor
+)
+
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
@@ -19,7 +27,6 @@ except Exception:  # Fallback for environments without pandas
     pd = _PD()  # type: ignore
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
     execution_error,
@@ -34,7 +41,6 @@ from src.integration.paper_trading_integration import (
 )
 if TYPE_CHECKING:
     from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
-from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 class EnhancedTradingLauncher:
     """
@@ -113,7 +119,7 @@ class EnhancedTradingLauncher:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -132,7 +138,7 @@ class EnhancedTradingLauncher:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="components initialization",
@@ -468,7 +474,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error generating comprehensive report: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="basic report generation",
@@ -532,7 +538,7 @@ setup_enhanced_backtester as _setup_backtester,
             "enhanced_backtester_available": self.enhanced_backtester is not None,
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="launcher cleanup",
@@ -556,7 +562,7 @@ setup_enhanced_backtester as _setup_backtester,
         except Exception as e:
             self.logger.error(error(f"Error stopping launcher: {e}"))
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="enhanced trading launcher setup",

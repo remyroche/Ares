@@ -28,7 +28,6 @@ logger = get_logger("TpSlOptimizer")
 # Suppress Optuna's informational messages for a cleaner log
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-
 @numba.jit(nopython=True, cache=True)
 def _numba_backtest(
     close_prices: np.ndarray,
@@ -102,7 +101,6 @@ def _numba_backtest(
     if not trades:
         return np.empty((0, 2), dtype=np.float64)
     return np.array(trades, dtype=np.float64)
-
 
 class TpSlOptimizer:
     """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds

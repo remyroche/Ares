@@ -1,5 +1,26 @@
 # src/training/steps/step16_*.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    artifact_versioning,
+    artifact_write_lock,
+    deterministic_seed,
+    idempotent_step,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing,
+    time_budget_watchdog
+)
+
 import asyncio
 import contextlib
 import json
@@ -12,7 +33,6 @@ import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, f1_score
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -60,7 +80,7 @@ class RegimeAwareConfidenceCalibrationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="confidence calibration step initialization",
@@ -70,7 +90,7 @@ class RegimeAwareConfidenceCalibrationStep:
         self.logger.info("🚀 Initializing Confidence Calibration Step...")
         self.logger.info("✅ Confidence Calibration Step initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="confidence calibration step execution",
@@ -802,23 +822,6 @@ class _PrefitWrapper:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
 import copy
 import os
 from src.utils.enhanced_mlflow_integration import (
@@ -835,11 +838,11 @@ from src.utils.enhanced_mlflow_integration import (
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step11_confidence_calibration")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=2400.0)
-@validate_step_prerequisites(
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=2400)
+@validates(
     required_directories=["data/training", "models"],
     min_memory_gb=4.0,
     min_disk_gb=3.0,
@@ -850,37 +853,37 @@ from src.utils.enhanced_mlflow_integration import (
     },
     context="Confidence Calibration",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=8.0,
     cpu_threshold_percent=80.0,
     disk_threshold_gb=5.0,
     monitor_interval=30.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=15000, streaming_processing=True, memory_pool=True, cleanup_frequency=35,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=120.0,
     expected_exception=Exception,
     monitor_interval=30.0,
 )
-@validate_step_output(
+@validates(
     required_files=["models/{exchange}_{symbol}_calibrated.pkl"],
     data_quality_checks={
         "min_rows": 100,
@@ -889,7 +892,7 @@ from src.utils.enhanced_mlflow_integration import (
     performance_thresholds={"calibration_time_minutes": 60.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"calibration_accuracy": 0.7},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"calibration_score": 0.7},

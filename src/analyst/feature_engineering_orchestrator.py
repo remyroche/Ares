@@ -1,5 +1,12 @@
 # src/analyst/feature_engineering_orchestrator.py
 
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    handle_data_processing_errors,
+    handle_file_operations
+)
+
 import os
 from typing import Any
 
@@ -13,11 +20,6 @@ from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerato
 from src.config import CONFIG
 import logging
 import asyncio
-from src.utils.error_handler import (
-    handle_data_processing_errors,
-    handle_errors,
-    handle_file_operations,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -81,7 +83,7 @@ class FeatureEngineeringOrchestrator:
 
         self.logger.info("🚀 FeatureEngineeringOrchestrator initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="orchestrated feature generation",
@@ -249,7 +251,7 @@ class FeatureEngineeringOrchestrator:
 
             return features_df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="multi-timeframe feature calculation",
@@ -287,7 +289,7 @@ class FeatureEngineeringOrchestrator:
 
             return pd.DataFrame()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="meta-labeling feature calculation",
@@ -575,12 +577,12 @@ close_diff = df["close"].diff().fillna(0)
 
             return df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="orchestrator info retrieval",
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="orchestrator info retrieval",
@@ -602,7 +604,7 @@ close_diff = df["close"].diff().fillna(0)
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="feature summary retrieval",
@@ -658,7 +660,7 @@ class FeatureEngineeringEngine:
             "der_scaler.joblib",
         )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="generate_all_features",
@@ -680,7 +682,7 @@ class FeatureEngineeringEngine:
             sr_levels,
         )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="wavelet transforms",

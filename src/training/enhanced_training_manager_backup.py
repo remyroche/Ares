@@ -1,6 +1,20 @@
 # src/training/enhanced_training_manager.py
 
 # Added optimized imports
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    PipelineStage,
+    PipelineValidationLevel,
+    ensure_data_integrity,
+    monitor_pipeline_performance,
+    monitor_pipeline_step,
+    monitor_step_execution,
+    secure_step_execution,
+    validate_pipeline_input,
+    validate_pipeline_step
+)
+
 import gc
 import json
 import os
@@ -59,27 +73,12 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
 from src.utils.model_performance_monitor import ModelPerformanceMonitor
 
 # Import the auto-fix decorator for data quality issues
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 
 # Import new QA decorators
-from src.utils.training_pipeline_decorators import (
-    validate_pipeline_step,
-    ensure_data_integrity,
-    monitor_step_execution,
-    secure_step_execution,
-    monitor_pipeline_step,
-    validate_pipeline_input,
-    monitor_pipeline_performance,
-    PipelineStage,
-    PipelineValidationLevel,
-)
+
 from src.utils.logger import system_logger
 from src.utils.step_dependency_validator import step_dependency_validator
 from src.utils.validator_orchestrator import validator_orchestrator
-
 
 # ==== Helpers for robust data path and JSON formatting ====
 def _is_relative_to(path: Path, base: Path) -> bool:
@@ -89,7 +88,6 @@ def _is_relative_to(path: Path, base: Path) -> bool:
         return True
     except Exception:
         return False
-
 
 def _safe_json_write(target: Path, obj: Any) -> None:
     """Atomically and deterministically write JSON to target."
@@ -111,9 +109,7 @@ def _safe_json_write(target: Path, obj: Any) -> None:
             pass
     os.replace(tmp, target)
 
-
 _ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
-
 
 def _sanitize_identifier(value: str) -> str:
     """Validate identifier for use in file/dir names. Raises ValueError on invalid."""
@@ -124,7 +120,6 @@ def _sanitize_identifier(value: str) -> str:
         msg = f"Invalid identifier: {value}"
         raise ValueError(msg)
     return value
-
 
 class EnhancedTrainingManager:
     """Enhanced training manager with comprehensive 16-step pipeline."
@@ -985,7 +980,7 @@ class EnhancedTrainingManager:
         elapsed_time = sum(step_times.values())
         self._log_progress(completed_steps, 16, elapsed_time)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
             AttributeError: (False, "Missing required enhanced training parameters"),
@@ -1088,7 +1083,7 @@ class EnhancedTrainingManager:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -1130,7 +1125,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training parameters"),
             AttributeError: (False, "Missing enhanced training components"),
@@ -1237,7 +1232,7 @@ class EnhancedTrainingManager:
             self.is_training = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="enhanced training inputs validation",
@@ -1276,7 +1271,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Enhanced training inputs validation failed: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="computational optimization initialization",
@@ -1314,7 +1309,7 @@ class EnhancedTrainingManager:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="comprehensive pipeline execution",
@@ -2437,7 +2432,6 @@ from src.training.steps import (
                         self.logger.error("❌ Step 7 dependencies not met, skipping")
                         return False
 
-
                     analyst_timeframes = ["30m", "15m", "5m"]
                     for tf in analyst_timeframes:
                         self.logger.info(f"🔧 STEP 7: Analyst Enhancement @ {tf}")
@@ -2489,7 +2483,6 @@ from src.training.steps import (
                         self.logger.error("❌ Step 8 dependencies not met, skipping")
                         return False
 
-
                     step8_success = await step8_tactician_labeling.run_step(
                         symbol=symbol,
                         data_dir=data_dir,
@@ -2535,7 +2528,6 @@ from src.training.steps import (
                     if not await self.validate_step_dependencies("step9_hyperparameter_optimization", pipeline_state, self.force_rerun):
                         self.logger.error("❌ Step 9 dependencies not met, skipping")
                         return False
-
 
                     step9_success = await step9_tactician_specialist_training.run_step(
                         symbol=symbol,
@@ -2584,7 +2576,6 @@ from src.training.steps import (
                     if not await self.validate_step_dependencies("step10_model_selection", pipeline_state, self.force_rerun):
                         self.logger.error("❌ Step 10 dependencies not met, skipping")
                         return False
-
 
                     step10_success = await step10_confidence_calibration.run_step(
                         symbol=symbol,
@@ -2813,7 +2804,6 @@ from src.training.steps import (
                         self.logger.error("❌ Step 12 dependencies not met, skipping")
                         return False
 
-
                     step12_success = await step12_walk_forward_validation.run_step(
                         symbol=symbol,
                         data_dir=data_dir,
@@ -2857,7 +2847,6 @@ from src.training.steps import (
                     if not await self._validate_step_dependencies("step13_monte_carlo_validation", pipeline_state):
                         self.logger.error("❌ Step 13 dependencies not met, skipping")
                         return False
-
 
                     step13_success = await step13_monte_carlo_validation.run_step(
                         symbol=symbol,
@@ -2903,7 +2892,6 @@ from src.training.steps import (
                         self.logger.error("❌ Step 14 dependencies not met, skipping")
                         return False
 
-
                     step14_success = await step14_ab_testing.run_step(
                         symbol=symbol,
                         data_dir=data_dir,
@@ -2947,7 +2935,6 @@ from src.training.steps import (
                     if not await self._validate_step_dependencies("step15_live_monitoring", pipeline_state):
                         self.logger.error("❌ Step 15 dependencies not met, skipping")
                         return False
-
 
                     step15_success = await step15_saving.run_step(
                         symbol=symbol,
@@ -3014,7 +3001,7 @@ from src.training.steps import (
             self.logger.info("💾 Checkpoint saved - you can resume training later")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="optimized tools initialization",
@@ -3065,7 +3052,7 @@ from src.training.steps import (
             self.logger.exception(f"❌ Failed to initialize optimized tools: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="optimized parameters optimization",
@@ -3268,7 +3255,7 @@ from src.training.steps import (
             "param3": np.random.randint(1, 100),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="market data loading for optimization",
@@ -3558,7 +3545,7 @@ from src.training.steps import (
             self.logger.exception(f"❌ Error running validator for {step_name}: {e}")
             return {"step_name": step_name, "validation_passed": False, "error": str(e)}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step1_5_data_converter"
@@ -3627,7 +3614,7 @@ from src.training.steps import (
             )
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step2_feature_engineering"
@@ -3698,7 +3685,7 @@ from src.training.steps import (
             )
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="enhanced training history storage",
@@ -3735,7 +3722,7 @@ from src.training.steps import (
         except Exception as e:
             self.logger.exception(f"❌ Failed to store training history: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="enhanced training results storage",
@@ -3758,7 +3745,7 @@ from src.training.steps import (
         except Exception as e:
             self.logger.exception(f"❌ Failed to store enhanced training results: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="enhanced training results getting",
@@ -3785,7 +3772,7 @@ from src.training.steps import (
             self.logger.exception(f"Failed to get enhanced training results: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="enhanced training history getting",
@@ -3865,7 +3852,7 @@ from src.training.steps import (
             "manager_available": False,
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="enhanced training manager cleanup",
@@ -4004,7 +3991,7 @@ from src.training.steps import (
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="feature selection execution",
@@ -4127,7 +4114,7 @@ from src.training.steps import (
             self.logger.exception(f"❌ Feature selection failed: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="tiered feature selection",
@@ -4651,7 +4638,7 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
             self.logger.exception(f"❌ Error clearing artifacts for {step_name}: {e}")
 
     # Performance tracking methods
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="track_step_performance"
@@ -4699,7 +4686,7 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
             self.logger.warning(f"⚠️ Failed to track performance for {step_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="track_model_performance"
@@ -4742,7 +4729,7 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
             self.logger.warning(f"⚠️ Failed to track model performance for {model_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="track_optimization_performance"
@@ -4789,7 +4776,7 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
             self.logger.warning(f"⚠️ Failed to track optimization performance for {opt_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="track_validation_performance"
@@ -4838,7 +4825,7 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
             self.logger.warning(f"⚠️ Failed to track validation performance for {val_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="track_ab_testing_performance"
@@ -5016,8 +5003,7 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
                 "error": "Could not retrieve system resources"
             }
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="enhanced training manager setup",

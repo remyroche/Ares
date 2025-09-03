@@ -1,5 +1,7 @@
 # src/training/di_training_manager.py
 
+from src.core.decorators import handles_errors
+
 """Dependency injection-aware training manager."
 
 This module provides a training manager that uses proper dependency injection
@@ -10,7 +12,7 @@ from typing import Any
 from src.core.dependency_injection import DependencyContainer
 from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
-from src.utils.error_handler import handle_errors
+
 import asyncio
 from src.utils.warning_symbols import (
 
@@ -20,7 +22,6 @@ from src.utils.warning_symbols import (
     missing,
     warning,
 )
-
 
 class DITrainingManager(InjectableBase):
     """Dependency injection-aware training manager."
@@ -193,7 +194,7 @@ self.training_pipeline = TrainingPipeline(self.training_config)
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="training execution",

@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -113,7 +113,7 @@ class DataFormattingFramework:
             },
         }
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="data formatting")
+    @handles_errors(Exception, fallback=None)
     def standardize_format(
         self, data: pd.DataFrame, target_format: DataFormat, preserve_original: bool = None
     ) -> pd.DataFrame:

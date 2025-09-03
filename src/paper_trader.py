@@ -3,6 +3,16 @@
 PaperTrader for training and testnet trading.
 Uses Binance testnet via BinanceExchange for all operations.
 """
+from src.core.decorators import (
+    handles_errors,
+    log_execution_time,
+    log_call,
+    retry,
+    traced,
+)
+
+from src.core.domain import handle_specific_errors
+
 from datetime import datetime
 from typing import Any
 
@@ -14,16 +24,16 @@ from src.config.constants import (
     DEFAULT_MAX_POSITION_SIZE,
     DEFAULT_SLIPPAGE_RATE,
 )
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
-from src.utils.trading_decorators import (
-    ExecutionMode,
-    comprehensive_trading_decorator,
-    get_trade_tracker,
-)
+# Removed trading_decorators imports - using core decorators instead
+from enum import Enum
+
+class ExecutionMode(Enum):
+    """Execution mode enumeration."""
+    LIVE = "live"
+    BACKTEST = "backtest"
+    PAPER = "paper"
+    SIMULATION = "simulation"
 from src.utils.warning_symbols import (
     execution_error,
     initialization_error,
@@ -114,7 +124,7 @@ class PaperTrader:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trader configuration loading",
     )
@@ -142,7 +152,7 @@ class PaperTrader:
                 initialization_error(f"Error loading trader configuration: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False, context="configuration validation",
     )
@@ -183,7 +193,7 @@ class PaperTrader:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trading state initialization",
     )
@@ -208,15 +218,10 @@ class PaperTrader:
                 initialization_error(f"Error initializing trading state: {e}"),
             )
 
-    @comprehensive_trading_decorator(
-        enable_error_handling=True,
-        enable_performance_monitoring=True,
-        enable_trade_logging=True,
-        enable_risk_management=True,
-        enable_regime_awareness=True,
-        max_drawdown=0.2,
-        max_position_size=0.1,
-    )
+    @handles_errors(fallback=False)
+    @log_execution_time()
+    @log_call(level="INFO")
+    @traced(span_name="execute_buy_order")
     async def execute_buy_order(
         self,
         symbol: str,
@@ -320,15 +325,10 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error executing buy order: {e}"))
             return False
 
-    @comprehensive_trading_decorator(
-        enable_error_handling=True,
-        enable_performance_monitoring=True,
-        enable_trade_logging=True,
-        enable_risk_management=True,
-        enable_regime_awareness=True,
-        max_drawdown=0.2,
-        max_position_size=0.1,
-    )
+    @handles_errors(fallback=False)
+    @log_execution_time()
+    @log_call(level="INFO")
+    @traced(span_name="execute_sell_order")
     async def execute_sell_order(
         self,
         symbol: str,
@@ -440,7 +440,7 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error executing sell order: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False, context="order validation",
     )
@@ -488,7 +488,7 @@ class PaperTrader:
             self.logger.exception(validation_error(f"Error validating order: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="position getting",
     )
@@ -537,7 +537,7 @@ class PaperTrader:
         except Exception as e:
             self.logger.exception(execution_error(f"Error updating equity: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="all positions getting",
     )
@@ -555,7 +555,7 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error getting all positions: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="balance getting",
     )
@@ -573,7 +573,7 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error getting balance: {e}"))
             return 0.0
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trade history getting",
     )
@@ -598,7 +598,7 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error getting trade history: {e}"))
             return []
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="performance calculation",
@@ -702,7 +702,7 @@ class PaperTrader:
             "slippage_rate": self.slippage_rate,
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None, context="paper trader cleanup",
     )
@@ -728,7 +728,7 @@ class PaperTrader:
 paper_trader: PaperTrader | None=None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None, context="paper trader setup",
 )

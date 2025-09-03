@@ -1,5 +1,7 @@
 # src/analyst/di_analyst.py
 
+from src.core.decorators import handles_errors
+
 """
 Dependency injection-aware Analyst implementation.
 
@@ -26,7 +28,6 @@ from src.interfaces.base_interfaces import (
     IStateManager,
     MarketData,
 )
-from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
     failed,
     initialization_error,
@@ -134,7 +135,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         )
         self.logger.debug("Event subscriptions set up")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="market data analysis",

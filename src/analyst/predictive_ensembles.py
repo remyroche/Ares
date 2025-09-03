@@ -1,12 +1,12 @@
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 from datetime import datetime
 from typing import Any
 import logging
 import asyncio
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -114,7 +114,7 @@ class PredictiveEnsembles:
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble configuration loading",
@@ -147,7 +147,7 @@ class PredictiveEnsembles:
             self.logger.error("Error loading ensemble configuration: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -195,7 +195,7 @@ class PredictiveEnsembles:
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble modules initialization",
@@ -230,7 +230,7 @@ class PredictiveEnsembles:
             self.logger.error(f"Error initializing ensemble modules: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model ensemble initialization",
@@ -253,7 +253,7 @@ class PredictiveEnsembles:
             self.logger.error(f"Error initializing model ensemble: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="voting ensemble initialization",
@@ -276,7 +276,7 @@ class PredictiveEnsembles:
             self.logger.error(f"Error initializing voting ensemble: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stacking ensemble initialization",
@@ -300,7 +300,7 @@ class PredictiveEnsembles:
                 initialization_error("Error initializing stacking ensemble: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="bagging ensemble initialization",
@@ -323,7 +323,7 @@ class PredictiveEnsembles:
             self.logger.error(f"Error initializing bagging ensemble: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="boosting ensemble initialization",
@@ -412,7 +412,7 @@ class PredictiveEnsembles:
             self.is_ensembling = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="ensemble inputs validation",
@@ -456,7 +456,7 @@ class PredictiveEnsembles:
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model ensemble",
@@ -506,7 +506,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="voting ensemble",
@@ -556,7 +556,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stacking ensemble",
@@ -608,7 +608,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="bagging ensemble",
@@ -662,7 +662,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="boosting ensemble",
@@ -1118,7 +1118,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble results storage",
@@ -1143,7 +1143,7 @@ class PredictiveEnsembles:
             self.logger.error("Error storing ensemble results: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble results getting",
@@ -1169,7 +1169,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble history getting",
@@ -1223,7 +1223,7 @@ class PredictiveEnsembles:
             "ensemble_history_count": len(self.ensemble_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="predictive ensembles cleanup",
@@ -1249,12 +1249,11 @@ class PredictiveEnsembles:
             self.logger.error("Error stopping predictive ensembles: {e}")
 
 
-
 # Global predictive ensembles instance
 predictive_ensembles: PredictiveEnsembles | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="predictive ensembles setup",

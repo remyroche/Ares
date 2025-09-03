@@ -1,5 +1,8 @@
 # src/tactician/position_sizer.py
 
+
+from src.core.domain import validate_data_quality
+
 """
 Simplified Position Sizer for high leverage trading.
 Uses ML confidence scores and Kelly criterion for position sizing.
@@ -9,9 +12,15 @@ import contextlib
 from datetime import datetime
 from typing import Any
 
-from kelly_criterion_fix import calculate_correct_kelly_position_size
+<<<<<<< HEAD
+from src.utils.confidence import normalize_dual_confidence
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import validate_data_quality
+from src.utils.warning_symbols import error, initialization_error, missing
+
+=======
+>>>>>>> origin/main
+from kelly_criterion_fix import calculate_correct_kelly_position_size
+from src.core.decorators import handles_errors, validates
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, missing

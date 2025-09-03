@@ -63,7 +63,7 @@ class OptimizedUnifiedDataProcessor:
         )
         self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb=config.max_memory_mb))
     
-    @memory_efficient(max_memory_mb=1024)
+    # @memory_efficient - removed(max_memory_mb=1024)
     async def process_unified_data_streaming(self, data_sources: Dict[str, str]) -> pd.DataFrame:
         """Process unified data using streaming approach."""
         self.logger.info(f"Processing unified data from {len(data_sources)} sources")

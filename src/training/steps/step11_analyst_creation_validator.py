@@ -1,14 +1,16 @@
 # src/training/steps/step11_*.py
 
+from src.core.domain import (
+
+from src.core.decorators import validates
+    validate_dataframe_operation,
+    validate_file_operation,
+    validate_step2_operation
+)
 from pathlib import Path
 from typing import Any
-
 from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_step2_operation,
-)
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
 
@@ -20,7 +22,7 @@ class Step11AnalystCreationValidator:
         self.config = config
         self.logger = logger
 
-    @validate_step2_operation
+    @validates()
     def validate_step11_analyst_creation(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:
@@ -90,7 +92,7 @@ class Step11AnalystCreationValidator:
             self.logger.exception(f"❌ Step 11 validation failed: {e}")
             return False
 
-    @validate_file_operation
+    @validates()
     def _validate_analyst_model(self, model_file: Path, regime_name: str) -> bool:
         """Validate an analyst model file."""
         try:
@@ -120,7 +122,7 @@ class Step11AnalystCreationValidator:
             self.logger.exception(f"❌ Error validating model file {model_file}: {e}")
             return False
 
-    @validate_file_operation
+    @validates()
     def _validate_metadata_file(self, metadata_file: Path, regime_name: str) -> bool:
         """Validate a metadata file."""
         try:
@@ -165,7 +167,7 @@ class Step11AnalystCreationValidator:
             return False
 
 
-@validate_step2_operation
+@validates()
 def step11_analyst_creation_validator(
     symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any],
 ) -> bool:

@@ -10,7 +10,6 @@ This module implements advanced optimization strategies for step17:
 
 These strategies dramatically improve optimization efficiency while maintaining quality.
 """
-
 import asyncio
 import logging
 import numpy as np
@@ -40,7 +39,7 @@ except Exception as e:
     pass  # TODO: Handle exception properly
 import copy
 
-OPTUNA_AVAILABLE = True
+    OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
 

@@ -1,6 +1,5 @@
 # src/analyst/feature_engineering_orchestrator.py
 
-import copy
 import os
 from typing import Any
 
@@ -12,19 +11,25 @@ import pywt
 from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from src.config import CONFIG
-from src.core.decorators import handles_errors
+import logging
+import asyncio
+from src.utils.error_handler import (
+    handle_data_processing_errors,
+    handle_errors,
+    handle_file_operations,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     warning,
 )
 
+
 class FeatureEngineeringOrchestrator:
     """
     Comprehensive feature engineering orchestrator that coordinates all feature generation components.
     Integrates advanced feature engineering and autoencoder feature generation.
     """
-
     def __init__(self, config: dict[str, Any]):
         """
         Initialize the feature engineering orchestrator.
@@ -76,7 +81,11 @@ class FeatureEngineeringOrchestrator:
 
         self.logger.info("🚀 FeatureEngineeringOrchestrator initialized successfully")
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="orchestrated feature generation",
+    )
     async def generate_all_features(
         self,
         klines_df: pd.DataFrame,
@@ -189,11 +198,11 @@ class FeatureEngineeringOrchestrator:
             return features_df
 
         except Exception:
-            self.logger.error(f"❌ Error in feature generation orchestration: {e}")
+            self.logger.error("❌ Error in feature generation orchestration: {e}")
 
             return klines_df.copy()
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="legacy feature generation",
     )
@@ -236,11 +245,15 @@ class FeatureEngineeringOrchestrator:
             return self._calculate_ml_enhanced_features(features_df)
 
         except Exception:
-            self.logger.error(f"Error generating legacy features: {e}")
+            self.logger.error("Error generating legacy features: {e}")
 
             return features_df
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="multi-timeframe feature calculation",
+    )
     async def _calculate_multi_timeframe_features(
         self,
         price_data: pd.DataFrame,
@@ -270,11 +283,15 @@ class FeatureEngineeringOrchestrator:
             return pd.DataFrame([multi_timeframe_features])
 
         except Exception:
-            self.logger.error(f"Error calculating multi-timeframe features: {e}")
+            self.logger.error("Error calculating multi-timeframe features: {e}")
 
             return pd.DataFrame()
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="meta-labeling feature calculation",
+    )
     async def _calculate_meta_labeling_features(
         self,
         price_data: pd.DataFrame,
@@ -308,11 +325,11 @@ class FeatureEngineeringOrchestrator:
             return pd.DataFrame([all_labels])
 
         except Exception:
-            self.logger.error(f"Error calculating meta-labeling features: {e}")
+            self.logger.error("Error calculating meta-labeling features: {e}")
 
             return pd.DataFrame()
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="standard indicators calculation",
     )
@@ -323,10 +340,10 @@ class FeatureEngineeringOrchestrator:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
-import os
+import os.path
 
 # Convert price data to differences for technical indicators
-            close_diff = df["close"].diff().fillna(0)
+close_diff = df["close"].diff().fillna(0)
             high_diff = df["high"].diff().fillna(0)
             low_diff = df["low"].diff().fillna(0)
 
@@ -373,11 +390,11 @@ import os
             return df
 
         except Exception:
-            self.logger.error(f"Error calculating standard indicators: {e}")
+            self.logger.error("Error calculating standard indicators: {e}")
 
             return df
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="time features calculation",
     )
@@ -409,11 +426,11 @@ import os
             return df
 
         except Exception:
-            self.logger.error(f"Error calculating time features: {e}")
+            self.logger.error("Error calculating time features: {e}")
 
             return df
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="volatility regime indicators calculation",
     )
@@ -452,7 +469,7 @@ import os
             )
             return df
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="volatility targeting features calculation",
     )
@@ -492,7 +509,7 @@ import os
             )
             return df
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="ML enhanced features calculation",
     )
@@ -526,11 +543,11 @@ import os
             return df
 
         except Exception:
-            self.logger.error(f"Error calculating ML enhanced features: {e}")
+            self.logger.error("Error calculating ML enhanced features: {e}")
 
             return df
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.DataFrame(),
         context="feature cleanup",
     )
@@ -554,12 +571,20 @@ import os
             return df
 
         except Exception:
-            self.logger.error(f"Error in feature cleanup: {e}")
+            self.logger.error("Error in feature cleanup: {e}")
 
             return df
 
-    @handles_errors
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="orchestrator info retrieval",
+    )
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="orchestrator info retrieval",
+    )
     def get_orchestrator_info(self) -> dict[str, Any]:
         """Get information about the orchestrator."""
         try:
@@ -573,11 +598,15 @@ import os
                 "config": self.orchestrator_config,
             }
         except Exception:
-            self.logger.error(f"Error getting orchestrator info: {e}")
+            self.logger.error("Error getting orchestrator info: {e}")
 
             return {}
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="feature summary retrieval",
+    )
     def get_feature_summary(self) -> dict[str, Any]:
         """Get a summary of all available features."""
         try:
@@ -594,9 +623,10 @@ import os
                 "orchestrator_config": self.orchestrator_config,
             }
         except Exception:
-            self.logger.error(f"Error getting feature summary: {e}")
+            self.logger.error("Error getting feature summary: {e}")
 
             return {}
+
 
 # Legacy FeatureEngineeringEngine class for backward compatibility
 class FeatureEngineeringEngine:
@@ -604,9 +634,8 @@ class FeatureEngineeringEngine:
     Legacy feature engineering engine for backward compatibility.
     Now delegates to the orchestrator.
     """
-
     def __init__(self, config):
-        self.config = config.get("analystf", {}).get("feature_engineering", {})
+        self.config = config.get("analyst", {}).get("feature_engineering", {})
         self.logger = system_logger.getChild("FeatureEngineeringEngine")
         self.orchestrator = FeatureEngineeringOrchestrator(config)
         self.autoencoder_model = None
@@ -629,7 +658,11 @@ class FeatureEngineeringEngine:
             "der_scaler.joblib",
         )
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="generate_all_features",
+    )
     async def generate_all_features(
         self,
         klines_df: pd.DataFrame,
@@ -647,17 +680,21 @@ class FeatureEngineeringEngine:
             sr_levels,
         )
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="wavelet transforms",
+    )
     def apply_wavelet_transforms(self, data: pd.Series, wavelet="db1", level=3):
         """Apply wavelet transforms to data."""
         try:
             return pywt.wavedec(data, wavelet, level=level)
         except Exception:
-            self.logger.error(f"Error applying wavelet transforms: {e}")
+            self.logger.error("Error applying wavelet transforms: {e}")
 
             return None
 
-    @handles_errors(default_return=False, context="train_autoencoder")
+    @handle_file_operations(default_return=False, context="train_autoencoder")
     def train_autoencoder(self, data: pd.DataFrame):
         """Train autoencoder model."""
         try:
@@ -666,11 +703,11 @@ class FeatureEngineeringEngine:
                 self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
             )
         except Exception:
-            self.logger.error(f"Error training autoencoder: {e}")
+            self.logger.error("Error training autoencoder: {e}")
 
             return False
 
-    @handles_errors(
+    @handle_data_processing_errors(
         default_return=pd.Series(),
         context="apply_autoencoders",
     )
@@ -679,17 +716,17 @@ class FeatureEngineeringEngine:
         try:
             return self.orchestrator.autoencoder_generator.generate_features(data)
         except Exception:
-            self.logger.error(f"Error applying autoencoders: {e}")
+            self.logger.error("Error applying autoencoders: {e}")
 
             return data
 
-    @handles_errors(default_return=False, context="load_autoencoder")
+    @handle_file_operations(default_return=False, context="load_autoencoder")
     def load_autoencoder(self):
         """Load autoencoder model."""
         try:
             # This is handled by the orchestrator now
             return True
         except Exception:
-            self.logger.error(f"Error loading autoencoder: {e}")
+            self.logger.error("Error loading autoencoder: {e}")
 
             return False

@@ -1,7 +1,6 @@
 """
 Base validator class for training step validators.
 """
-
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -303,7 +302,7 @@ class BaseValidator(ABC):
 import os.path
 
 with open(model_path, "rb") as f:
-                        model = pickle.load(f)
+    model = pickle.load(f)
 
                     # Basic model validation
                     if hasattr(model, "predict"):

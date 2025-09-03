@@ -5,8 +5,14 @@ from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
+import asyncio
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import (
+
+    handle_errors,
+    handle_network_operations,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,
@@ -16,11 +22,11 @@ from src.utils.warning_symbols import (
     missing,
 )
 
+
 class BinanceExchange:
     """
     Enhanced Binance exchange client with comprehensive error handling and type safety.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize Binance exchange with enhanced type safety.
@@ -48,7 +54,7 @@ class BinanceExchange:
         self.timeout: int = self.exchange_config.get("timeout", 30)
         self.max_retries: int = self.exchange_config.get("max_retries", 3)
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid Binance exchange configuration"),
             AttributeError: (False, "Missing required exchange parameters"),
@@ -82,7 +88,11 @@ class BinanceExchange:
         )
         return True
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="exchange configuration loading",
+    )
     async def _load_exchange_configuration(self) -> None:
         """Load exchange configuration."""
         # Set default exchange parameters
@@ -102,7 +112,11 @@ class BinanceExchange:
 
         self.logger.info("Exchange configuration loaded successfully")
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """
         Validate exchange configuration.
@@ -323,7 +337,7 @@ class BinanceExchange:
             self.print(error("Error getting position risk: {e}"))
             return None
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid order parameters"),
             AttributeError: (False, "Missing order components"),
@@ -474,7 +488,7 @@ class BinanceExchange:
             self.print(connection_error("Network error calling {path}: {e}"))
             return None
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid cancel parameters"),
             AttributeError: (False, "Missing cancel components"),
@@ -541,7 +555,7 @@ class BinanceExchange:
         except Exception:
             return False
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid status parameters"),
             AttributeError: (None, "Missing status components"),
@@ -841,7 +855,11 @@ class BinanceExchange:
             "api_secret_configured": bool(self.api_secret),
         }
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="Binance exchange cleanup",
+    )
     async def stop(self) -> None:
         """Stop the Binance exchange."""
         self.logger.info("🛑 Stopping Binance Exchange...")
@@ -857,10 +875,16 @@ class BinanceExchange:
         except Exception:
             self.print(error("Error stopping Binance exchange: {e}"))
 
+
 # Global Binance exchange instance
 binance_exchange: BinanceExchange | None = None
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="Binance exchange setup",
+)
 async def setup_binance_exchange(
     config: dict[str, Any] | None = None,
 ) -> BinanceExchange | None:

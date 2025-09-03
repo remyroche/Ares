@@ -9,7 +9,6 @@ This module provides standardized data formatting including:
 - Cross-step format consistency
 - Format transformation utilities
 """
-
 import json
 import logging
 from datetime import datetime, timedelta
@@ -20,9 +19,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors
+from .error_handler import handle_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class DataFormat(Enum):
     """Standard data formats."""
@@ -34,6 +34,7 @@ class DataFormat(Enum):
     METADATA = "metadata"
     CONFIG = "config"
 
+
 class ColumnNamingConvention(Enum):
     """Column naming conventions."""
 
@@ -41,6 +42,7 @@ class ColumnNamingConvention(Enum):
     CAMEL_CASE = "camel_case"
     UPPER_CASE = "upper_case"
     LOWER_CASE = "lower_case"
+
 
 class DataFormattingFramework:
     """Comprehensive data formatting and standardization framework."""
@@ -111,7 +113,7 @@ class DataFormattingFramework:
             },
         }
 
-    @handles_errors(fallback=None)
+    @handle_errors(exceptions=(Exception,), default_return=None, context="data formatting")
     def standardize_format(
         self, data: pd.DataFrame, target_format: DataFormat, preserve_original: bool = None
     ) -> pd.DataFrame:
@@ -392,11 +394,11 @@ import copy
 import os.path
 
 return enhanced_missing_value_handler.handle_missing_values_intelligently(
-                data, "timestamp", symbol, exchange, timeframe
+data, "timestamp", symbol, exchange, timeframe
             )
 
         # Fallback to traditional strategies
-            handled_data = data.copy()
+        handled_data = data.copy()
 
         if strategy == "forward_fill":
             handled_data = handled_data.fillna(method="ffill", limit=limit)
@@ -532,6 +534,7 @@ return enhanced_missing_value_handler.handle_missing_values_intelligently(
             }
 
         return report
+
 
 # Global data formatting framework instance
 data_formatting_framework = DataFormattingFramework()

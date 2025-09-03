@@ -7,12 +7,7 @@ Prepares data for step1_5_data_converter.py processing. This module focuses on:
 
 Note: Actual resampling is handled by step1_5_data_converter.py
 """
-
 import sys
-
-
-
-
 from datetime import datetime
 from pathlib import Path
 
@@ -23,10 +18,9 @@ from src.utils.logger import system_logger
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+import copy
 
 from src.utils.centralized_decorators import (
-import copy
-from src.core.decorators import handles_errors
 
     ValidationLevel,
     comprehensive_data_validation,
@@ -39,6 +33,7 @@ from src.core.decorators import handles_errors
 )
 
 logger = system_logger.getChild("DataPreparation")
+
 
 class DataPreparation:
     """Prepares data for step1_5_data_converter.py processing."""
@@ -90,7 +85,20 @@ class DataPreparation:
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     @with_tracing_span("load_klines_data")
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            pd.errors.EmptyDataError,
+            FileNotFoundError,
+            PermissionError,
+            pd.errors.ParserError,
+        ),
+        default_return=pd.DataFrame(),
+        context="data_resampler.load_klines_data"
+    )
     def load_klines_data(
         self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None
     ) -> pd.DataFrame:
@@ -158,7 +166,17 @@ class DataPreparation:
 
     @validate_data_structure
     @with_tracing_span("prepare_for_step1_5")
-    @handles_errors
+    @handle_errors(
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            pd.errors.EmptyDataError,
+            FileNotFoundError,
+            PermissionError,
+            pd.errors.ParserError,
+        ),
         default_return={
             "symbol": "",
             "exchange": "",
@@ -233,7 +251,18 @@ class DataPreparation:
 
     @optimize_memory_usage
     @with_tracing_span("save_resampled_data")
-    @handles_errors(fallback=Path())
+    @handle_errors(
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            FileNotFoundError,
+            PermissionError,
+        ),
+        default_return=Path(),
+        context="data_resampler.save_resampled_data"
+    )
     def save_resampled_data(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, output_format: str = "parquet"
     ) -> Path:
@@ -303,7 +332,11 @@ class DataPreparation:
 
     @optimize_memory_usage
     @with_tracing_span("create_partitioned_dataset")
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
+        default_return=None,
+        context="data_resampler.create_partitioned_dataset"
+    )
     def create_partitioned_dataset(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, ) -> Path:
         """Create partitioned Parquet dataset for efficient querying."
@@ -355,7 +388,17 @@ class DataPreparation:
     @comprehensive_data_validation
     @optimize_memory_usage
     @with_tracing_span("resample_all_timeframes")
-    @handles_errors
+    @handle_errors(
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            pd.errors.EmptyDataError,
+            FileNotFoundError,
+            PermissionError,
+            MemoryError,
+        ),
         default_return={
             "symbol": "",
             "exchange": "",
@@ -490,7 +533,17 @@ class DataPreparation:
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     @with_tracing_span("validate_resampled_data")
-    @handles_errors
+    @handle_errors(
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            pd.errors.EmptyDataError,
+            FileNotFoundError,
+            PermissionError,
+            pd.errors.ParserError,
+        ),
         default_return={
             "valid": False,
             "error": "Validation failed",
@@ -591,7 +644,11 @@ class DataPreparation:
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     @with_tracing_span("resample_to_timeframe")
-    @handles_errors(fallback=pd.DataFrame())
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, pd.errors.EmptyDataError),
+        default_return=pd.DataFrame(),
+        context="data_resampler.resample_to_timeframe"
+    )
     def resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Resample DataFrame to specified timeframe."
 
@@ -651,7 +708,8 @@ class DataPreparation:
 
     @validate_data_quality()
     @with_tracing_span("validate_resampled_data_quality")
-    @handles_errors
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError),
         default_return={"valid": False, "issues": ["Validation failed"], "warnings": [], "row_count": 0, "timeframe": "unknown"},
         context="data_resampler.validate_resampled_data_quality"
     )
@@ -730,16 +788,15 @@ class DataPreparation:
 
     def generate_resampling_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive resampling report."""
-        report = f"""
+        report = f""""
 🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
 {'='*60}
 
 📊 AVAILABLE TIMEFRAMES:
     pass
 """
-
 for timeframe in self.SUPPORTED_TIMEFRAMES:
-            # Check if resampled file exists
+    # Check if resampled file exists
             output_dir = self.data_cache_path / "resampled" / exchange / symbol
             filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
             file_path = output_dir / filename
@@ -753,14 +810,23 @@ for timeframe in self.SUPPORTED_TIMEFRAMES:
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
 
-        report += f"""
+        report += f""""
 {'='*60}
 """
-
 return report
 
     @with_tracing_span("create_1m_consolidated_data")
-    @handles_errors
+    @handle_errors(
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            pd.errors.EmptyDataError,
+            FileNotFoundError,
+            PermissionError,
+            pd.errors.ParserError,
+        ),
         default_return={
             "symbol": "",
             "exchange": "",

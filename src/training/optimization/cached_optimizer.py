@@ -12,15 +12,16 @@ from typing import Any
 
 import optuna
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-import os
+import os.path
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     warning,
 )
+
 
 @dataclass
 class CacheConfig:
@@ -31,6 +32,7 @@ class CacheConfig:
     max_cache_size_mb: int = 100
     enable_warm_start: bool = True
     warm_start_threshold: float = 0.8  # Similarity threshold for warm start
+
 
 class CachedOptimizer:
     """Implements caching for optimization efficiency with warm start capabilities."""
@@ -51,7 +53,11 @@ class CachedOptimizer:
         )
         self.cache_metadata = self._load_cache_metadata()
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="cache metadata loading",
+    )
     def _load_cache_metadata(self) -> dict[str, Any]:
         """Load cache metadata from file."""
         try:
@@ -63,7 +69,11 @@ class CachedOptimizer:
             self.print(warning("Could not load cache metadata: {e}"))
             return {}
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="cache metadata saving",
+    )
     def _save_cache_metadata(self) -> bool:
         """Save cache metadata to file."""
         try:
@@ -83,7 +93,11 @@ class CachedOptimizer:
         """Get cache file path for given key."""
         return os.path.join(self.cache_config.cache_dir, f"{cache_key}.pkl")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="cached results retrieval",
+    )
     def get_cached_optimization_results(
         self,
         optimization_config: dict[str, Any],
@@ -116,7 +130,11 @@ class CachedOptimizer:
             self.print(warning("Error retrieving cached results: {e}"))
             return None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="cache validation",
+    )
     def is_cache_valid(self, cached_results: dict[str, Any]) -> bool:
         """Check if cached results are valid."""
         try:
@@ -139,7 +157,11 @@ class CachedOptimizer:
             self.print(warning("Error validating cache: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="warm start parameters retrieval",
+    )
     def get_warm_start_parameters(
         self,
         optimization_config: dict[str, Any],
@@ -203,7 +225,11 @@ class CachedOptimizer:
             self.print(warning("Error calculating config similarity: {e}"))
             return 0.0
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="optimization results caching",
+    )
     def cache_optimization_results(
         self,
         optimization_config: dict[str, Any],
@@ -243,7 +269,11 @@ class CachedOptimizer:
             self.print(error("Error caching optimization results: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="optimization with warm start",
+    )
     async def run_optimization_with_warm_start(
         self,
         optimization_config: dict[str, Any],
@@ -313,7 +343,11 @@ class CachedOptimizer:
             self.print(error("Error running optimization with warm start: {e}"))
             return None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="cache cleanup",
+    )
     async def cleanup_cache(self) -> bool:
         """Clean up expired cache files."""
         try:

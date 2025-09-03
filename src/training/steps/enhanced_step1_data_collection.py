@@ -4,7 +4,6 @@ Enhanced Step1 Data Collection
 This module provides an improved implementation of Step1 data collection
 with enhanced error handling, memory optimization, and data quality validation.
 """
-
 import asyncio
 import json
 import logging
@@ -24,19 +23,21 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
-    from src.utils.enhanced_error_handling import (
+from src.utils.enhanced_data_quality_validator import (
+from src.utils.enhanced_config_management import Step1Config
+from src.utils.logger import system_logger
+from src.training.steps.data_downloader import download_all_data_with_consolidation
+from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
+from src.utils.enhanced_error_handling import (
+from src.utils.enhanced_memory_management import (
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )
-    from src.utils.enhanced_memory_management import (
         MemoryMonitor, memory_efficient, optimize_dataframe_dtypes,
         MemoryOptimizedProcessor, MemoryConfig
     )
-    from src.utils.enhanced_data_quality_validator import (
         EnhancedDataQualityValidator, QualityThresholds, QualityResult
     )
-    from src.utils.enhanced_config_management import Step1Config
-    from src.utils.logger import system_logger
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
@@ -44,7 +45,6 @@ except ImportError as e:
 
 # Import existing utilities with fallbacks
 try:
-    from src.training.steps.data_downloader import download_all_data_with_consolidation
 except ImportError:
     download_all_data_with_consolidation = None
 
@@ -56,7 +56,6 @@ class EnhancedStep1DataCollection:
     This class provides an improved implementation of Step1 data collection
     with enhanced error handling, memory optimization, and data quality validation.
     """
-    
     def __init__(self, config: Optional[Step1Config] = None):
         self.config = config or Step1Config()
         self.logger = system_logger.getChild("EnhancedStep1")
@@ -154,7 +153,6 @@ class EnhancedStep1DataCollection:
             global download_all_data_with_consolidation
             if download_all_data_with_consolidation is None:
                 try:
-                    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
                     download_all_data_with_consolidation = _dl
                 except ImportError:
                     self.logger.warning("Could not import data downloader, using fallback")
@@ -403,7 +401,7 @@ if __name__ == "__main__":
 import os.path
     
     # Set up logging
-logging.basicConfig(
+    logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )

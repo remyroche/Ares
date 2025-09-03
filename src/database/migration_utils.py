@@ -31,7 +31,6 @@ class DatabaseMigrationUtils:
     Utility class for managing database migrations between computers.
     Handles export, import, validation, and backup operations.
     """
-
     def __init__(self, db_manager: SQLiteManager):
         self.db_manager = db_manager
         self.logger = system_logger.getChild("MigrationUtils")
@@ -410,7 +409,7 @@ if __name__ == "__main__":
     import sys
 import os.path
 
-if len(sys.argv) < 2:
+    if len(sys.argv) < 2:
         print("Usage:")
         print("  python migration_utils.py export [db_path]")
         print("  python migration_utils.py import <import_path> [db_path]")

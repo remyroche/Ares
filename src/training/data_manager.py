@@ -19,7 +19,6 @@ class UnifiedDataManager:
     This class creates and manages a single, efficient database with all labels
     and features needed by subsequent training steps, with proper time-based splitting.
     """
-
     def __init__(
         self,
         data_dir: str,
@@ -623,7 +622,7 @@ import copy
 import os.path
 
 with open(self.metadata_file) as f:
-            return json.load(f)
+    return json.load(f)
 
     def update_data_split(self, split_type: str, updated_data: pd.DataFrame) -> None:
         """Update a specific data split (useful for steps like step 8 that modify data)."

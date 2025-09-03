@@ -4,7 +4,6 @@
 
 This validator ensures quality insurance for the Unified Regime Intelligence step.
 """
-
 import json
 import os
 import pickle
@@ -17,7 +16,7 @@ import pandas as pd
 import torch
 from sklearn.preprocessing import LabelEncoder
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
 from src.utils.common_operations import ensure_directory, safe_json_dump
@@ -25,6 +24,7 @@ from src.utils.common_operations import ensure_directory, safe_json_dump
 warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
+
 
 class UnifiedRegimeIntelligenceValidator:
 	"""Validator for the Unified Regime Intelligence step."""
@@ -56,7 +56,11 @@ class UnifiedRegimeIntelligenceValidator:
 			"overall_status": "PENDING",
 		}
 
-	@handles_errors(fallback=False)
+	@handle_errors(
+		exceptions=(Exception,),
+		default_return=False,
+		context="validator initialization",
+	)
 	async def initialize(self) -> bool:
 		"""Initialize the validator."""
 		try:
@@ -103,7 +107,8 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Configuration validation failed: {e}")
 			return False
 
-	@handles_errors, default_return=False, context="data quality validation",
+	@handle_errors(
+		exceptions=(Exception,), default_return=False, context="data quality validation",
 	)
 	async def validate_data_quality(self, data: Dict[str, pd.DataFrame]) -> bool:
 		"""Validate input data quality."""
@@ -200,7 +205,11 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Data quality validation failed: {e}")
 			return False
 
-	@handles_errors(fallback=False)
+	@handle_errors(
+		exceptions=(Exception,),
+		default_return=False,
+		context="model architecture validation",
+	)
 	async def validate_model_architecture(self, model: Any) -> bool:
 		"""Validate model architecture."""
 		try:
@@ -279,7 +288,11 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Model architecture validation failed: {e}")
 			return False
 
-	@handles_errors(fallback=False)
+	@handle_errors(
+		exceptions=(Exception,),
+		default_return=False,
+		context="training process validation",
+	)
 	async def validate_training_process(self, training_data: Dict[str, Any]) -> bool:
 		"""Validate training process integrity."""
 		try:
@@ -353,7 +366,8 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Training process validation failed: {e}")
 			return False
 
-	@handles_errors, default_return=False, context="artifacts validation",
+	@handle_errors(
+		exceptions=(Exception,), default_return=False, context="artifacts validation",
 	)
 	async def validate_artifacts(self, artifacts_dir: str) -> bool:
 		"""Validate saved artifacts."""
@@ -431,7 +445,8 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Artifacts validation failed: {e}")
 			return False
 
-	@handles_errors, default_return=False, context="predictions validation",
+	@handle_errors(
+		exceptions=(Exception,), default_return=False, context="predictions validation",
 	)
 	async def validate_predictions(self, model: Any, test_data: Dict[str, Any]) -> bool:
 		"""Validate model predictions."""
@@ -508,7 +523,11 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Predictions validation failed: {e}")
 			return False
 
-	@handles_errors(fallback=False)
+	@handle_errors(
+		exceptions=(Exception,),
+		default_return=False,
+		context="S/R integration validation",
+	)
 	async def validate_sr_integration(self, model: Any) -> bool:
 		"""Validate S/R integration functionality."""
 		try:
@@ -562,7 +581,11 @@ import os.path
 			self.logger.exception(f"S/R integration validation failed: {e}")
 			return False
 
-	@handles_errors(fallback=False)
+	@handle_errors(
+		exceptions=(Exception,),
+		default_return=False,
+		context="comprehensive validation",
+	)
 	async def run_comprehensive_validation(
 		self,
 		data: Dict[str, pd.DataFrame],
@@ -673,7 +696,9 @@ import os.path
 		except Exception as e:
 			self.logger.exception(f"Failed to generate validation report: {e}")
 
-@handles_errors, default_return=False, context="step5_5 validation",
+
+@handle_errors(
+	exceptions=(Exception,), default_return=False, context="step5_5 validation",
 )
 async def run_step5_5_validation(
 	symbol: str,

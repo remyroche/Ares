@@ -6,7 +6,6 @@ Integration module for dependency injection patterns.
 This module demonstrates how to integrate all dependency injection patterns
 throughout the Ares trading system.
 """
-
 from src.core.dependency_injection import DependencyContainer, ServiceLifetime
 from src.core.enhanced_factories import TradingSystemFactory
 from src.core.service_registry import ServiceRegistry
@@ -15,8 +14,8 @@ from typing import Any
 from src.analyst.di_analyst import DIAnalyst
 from src.config import CONFIG
 from src.training.di_training_manager import DITrainingManager
-from src.interfaces.base_interfaces import (
 import asyncio
+from src.interfaces.base_interfaces import (
 
     IAnalyst,
     IEventBus,
@@ -31,7 +30,6 @@ class DIIntegration:
     Integration class that demonstrates proper dependency injection usage
     throughout the Ares trading system.
     """
-
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or CONFIG
         self.logger = system_logger.getChild("DIIntegration")

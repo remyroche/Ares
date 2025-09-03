@@ -4,7 +4,6 @@ Centralized logging configuration with Standardized Import Management.
 This module provides a unified logging system with JSON formatting,
 file rotation, and console output capabilities.
 """
-
 import logging
 import logging.handlers
 import os
@@ -56,10 +55,10 @@ else:
     get_json_formatter = structured_logging.get_json_formatter
 
 if warning_symbols is None:
-    def critical(msg): return print(f"CRITICAL: {msg}")
-    def error(msg): return print(f"ERROR: {msg}")
-    def failed(msg): return print(f"FAILED: {msg}")
-    def warning(msg): return print(f"WARNING: {msg}")
+    def critical(msg): return print(f"CRITICAL: {msg}"):
+    def error(msg): return print(f"ERROR: {msg}"):
+    def failed(msg): return print(f"FAILED: {msg}"):
+    def warning(msg): return print(f"WARNING: {msg}"):
 else:
     critical = warning_symbols.critical
     error = warning_symbols.error
@@ -73,7 +72,6 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
     Suppresses messages like:
     "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
     """
-
     TARGET_SUBSTRING = "Falling back to TensorFlow client; we recommended you install the Cloud TPU client"
 
     def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
@@ -128,7 +126,6 @@ class EnhancedLogger:
     """
     Enhanced logger utility with comprehensive error handling and type safety.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize enhanced logger with enhanced type safety.
@@ -391,7 +388,6 @@ class EnhancedLogger:
         Returns:
             Enhanced logger with warning symbols
         """
-
         class EnhancedLoggerWithWarnings:
             def __init__(self, logger: logging.Logger):
                 self._logger = logger
@@ -558,14 +554,14 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, enhanced_logger.initialize())
+                    future = executor.submit(asyncio.run, enhanced_logger.await initialize())
                     success = future.result()
             except RuntimeError:
                 # No event loop running, create a new one
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    success = loop.run_until_complete(enhanced_logger.initialize())
+                    success = loop.run_until_complete(enhanced_logger.await initialize())
                 finally:
                     loop.close()
 
@@ -743,10 +739,10 @@ def ensure_comprehensive_logging_available():
         from src.utils.comprehensive_logger import get_comprehensive_logger
     except Exception as e:
         pass  # TODO: Handle exception properly
-import os
+import os.path
 
 comprehensive_logger = get_comprehensive_logger()
-        if comprehensive_logger:
+if comprehensive_logger:
             # Initialize integration if comprehensive logging is available
             initialize_comprehensive_integration()
             return True

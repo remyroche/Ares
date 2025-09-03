@@ -5,7 +5,6 @@ This module creates a unified dataset with regime labels for regime-aware proces
 Uses labels to differentiate regimes instead of creating separate files per regime.
 This ensures trading indicators have the necessary lookback periods.
 """
-
 import asyncio
 import os
 import sys
@@ -94,6 +93,7 @@ else:
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 logger = system_logger.getChild("Step4RegimeDataSplitting")
+
 
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
@@ -411,7 +411,6 @@ class RegimeDataSplittingStep:
             pass  # TODO: Handle exception properly
 import numpy as np
 import pandas as pd
-from src.core.decorators import handles_errors
 
 safe_json_dump(metadata, metadata_file, indent=2)
             
@@ -420,6 +419,7 @@ self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
         except Exception as e:
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
+
 @with_tracing_span("execute_regime_data_splitting")
 @quality_gate(
     min_quality_score=0.8,
@@ -427,7 +427,7 @@ self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
     required_grade="B"
 )
 @comprehensive_data_validation
-@handles_errors
+@handle_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -478,6 +478,7 @@ async def run_step(
     except Exception as e:
         logger.exception(f"❌ Error in Step 4: {e}")
         return False
+
 
 if __name__ == "__main__":
     # Test the step

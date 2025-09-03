@@ -16,9 +16,9 @@ from src.utils.common_operations import ensure_directory
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+from src.core.decorators import handles_errors
 
 from src.utils.centralized_decorators import (
-from src.core.decorators import handles_errors
     handle_errors,
     optimize_memory_usage,
     validate_data_structure,

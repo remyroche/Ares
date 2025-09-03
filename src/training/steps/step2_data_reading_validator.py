@@ -3,7 +3,6 @@
 
 This module validates the data reading step outputs with comprehensive quality checks.
 """
-
 import asyncio
 import sys
 from pathlib import Path
@@ -28,6 +27,7 @@ from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step2DataReadingValidator")
 
+
 @with_tracing_span("validate_data_reading")
 @quality_gate(
     min_quality_score=0.8,
@@ -35,7 +35,7 @@ logger = system_logger.getChild("Step2DataReadingValidator")
     required_grade="B"
 )
 @comprehensive_data_validation
-@handles_errors
+@handle_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -93,10 +93,9 @@ async def run_validator(
         except Exception as e:
             pass  # TODO: Handle exception properly
 import numpy as np
-from src.core.decorators import handles_errors
             
 # Read the most recent data file
-            latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
+latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
             data = pd.read_parquet(latest_file)
             
             # Check data quality
@@ -240,6 +239,7 @@ from src.core.decorators import handles_errors
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }
+
 
 if __name__ == "__main__":
     # Test the validator

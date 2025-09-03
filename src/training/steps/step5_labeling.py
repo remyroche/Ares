@@ -10,7 +10,6 @@ Key Enhancements:
 - Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available'
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
-
 import asyncio
 import sys
 from pathlib import Path
@@ -104,6 +103,7 @@ else:
 
 logger = system_logger.getChild("Step5Labeling")
 
+
 class LabelingStep:
     """Step 5: Labeling with standardized data quality management and regime-aware triple barrier method."""
 
@@ -151,7 +151,11 @@ class LabelingStep:
         
         try:
             # Try to import and initialize RegimeSpecificTripleBarrierOptimizer
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+import copy
+import numpy as np
+import pandas as pd
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
                 RegimeSpecificTripleBarrierOptimizer
             )
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
@@ -197,7 +201,7 @@ class LabelingStep:
     )
     @with_enhanced_mlflow_logging("step5_labeling")
     @comprehensive_data_validation
-    @handles_errors
+    @handle_errors
     @memory_efficient
     @resource_monitor
     @secure_data_processing
@@ -510,6 +514,8 @@ class LabelingStep:
             self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
             return None
 
+
+
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
         try:
@@ -598,16 +604,11 @@ class LabelingStep:
             # Generate regime-aware labels
             try:
                 # Use the regime-aware triple barrier labeling
-                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
             except Exception as e:
                 pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-import pandas as pd
-from src.core.decorators import handles_errors
 
 RegimeAwareTripleBarrierLabeling
-                )
+)
                 
                 regime_labeler = RegimeAwareTripleBarrierLabeling(
                     default_profit_take_multiplier=0.002,
@@ -637,6 +638,7 @@ RegimeAwareTripleBarrierLabeling
         except Exception as e:
             self.logger.exception(f"❌ Error in regime-aware labeling: {e}")
             return None
+
 
 async def run_step(
     symbol: str,
@@ -699,6 +701,7 @@ async def run_step(
         data_dir=data_dir,
         force_rerun=force_rerun,
     )
+
 
 if __name__ == "__main__":
     # Test the step

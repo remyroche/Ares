@@ -4,7 +4,6 @@
 Implements feature selection based on fractional label alignment, multicollinearity reduction,
 and feature importance ranking.
 """
-
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -22,11 +21,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 from src.utils.logger import get_logger
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
+
 
 class FractionalFeatureSelector:
     """Intelligent feature selector for Step 7 with fractional label alignment."""
@@ -72,7 +72,7 @@ class FractionalFeatureSelector:
         
         self.logger.info("✅ Fractional Feature Selector initialized successfully")
     
-    @handles_errors
+    @handle_errors("Fractional feature selection")
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     def select_features(
@@ -686,7 +686,7 @@ class FractionalFeatureSelector:
 import datetime as datetime
 
 with open(report_file, 'w') as f:
-                json.dump(summary, f, indent=2, default=str)
+    json.dump(summary, f, indent=2, default=str)
             
             # Export detailed history
             history_file = output_path / "selection_history.json"
@@ -699,6 +699,7 @@ with open(report_file, 'w') as f:
         except Exception as e:
             self.logger.error(f"Failed to export feature selection report: {e}")
             return ""
+
 
 # Configuration helper
 def get_fractional_feature_selector_config(

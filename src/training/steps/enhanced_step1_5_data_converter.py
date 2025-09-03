@@ -4,7 +4,6 @@ Enhanced Step1_5 Data Converter
 This module provides an improved implementation of Step1_5 data converter
 with enhanced error handling, memory optimization, and data quality validation.
 """
-
 import asyncio
 import json
 import logging
@@ -25,19 +24,22 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
-    from src.utils.enhanced_error_handling import (
+from src.utils.enhanced_data_quality_validator import (
+from src.utils.enhanced_config_management import Step1_5Config
+from src.utils.logger import system_logger
+import shutil
+import pyarrow as pa
+import pyarrow.parquet as pq
+from src.utils.enhanced_error_handling import (
+from src.utils.enhanced_memory_management import (
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )
-    from src.utils.enhanced_memory_management import (
         MemoryMonitor, memory_efficient, optimize_dataframe_dtypes,
         MemoryOptimizedProcessor, MemoryConfig
     )
-    from src.utils.enhanced_data_quality_validator import (
         UnifiedDataQualityValidator, QualityThresholds, QualityResult
     )
-    from src.utils.enhanced_config_management import Step1_5Config
-    from src.utils.logger import system_logger
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
@@ -184,7 +186,6 @@ class EnhancedStep1_5DataConverter:
     This class provides an improved implementation of Step1_5 data converter
     with enhanced error handling, memory optimization, and data quality validation.
     """
-    
     def __init__(self, config: Optional[Step1_5Config] = None):
         self.config = config or Step1_5Config()
         self.logger = system_logger.getChild("EnhancedStep1_5")
@@ -310,7 +311,6 @@ class EnhancedStep1_5DataConverter:
             backup_path = os.path.join(self.config.backup_dir, f"{exchange}_{symbol}_{timeframe}_{int(time.time())}")
             
             if os.path.exists(unified_base):
-                import shutil
                 shutil.move(unified_base, backup_path)
                 self.logger.info(f"📦 Backed up existing data to: {backup_path}")
         except Exception as e:
@@ -415,8 +415,6 @@ class EnhancedStep1_5DataConverter:
             
             # Use pyarrow for efficient writing
             try:
-                import pyarrow as pa
-                import pyarrow.parquet as pq
                 
                 table = pa.Table.from_pandas(unified_data, preserve_index=False)
                 
@@ -495,7 +493,7 @@ if __name__ == "__main__":
 import os.path
     
     # Set up logging
-logging.basicConfig(
+    logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )

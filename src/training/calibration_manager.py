@@ -2,8 +2,13 @@
 
 from datetime import datetime
 from typing import Any
+import asyncio
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import (
+
+    handle_errors,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -11,11 +16,11 @@ from src.utils.warning_symbols import (
     invalid,
 )
 
+
 class CalibrationManager:
     """Calibration manager responsible for model calibration and confidence estimation."
     This module handles model calibration to improve prediction reliability.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize calibration manager."
 
@@ -48,7 +53,7 @@ class CalibrationManager:
             True,
         )
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid calibration manager configuration"),
             AttributeError: (False, "Missing required calibration parameters"),
@@ -82,7 +87,11 @@ class CalibrationManager:
             self.print(failed("❌ Calibration Manager initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """Validate calibration manager configuration."
 
@@ -108,7 +117,11 @@ class CalibrationManager:
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="calibration components initialization",
+    )
     async def _initialize_calibration_components(self) -> None:
         """Initialize calibration components."""
         try:
@@ -119,7 +132,7 @@ class CalibrationManager:
 import copy
 
 self.ml_confidence_predictor = MLConfidencePredictor(self.config)
-            await self.ml_confidence_predictor.initialize()
+await self.ml_confidence_predictor.initialize()
 
             # Initialize calibration methods
             if self.enable_temperature_scaling:
@@ -136,7 +149,7 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             )
             raise
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid calibration parameters"),
             AttributeError: (False, "Missing calibration components"),
@@ -204,7 +217,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.is_calibrating = False
             return None
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="calibration inputs validation",
+    )
     def _validate_calibration_inputs(
         self,
         ensemble_results: dict[str, Any],
@@ -244,7 +261,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.print(failed("Calibration inputs validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analyst model calibration",
+    )
     async def _calibrate_analyst_models(
         self,
         analyst_ensembles: dict[str, Any],
@@ -284,7 +305,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.print(failed("❌ Analyst model calibration failed: {e}"))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician model calibration",
+    )
     async def _calibrate_tactician_models(
         self,
         tactician_ensembles: dict[str, Any],
@@ -324,7 +349,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.print(failed("❌ Tactician model calibration failed: {e}"))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="single ensemble calibration",
+    )
     async def _calibrate_single_ensemble(
         self,
         ensemble: dict[str, Any],
@@ -391,7 +420,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             )
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="temperature scaling calibration",
+    )
     async def _apply_temperature_scaling(
         self,
         ensemble: dict[str, Any],
@@ -418,7 +451,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.print(failed("❌ Temperature scaling calibration failed: {e}"))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="isotonic regression calibration",
+    )
     async def _apply_isotonic_regression(
         self,
         ensemble: dict[str, Any],
@@ -445,7 +482,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.print(failed("❌ Isotonic regression calibration failed: {e}"))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="confidence calibration",
+    )
     async def _apply_confidence_calibration(
         self,
         ensemble: dict[str, Any],
@@ -472,7 +513,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             self.print(failed("❌ Confidence calibration failed: {e}"))
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="calibration results storage",
+    )
     async def _store_calibration_results(
         self,
         calibration_results: dict[str, Any],
@@ -519,7 +564,11 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         """
         return self.calibration_results.copy()
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="calibration manager cleanup",
+    )
     async def stop(self) -> None:
         """Stop the calibration manager and cleanup resources."""
         try:
@@ -529,7 +578,12 @@ self.ml_confidence_predictor = MLConfidencePredictor(self.config)
         except Exception:
             self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
 
-@handles_errors(fallback=None)
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="calibration manager setup",
+)
 async def setup_calibration_manager(
     config: dict[str, Any] | None = None,
 ) -> CalibrationManager | None:

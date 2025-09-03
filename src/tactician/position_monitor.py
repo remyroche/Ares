@@ -6,7 +6,6 @@ This module provides continuous monitoring of open positions with confidence sco
 re-assessment and position decision logic every 10 seconds, using the existing
 PositionDivisionStrategy for consistency.
 """
-
 import asyncio
 import yaml
 from datetime import datetime
@@ -18,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -82,7 +81,6 @@ class PositionMonitor:
     - Alert generation for critical conditions
     - Integration with PositionDivisionStrategy
     """
-
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize the position monitor.
@@ -121,7 +119,11 @@ class PositionMonitor:
         self.monitoring_task: Optional[asyncio.Task] = None
         self.is_monitoring = False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position monitor initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the position monitor.
@@ -178,7 +180,11 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position monitoring start"
+    )
     async def start_monitoring(self) -> bool:
         """
         Start continuous position monitoring.
@@ -201,7 +207,11 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Failed to start position monitoring: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position monitoring stop"
+    )
     async def stop_monitoring(self) -> bool:
         """
         Stop continuous position monitoring.
@@ -579,7 +589,7 @@ import copy
 
 updated_config = yaml.safe_load(f)
                             
-                        # Check if this is newer than our current config
+# Check if this is newer than our current config
                         if "timestamp" in updated_config:
                             config_time = datetime.fromisoformat(updated_config["timestamp"])
                             if hasattr(self, '_last_step12_refresh'):

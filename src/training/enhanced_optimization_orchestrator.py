@@ -9,15 +9,16 @@ import pandas as pd
 from src.training.adaptive_optimizer import AdaptiveOptimizer
 from src.training.bayesian_optimizer import AdvancedBayesianOptimizer
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     failed,
 )
+
 
 class EnhancedOptimizationOrchestrator:
     """Orchestrates multiple advanced hyperparameter optimization techniques."
@@ -28,7 +29,6 @@ class EnhancedOptimizationOrchestrator:
     - Adaptive optimization based on market regimes
     - Performance tracking and analysis
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedOptimizationOrchestrator")
@@ -65,7 +65,11 @@ class EnhancedOptimizationOrchestrator:
             self.adaptive_optimizer = AdaptiveOptimizer(opt_config)
             self.logger.info("Adaptive optimizer initialized")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="enhanced optimization orchestration",
+    )
     async def run_comprehensive_optimization(
         self,
         market_data: pd.DataFrame,
@@ -400,7 +404,11 @@ class EnhancedOptimizationOrchestrator:
 
         return trends
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="scheduled optimization",
+    )
     async def run_scheduled_optimization(
         self,
         schedule_type: str = "daily",

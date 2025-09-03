@@ -6,20 +6,19 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
-
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
 
 # Import Pydantic models and utilities
 from .config import StrategistConfig, MarketIndicators, StrategyResult, RiskLevel
-from .utils import (
 import asyncio
+from .utils import (
 
     StrategistError, ValidationError, CalculationError,
     log_error, validate_required_columns, validate_data_sufficiency,
@@ -31,6 +30,7 @@ if TYPE_CHECKING:
     from src.tactician.tactician import Tactician
 import copy
 
+
 class Strategist:
     """
     Strategy-Level Strategist component responsible for:
@@ -40,7 +40,6 @@ class Strategist:
     
     Note: Position sizing is handled by the Tactician component
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize strategist with enhanced type safety.
@@ -75,7 +74,7 @@ class Strategist:
         self.analyst: Optional["Analyst"] = None
         self.tactician: Optional["Tactician"] = None
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid strategist configuration"),
             AttributeError: (False, "Missing required strategist parameters"),
@@ -121,7 +120,7 @@ class Strategist:
             log_error(self.logger, "Error initializing strategy components", e)
             raise
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValidationError: (None, "Invalid market data for strategy generation"),
             CalculationError: (None, "Error in market calculations"),
@@ -405,7 +404,11 @@ class Strategist:
         """Get strategy history."""
         return self.strategy_history.copy()
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="strategist stop",
+    )
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:

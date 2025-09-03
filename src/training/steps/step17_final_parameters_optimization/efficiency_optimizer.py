@@ -5,7 +5,6 @@
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
 """
-
 import asyncio
 import multiprocessing as mp
 import os
@@ -17,8 +16,9 @@ from typing import Any
 
 import numpy as np
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+
 
 @dataclass
 class EfficiencyConfig:
@@ -56,6 +56,7 @@ class EfficiencyConfig:
     batch_size: int = 50  # Process trials in smaller batches
     clear_cache_interval: int = 25  # Clear cache more frequently
 
+
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
 
@@ -81,7 +82,11 @@ class EfficiencyOptimizer:
             f"Efficiency optimizer initialized with {self.max_workers} workers",
         )
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="efficiency optimizer initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
@@ -95,7 +100,8 @@ class EfficiencyOptimizer:
 
         self.logger.info("✅ Efficiency optimizer initialized successfully")
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Optimization failed"},
         context="efficiency optimizer trial optimization",
     )
@@ -729,9 +735,11 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f"Error during cleanup: {e}")
 
+
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:
     """Create an efficiency optimizer instance."""
     return EfficiencyOptimizer(config)
+
 
 if __name__ == "__main__":
     # Test the efficiency optimizer
@@ -764,7 +772,7 @@ if __name__ == "__main__":
     import asyncio
 import os.path
 
-async def test() -> None:
+    async def test() -> None:
         await optimizer.initialize()
         await optimizer.optimize_trial_efficiency(
             test_objective,

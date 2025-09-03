@@ -2,7 +2,6 @@
 Training Pipeline Decorators
 Provides automatic pipeline monitoring, validation, and logging for training steps.
 """
-
 import asyncio
 import functools
 import time
@@ -733,7 +732,6 @@ def monitor_pipeline_step(
         memory_threshold: Memory usage threshold for warnings
         duration_threshold: Duration threshold for warnings
     """
-
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(self: Any, *args, **kwargs) -> Any:
@@ -945,7 +943,6 @@ def validate_pipeline_input(
         data_validation: Whether to validate input data
         memory_check: Whether to check memory usage
     """
-
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(self: Any, *args, **kwargs) -> Any:
@@ -1196,7 +1193,6 @@ def monitor_pipeline_performance(
         enable_cpu_tracking: Whether to track CPU usage
         enable_gc_tracking: Whether to track garbage collection
     """
-
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(self: Any, *args, **kwargs) -> Any:

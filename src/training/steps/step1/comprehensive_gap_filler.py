@@ -2,7 +2,6 @@
 """Comprehensive Gap Filler for Pipeline Integration"
 Handles aggtrades, futures, and klines files with gap detection and filling.
 """
-
 from __future__ import annotations
 
 import asyncio

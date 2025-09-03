@@ -6,7 +6,6 @@ Multi-Timeframe Ensemble Integration
 This integrates multi-timeframe training into the existing ensemble system,
 making each individual model (XGBoost, LSTM, etc.) a multi-timeframe ensemble.
 """
-
 import os
 import time
 from datetime import datetime
@@ -36,7 +35,6 @@ class MultiTimeframeEnsemble:
 
     Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
     """
-
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
         self,
@@ -156,7 +154,7 @@ class MultiTimeframeEnsemble:
                         f"avg confidence: {np.mean(confidences):.3f}",
                     )
                 else:
-                    self.logger.error(failed(f"❌ {timeframe} training failed"))
+                    self.logger.error(failed("❌ {timeframe} training failed"))
 
                     training_stats[timeframe] = {
                         "training_time": tf_training_time,
@@ -205,7 +203,7 @@ class MultiTimeframeEnsemble:
                                 f"avg confidence: {stats['avg_confidence']:.3f}",
                             )
                         else:
-                            self.logger.error(failed(f"   - {tf}: FAILED"))
+                            self.logger.error(failed("   - {tf}: FAILED"))
 
 
                     return True
@@ -218,7 +216,7 @@ class MultiTimeframeEnsemble:
             return False
 
         except Exception:
-            self.logger.error(f"💥 Error in multi-timeframe ensemble training: {e}")
+            self.logger.error("💥 Error in multi-timeframe ensemble training: {e}")
 
             return False
 
@@ -238,7 +236,7 @@ class MultiTimeframeEnsemble:
             X, y = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning(f"⚠️ No valid data for {timeframe}")
+                self.logger.warning("⚠️ No valid data for {timeframe}")
 
                 return False
 
@@ -253,7 +251,7 @@ class MultiTimeframeEnsemble:
             elif model_type == "random_forest":
                 model = self._train_random_forest_model(X, y)
             else:
-                self.logger.error(f"❌ Unknown model type: {model_type}")
+                self.logger.error("❌ Unknown model type: {model_type}")
 
                 return False
 
@@ -275,7 +273,7 @@ class MultiTimeframeEnsemble:
             return False
 
         except Exception:
-            self.logger.error(f"💥 Error training {timeframe} model: {e}")
+            self.logger.error("💥 Error training {timeframe} model: {e}")
 
             return False
 
@@ -318,7 +316,7 @@ class MultiTimeframeEnsemble:
             return model
 
         except Exception:
-            self.logger.error(f"💥 Error training XGBoost model: {e}")
+            self.logger.error("💥 Error training XGBoost model: {e}")
 
             return None
 
@@ -333,10 +331,10 @@ class MultiTimeframeEnsemble:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
-import os
+import os.path
 
 model = MLPClassifier(
-                hidden_layer_sizes=(100, 50),
+hidden_layer_sizes=(100, 50),
                 max_iter=200,
                 random_state=42,
             )
@@ -346,7 +344,7 @@ model = MLPClassifier(
             return model
 
         except Exception:
-            self.logger.error(f"💥 Error training LSTM model: {e}")
+            self.logger.error("💥 Error training LSTM model: {e}")
 
             return None
 
@@ -370,7 +368,7 @@ model = MLPClassifier(
             return model
 
         except Exception:
-            self.logger.error(f"💥 Error training Random Forest model: {e}")
+            self.logger.error("💥 Error training Random Forest model: {e}")
 
             return None
 
@@ -447,7 +445,7 @@ model = MLPClassifier(
             return X, y
 
         except Exception:
-            self.logger.error(f"💥 Error preparing features/target: {e}")
+            self.logger.error("💥 Error preparing features/target: {e}")
 
             return pd.DataFrame(), pd.Series()
 
@@ -459,7 +457,7 @@ model = MLPClassifier(
         """Get predictions and confidences for a timeframe."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning(f"⚠️ No trained model for {timeframe}")
+                self.logger.warning("⚠️ No trained model for {timeframe}")
 
                 return [], []
 
@@ -469,7 +467,7 @@ model = MLPClassifier(
             X, _ = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning(f"⚠️ No valid features for {timeframe}")
+                self.logger.warning("⚠️ No valid features for {timeframe}")
 
                 return [], []
 
@@ -493,7 +491,7 @@ model = MLPClassifier(
             return predictions, confidences
 
         except Exception:
-            self.logger.error(f"💥 Error getting predictions for {timeframe}: {e}")
+            self.logger.error("💥 Error getting predictions for {timeframe}: {e}")
 
             return [], []
 
@@ -562,7 +560,7 @@ model = MLPClassifier(
             return True
 
         except Exception:
-            self.logger.error(f"💥 Error training meta-learner: {e}")
+            self.logger.error("💥 Error training meta-learner: {e}")
 
             return False
 
@@ -619,7 +617,7 @@ model = MLPClassifier(
             return result_df
 
         except Exception:
-            self.logger.error(f"💥 Error preparing meta-learner data: {e}")
+            self.logger.error("💥 Error preparing meta-learner data: {e}")
 
             return pd.DataFrame()
 
@@ -698,7 +696,7 @@ model = MLPClassifier(
             }
 
         except Exception:
-            self.logger.error(f"💥 Error getting prediction: {e}")
+            self.logger.error("💥 Error getting prediction: {e}")
 
             return {"prediction": "HOLD", "confidence": 0.0}
 
@@ -710,7 +708,7 @@ model = MLPClassifier(
         """Get prediction from single timeframe model."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning(f"⚠️ No trained model for {timeframe}")
+                self.logger.warning("⚠️ No trained model for {timeframe}")
 
                 return "HOLD", 0.0
 
@@ -721,7 +719,7 @@ model = MLPClassifier(
             X, _ = self._prepare_features_target(features)
 
             if len(X) == 0:
-                self.logger.warning(f"⚠️ No valid features for {timeframe}")
+                self.logger.warning("⚠️ No valid features for {timeframe}")
 
                 return "HOLD", 0.0
 
@@ -738,7 +736,7 @@ model = MLPClassifier(
             return prediction, confidence
 
         except Exception:
-            self.logger.error(f"💥 Error getting prediction for {timeframe}: {e}")
+            self.logger.error("💥 Error getting prediction for {timeframe}: {e}")
 
             return "HOLD", 0.0
 
@@ -791,7 +789,7 @@ model = MLPClassifier(
             return prediction, confidence
 
         except Exception:
-            self.logger.error(f"💥 Error combining with meta-learner: {e}")
+            self.logger.error("💥 Error combining with meta-learner: {e}")
 
             return "HOLD", 0.0
 
@@ -835,7 +833,7 @@ model = MLPClassifier(
             return final_prediction, final_confidence
 
         except Exception:
-            self.logger.error(f"💥 Error in simple prediction combination: {e}")
+            self.logger.error("💥 Error in simple prediction combination: {e}")
 
             return "HOLD", 0.0
 
@@ -879,7 +877,7 @@ model = MLPClassifier(
             return True
 
         except Exception:
-            self.logger.error(f"💥 Error saving model: {e}")
+            self.logger.error("💥 Error saving model: {e}")
 
             return False
 
@@ -913,7 +911,7 @@ model = MLPClassifier(
                     }
                     self.logger.debug(f"📂 Loaded {timeframe} model")
                 else:
-                    self.logger.warning(f"⚠️ No model file found for {timeframe}")
+                    self.logger.warning("⚠️ No model file found for {timeframe}")
 
 
             # Load meta-learner
@@ -938,6 +936,6 @@ model = MLPClassifier(
             return True
 
         except Exception:
-            self.logger.error(f"💥 Error loading model: {e}")
+            self.logger.error("💥 Error loading model: {e}")
 
             return False

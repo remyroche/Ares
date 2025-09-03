@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, f1_score
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -22,6 +22,7 @@ try:
     import joblib  # Optional; used when loading joblib artifacts
 except Exception:  # pragma: no cover
     joblib = None
+
 
 class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
@@ -59,13 +60,18 @@ class RegimeAwareConfidenceCalibrationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="confidence calibration step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the confidence calibration step."""
         self.logger.info("🚀 Initializing Confidence Calibration Step...")
         self.logger.info("✅ Confidence Calibration Step initialized successfully")
 
-    @handles_errors
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="confidence calibration step execution",
     )
@@ -755,6 +761,7 @@ class RegimeAwareConfidenceCalibrationStep:
                 )
             return {}
 
+
 class _PrefitWrapper:
     """Wrapper to adapt prefit estimators/ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 
@@ -793,6 +800,7 @@ class _PrefitWrapper:
             )
         return proba
 
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -811,9 +819,9 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-from src.utils.enhanced_mlflow_integration import (
 import copy
-import os
+import os.path
+from src.utils.enhanced_mlflow_integration import (
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -822,6 +830,7 @@ import os
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
+
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1133,6 +1142,7 @@ async def run_step(
 
     except Exception:
         return False
+
 
 if __name__ == "__main__":
     # Test the step

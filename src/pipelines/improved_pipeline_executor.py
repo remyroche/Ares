@@ -4,8 +4,13 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+import asyncio
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import (
+
+    handle_errors,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -13,12 +18,12 @@ from src.utils.warning_symbols import (
     warning,
 )
 
+
 class ImprovedPipelineExecutor:
     """
     Improved pipeline executor with enhanced data flow between steps.
     Ensures proper integration and data passing between all pipeline components.
     """
-
     def __init__(self, pipeline_components: Dict[str, Any]) -> None:
         """
         Initialize improved pipeline executor.
@@ -41,7 +46,7 @@ class ImprovedPipelineExecutor:
         self.cycle_history: List[Dict[str, Any]] = []
         self.max_history_size = 100
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline configuration"),
             AttributeError: (False, "Missing required pipeline components"),
@@ -72,7 +77,11 @@ class ImprovedPipelineExecutor:
             self.logger.error(failed(f"❌ Pipeline executor initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="component validation",
+    )
     def _validate_components(self) -> bool:
         """Validate that all required components are available."""
         try:
@@ -93,7 +102,7 @@ class ImprovedPipelineExecutor:
             self.logger.error(f"Error validating components: {e}")
             return False
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid market data"),
             AttributeError: (None, "Missing market data fields"),
@@ -150,7 +159,7 @@ class ImprovedPipelineExecutor:
 import copy
         
 # Generate realistic mock data
-        base_price = 100.0
+base_price = 100.0
         prices = []
         for i in range(limit):
             # Add some realistic price movement
@@ -171,7 +180,7 @@ import copy
         current_price = float(prices[-1])
         return market_data, current_price
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Step 1 execution failed"),
             AttributeError: (None, "Analyst component error"),
@@ -234,7 +243,7 @@ import copy
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Step 2 execution failed"),
             AttributeError: (None, "Strategist component error"),
@@ -301,7 +310,7 @@ import copy
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Step 3 execution failed"),
             AttributeError: (None, "Tactician component error"),
@@ -372,7 +381,7 @@ import copy
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Step 4 execution failed"),
             AttributeError: (None, "Dual model system error"),
@@ -466,7 +475,11 @@ import copy
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="dual model tactician integration",
+    )
     async def _integrate_dual_model_with_tactician(
         self,
         dual_model_decision: Dict[str, Any],
@@ -574,7 +587,7 @@ import copy
                 "integrated": False,
             }
 
-    @handles_errors(
+    @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Pipeline execution failed"),
             AttributeError: (None, "Pipeline component error"),

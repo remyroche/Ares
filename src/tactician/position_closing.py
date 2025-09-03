@@ -4,15 +4,14 @@
 Position Closing Module for Tactician.
 Handles position closure based on dual model confidence scores and ATR-based exit rules.
 """
-
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
-from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     invalid,
@@ -23,7 +22,6 @@ class PositionCloser:
     Position Closer that handles position closure based on dual model confidence scores
     and ATR-based exit rules.
     """
-
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize Position Closer.
@@ -57,7 +55,11 @@ class PositionCloser:
         self.closed_positions = []
         self.position_history = []
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position closer initialization"
+    )
     async def initialize(self) -> bool:
         """
         Initialize the position closer.
@@ -135,7 +137,11 @@ class PositionCloser:
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position closure evaluation"
+    )
     async def should_close_position(
         self,
         position_data: Dict[str, Any],
@@ -243,7 +249,11 @@ class PositionCloser:
             self.logger.error(failed(f"❌ Time-based closure check failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position closure execution"
+    )
     async def close_position(
         self,
         position_data: Dict[str, Any],

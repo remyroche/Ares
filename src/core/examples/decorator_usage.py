@@ -4,14 +4,13 @@ Examples of using the core decorator system.
 This file demonstrates various decorator usage patterns and
 best practices for the centralized decorator system.
 """
-
 import asyncio
 import time
 from typing import Dict, List
 
 # Import decorators
-from src.core.decorators import (
 import numpy as np
+from src.core.decorators import (
 
     compose,
     handles_errors,

@@ -5,7 +5,6 @@ This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
 """
-
 import json
 import os
 import pickle
@@ -69,7 +68,6 @@ class EnhancedHMMBasedTrainingStep:
     prediction for both direction and profit using the triple barrier method
     and profit-based feature engineering, with regime-specific optimization.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
@@ -136,7 +134,7 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handles_errors(fallback=False)
+    @handle_errors(exceptions=(Exception,), default_return=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -531,7 +529,11 @@ class EnhancedHMMBasedTrainingStep:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, TypeError, MemoryError),
+        default_return=None,
+        context="enhanced_data_preparation"
+    )
     async def prepare_enhanced_data(
         self,
         data: pd.DataFrame,
@@ -639,7 +641,11 @@ class EnhancedHMMBasedTrainingStep:
         
         return prepared_data
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, RuntimeError),
+        default_return=None,
+        context="enhanced_model_training"
+    )
     @performance_monitor
     async def train_enhanced_model(
         self,
@@ -849,7 +855,11 @@ class EnhancedHMMBasedTrainingStep:
             self.logger.exception(f"❌ Failed to train single-output model: {e}")
             return None
 
-    @handles_errors(fallback=None)
+    @handle_errors(
+        exceptions=(ValueError, RuntimeError),
+        default_return=None,
+        context="enhanced_regime_specific_training"
+    )
     async def train_enhanced_regime_specific_models(
         self,
         timeframe: str,
@@ -1033,7 +1043,6 @@ class EnhancedHMMBasedTrainingStep:
             pass  # TODO: Handle exception properly
 import copy
 import os.path
-from src.core.decorators import handles_errors
 
 model = joblib.load(model_path)
 scaler = joblib.load(scaler_path)
@@ -1070,6 +1079,7 @@ scaler = joblib.load(scaler_path)
         except Exception as e:
             self.logger.warning(f"⚠️ Feature selection fallback for regime {regime}: {e}")
             return features_df
+
 
 async def run_enhanced_step(
     symbol: str = "ETHUSDT",

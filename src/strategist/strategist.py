@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 
-from src.core.domain import handle_specific_errors
+from src.core.decorators import handles_errors
+from src.utils.compat import handle_specific_errors
 from src.utils.logger import system_logger
 
 # Import Pydantic models and utilities
@@ -28,7 +29,6 @@ from .utils import (
     validate_data_sufficiency,
     validate_required_columns,
 )
-from .enhanced_regime_classifier import EnhancedRegimeClassifier
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
@@ -79,8 +79,8 @@ class Strategist:
         self.analyst: Analyst | None = None
         self.tactician: Tactician | None = None
         
-        # Enhanced regime classifier
-        self.regime_classifier: EnhancedRegimeClassifier | None = None
+        # Enhanced regime classifier (lazily imported during initialize)
+        self.regime_classifier: "EnhancedRegimeClassifier" | None = None
         self.enable_regime_detection = self.strategist_config.dict().get("enable_regime_detection", True)
 
     @handle_specific_errors(
@@ -111,9 +111,18 @@ class Strategist:
             # Initialize regime classifier if enabled
             if self.enable_regime_detection:
                 regime_config = self.config.get("strategist", {}).get("regime_classifier", {})
-                self.regime_classifier = EnhancedRegimeClassifier(regime_config)
-                await self.regime_classifier.initialize()
-                self.logger.info("✅ Enhanced regime classifier initialized")
+                try:
+                    from .enhanced_regime_classifier import EnhancedRegimeClassifier as _EnhancedRegimeClassifier
+
+                    self.regime_classifier = _EnhancedRegimeClassifier(regime_config)
+                    await self.regime_classifier.initialize()
+                    self.logger.info("✅ Enhanced regime classifier initialized")
+                except Exception as e:
+                    self.logger.warning(
+                        f"Regime classifier unavailable or failed to initialize ({e}); disabling regime detection"
+                    )
+                    self.enable_regime_detection = False
+                    self.regime_classifier = None
 
             self.logger.info("✅ Strategist initialized successfully")
             return True
@@ -562,13 +571,9 @@ class Strategist:
             self.logger.error(f"Failed to apply regime adjustments: {e}")
             return strategy
 
-    @handle_specific_errors(
-        error_handlers={
-            Exception: (False, "Failed to stop strategist"),
-        },
-        default_return=False,
-        context="strategist stop",
-    )
+
+    @handles_errors(Exception, fallback=False)
+
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:

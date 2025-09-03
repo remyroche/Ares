@@ -29,8 +29,8 @@ def calculate_correct_kelly_position_size(
         float: Calculated position size within bounds
     """
     try:
-        # Get average confidence for target levels (0.5% to 2.0%)
-        target_levels = [0.5, 1.0, 1.5, 2.0]
+        # Get average confidence for target levels (0.25% to 1.0%)
+        target_levels = [0.25, 0.5, 0.75, 1.0]
         confidences: list[float] = []
 
         for level in target_levels:
@@ -173,17 +173,17 @@ def calculate_enhanced_kelly_position_size(
 if __name__== "__main__":
     # Test data
     price_target_confidences = {
+        "0.25%": 0.75,
         "0.5%": 0.7,
-        "1.0%": 0.65,
-        "1.5%": 0.6,
-        "2.0%": 0.55,
+        "0.75%": 0.65,
+        "1.0%": 0.6,
     }
 
     adversarial_confidences={
+        "0.25%": 0.25,
         "0.5%": 0.3,
-        "1.0%": 0.35,
-        "1.5%": 0.4,
-        "2.0%": 0.45,
+        "0.75%": 0.35,
+        "1.0%": 0.4,
     }
 
     # Test basic Kelly calculation

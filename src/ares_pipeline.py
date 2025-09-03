@@ -68,7 +68,7 @@ class AresPipeline:
     Enhanced main pipeline with dependency injection and comprehensive error handling.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) :-> None:
+    def __init__(self, config: dict[str, Any] | None=None) -> None:
         """
         Initialize Ares pipeline with enhanced type safety and DI.
 
@@ -111,7 +111,7 @@ class AresPipeline:
         },
         default_return=False, context="pipeline initialization",
     )
-    async def initialize(self) :-> bool:
+    async def initialize(self) -> bool:
         """
         Initialize pipeline with enhanced error handling and DI.
 
@@ -153,7 +153,7 @@ class AresPipeline:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="configuration service initialization",
     )
-    async def _initialize_configuration_service(self) :-> None:
+    async def _initialize_configuration_service(self) -> None:
         """Initialize configuration service."""
         try:
             print("   ⚙️ Initializing ConfigurationService...")
@@ -162,7 +162,7 @@ class AresPipeline:
             # Register ConfigurationService via factory so it receives DI config
             def _config_service_factory(
                 container: DependencyContainer
-            ) :-> ConfigurationService:
+            ) -> ConfigurationService:
                 # Pass the DI container's config into the service
                 return ConfigurationService(container.get_config("root_config", {}))
 
@@ -188,7 +188,7 @@ class AresPipeline:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="core service registration",
     )
-    async def _register_core_services(self) :-> None:
+    async def _register_core_services(self) -> None:
         """Register core services in DI container with comprehensive logging."""
         try:
             print("🔧 Registering core services...")
@@ -312,7 +312,7 @@ class AresPipeline:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="pipeline component resolution",
     )
-    async def _resolve_pipeline_components(self) :-> None:
+    async def _resolve_pipeline_components(self) -> None:
         """Resolve pipeline components through DI container with comprehensive logging."""
         try:
             print("🔧 Resolving pipeline components...")
@@ -391,7 +391,7 @@ class AresPipeline:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="component initialization",
     )
-    async def _initialize_components(self) :-> None:
+    async def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
             # Initialize components in dependency order
@@ -422,7 +422,7 @@ class AresPipeline:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="signal handler setup",
     )
-    def _setup_signal_handlers(self) :-> None:
+    def _setup_signal_handlers(self) -> None:
         """Setup signal handlers for graceful shutdown."""
         try:
             signal.signal(signal.SIGINT, self._signal_handler)
@@ -433,7 +433,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception("Error setting up signal handlers")
 
-    def _signal_handler(self, signum: int, _frame: Any) :-> None:
+    def _signal_handler(self, signum: int, _frame: Any) -> None:
         """Handle shutdown signals."""
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         asyncio.create_task(self.stop())
@@ -446,7 +446,7 @@ class AresPipeline:
         },
         default_return=None, context="pipeline execution",
     )
-    async def run(self) :-> dict[str, Any] | None:
+    async def run(self) -> dict[str, Any] | None:
         """
         Run the Ares pipeline with comprehensive logging and timeout protection.
 
@@ -580,7 +580,7 @@ class AresPipeline:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="pipeline cycle execution",
     )
-    async def _execute_cycle(self) :-> None:
+    async def _execute_cycle(self) -> None:
         """Execute a single pipeline cycle with comprehensive logging."""
         try:
             cycle_start=datetime.now()
@@ -801,7 +801,7 @@ class AresPipeline:
     async def _integrate_dual_model_with_tactician(
         self, dual_model_decision: dict[str, Any],
         market_data: pd.DataFrame, current_price: float,
-    ) :-> dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Integrate dual model system decisions with tactician for position sizing and leverage.
 
@@ -900,7 +900,7 @@ class AresPipeline:
                 "integrated": False,
             }
 
-    def get_pipeline_status(self) :-> dict[str, Any]:
+    def get_pipeline_status(self) -> dict[str, Any]:
         """
         Get current pipeline status.
 
@@ -952,7 +952,7 @@ class AresPipeline:
         exceptions=(Exception,),
         default_return=None, context="pipeline cleanup",
     )
-    async def stop(self) :-> None:
+    async def stop(self) -> None:
         """Stop the pipeline gracefully."""
         self.logger.info("🛑 Stopping Ares Pipeline...")
 
@@ -998,7 +998,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception("Error stopping pipeline")
 
-    async def _initialize_dual_model_system(self) :-> None:
+    async def _initialize_dual_model_system(self) -> None:
         """Initialize dual model system."""
         try:
             # Get proper configuration for dual model system
@@ -1027,7 +1027,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception("Error initializing dual model system")
 
-    async def _initialize_performance_monitoring(self) :-> None:
+    async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring."""
         try:
             self.logger.info("📊 Initializing Performance Monitoring...")
@@ -1056,7 +1056,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception("Error initializing performance monitoring")
 
-    def _get_dual_model_config(self) :-> dict[str, Any]:
+    def _get_dual_model_config(self) -> dict[str, Any]:
         """Get dual model system configuration."""
         try:
             # Get configuration from the centralized config system

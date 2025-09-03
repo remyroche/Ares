@@ -6,6 +6,8 @@ and adaptive indicators for improved prediction accuracy with vectorized operati
 """
 
 import asyncio
+import copy
+import datetime
 import hashlib
 import json
 import os
@@ -5987,10 +5989,6 @@ class VectorizedAdvancedFeatureEngineering:
             # Log memory usage
             try:
                 import psutil
-import copy
-import datetime as datetime
-import os.path
-
                 memory_usage = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                 self.logger.info(f"  - Memory usage: {memory_usage:.1f} MB")
             except ImportError:

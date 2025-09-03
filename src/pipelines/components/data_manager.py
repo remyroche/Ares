@@ -3,32 +3,27 @@ Data manager for pipeline data operations (minimal scaffold).
 """
 from src.core.decorators import (
     cached,
+    compose,
     handles_errors,
-    log_execution_time
-)
+    log_execution_time,
+    traced,
+    validates
 
 from src.core.domain import (
     PerformanceLevel,
     secure_data_processing,
     validate_data_quality
-)
 
 from __future__ import annotations
 
 from typing import Any
 
-<<<<<<< HEAD
-=======
-from src.core.decorators import handles_errors, validates, traced, cached, compose
-    PerformanceLevel,
     handle_errors,
     handle_specific_errors,
     memory_efficient,
     performance_monitor,
     secure_data_processing,
     validate_data_quality,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 
 class DataManager:
@@ -46,7 +41,6 @@ class DataManager:
         },
         default_return=False,
         context="data_manager.initialize",
-    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing DataManager ...")
         return True

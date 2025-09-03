@@ -16,7 +16,6 @@ from src.core.domain import (
     invalid,
     missing,
     warning as eh_warning
-)
 
 import json
 import os
@@ -33,7 +32,6 @@ import asyncio
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_copy
-)
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import _warn_symbol as _warn_symbol
@@ -108,11 +106,9 @@ if original_ctor is None:
                     _warn_symbol(
                         f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
                     ),
-                )
             except Exception:
                 logger.warning(
                     f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
-                )
 
 
 class ModelManager:
@@ -152,7 +148,6 @@ class ModelManager:
         },
         default_return=False,
         context="model manager initialization",
-    )
     async def initialize(self) -> bool:
         """
         Initialize model manager with enhanced error handling.
@@ -183,7 +178,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model configuration loading",
-    )
     async def _load_model_configuration(self) -> None:
         """Load model configuration."""
         # Set default model parameters
@@ -209,7 +203,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
-    )
     def _validate_configuration(self) -> bool:
         """
         Validate model configuration.
@@ -238,7 +231,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="directory initialization",
-    )
     async def _initialize_directories(self) -> None:
         """Initialize directories."""
         # Create models directory
@@ -259,7 +251,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="existing models loading",
-    )
     async def _load_existing_models(self) -> None:
         """Load existing models and metadata."""
         # Load metadata if exists
@@ -281,7 +272,6 @@ class ModelManager:
         supported_formats: list[str] = self.model_config.get(
             "supported_formats",
             [".joblib", ".pkl", ".h5"],
-        )
         if os.path.isdir(self.models_dir):
             for file in os.listdir(self.models_dir):
                 if any(file.endswith(fmt) for fmt in supported_formats):
@@ -310,7 +300,6 @@ class ModelManager:
         },
         default_return=False,
         context="model registration",
-    )
     async def register_model(
         self,
         model_name: str,
@@ -375,7 +364,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model loading",
-    )
     async def load_model(self, model_name: str) -> Any | None:
         """
         Load a model.
@@ -414,7 +402,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="model saving",
-    )
     async def save_model(
         self,
         model: Any,
@@ -472,7 +459,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="active model setting",
-    )
     async def set_active_model(self, model_name: str) -> bool:
         """
         Set the active model.
@@ -501,7 +487,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="active model getting",
-    )
     async def get_active_model(self) -> str | None:
         """
         Get the active model name.
@@ -514,7 +499,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="metadata saving",
-    )
     async def _save_metadata(self) -> None:
         """Save model metadata to file."""
         metadata_path = os.path.join(self.models_dir, self.metadata_file)
@@ -527,7 +511,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="model backup creation",
-    )
     async def create_backup(self, model_name: str) -> None:
         """
         Create backup of a model.
@@ -551,7 +534,6 @@ class ModelManager:
         backup_path = os.path.join(
             backup_dir,
             f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
-        )
 
         # Copy model file
         shutil.copy2(model_path, backup_path)
@@ -579,7 +561,6 @@ class ModelManager:
         exceptions=(Exception,),
         default_return=None,
         context="model manager cleanup",
-    )
     async def stop(self) -> None:
         """Stop the model manager."""
         self.logger.info("🛑 Stopping Model Manager...")
@@ -598,7 +579,6 @@ model_manager: ModelManager | None = None
     exceptions=(Exception,),
     default_return=None,
     context="model manager setup",
-)
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:

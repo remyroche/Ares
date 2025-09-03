@@ -1,6 +1,6 @@
 # src/analyst/enhanced_prediction_integrator.py
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, retry, timeout
 from src.core.domain import handle_specific_errors
 from pathlib import Path
 from typing import Any
@@ -13,13 +13,6 @@ from src.utils.warning_symbols import error
     performance_monitor,
     validate_data_quality,
     with_tracing_span,
-<<<<<<< HEAD
-    PerformanceLevel
-=======
->>>>>>> origin/main
-)
-from src.core.decorators import handles_errors, retry, timeout
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, warning
 
 
@@ -133,7 +126,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="loading analyst enhanced models",
-    )
     async def _load_analyst_enhanced_models(self) -> None:
         """Load analyst enhanced models from step 9."""
         try:
@@ -166,7 +158,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="loading calibration results",
-    )
     async def _load_calibration_results(self) -> None:
         """Load confidence calibration results from step 11."""
         try:
@@ -192,7 +183,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="loading optimization results",
-    )
     async def _load_optimization_results(self) -> None:
         """Load optimization results from step 12-14."""
         try:
@@ -302,19 +292,16 @@ class EnhancedPredictionIntegrator:
             # Apply confidence calibration
             calibrated_predictions = await self._apply_confidence_calibration(
                 predictions["price_predictions"], symbol, exchange,
-            )
             predictions["calibrated_predictions"] = calibrated_predictions
 
             # Apply optimization weights
             optimized_predictions = await self._apply_optimization_weights(
                 predictions["calibrated_predictions"], symbol, exchange,
-            )
             predictions["optimization_weights"] = optimized_predictions
 
             # Generate final confidence scores
             final_confidence = await self._generate_final_confidence_scores(
                 predictions["calibrated_predictions"], predictions["optimization_weights"],
-            )
             predictions["confidence_scores"] = final_confidence
 
             return predictions
@@ -325,7 +312,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="generating HMM predictions",
-    )
     async def _generate_hmm_predictions(
         self,
         market_data: pd.DataFrame,
@@ -350,7 +336,6 @@ class EnhancedPredictionIntegrator:
                         # Apply model-specific post-processing
                         processed_prediction = self._process_hmm_prediction(
                             raw_prediction, model_data, model_name,
-                        )
 
                         predictions[f"hmm_{model_name}"] = processed_prediction
 
@@ -365,7 +350,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="generating analyst predictions",
-    )
     async def _generate_analyst_predictions(
         self,
         market_data: pd.DataFrame,
@@ -393,7 +377,6 @@ class EnhancedPredictionIntegrator:
                         # Apply model-specific post-processing
                         processed_prediction = self._process_analyst_prediction(
                             raw_prediction, model_data, model_name,
-                        )
 
                         predictions[f"analyst_{current_regime}_{model_name}"] = processed_prediction
 
@@ -408,7 +391,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="applying confidence calibration",
-    )
     async def _apply_confidence_calibration(
         self,
         predictions: dict[str, Any],
@@ -428,7 +410,6 @@ class EnhancedPredictionIntegrator:
                     # Apply calibration if available
                     calibrated_prediction = self._calibrate_prediction(
                         prediction_data, calibration_data, prediction_name,
-                    )
                     calibrated_predictions[prediction_name] = calibrated_prediction
                 else:
                     # Use original prediction if no calibration available
@@ -442,7 +423,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="applying optimization weights",
-    )
     async def _apply_optimization_weights(
         self,
         calibrated_predictions: dict[str, Any],
@@ -475,7 +455,6 @@ class EnhancedPredictionIntegrator:
 
     @handles_errors(Exception,, fallback={},
         context="generating final confidence scores",
-    )
     async def _generate_final_confidence_scores(
         self,
         calibrated_predictions: dict[str, Any],

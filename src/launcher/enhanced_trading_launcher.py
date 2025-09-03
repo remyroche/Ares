@@ -9,9 +9,7 @@ from src.core.decorators import handles_errors
 
 from src.core.domain import (
     PerformanceLevel,
-    handle_specific_errors,
     performance_monitor
-)
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -34,11 +32,9 @@ from src.utils.warning_symbols import (
     initialization_error,
     invalid,
     warning,
-)
 from src.integration.paper_trading_integration import (
     PaperTradingIntegration,
     setup_paper_trading_integration,
-)
 if TYPE_CHECKING:
     from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
 
@@ -69,7 +65,6 @@ class EnhancedTradingLauncher:
         self.enable_paper_trading = self.launcher_config.get(
             "enable_paper_trading",
             True,
-        )
         self.enable_live_trading = self.launcher_config.get(
             "enable_live_trading",
             False,
@@ -78,7 +73,6 @@ class EnhancedTradingLauncher:
         self.enable_detailed_reporting = self.launcher_config.get(
             "enable_detailed_reporting",
             True,
-        )
 
     @handle_specific_errors(
         error_handlers={
@@ -103,7 +97,6 @@ class EnhancedTradingLauncher:
             if not self._validate_configuration():
                 self.logger.error(
                     invalid("Invalid configuration for enhanced trading launcher"),
-                )
                 return False
 
             # Initialize components based on configuration
@@ -116,14 +109,12 @@ class EnhancedTradingLauncher:
         except Exception as e:
             self.logger.exception(
                 f"❌ Enhanced Trading Launcher initialization failed: {e}",
-            )
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
-    )
     def _validate_configuration(self) -> bool:
         """Validate launcher configuration."""
         try:
@@ -151,13 +142,11 @@ class EnhancedTradingLauncher:
             if self.enable_paper_trading:
                 self.paper_trading_integration = await setup_paper_trading_integration(
                     self.config
-                )
                 if self.paper_trading_integration:
                     self.logger.info("✅ Paper trading integration initialized")
                 else:
                     self.logger.warning(
                         "⚠️ Failed to initialize paper trading integration",
-                    )
 
             # Initialize enhanced backtester
             if self.enable_backtesting:
@@ -222,7 +211,6 @@ setup_enhanced_backtester as _setup_backtester,
             # Generate initial report
             await self.paper_trading_integration.generate_comprehensive_report(
                 "initial",
-            )
 
             self.logger.info("✅ Paper trading launched successfully")
             return True
@@ -316,7 +304,6 @@ setup_enhanced_backtester as _setup_backtester,
 
             self.logger.info(
                 "🚀 Launching enhanced backtest with comprehensive reporting...",
-            )
             self.current_mode = "backtest"
 
             # Update configuration if provided
@@ -328,7 +315,6 @@ setup_enhanced_backtester as _setup_backtester,
                 historical_data=historical_data,
                 strategy_signals=strategy_signals,
                 backtest_config=backtest_config or {},
-            )
 
             # Generate comprehensive report
             await self.enhanced_backtester.generate_backtest_report("comprehensive")
@@ -385,14 +371,12 @@ setup_enhanced_backtester as _setup_backtester,
                     price=price,
                     timestamp=timestamp,
                     trade_metadata=trade_metadata,
-                )
             if self.current_mode == "live":
                 # TODO: Implement live trading execution
                 self.logger.error(execution_error("⚠️ Live trading execution not yet implemented"))
                 return False
             self.logger.error(
                 f"Trade execution not available for mode: {self.current_mode}",
-            )
             return False
 
         except Exception as e:
@@ -462,7 +446,6 @@ setup_enhanced_backtester as _setup_backtester,
                 return await self.paper_trading_integration.generate_comprehensive_report(
                     report_type,
                     export_formats,
-                )
             if self.current_mode == "backtest" and self.enhanced_backtester:
                 return await self.enhanced_backtester.generate_backtest_report(
                     report_type,
@@ -566,7 +549,6 @@ setup_enhanced_backtester as _setup_backtester,
     exceptions=(Exception,),
     default_return=None,
     context="enhanced trading launcher setup",
-)
 async def setup_enhanced_trading_launcher(
     config: dict[str, Any] | None = None,
 ) -> EnhancedTradingLauncher | None:

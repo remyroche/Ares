@@ -3,22 +3,18 @@
 from src.core.decorators import handles_errors
 from src.core.domain import (
     PerformanceLevel,
-    handle_specific_errors,
     performance_monitor
-)
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 from dataclasses import (
     asdict,
     dataclass
-)
 from enum import Enum
 from abc import ABC
 from datetime import (
     UTC,
     datetime
-)
 from collections import defaultdict
 from src.utils.logger import system_logger
 # PerformanceLevel enum - to be replaced with new monitoring system
@@ -34,7 +30,6 @@ from src.utils.warning_symbols import (
     invalid,
     validation_error,
     warning,
-)
 
 
 class EventType(Enum):
@@ -113,7 +108,6 @@ class Event:
             datetime.fromisoformat(ts_raw)
             if isinstance(ts_raw, str)
             else datetime.now(UTC)
-        )
         status_value = metadata_dict.get("status", EventStatus.PENDING.value)
         if isinstance(status_value, str):
             try:
@@ -136,7 +130,6 @@ class Event:
             retry_count=int(metadata_dict.get("retry_count", 0)),
             status=status_enum,
             tags=metadata_dict.get("tags", {}),
-        )
 
         et = data.get("event_type")
         event_type = EventType(et) if isinstance(et, str) else et
@@ -260,7 +253,6 @@ class FileEventStore(IEventStore):
             snapshot_file = (
                 self.snapshots_path
                 / f"snapshot_{snapshot.aggregate_id}_{snapshot.sequence_number}.json"
-            )
 
             snapshot_data = asdict(snapshot)
             # Convert datetime to string for JSON serialization
@@ -272,7 +264,6 @@ class FileEventStore(IEventStore):
 
             self.logger.debug(
                 f"Saved snapshot {snapshot.snapshot_id} to {snapshot_file}",
-            )
             return True
 
         except Exception as e:
@@ -369,7 +360,6 @@ class EventVersionManager:
                     if field_name not in event.data:
                         self.logger.error(
                             f"Missing required field '{field_name}' in event {event.metadata.event_id}",
-                        )
                         return False
 
             return True
@@ -404,7 +394,6 @@ class EventVersionManager:
                     status=event.metadata.status,
                     tags=event.metadata.tags.copy(),
                 ),
-            )
 
             # Apply simple migration example
             if current_version == "1.0.0" and target_version == "1.1.0":
@@ -450,7 +439,6 @@ class EnhancedEventBus:
         # Event sourcing components
         self.event_store: IEventStore | None = (
             FileEventStore(self.storage_path) if self.enable_persistence else None
-        )
         self.version_manager = EventVersionManager()
         self.snapshots: dict[str, EventSnapshot] = {}
 
@@ -487,7 +475,6 @@ class EnhancedEventBus:
 
             self.logger.info(
                 "✅ Enhanced Event Bus initialization completed successfully",
-            )
             return True
 
         except Exception as e:
@@ -517,7 +504,6 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.exception(
                 error(f"Error loading enhanced event bus configuration: {e}"),
-            )
 
     def _validate_configuration(self) -> bool:
         """Validate event bus configuration"""
@@ -556,7 +542,6 @@ class EnhancedEventBus:
                 if events:
                     self.sequence_counter = (
                         max(event.metadata.sequence_number for event in events) + 1
-                    )
 
             self.logger.info("Enhanced event processing initialized successfully")
 
@@ -565,7 +550,6 @@ class EnhancedEventBus:
                 initialization_error(
                     f"Error initializing enhanced event processing: {e}",
                 ),
-            )
 
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def _load_event_history(self) -> None:
@@ -648,7 +632,6 @@ class EnhancedEventBus:
             if not self.version_manager.validate_event_schema(event):
                 self.logger.error(
                     f"Event {event.metadata.event_id} failed schema validation",
-                )
                 event.metadata.status = EventStatus.FAILED
                 return False
 
@@ -666,7 +649,6 @@ class EnhancedEventBus:
                 except Exception as e:
                     self.logger.exception(
                         f"Error in event subscriber {getattr(subscriber, '__name__', str(subscriber))}: {e}",
-                    )
                     event.metadata.retry_count += 1
 
             # Update event status
@@ -683,7 +665,6 @@ class EnhancedEventBus:
 
             self.logger.debug(
                 f"Event '{event_type_str}' dispatched to {len(subscribers)} subscribers",
-            )
             return True
 
         except Exception as e:
@@ -704,7 +685,6 @@ class EnhancedEventBus:
                     "queue_size": self.event_queue.qsize(),
                     "last_processed": datetime.now(UTC).isoformat(),
                 },
-            )
 
             if self.enable_persistence and self.event_store is not None:
                 await self.event_store.save_snapshot(snapshot)
@@ -742,7 +722,6 @@ class EnhancedEventBus:
         try:
             event_type_str = (
                 event_type.value if isinstance(event_type, EventType) else event_type
-            )
             self.subscribers[event_type_str].append(callback)
             self.logger.info(f"Subscriber added for event type: {event_type_str}")
 
@@ -754,7 +733,6 @@ class EnhancedEventBus:
         try:
             event_type_str = (
                 event_type.value if isinstance(event_type, EventType) else event_type
-            )
             if event_type_str in self.subscribers:
                 self.subscribers[event_type_str] = [
                     sub for sub in self.subscribers[event_type_str] if sub != callback
@@ -793,7 +771,6 @@ class EnhancedEventBus:
                 aggregate_id=aggregate_id,
                 sequence_number=self.sequence_counter,
                 tags=tags or {},
-            )
 
             # Create event
             event = Event(event_type=event_type, data=data, metadata=metadata)
@@ -804,7 +781,6 @@ class EnhancedEventBus:
 
             self.logger.debug(
                 f"Event '{event_type.value}' published with ID {event.metadata.event_id}",
-            )
             return event.metadata.event_id
 
         except Exception as e:
@@ -824,7 +800,6 @@ class EnhancedEventBus:
             if not self.enable_persistence or self.event_store is None:
                 self.logger.warning(
                     "Event persistence is disabled, cannot replay events",
-                )
                 return []
 
             events = await self.event_store.get_events(
@@ -832,7 +807,6 @@ class EnhancedEventBus:
                 from_sequence=from_sequence,
                 to_sequence=to_sequence,
                 event_types=event_types,
-            )
 
             self.metrics["replays_performed"] += 1
             self.logger.info(f"Replayed {len(events)} events")
@@ -873,7 +847,6 @@ class EnhancedEventBus:
                     aggregate_id=aggregate_id,
                     from_sequence=start_sequence,
                     to_sequence=target_sequence,
-                )
 
             # Apply events to rebuild state (simplified example)
             for event in events:
@@ -884,7 +857,6 @@ class EnhancedEventBus:
 
             self.logger.info(
                 f"Rebuilt state for aggregate {aggregate_id} using {len(events)} events",
-            )
             return state
 
         except Exception as e:

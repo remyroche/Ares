@@ -9,7 +9,7 @@ This module provides the Strategist class which is responsible for:
 - Strategy History Management: Track and store strategy performance
 """
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 
@@ -19,9 +19,6 @@ from src.utils.logger import system_logger
 # Import Pydantic models and utilities
 from .config import MarketIndicators, StrategistConfig, StrategyResult
 from .utils import (
-from copy import copy
-import asyncio
-
     CalculationError,
     PerformanceOptimizer,
     StrategyComponentExtractor,
@@ -35,6 +32,7 @@ from .enhanced_regime_classifier import EnhancedRegimeClassifier
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
+    from src.tactician.tactician import Tactician
 
 
 class Strategist:
@@ -564,8 +562,10 @@ class Strategist:
             self.logger.error(f"Failed to apply regime adjustments: {e}")
             return strategy
 
-    @handles_errors(
-        exceptions=(Exception,),
+    @handle_specific_errors(
+        error_handlers={
+            Exception: (False, "Failed to stop strategist"),
+        },
         default_return=False,
         context="strategist stop",
     )

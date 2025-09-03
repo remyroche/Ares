@@ -5,7 +5,6 @@ Enhanced Trading Launcher
 Provides a comprehensive launcher for paper trading, live trading, and
 backtesting with integrated detailed reporting capabilities.
 """
-
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
@@ -41,7 +40,6 @@ class EnhancedTradingLauncher:
     """
     Enhanced trading launcher with comprehensive reporting integration.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize enhanced trading launcher.
@@ -158,13 +156,13 @@ class EnhancedTradingLauncher:
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
+import os.path
                     from src.backtesting.enhanced_backtester import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly
-import os.path
 
 setup_enhanced_backtester as _setup_backtester,
-                    )
+)
                     self.enhanced_backtester = await _setup_backtester(self.config)
                 except Exception as e:
                     self.logger.error(failed(f"Backtester import/setup failed: {e}"))

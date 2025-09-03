@@ -92,7 +92,6 @@ class AnalystCreationStep:
     regime-specific data and features. It focuses on creating robust base models
     that will be enhanced in subsequent steps.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """Initializes the AnalystCreationStep."
 
@@ -153,7 +152,7 @@ import os.path
 
 result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
-            def check_mps() -> None:
+def check_mps() -> None:
                 try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))

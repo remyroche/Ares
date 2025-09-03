@@ -255,7 +255,7 @@ def get_typed_config_manager() -> TypedConfigManager:
 def load_typed_config(config_path: str) -> ConfigDict:
     """Load typed configuration from file."""
     manager = get_typed_config_manager()
-    return manager.await load_config(config_path)
+    return manager.load_config(config_path)
 
 def get_typed_config() -> ConfigDict:
     """Get current typed configuration."""

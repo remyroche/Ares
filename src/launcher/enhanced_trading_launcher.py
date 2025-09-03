@@ -156,7 +156,7 @@ class EnhancedTradingLauncher:
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
-import os.path
+import os
                     from src.backtesting.enhanced_backtester import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly

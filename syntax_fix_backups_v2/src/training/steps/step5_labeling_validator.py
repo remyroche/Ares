@@ -3,7 +3,6 @@
 
 This module validates the labeling step outputs.
 """
-
 import json
 import os
 from pathlib import Path

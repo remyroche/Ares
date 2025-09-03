@@ -218,7 +218,7 @@ await self.feature_integration_manager.initialize()
                 "feature_engineering": True,
                 "model_training": True,
                 "model_validation": True,
-            }
+                }
 
             self.logger.info("Model training module initialized")
 

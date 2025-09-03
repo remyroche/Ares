@@ -5,7 +5,6 @@ This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
 """
-
 import json
 import os
 import pickle
@@ -69,7 +68,6 @@ class EnhancedHMMBasedTrainingStep:
     prediction for both direction and profit using the triple barrier method
     and profit-based feature engineering, with regime-specific optimization.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
@@ -1047,7 +1045,7 @@ import copy
 import os.path
 
 model = joblib.load(model_path)
-                    scaler = joblib.load(scaler_path)
+scaler = joblib.load(scaler_path)
                     
                     # Store in models dict
                     self.models[f"{model_name}_single"] = {

@@ -153,7 +153,7 @@ import os.path
 result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
 def check_mps() -> None:
-                try:
+    try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
                 except Exception as e:  # noqa: BLE001

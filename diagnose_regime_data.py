@@ -89,6 +89,7 @@ def load_test_data(BINANCE, symbol="ETHUSDT", days=180):
                 if source.endswith(".pkl"):
                     pass
                     pass
+                    pass
     pass  # TODO: Add proper implementation
                     with open(source, "rb") as f:
                         payload=pickle.load(f)

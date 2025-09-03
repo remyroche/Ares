@@ -11,9 +11,9 @@ import pywt
 from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from src.config import CONFIG
-from src.utils.error_handler import (
 import logging
 import asyncio
+from src.utils.error_handler import (
     handle_data_processing_errors,
     handle_errors,
     handle_file_operations,
@@ -30,7 +30,6 @@ class FeatureEngineeringOrchestrator:
     Comprehensive feature engineering orchestrator that coordinates all feature generation components.
     Integrates advanced feature engineering and autoencoder feature generation.
     """
-
     def __init__(self, config: dict[str, Any]):
         """
         Initialize the feature engineering orchestrator.
@@ -344,7 +343,7 @@ import copy
 import os.path
 
 # Convert price data to differences for technical indicators
-            close_diff = df["close"].diff().fillna(0)
+close_diff = df["close"].diff().fillna(0)
             high_diff = df["high"].diff().fillna(0)
             low_diff = df["low"].diff().fillna(0)
 
@@ -635,7 +634,6 @@ class FeatureEngineeringEngine:
     Legacy feature engineering engine for backward compatibility.
     Now delegates to the orchestrator.
     """
-
     def __init__(self, config):
         self.config = config.get("analyst", {}).get("feature_engineering", {})
         self.logger = system_logger.getChild("FeatureEngineeringEngine")

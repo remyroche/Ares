@@ -436,7 +436,7 @@ def _get_cpu_usage() -> float:
         import psutil
     except Exception as e:
         pass  # TODO: Handle exception properly
-import os.path
+import os
 
 return psutil.cpu_percent(interval=0.1)
 except ImportError:

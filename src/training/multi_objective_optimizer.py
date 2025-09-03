@@ -69,7 +69,7 @@ config["market_data"],
             )
 
     @handle_errors(
-        exceptions=(Exception,),
+    exceptions=(Exception,),
         default_return=None,
         context="multi-objective optimization",
     )

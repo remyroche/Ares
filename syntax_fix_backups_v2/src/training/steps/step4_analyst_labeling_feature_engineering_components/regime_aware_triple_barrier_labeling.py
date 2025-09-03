@@ -14,7 +14,6 @@ Key Features:
 - Fallback to global parameters when regime-specific params not available
 - Comprehensive regime-aware performance tracking
 """
-
 import contextlib
 from typing import Any, Dict, List, Optional, Union
 import warnings
@@ -157,7 +156,6 @@ class RegimeAwareTripleBarrierLabeling:
     regime-specific parameters for each HMM regime, providing more nuanced and
     adaptive labeling based on market conditions.
     """
-
     def __init__(
         self, 
         config: Optional[RegimeTripleBarrierConfig] = None,
@@ -796,7 +794,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
 import copy
 
 logger = logging.getLogger(__name__)
-        logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
+logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
         
         # Return data with error indicator
         data_copy = data.copy()

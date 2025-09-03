@@ -5,7 +5,6 @@ This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
 """
-
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
@@ -100,7 +99,6 @@ class ProfitBasedFeatureEngineering:
     percentage data from triple barrier labeling. It includes multiple feature
     categories with performance optimizations and comprehensive validation.
     """
-
     def __init__(
         self,
         profit_column: str = "potential_profit_pct",

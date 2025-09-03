@@ -35,7 +35,6 @@ class MultiObjectiveOptimizer:
     - Risk metrics (Max drawdown, VaR, CVaR)
     - Profitability metrics (Total return, Win rate, Profit factor)
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("MultiObjectiveOptimizer")
@@ -65,7 +64,7 @@ class MultiObjectiveOptimizer:
 import datetime as datetime
 
 self.optimized_backtester = OptimizedBacktester(
-                config["market_data"],
+config["market_data"],
                 config.get("computational_optimization", {}),
             )
 

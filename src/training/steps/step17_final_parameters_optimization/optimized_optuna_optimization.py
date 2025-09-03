@@ -14,9 +14,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from src.utils.logger import setup_logging
-from src.utils.warning_symbols import (
-    failed,
-)
+from src.utils.warning_symbols import failed
 
 setup_logging()
 
@@ -26,8 +24,8 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
 class AdvancedOptunaManager:
-    """Manages Optuna hyperparameter optimization with advanced features for
-    efficiency = robustness, and extensibility.
+    """Manages Optuna hyperparameter optimization with advanced features for efficiency
+    = robustness, and extensibility.
 
     Key Features:
     - Persistence: Uses a database backend (e.g., SQLite) to save and resume studies.
@@ -48,7 +46,6 @@ class AdvancedOptunaManager:
             storage_url (str): Database URL for study persistence. This is crucial
         for resuming studies and enabling safe parallel execution.
             study_name_prefix (str): A prefix for all study names.
-
         """
         self.storage_url = storage_url
         self.study_name_prefix = study_name_prefix
@@ -57,6 +54,7 @@ class AdvancedOptunaManager:
 
     def _get_model_configurations(self) -> dict[str, dict[str, Any]]:
         """Returns a dictionary containing the configuration for each supported model.
+
         This design makes the manager easily extensible.
         """
         return {
@@ -120,12 +118,10 @@ class AdvancedOptunaManager:
     def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:
         """Extracts key results from a completed study."""
         pruned_trials = study.get_trials(
-            deepcopy=False,
-            states=[optuna.trial.TrialState.PRUNED]
+            deepcopy=False, states=[optuna.trial.TrialState.PRUNED]
         )
         complete_trials = study.get_trials(
-            deepcopy=False,
-            states=[optuna.trial.TrialState.COMPLETE]
+            deepcopy=False, states=[optuna.trial.TrialState.COMPLETE]
         )
 
         summary = {
@@ -140,7 +136,15 @@ class AdvancedOptunaManager:
         return summary
 
     def optimize(
-        self, model_type: str, X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int | None = 15, subsample_fraction: float | None = None
+        self,
+        model_type: str,
+        X: pd.DataFrame,
+        y: pd.Series,
+        n_trials: int = 100,
+        n_jobs: int = -1,
+        cv_folds: int = 5,
+        early_stopping_patience: int | None = 15,
+        subsample_fraction: float | None = None,
     ) -> dict[str, Any]:
         """Runs a full hyperparameter optimization for a specified model.
 
@@ -156,7 +160,6 @@ class AdvancedOptunaManager:
 
         Returns:
             A dictionary summarizing the results of the optimization study.
-
         """
         if model_type not in self._model_configs:
             msg = f"Model type '{model_type}' is not configured."
@@ -168,11 +171,10 @@ class AdvancedOptunaManager:
             study_name=study_name,
             direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(
-                min_resource=1,
-                max_resource=n_trials
+                min_resource=1, max_resource=n_trials
             ),
             sampler=optuna.samplers.TPESampler(seed=42),
-            load_if_exists=True
+            load_if_exists=True,
         )
 
         def objective(trial: optuna.Trial) -> float:
@@ -201,11 +203,7 @@ class AdvancedOptunaManager:
                     for i, step in enumerate(range(10, n_estimators + 1, 10)):
                         model.n_estimators = step
                         score = cross_val_score(
-                            model,
-                            X_sample,
-                            y_sample,
-                            cv=cv,
-                            scoring="accuracy"
+                            model, X_sample, y_sample, cv=cv, scoring="accuracy"
                         ).mean()
                         intermediate_scores.append(score)
                         trial.report(score, step=i)
@@ -215,11 +213,7 @@ class AdvancedOptunaManager:
 
                 # Native pruning for LightGBM and XGBoost
                 score = cross_val_score(
-                    model,
-                    X_sample,
-                    y_sample,
-                    cv=cv,
-                    scoring="accuracy"
+                    model, X_sample, y_sample, cv=cv, scoring="accuracy"
                 ).mean()
                 trial.report(score, step=0)  # Report final score
                 return score
@@ -286,6 +280,5 @@ if __name__ == "__main__":
 
     # 5. You can easily retrieve the full study from storage if needed
     loaded_study = optuna.load_study(
-        study_name="production_models_lightgbm",
-        storage=optimizer.storage_url
+        study_name="production_models_lightgbm", storage=optimizer.storage_url
     )

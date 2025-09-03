@@ -1,8 +1,7 @@
-"""
-Base error hierarchy with codes and status mapping.
+"""Base error hierarchy with codes and status mapping.
 
-Provides a structured error system with machine-readable codes,
-HTTP/gRPC status mappings, and rich context.
+Provides a structured error system with machine-readable codes, HTTP/gRPC status
+mappings, and rich context.
 """
 
 from dataclasses import dataclass, field
@@ -12,7 +11,7 @@ from typing import Any, Dict, Optional
 
 class ErrorCode(str, Enum):
     """Standard error codes for the application."""
-    
+
     # Client errors (4xx equivalent)
     VALIDATION_ERROR = "VALIDATION_ERROR"
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
@@ -21,18 +20,18 @@ class ErrorCode(str, Enum):
     CONFLICT = "CONFLICT"
     RATE_LIMITED = "RATE_LIMITED"
     BAD_REQUEST = "BAD_REQUEST"
-    
+
     # Server errors (5xx equivalent)
     INTERNAL_ERROR = "INTERNAL_ERROR"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
     TIMEOUT = "TIMEOUT"
     DEPENDENCY_ERROR = "DEPENDENCY_ERROR"
-    
+
     # Business logic errors
     BUSINESS_RULE_VIOLATION = "BUSINESS_RULE_VIOLATION"
     INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS"
     QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
-    
+
     # Data errors
     DATA_INTEGRITY_ERROR = "DATA_INTEGRITY_ERROR"
     DATA_NOT_FOUND = "DATA_NOT_FOUND"
@@ -41,23 +40,22 @@ class ErrorCode(str, Enum):
 
 @dataclass
 class AppError(Exception):
+    """Base application error with structured information.
+
+    All application errors should inherit from this class to ensure consistent error
+    handling across different transports.
     """
-    Base application error with structured information.
-    
-    All application errors should inherit from this class to ensure
-    consistent error handling across different transports.
-    """
-    
+
     message: str
     code: ErrorCode = ErrorCode.INTERNAL_ERROR
     status_code: int = 500
     details: Dict[str, Any] = field(default_factory=dict)
     cause: Optional[Exception] = None
-    
+
     def __str__(self) -> str:
         """Human-readable error message."""
         return self.message
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         result = {
@@ -67,20 +65,20 @@ class AppError(Exception):
                 "status_code": self.status_code,
             }
         }
-        
+
         if self.details:
             result["error"]["details"] = self.details
-            
+
         if self.cause:
             result["error"]["cause"] = str(self.cause)
-            
+
         return result
-    
+
     @property
     def is_client_error(self) -> bool:
         """Check if this is a client error (4xx range)."""
         return 400 <= self.status_code < 500
-    
+
     @property
     def is_server_error(self) -> bool:
         """Check if this is a server error (5xx range)."""
@@ -89,22 +87,19 @@ class AppError(Exception):
 
 # Specific error types
 
+
 class ValidationError(AppError):
     """Input validation error."""
-    
+
     def __init__(
-        self,
-        message: str,
-        field: Optional[str] = None,
-        value: Any = None,
-        **kwargs
+        self, message: str, field: Optional[str] = None, value: Any = None, **kwargs
     ):
         details = kwargs.pop("details", {})
         if field:
             details["field"] = field
         if value is not None:
             details["value"] = value
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.VALIDATION_ERROR,
@@ -116,7 +111,7 @@ class ValidationError(AppError):
 
 class AuthenticationError(AppError):
     """Authentication failure."""
-    
+
     def __init__(self, message: str = "Authentication required", **kwargs):
         super().__init__(
             message=message,
@@ -128,7 +123,7 @@ class AuthenticationError(AppError):
 
 class AuthorizationError(AppError):
     """Authorization failure."""
-    
+
     def __init__(
         self,
         message: str = "Insufficient permissions",
@@ -138,7 +133,7 @@ class AuthorizationError(AppError):
         details = kwargs.pop("details", {})
         if required_permission:
             details["required_permission"] = required_permission
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.AUTHORIZATION_ERROR,
@@ -150,7 +145,7 @@ class AuthorizationError(AppError):
 
 class NotFoundError(AppError):
     """Resource not found."""
-    
+
     def __init__(
         self,
         message: str,
@@ -163,7 +158,7 @@ class NotFoundError(AppError):
             details["resource_type"] = resource_type
         if resource_id:
             details["resource_id"] = resource_id
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.NOT_FOUND,
@@ -175,19 +170,16 @@ class NotFoundError(AppError):
 
 class ConflictError(AppError):
     """Resource conflict."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
-            message=message,
-            code=ErrorCode.CONFLICT,
-            status_code=409,
-            **kwargs
+            message=message, code=ErrorCode.CONFLICT, status_code=409, **kwargs
         )
 
 
 class RateLimitError(AppError):
     """Rate limit exceeded."""
-    
+
     def __init__(
         self,
         message: str = "Rate limit exceeded",
@@ -197,7 +189,7 @@ class RateLimitError(AppError):
         details = kwargs.pop("details", {})
         if retry_after:
             details["retry_after"] = retry_after
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.RATE_LIMITED,
@@ -209,7 +201,7 @@ class RateLimitError(AppError):
 
 class TimeoutError(AppError):
     """Operation timeout."""
-    
+
     def __init__(
         self,
         message: str = "Operation timed out",
@@ -219,7 +211,7 @@ class TimeoutError(AppError):
         details = kwargs.pop("details", {})
         if timeout_seconds:
             details["timeout_seconds"] = timeout_seconds
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.TIMEOUT,
@@ -231,7 +223,7 @@ class TimeoutError(AppError):
 
 class ServiceUnavailableError(AppError):
     """Service temporarily unavailable."""
-    
+
     def __init__(
         self,
         message: str = "Service temporarily unavailable",
@@ -241,7 +233,7 @@ class ServiceUnavailableError(AppError):
         details = kwargs.pop("details", {})
         if service_name:
             details["service_name"] = service_name
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.SERVICE_UNAVAILABLE,
@@ -253,17 +245,12 @@ class ServiceUnavailableError(AppError):
 
 class BusinessRuleError(AppError):
     """Business rule violation."""
-    
-    def __init__(
-        self,
-        message: str,
-        rule_name: Optional[str] = None,
-        **kwargs
-    ):
+
+    def __init__(self, message: str, rule_name: Optional[str] = None, **kwargs):
         details = kwargs.pop("details", {})
         if rule_name:
             details["rule_name"] = rule_name
-            
+
         super().__init__(
             message=message,
             code=ErrorCode.BUSINESS_RULE_VIOLATION,
@@ -275,7 +262,7 @@ class BusinessRuleError(AppError):
 
 class DataIntegrityError(AppError):
     """Data integrity violation."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message=message,

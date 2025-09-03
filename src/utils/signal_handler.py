@@ -1,8 +1,7 @@
-"""
-Signal handling utilities for graceful shutdown.
+"""Signal handling utilities for graceful shutdown.
 
-This module provides centralized signal handling for graceful shutdown
-of the application, including both synchronous and asynchronous cleanup.
+This module provides centralized signal handling for graceful shutdown of the
+application, including both synchronous and asynchronous cleanup.
 """
 
 import asyncio
@@ -24,13 +23,10 @@ from src.utils.warning_symbols import (
 
 
 class SignalHandler:
-    """
-    Enhanced signal handler with comprehensive error handling and type safety.
-    """
+    """Enhanced signal handler with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize signal handler with enhanced type safety.
+        """Initialize signal handler with enhanced type safety.
 
         Args:
             config: Configuration dictionary
@@ -55,11 +51,10 @@ class SignalHandler:
         )
 
     def print(self, message: Any) -> None:
-        """
-        Compatibility helper to mirror other components' print method.
+        """Compatibility helper to mirror other components' print method.
 
-        Routes messages through the component logger so output appears in the
-        terminal and logs consistently.
+        Routes messages through the component logger so output appears in the terminal
+        and logs consistently.
         """
         # Ensure string conversion in case formatting helpers are used
         self.logger.info(str(message))
@@ -74,8 +69,7 @@ class SignalHandler:
         context="signal handler initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize signal handler with enhanced error handling.
+        """Initialize signal handler with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -118,7 +112,9 @@ class SignalHandler:
             self.signal_config.setdefault("handle_sighup", False)
 
             # Update configuration
-            self.graceful_shutdown_timeout = self.signal_config["graceful_shutdown_timeout"]
+            self.graceful_shutdown_timeout = self.signal_config[
+                "graceful_shutdown_timeout"
+            ]
             self.enable_signal_handling = self.signal_config["enable_signal_handling"]
 
             self.logger.info("Signal configuration loaded successfully")
@@ -132,8 +128,7 @@ class SignalHandler:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate signal configuration.
+        """Validate signal configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -185,8 +180,7 @@ class SignalHandler:
         context="signal handler registration",
     )
     def _register_handler(self, sig: int, handler: Callable) -> None:
-        """
-        Register a signal handler.
+        """Register a signal handler.
 
         Args:
             sig: Signal number
@@ -213,8 +207,7 @@ class SignalHandler:
         context="SIGTERM handling",
     )
     def _handle_sigterm(self, signum: int, frame) -> None:
-        """
-        Handle SIGTERM signal.
+        """Handle SIGTERM signal.
 
         Args:
             signum: Signal number
@@ -237,8 +230,7 @@ class SignalHandler:
         context="SIGINT handling",
     )
     def _handle_sigint(self, signum: int, frame) -> None:
-        """
-        Handle SIGINT signal.
+        """Handle SIGINT signal.
 
         Args:
             signum: Signal number
@@ -261,8 +253,7 @@ class SignalHandler:
         context="SIGHUP handling",
     )
     def _handle_sighup(self, signum: int, frame) -> None:
-        """
-        Handle SIGHUP signal for configuration reload.
+        """Handle SIGHUP signal for configuration reload.
 
         Args:
             signum: Signal number
@@ -310,8 +301,7 @@ class SignalHandler:
         context="shutdown initiation",
     )
     def _initiate_shutdown(self, reason: str) -> None:
-        """
-        Initiate graceful shutdown.
+        """Initiate graceful shutdown.
 
         Args:
             reason: Reason for shutdown
@@ -375,8 +365,7 @@ class SignalHandler:
         context="shutdown callback registration",
     )
     def register_shutdown_callback(self, callback: Callable) -> None:
-        """
-        Register a shutdown callback.
+        """Register a shutdown callback.
 
         Args:
             callback: Callback function to execute during shutdown
@@ -397,8 +386,7 @@ class SignalHandler:
         context="shutdown callback removal",
     )
     def unregister_shutdown_callback(self, callback: Callable) -> None:
-        """
-        Unregister a shutdown callback.
+        """Unregister a shutdown callback.
 
         Args:
             callback: Callback function to remove
@@ -414,8 +402,7 @@ class SignalHandler:
             self.print(error("Error unregistering shutdown callback: {e}"))
 
     def get_signal_status(self) -> dict[str, Any]:
-        """
-        Get signal handler status information.
+        """Get signal handler status information.
 
         Returns:
             Dict[str, Any]: Signal handler status
@@ -466,8 +453,7 @@ signal_handler: SignalHandler | None = None
 async def setup_signal_handler(
     config: dict[str, Any] | None = None,
 ) -> SignalHandler | None:
-    """
-    Setup signal handler with enhanced error handling.
+    """Setup signal handler with enhanced error handling.
 
     Args:
         config: Optional configuration dictionary
@@ -495,9 +481,7 @@ async def setup_signal_handler(
 
 
 class GracefulShutdown:
-    """
-    Context manager for graceful shutdown handling.
-    """
+    """Context manager for graceful shutdown handling."""
 
     def __init__(self, signal_handler: SignalHandler | None = None):
         self.signal_handler = signal_handler
@@ -525,8 +509,7 @@ class GracefulShutdown:
 
 
 def setup_signal_handlers() -> SignalHandler:
-    """
-    Setup signal handlers for backward compatibility.
+    """Setup signal handlers for backward compatibility.
 
     Returns:
         SignalHandler: Configured signal handler instance

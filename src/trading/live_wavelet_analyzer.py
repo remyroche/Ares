@@ -5,19 +5,21 @@ This module provides a lightweight = real-time wavelet analysis system
 optimized for live trading with strict performance constraints.
 """
 
-from collections import deque
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
 import threading
 import time
-
+from collections import deque
 from dataclasses import dataclass
-from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, initialization_error, timeout, warning
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pywt
+
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, initialization_error, timeout, warning
+
 
 @dataclass
 class WaveletSignal:
@@ -30,9 +32,9 @@ class WaveletSignal:
     entropy_level: float
     computation_time: float
 
+
 class LiveWaveletAnalyzer:
-    """
-    Computationally-aware wavelet analyzer for live trading.
+    """Computationally-aware wavelet analyzer for live trading.
 
     Key optimizations:
     - Single wavelet type (db4) for speed
@@ -133,15 +135,18 @@ class LiveWaveletAnalyzer:
         try:
             # Create a dummy signal for coefficient computation
             dummy_signal = np.random.randn(self.sliding_window_size).astype(
-                np.float32, copy=False,
+                np.float32,
+                copy=False,
             )
 
             # Pre-compute DWT coefficients structure
             self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
             level = self._get_decomposition_level(len(dummy_signal))
             self.dwt_coeffs_structure = pywt.wavedec(
-                dummy_signal, self.wavelet_obj,
-                level=level, mode=self.padding_mode,
+                dummy_signal,
+                self.wavelet_obj,
+                level=level,
+                mode=self.padding_mode,
             )
 
             self.logger.info("✅ Pre-computed wavelet coefficients")
@@ -164,11 +169,9 @@ class LiveWaveletAnalyzer:
         context="live wavelet signal generation",
     )
     async def generate_signal(
-        self, price_data: pd.DataFrame,
-        volume_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
     ) -> WaveletSignal | None:
-        """
-        Generate trading signal using computationally-aware wavelet analysis.
+        """Generate trading signal using computationally-aware wavelet analysis.
 
         Args:
             price_data: Recent price data
@@ -222,8 +225,7 @@ class LiveWaveletAnalyzer:
             return None
 
     def _update_sliding_windows(
-        self, price_data: pd.DataFrame,
-        volume_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
     ) -> None:
         """Update sliding windows with new data."""
         try:
@@ -254,8 +256,7 @@ class LiveWaveletAnalyzer:
             # Use asyncio to enforce timeout
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
-                None, self._compute_wavelet_features,
-                price_array
+                None, self._compute_wavelet_features, price_array
             )
 
             if result is None:
@@ -272,7 +273,8 @@ class LiveWaveletAnalyzer:
             return None
 
     def _compute_wavelet_features(
-        self, price_array: np.ndarray,
+        self,
+        price_array: np.ndarray,
     ) -> dict[str, float] | None:
         """Compute wavelet features with performance constraints."""
         try:
@@ -291,8 +293,10 @@ class LiveWaveletAnalyzer:
                 self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
             level = self._get_decomposition_level(len(price_array))
             coeffs = pywt.wavedec(
-                price_array, self.wavelet_obj,
-                level=level, mode=self.padding_mode,
+                price_array,
+                self.wavelet_obj,
+                level=level,
+                mode=self.padding_mode,
             )
 
             # Extract key features efficiently

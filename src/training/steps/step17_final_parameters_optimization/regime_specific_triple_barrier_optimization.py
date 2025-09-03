@@ -18,30 +18,32 @@ Key Features:
 import asyncio
 import logging
 import time
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
-import warnings
 
+import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import optuna
+import pandas as pd
+import seaborn as sns
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 from optuna.visualization import plot_optimization_history, plot_param_importances
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from scipy import stats
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.model_selection import TimeSeriesSplit
 
-from src.utils.logger import setup_logging
 from src.config.config_optuna import (
-from pathlib import Path
-
-    SROptimizationParameters,
     HyperparameterOptimizationConfig,
-    get_parameter_search_space
+    Path,
+    SROptimizationParameters,
+    from,
+    get_parameter_search_space,
+    import,
+    pathlib,
 )
+from src.utils.logger import setup_logging
 
 setup_logging()
 warnings.filterwarnings('ignore')
@@ -455,11 +457,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
             # Import the optimized triple barrier labeling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
-import copy
-
-                OptimizedTripleBarrierLabeling
+                OptimizedTripleBarrierLabeling,
             )
-            
+
             # Create labeler with regime-specific parameters
             labeler = OptimizedTripleBarrierLabeling(
                 profit_take_multiplier=tb_params.profit_take_multiplier,

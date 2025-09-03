@@ -2,11 +2,10 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from src.utils.centralized_decorators import guard_dataframe_nulls, import
+from src.utils.centralized_decorators import numpy as np
 from src.utils.centralized_decorators import (
-import numpy as np
-import os.path
-
-    guard_dataframe_nulls,
+    os.path,
     validate_call_or_runtime_types,
     with_tracing_span,
 )

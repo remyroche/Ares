@@ -4,22 +4,17 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
-import asyncio
-
+    asyncio,
     handle_errors,
     handle_specific_errors,
+    import,
 )
 from src.utils.logger import system_logger
 from src.utils.trading_decorators import (
     comprehensive_model_decorator,
     get_trade_tracker,
 )
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, invalid, warning
 
 
 class EnsembleManager:
@@ -133,6 +128,7 @@ class EnsembleManager:
         try:
             # Initialize ensemble creator
             from src.training.ensemble_creator import EnsembleCreator
+
 import copy
 
             self.ensemble_creator = EnsembleCreator(self.config)

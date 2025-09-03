@@ -6,6 +6,7 @@ multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
 """
 
+import asyncio
 import json
 import os
 import pickle
@@ -19,11 +20,6 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-import asyncio
-from src.utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_read_parquet, safe_to_parquet, safe_copy
-)
 from sklearn.feature_selection import (
     f_classif,
     f_regression,
@@ -31,19 +27,25 @@ from sklearn.feature_selection import (
     mutual_info_regression,
 )
 from sklearn.metrics import (
-    accuracy_score, f1_score, precision_score, recall_score,
-    mean_squared_error, mean_absolute_error, r2_score
+    accuracy_score,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
 )
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
 
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+
 # Multi-output training will be imported when needed
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
-    ProfitBasedFeatureEngineering
+    ProfitBasedFeatureEngineering,
 )
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.centralized_decorators import (
     PerformanceLevel,
     ValidationLevel,
@@ -56,8 +58,16 @@ from src.utils.centralized_decorators import (
     pipeline_checkpoint,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
+from src.utils.common_operations import (
+    ensure_directory,
+    format_datetime,
+    get_current_datetime,
+    safe_copy,
+    safe_json_dump,
+    safe_read_parquet,
+    safe_to_parquet,
+)
 from src.utils.logger import system_logger
-from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -564,7 +574,9 @@ class EnhancedHMMBasedTrainingStep:
         # Use enhanced feature selection if multi-output is enabled
         if has_profit and self.enable_multi_output:
             try:
-                from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
+                from src.training.enhanced_matrix_operations import (
+                    EnhancedMatrixOperations,
+                )
                 
                 self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
                 
@@ -1041,6 +1053,7 @@ class EnhancedHMMBasedTrainingStep:
                 
                 if os.path.exists(model_path) and os.path.exists(scaler_path):
                     import joblib
+
 import copy
 import os.path
 

@@ -1,12 +1,14 @@
 # src/analyst/decision_aggregator.py
 
 from __future__ import annotations
-from src.analyst.regime_runtime import get_current_regime_info
-from src.utils.logger import system_logger
-from typing import Any
+
 import contextlib
+from typing import Any
 
 import numpy as np
+
+from src.analyst.regime_runtime import get_current_regime_info
+from src.utils.logger import system_logger
 
 
 def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
@@ -17,7 +19,7 @@ def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
         return float(default)
 
 
-def _normalize(weights: dict[str , float]) -> dict[str, float]:
+def _normalize(weights: dict[str, float]) -> dict[str, float]:
     vals = np.array([max(0.0, float(v)) for v in weights.values()], dtype=float)
     s = float(vals.sum())
     if s <= 0:

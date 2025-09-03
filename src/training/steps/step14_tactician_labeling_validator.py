@@ -11,12 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    missing,
-    validation_error,
-)
+from src.utils.warning_symbols import error, failed, missing, validation_error
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -676,6 +671,7 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
+
 import os.path
 
     # Example usage

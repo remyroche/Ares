@@ -8,17 +8,9 @@ from typing import Any
 
 # Temporarily commented out due to syntax errors
 # from src.config_optuna import get_optuna_config, update_parameter_value
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-    missing,
-)
+from src.utils.warning_symbols import error, failed, initialization_error, missing
 
 
 @dataclass
@@ -47,14 +39,14 @@ class RollbackOperation:
 
 
 class RollbackManager:
-    """Manages rollback points and allows manual reversion to previous parameter configurations."""
+    """Manages rollback points and allows manual reversion to previous parameter
+    configurations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize rollback manager.
 
         Args:
             config: Configuration dictionary
-
         """
         self.config = config
         self.logger = system_logger.getChild("RollbackManager")
@@ -117,7 +109,6 @@ class RollbackManager:
 
         Returns:
             bool: True if rollback point created successfully, False otherwise
-
         """
         try:
             # Get current configuration
@@ -170,7 +161,6 @@ class RollbackManager:
         Args:
             point_id: Unique identifier for the rollback point
             rollback_point: Rollback point to save
-
         """
         try:
             rollback_dir = Path(self.storage_config["rollback_directory"])
@@ -281,7 +271,6 @@ class RollbackManager:
 
         Args:
             point_id: ID of the rollback point to remove
-
         """
         try:
             # Remove from memory
@@ -315,7 +304,6 @@ class RollbackManager:
 
         Returns:
             bool: True if rollback successful, False otherwise
-
         """
         try:
             # Check if rollback point exists
@@ -345,9 +333,9 @@ class RollbackManager:
                     target_point.config_snapshot,
                 ),
                 success=success,
-                error_message=None
-                if success
-                else "Failed to apply rollback configuration",
+                error_message=(
+                    None if success else "Failed to apply rollback configuration"
+                ),
             )
 
             self.rollback_history.append(rollback_operation)
@@ -378,7 +366,6 @@ class RollbackManager:
 
         Returns:
             bool: True if configuration applied successfully, False otherwise
-
         """
         try:
             # This is a simplified implementation
@@ -427,7 +414,6 @@ class RollbackManager:
 
         Returns:
             List[str]: List of parameter paths that would change
-
         """
         try:
             # Temporarily commented out due to syntax errors
@@ -457,7 +443,6 @@ class RollbackManager:
 
         Returns:
             str: Current point ID
-
         """
         return f"current_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -466,7 +451,6 @@ class RollbackManager:
 
         Returns:
             Dict[str, dict[str, Any]]: Rollback points with metadata
-
         """
         try:
             points = {}
@@ -495,7 +479,6 @@ class RollbackManager:
 
         Returns:
             Optional[dict[str, Any]]: Detailed rollback point information
-
         """
         try:
             if point_id not in self.rollback_points:
@@ -523,7 +506,6 @@ class RollbackManager:
 
         Returns:
             List[dict[str, Any]]: Rollback operation history
-
         """
         try:
             return [asdict(operation) for operation in self.rollback_history]
@@ -540,7 +522,6 @@ class RollbackManager:
 
         Returns:
             bool: True if deletion successful, False otherwise
-
         """
         try:
             if point_id not in self.rollback_points:
@@ -560,7 +541,6 @@ class RollbackManager:
 
         Returns:
             dict[str, Any]: Rollback manager summary
-
         """
         try:
             return {
@@ -594,7 +574,6 @@ def setup_rollback_manager(
 
     Returns:
         RollbackManager | None: Rollback manager instance or None
-
     """
     try:
         if config is None:

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""
-Regime and Support/Resistance Tracker (minimal scaffold)
+"""Regime and Support/Resistance Tracker (minimal scaffold)
 
 Scaffolding for regime detection and S/R tracking.
 """
 
 from __future__ import annotations
 
+import asyncio
 from enum import Enum
 from typing import Any, Dict
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class RegimeType(Enum):

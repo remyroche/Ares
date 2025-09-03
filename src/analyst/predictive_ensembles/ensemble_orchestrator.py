@@ -1,28 +1,29 @@
+import copy
+import logging
 import os
+import os.path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from joblib import dump, load
 from lightgbm import LGBMClassifier
+from sklearn.decomposition import PCA
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.decomposition import PCA
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
-import logging
-import copy
-import os.path
 
 
 class RegimePredictiveEnsembles:
-    """
-    Orchestrates the training and prediction workflows for all specialized ensembles.
-    Now includes checkpointing for ensemble models and a sophisticated global meta-learner
-    for final prediction combining outputs from all regime-specific ensembles and market context.
+    """Orchestrates the training and prediction workflows for all specialized ensembles.
+
+    Now includes checkpointing for ensemble models and a sophisticated global meta-
+    learner for final prediction combining outputs from all regime-specific ensembles
+    and market context.
     """
 
     def __init__(self, config):
@@ -83,10 +84,9 @@ class RegimePredictiveEnsembles:
         prepared_data: pd.DataFrame,
         model_path_prefix: str | None = None,
     ):
-        """
-        Orchestrates the training of all regime-specific ensembles.
-        It splits the prepared data by regime and passes the relevant slice to each ensemble.
-        After individual ensembles are trained, it trains a global meta-learner.
+        """Orchestrates the training of all regime-specific ensembles. It splits the
+        prepared data by regime and passes the relevant slice to each ensemble. After
+        individual ensembles are trained, it trains a global meta-learner.
 
         Args:
             asset (str): The trading asset (e.g., "BTCUSDT").
@@ -99,15 +99,21 @@ class RegimePredictiveEnsembles:
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" in prepared_data.columns:
-            self.logger.info("🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)")
+            self.logger.info(
+                "🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)"
+            )
             regime_column = "composite_cluster_id"
             regime_prefix = "hmm_composite_"
         else:
             self.logger.error(
                 "🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.",
             )
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
-            self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
+            self.logger.error(
+                "   HMM composite clusters are paramount - no fallbacks allowed"
+            )
+            self.logger.error(
+                "   Please ensure step3_hmm_regime_discovery completed successfully"
+            )
             return
 
         if "target" not in prepared_data.columns:
@@ -234,9 +240,10 @@ class RegimePredictiveEnsembles:
         current_features: pd.DataFrame,
         **kwargs,
     ) -> dict[str, Any]:
-        """
-        Gets a prediction by identifying the current regime and delegating to the
-        appropriate trained ensemble. The final prediction is made by the global meta-learner.
+        """Gets a prediction by identifying the current regime and delegating to the
+        appropriate trained ensemble.
+
+        The final prediction is made by the global meta-learner.
         """
         # Get comprehensive regime information
         regime_info = self.get_current_regime_info(current_features)
@@ -356,10 +363,8 @@ class RegimePredictiveEnsembles:
         }
 
     def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]):
-        """
-        Trains the global meta-learner using outputs from individual ensembles
-        and high-level market context.
-        """
+        """Trains the global meta-learner using outputs from individual ensembles and
+        high-level market context."""
         self.logger.info("Training global meta-learner...")
 
         meta_df = pd.DataFrame(meta_learner_raw_data)
@@ -486,9 +491,7 @@ class RegimePredictiveEnsembles:
         ensemble_confidences: dict[str, float],
         current_features: pd.DataFrame,
     ) -> tuple[str, float]:
-        """
-        Uses the trained global meta-learner to make the final prediction.
-        """
+        """Uses the trained global meta-learner to make the final prediction."""
         if (
             not self.global_meta_learner
             or not self.global_meta_scaler
@@ -609,8 +612,8 @@ class RegimePredictiveEnsembles:
             )
 
     def get_current_regime(self, current_features: pd.DataFrame) -> str:
-        """
-        Determines the current market regime from composite_cluster_id.
+        """Determines the current market regime from composite_cluster_id.
+
         HMM composite clusters are paramount - no fallbacks allowed.
         """
         if current_features.empty:
@@ -621,13 +624,17 @@ class RegimePredictiveEnsembles:
             cluster_id = current_features["composite_cluster_id"].iloc[-1]
             return self._map_cluster_to_regime(cluster_id)
         else:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+            self.logger.error(
+                "🚨 HMM composite_cluster_id column is missing from current features"
+            )
+            self.logger.error(
+                "   HMM composite clusters are paramount - no fallbacks allowed"
+            )
             return "UNKNOWN"
 
     def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
-        """
-        Maps HMM composite cluster IDs to regime ensemble names.
+        """Maps HMM composite cluster IDs to regime ensemble names.
+
         Uses dynamic regime mapping based on Step 1.7 results.
         """
         # Try to use dynamic regime mapper if available
@@ -664,8 +671,8 @@ class RegimePredictiveEnsembles:
         return regime
 
     def get_regime_expert(self, cluster_id: int) -> Any:
-        """
-        Get the appropriate regime expert based on composite_cluster_id.
+        """Get the appropriate regime expert based on composite_cluster_id.
+
         Returns the ensemble instance for the given cluster.
         """
         regime_name = self._map_cluster_to_regime(cluster_id)
@@ -691,8 +698,8 @@ class RegimePredictiveEnsembles:
             return None
 
     def get_current_regime_info(self, current_features: pd.DataFrame) -> dict[str, Any]:
-        """
-        Get comprehensive current regime information including cluster ID and expert.
+        """Get comprehensive current regime information including cluster ID and expert.
+
         HMM composite clusters are paramount - no fallbacks allowed.
         """
         if current_features.empty:
@@ -705,8 +712,12 @@ class RegimePredictiveEnsembles:
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" not in current_features.columns:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+            self.logger.error(
+                "🚨 HMM composite_cluster_id column is missing from current features"
+            )
+            self.logger.error(
+                "   HMM composite clusters are paramount - no fallbacks allowed"
+            )
             return {
                 "cluster_id": -1,
                 "regime_name": "UNKNOWN",
@@ -735,9 +746,9 @@ class RegimePredictiveEnsembles:
             "regime_name": regime_name,
             "expert": expert,
             "confidence": confidence,
-            "timestamp": current_features.index[-1]
-            if not current_features.empty
-            else None,
+            "timestamp": (
+                current_features.index[-1] if not current_features.empty else None
+            ),
         }
 
     def save_model(self, ensemble_instance: Any, path: str):

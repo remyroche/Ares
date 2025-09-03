@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""
-Report Scheduler (minimal scaffold)
+"""Report Scheduler (minimal scaffold)
 
 Automated report scheduling scaffolding.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class ReportType(Enum):

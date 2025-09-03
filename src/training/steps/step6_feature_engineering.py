@@ -8,16 +8,17 @@ with regime-aware optimization after HMM regime discovery.
 import asyncio
 import hashlib
 import json
+import multiprocessing
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 import sys
+
 sys.path.insert(0, str(project_root))
 
 # Common utilities
@@ -748,7 +749,7 @@ def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> 
     """Enhance features with HMM feature enhancer."""
     try:
         from src.training.steps.hmm_feature_enhancer import HMMFeatureEnhancer
-        
+
         # Initialize HMM feature enhancer
         enhancer = HMMFeatureEnhancer()
         
@@ -886,7 +887,7 @@ async def _add_sr_features(
             system_logger.info(f"   Existing features: {existing_sr_features[:5]}...")
         
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-        
+
         # Initialize S/R predictor with optimized parameters
         sr_config = config.copy()
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
@@ -988,7 +989,7 @@ async def _add_sr_aware_feature_selection(
     """Add SR-aware feature selection and engineering."""
     try:
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-        
+
         # Initialize SRBreakoutPredictor with optimized parameters
         sr_config = config.copy()
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
@@ -1049,10 +1050,12 @@ async def _add_sr_optimization_features(
     """Add SR detection optimization features using all optimization capabilities."""
     try:
         from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
+
 import copy
+
 import numpy as np
 import pandas as pd
-        
+
         # Initialize SR detection optimizer
         optimizer = await setup_sr_detection_optimizer(config)
         if not optimizer:

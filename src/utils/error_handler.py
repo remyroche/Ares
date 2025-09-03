@@ -1,10 +1,8 @@
-"""
-Enhanced Error Handling and Recovery Strategies for Ares Trading Bot.
+"""Enhanced Error Handling and Recovery Strategies for Ares Trading Bot.
 
-This module provides centralized error handling patterns, including
-decorators for consistent error handling, retry logic, automatic recovery
-strategies, circuit breaker pattern, and safe operation wrappers with
-100% type hint coverage.
+This module provides centralized error handling patterns, including decorators for
+consistent error handling, retry logic, automatic recovery strategies, circuit breaker
+pattern, and safe operation wrappers with 100% type hint coverage.
 """
 
 import asyncio
@@ -49,11 +47,9 @@ try:
 except Exception:  # Minimal fallback for environments without pandas
 
     class _PD:
-        class DataFrame:
-            ...
+        class DataFrame: ...
 
-        class Series:
-            ...
+        class Series: ...
 
     pd = _PD()  # type: ignore
 
@@ -102,8 +98,7 @@ def call_method_robust(
     logger: logging.Logger | None = None,
     **kwargs,
 ) -> Any:
-    """
-    Robustly call a method on an object with fallback options.
+    """Robustly call a method on an object with fallback options.
 
     Args:
         obj: Object to call method on
@@ -129,17 +124,23 @@ def call_method_robust(
             method = getattr(obj, fallback_method)
             if callable(method):
                 if logger:
-                    logger.debug(f"Primary method '{method_name}' not available, using fallback '{fallback_method}'")
+                    logger.debug(
+                        f"Primary method '{method_name}' not available, using fallback '{fallback_method}'"
+                    )
                 return method(*args, **kwargs)
 
         # Return default if no methods available
         if logger:
-            logger.warning(f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}")
+            logger.warning(
+                f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}"
+            )
         return default_return
 
     except Exception as e:
         if logger:
-            logger.error(f"Error calling method '{method_name}' on {type(obj).__name__}: {e}")
+            logger.error(
+                f"Error calling method '{method_name}' on {type(obj).__name__}: {e}"
+            )
         return default_return
 
 
@@ -457,6 +458,7 @@ class ErrorHandler:
                                 try:
                                     # For sync functions, handle recovery differently
                                     error_obj = e  # Capture exception for closure
+
                                     async def run_recovery() -> Any | None:
                                         return await strategy.execute(
                                             {
@@ -547,6 +549,7 @@ class ErrorHandler:
                                 if strategy.can_handle(e):
                                     try:
                                         error_obj = e  # Capture exception for closure
+
                                         async def run_recovery() -> Any | None:
                                             return await strategy.execute(
                                                 {
@@ -766,8 +769,7 @@ def handle_network_operations(
     max_retries: int = 3,
     default_return: Any = None,
 ):
-    """
-    Decorator for network operations with retry logic.
+    """Decorator for network operations with retry logic.
 
     Args:
         max_retries: Maximum number of retry attempts
@@ -857,7 +859,8 @@ async def _execute_with_retries(
             else:
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"Max retries ({max_retries}) reached. " f"Returning default value.",
+                    f"Max retries ({max_retries}) reached. "
+                    f"Returning default value.",
                 )
                 return default_return
 
@@ -910,8 +913,7 @@ def handle_data_processing_errors(
     default_return: Any = None,
     context: str = "",
 ):
-    """
-    Decorator for data processing operations with NaN/inf handling.
+    """Decorator for data processing operations with NaN/inf handling.
 
     Args:
         default_return: Value to return on error
@@ -975,8 +977,7 @@ def handle_file_operations(
     default_return: Any = None,
     context: str = "",
 ):
-    """
-    Decorator for file operations with comprehensive error handling.
+    """Decorator for file operations with comprehensive error handling.
 
     Args:
         default_return: Value to return on error
@@ -1037,8 +1038,7 @@ def handle_type_conversions(
     *,
     log_errors: bool = True,
 ):
-    """
-    Decorator for type conversion operations.
+    """Decorator for type conversion operations.
 
     Args:
         default_return: Value to return on error
@@ -1122,8 +1122,7 @@ async def safe_network_operation(
     *args,
     **kwargs,
 ) -> Any:
-    """
-    Safe wrapper for network operations with retry logic.
+    """Safe wrapper for network operations with retry logic.
 
     Args:
         operation: Function to execute
@@ -1147,7 +1146,8 @@ async def safe_network_operation(
                     wait_time = 2**attempt  # Exponential backoff
                     system_logger = get_system_logger()
                     system_logger.warning(
-                        f"Network error (attempt {attempt + 1}/{max_retries}): " f"{e}. Retrying in {wait_time}s...",
+                        f"Network error (attempt {attempt + 1}/{max_retries}): "
+                        f"{e}. Retrying in {wait_time}s...",
                     )
                     await asyncio.sleep(wait_time)
                 else:
@@ -1172,8 +1172,7 @@ async def safe_network_operation(
 
 
 def safe_database_operation(operation: Callable, *args, **kwargs) -> Any:
-    """
-    Safe wrapper for database operations.
+    """Safe wrapper for database operations.
 
     Args:
         operation: Function to execute
@@ -1192,8 +1191,7 @@ def safe_database_operation(operation: Callable, *args, **kwargs) -> Any:
 
 
 def safe_dataframe_operation(operation: Callable, *args, **kwargs) -> Any:
-    """
-    Safe wrapper for DataFrame operations with NaN handling.
+    """Safe wrapper for DataFrame operations with NaN handling.
 
     Args:
         operation: Function to execute
@@ -1213,8 +1211,7 @@ def safe_dataframe_operation(operation: Callable, *args, **kwargs) -> Any:
 
 
 def safe_numeric_operation(operation: Callable, *args, **kwargs) -> Any:
-    """
-    Wrapper for safe numeric operations with division by zero and overflow handling.
+    """Wrapper for safe numeric operations with division by zero and overflow handling.
 
     Args:
         operation: Function to execute
@@ -1238,8 +1235,7 @@ def safe_numeric_operation(operation: Callable, *args, **kwargs) -> Any:
 
 
 def safe_dict_access(data: dict, key: str, default: Any = None) -> Any:
-    """
-    Safe dictionary access with default value.
+    """Safe dictionary access with default value.
 
     Args:
         data: Dictionary to access
@@ -1258,8 +1254,7 @@ def safe_dict_access(data: dict, key: str, default: Any = None) -> Any:
 
 
 def safe_dataframe_access(df: pd.DataFrame, column: str, default: Any = None) -> Any:
-    """
-    Safe DataFrame column access with default value.
+    """Safe DataFrame column access with default value.
 
     Args:
         df: DataFrame to access
@@ -1290,8 +1285,7 @@ class ErrorRecoveryStrategies:
         *args,
         **kwargs,
     ) -> Any:
-        """
-        Retry operation with exponential backoff.
+        """Retry operation with exponential backoff.
 
         Args:
             operation: Function to retry
@@ -1317,7 +1311,8 @@ class ErrorRecoveryStrategies:
                 delay = base_delay * (2**attempt)
                 system_logger = get_system_logger()
                 system_logger.warning(
-                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): " f"{e}. Retrying in {delay}s...",
+                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): "
+                    f"{e}. Retrying in {delay}s...",
                 )
                 time.sleep(delay)
 
@@ -1325,8 +1320,7 @@ class ErrorRecoveryStrategies:
 
     @staticmethod
     def fallback_chain(operations: list[Callable], *args, **kwargs) -> Any:
-        """
-        Execute operations in fallback chain.
+        """Execute operations in fallback chain.
 
         Args:
             operations: List of operations to try
@@ -1356,11 +1350,10 @@ class ErrorRecoveryStrategies:
 
 
 class ErrorContext:
-    """
-    Context manager for error handling.
+    """Context manager for error handling.
 
-    This context manager provides a way to handle errors within a code block
-    and optionally execute cleanup code.
+    This context manager provides a way to handle errors within a code block and
+    optionally execute cleanup code.
     """
 
     def __init__(
@@ -1370,8 +1363,7 @@ class ErrorContext:
         *,
         reraise: bool = True,
     ):
-        """
-        Initialize error context.
+        """Initialize error context.
 
         Args:
             error_handler: Function to call on error
@@ -1417,8 +1409,7 @@ def handle_assertion_errors(
     *,
     log_errors: bool = True,
 ):
-    """
-    Decorator for handling assertion errors with proper message formatting.
+    """Decorator for handling assertion errors with proper message formatting.
 
     This decorator addresses EM101/EM102 and TRY003 issues by:
     - Assigning exception messages to variables before raising
@@ -1488,8 +1479,7 @@ def safe_assertion(
     error_type: type[Exception] = AssertionError,
     log_errors: bool = True,
 ) -> None:
-    """
-    Safe assertion function that properly formats error messages.
+    """Safe assertion function that properly formats error messages.
 
     This function addresses EM101/EM102 issues by:
     - Assigning the message to a variable before raising
@@ -1524,8 +1514,7 @@ def format_assertion_message(
     *,
     message_template: str = "Expected {expected}, got {actual}",
 ) -> str:
-    """
-    Format assertion messages properly to address EM101/EM102 issues.
+    """Format assertion messages properly to address EM101/EM102 issues.
 
     Args:
         expected: Expected value
@@ -1545,8 +1534,7 @@ def format_assertion_message(
 
 
 def handle_nan_issues(func: Callable) -> Callable:
-    """
-    Decorator for data processing operations with comprehensive NaN handling.
+    """Decorator for data processing operations with comprehensive NaN handling.
 
     This decorator:
     1. Replaces infinite values with NaN
@@ -1577,7 +1565,9 @@ def handle_nan_issues(func: Callable) -> Callable:
                         result[col] = result[col].fillna(0)
                     else:
                         # For other types, use forward fill then backward fill
-                        result[col] = result[col].fillna(method="ffill").fillna(method="bfill")
+                        result[col] = (
+                            result[col].fillna(method="ffill").fillna(method="bfill")
+                        )
 
                 # Log any remaining NaN issues
                 nan_counts = result.isnull().sum()
@@ -1640,8 +1630,7 @@ def handle_nan_issues(func: Callable) -> Callable:
 
 
 def safe_division(numerator: float, denominator: float, default: float = 0.0) -> float:
-    """
-    Safe division function that handles division by zero and NaN values.
+    """Safe division function that handles division by zero and NaN values.
 
     Args:
         numerator: Numerator value or array
@@ -1668,7 +1657,11 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
                     else np.full_like(numerator, default)
                 )
             result = numerator / denominator
-            return result.fillna(default) if isinstance(result, pd.Series) else np.nan_to_num(result, nan=default)
+            return (
+                result.fillna(default)
+                if isinstance(result, pd.Series)
+                else np.nan_to_num(result, nan=default)
+            )
         # Handle scalar division
         if denominator == 0:
             return default
@@ -1688,8 +1681,7 @@ def clean_dataframe(
     df: pd.DataFrame,
     critical_columns: list[str] | None = None,
 ) -> pd.DataFrame:
-    """
-    Comprehensive DataFrame cleaning function.
+    """Comprehensive DataFrame cleaning function.
 
     Args:
         df: DataFrame to clean

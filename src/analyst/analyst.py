@@ -1,34 +1,22 @@
 # src/analyst/analyst.py
 
 from datetime import datetime
-from typing import (
-import logging
-import asyncio
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING, Any, asyncio, import, logging
 
 import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
-
-# Import dual model system and other components
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-)
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
 )
+
+# Import dual model system and other components
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, failed, initialization_error
 
 if TYPE_CHECKING:
     from src.analyst.liquidation_risk_model import LiquidationRiskModel
@@ -303,7 +291,9 @@ class Analyst:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
+
 import copy
+
 import numpy as np
 
             self.liquidation_risk_model = await setup_liquidation_risk_model(

@@ -11,7 +11,6 @@ def get_system_config() -> dict[str, Any]:
 
     Returns:
         dict: Complete system configuration
-
     """
     settings = get_environment_settings()
 
@@ -102,7 +101,6 @@ def get_logging_config() -> dict[str, Any]:
 
     Returns:
         dict: Logging configuration
-
     """
     system_config = get_system_config()
     return system_config.get("logging", {})
@@ -113,7 +111,6 @@ def get_database_config() -> dict[str, Any]:
 
     Returns:
         dict: Database configuration
-
     """
     system_config = get_system_config()
     return system_config.get("database", {})
@@ -124,7 +121,6 @@ def get_checkpointing_config() -> dict[str, Any]:
 
     Returns:
         dict: Checkpointing configuration
-
     """
     system_config = get_system_config()
     return system_config.get("checkpointing", {})
@@ -135,7 +131,6 @@ def get_reporting_config() -> dict[str, Any]:
 
     Returns:
         dict: Reporting configuration
-
     """
     system_config = get_system_config()
     return system_config.get("reporting", {})
@@ -146,7 +141,6 @@ def get_mlflow_config() -> dict[str, Any]:
 
     Returns:
         dict: MLflow configuration
-
     """
     system_config = get_system_config()
     return system_config.get("mlflow", {})
@@ -157,7 +151,6 @@ def get_version_info() -> dict[str, Any]:
 
     Returns:
         dict: Version information
-
     """
     system_config = get_system_config()
     return system_config.get("version", {})

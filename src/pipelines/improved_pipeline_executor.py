@@ -6,17 +6,13 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.utils.error_handler import (
-import asyncio
-
+    asyncio,
     handle_errors,
     handle_specific_errors,
+    import,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, warning
 
 
 class ImprovedPipelineExecutor:
@@ -157,8 +153,9 @@ class ImprovedPipelineExecutor:
     def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
         """Generate mock market data for testing."""
         import numpy as np
+
 import copy
-        
+
         # Generate realistic mock data
         base_price = 100.0
         prices = []

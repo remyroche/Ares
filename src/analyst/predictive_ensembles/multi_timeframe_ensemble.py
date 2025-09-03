@@ -22,12 +22,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-import logging
-    error,
-    failed,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, import, logging, warning
 
 
 class MultiTimeframeEnsemble:
@@ -330,6 +325,7 @@ class MultiTimeframeEnsemble:
             # Use MLP as a simplified sequence model
             # TODO: Implement proper LSTM when TensorFlow/PyTorch is available
             from sklearn.neural_network import MLPClassifier
+
 import copy
 import os.path
 

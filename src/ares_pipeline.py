@@ -1,27 +1,25 @@
 # src/ares_pipeline.py
 
 from __future__ import annotations
-from pathlib import Path
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+
+import argparse
 import asyncio
+import os
 import signal
 import sys
-import os
-import argparse
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from exchange.factory import ExchangeFactory, RootExchangeFactory
 from src.analyst.analyst import Analyst
-from src.config.environment import get_exchange_name
-from src.database.sqlite_manager import SQLiteManager
-from src.interfaces.event_bus import EventBus
-from src.strategist.strategist import Strategist
-from src.supervisor.supervisor import Supervisor
-from src.tactician.tactician import Tactician
-from src.utils.state_manager import StateManager
 from src.config import get_dual_model_config
+from src.config.environment import get_exchange_name
+from src.core.config_service import ConfigurationService
+from src.core.dependency_injection import DependencyContainer, ServiceLocator
+from src.database.sqlite_manager import SQLiteManager
 from src.interfaces.base_interfaces import (
     IAnalyst,
     IEventBus,
@@ -30,7 +28,8 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
 )
-from src.utils.observability import init_observability
+from src.interfaces.event_bus import EventBus
+from src.monitoring.dual_model_system import DualModelSystem, setup_dual_model_system
 from src.monitoring.performance_dashboard import (
     PerformanceDashboard,
     setup_performance_dashboard,
@@ -39,51 +38,45 @@ from src.monitoring.performance_monitor import (
     PerformanceMonitor,
     setup_performance_monitor,
 )
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.warning_symbols import (
-    critical,
-    error,
-    failed,
-    warning,
-)
-from src.utils.logger import system_logger, setup_logging
-from src.core.dependency_injection import DependencyContainer, ServiceLocator
-from src.monitoring.dual_model_system import DualModelSystem, setup_dual_model_system
-from src.core.config_service import ConfigurationService
+from src.strategist.strategist import Strategist
+from src.supervisor.supervisor import Supervisor
+from src.tactician.tactician import Tactician
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import setup_logging, system_logger
+from src.utils.observability import init_observability
+from src.utils.state_manager import StateManager
+from src.utils.warning_symbols import critical, error, failed, warning
 
 # Add the project root to the Python path for subprocess execution
 # Important: append instead of inserting at position 0 to avoid shadowing
 # standard library modules like 'types' with our internal 'src/types' package.
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 if TYPE_CHECKING:
     pass  # TODO: Add proper implementation
-class AresPipeline:
-    """
-    Enhanced main pipeline with dependency injection and comprehensive error handling.
-    """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
-        """
-        Initialize Ares pipeline with enhanced type safety and DI.
+
+class AresPipeline:
+    """Enhanced main pipeline with dependency injection and comprehensive error
+    handling."""
+
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize Ares pipeline with enhanced type safety and DI.
 
         Args:
             config: Optional configuration dictionary
         """
-        self.logger=system_logger.getChild("AresPipeline")
-        self.config=config or {}
+        self.logger = system_logger.getChild("AresPipeline")
+        self.config = config or {}
 
         # Initialize dependency injection container
         self.container: DependencyContainer = DependencyContainer(config or {})
-        self.service_locator: ServiceLocator=ServiceLocator(self.container)
+        self.service_locator: ServiceLocator = ServiceLocator(self.container)
 
         # Pipeline components (will be resolved through DI)
-        self.analyst: IAnalyst | None=None
+        self.analyst: IAnalyst | None = None
         self.strategist: IStrategist | None = None
         self.tactician: ITactician | None = None
         self.supervisor: ISupervisor | None = None
@@ -109,11 +102,11 @@ class AresPipeline:
             AttributeError: (False, "Missing required pipeline components"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False, context="pipeline initialization",
+        default_return=False,
+        context="pipeline initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize pipeline with enhanced error handling and DI.
+        """Initialize pipeline with enhanced error handling and DI.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -151,7 +144,8 @@ class AresPipeline:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="configuration service initialization",
+        default_return=None,
+        context="configuration service initialization",
     )
     async def _initialize_configuration_service(self) -> None:
         """Initialize configuration service."""
@@ -161,7 +155,7 @@ class AresPipeline:
 
             # Register ConfigurationService via factory so it receives DI config
             def _config_service_factory(
-                container: DependencyContainer
+                container: DependencyContainer,
             ) -> ConfigurationService:
                 # Pass the DI container's config into the service
                 return ConfigurationService(container.get_config("root_config", {}))
@@ -172,8 +166,7 @@ class AresPipeline:
                 self.container.set_config("root_config", self.container._config)
 
             self.container.register_factory(
-                "ConfigurationService",
-                _config_service_factory
+                "ConfigurationService", _config_service_factory
             )
 
             print("   ✅ ConfigurationService initialized successfully")
@@ -186,7 +179,8 @@ class AresPipeline:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="core service registration",
+        default_return=None,
+        context="core service registration",
     )
     async def _register_core_services(self) -> None:
         """Register core services in DI container with comprehensive logging."""
@@ -212,7 +206,7 @@ class AresPipeline:
                 # Use environment-configured exchange as default
 
                 # Build exchange instance via factory and register the instance
-                exchange_instance=RootExchangeFactory.get_exchange(
+                exchange_instance = RootExchangeFactory.get_exchange(
                     get_exchange_name().lower(),
                 )
                 self.container.register_instance("ExchangeClient", exchange_instance)
@@ -239,7 +233,8 @@ class AresPipeline:
             try:
                 self.container.register(
                     "Strategist",
-                    Strategist, config={"strategist": {}},
+                    Strategist,
+                    config={"strategist": {}},
                 )
                 print("   ✅ Strategist registered successfully")
                 self.logger.info("   ✅ Strategist registered successfully")
@@ -253,7 +248,8 @@ class AresPipeline:
             try:
                 self.container.register(
                     "Tactician",
-                    Tactician, config={"tactician": {}},
+                    Tactician,
+                    config={"tactician": {}},
                 )
                 print("   ✅ Tactician registered successfully")
                 self.logger.info("   ✅ Tactician registered successfully")
@@ -267,7 +263,8 @@ class AresPipeline:
             try:
                 self.container.register(
                     "Supervisor",
-                    Supervisor, config={"supervisor": {}},
+                    Supervisor,
+                    config={"supervisor": {}},
                 )
                 print("   ✅ Supervisor registered successfully")
                 self.logger.info("   ✅ Supervisor registered successfully")
@@ -281,7 +278,8 @@ class AresPipeline:
             try:
                 self.container.register(
                     "StateManager",
-                    StateManager, config={"state_manager": {}},
+                    StateManager,
+                    config={"state_manager": {}},
                 )
                 print("   ✅ StateManager registered successfully")
                 self.logger.info("   ✅ StateManager registered successfully")
@@ -310,10 +308,12 @@ class AresPipeline:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="pipeline component resolution",
+        default_return=None,
+        context="pipeline component resolution",
     )
     async def _resolve_pipeline_components(self) -> None:
-        """Resolve pipeline components through DI container with comprehensive logging."""
+        """Resolve pipeline components through DI container with comprehensive
+        logging."""
         try:
             print("🔧 Resolving pipeline components...")
             self.logger.info("🔧 Resolving pipeline components...")
@@ -321,7 +321,7 @@ class AresPipeline:
             # Resolve all components
             print("   📊 Resolving Analyst component...")
             self.logger.info("   📊 Resolving Analyst component...")
-            self.analyst=self.container.resolve("Analyst")
+            self.analyst = self.container.resolve("Analyst")
             if self.analyst:
                 print("   ✅ Analyst component resolved successfully")
                 self.logger.info("   ✅ Analyst component resolved successfully")
@@ -331,7 +331,7 @@ class AresPipeline:
 
             print("   🧠 Resolving Strategist component...")
             self.logger.info("   🧠 Resolving Strategist component...")
-            self.strategist=self.container.resolve("Strategist")
+            self.strategist = self.container.resolve("Strategist")
             if self.strategist:
                 print("   ✅ Strategist component resolved successfully")
                 self.logger.info("   ✅ Strategist component resolved successfully")
@@ -341,7 +341,7 @@ class AresPipeline:
 
             print("   🎯 Resolving Tactician component...")
             self.logger.info("   🎯 Resolving Tactician component...")
-            self.tactician=self.container.resolve("Tactician")
+            self.tactician = self.container.resolve("Tactician")
             if self.tactician:
                 print("   ✅ Tactician component resolved successfully")
                 self.logger.info("   ✅ Tactician component resolved successfully")
@@ -351,7 +351,7 @@ class AresPipeline:
 
             print("   👁️ Resolving Supervisor component...")
             self.logger.info("   👁️ Resolving Supervisor component...")
-            self.supervisor=self.container.resolve("Supervisor")
+            self.supervisor = self.container.resolve("Supervisor")
             if self.supervisor:
                 print("   ✅ Supervisor component resolved successfully")
                 self.logger.info("   ✅ Supervisor component resolved successfully")
@@ -361,7 +361,7 @@ class AresPipeline:
 
             print("   💾 Resolving StateManager component...")
             self.logger.info("   💾 Resolving StateManager component...")
-            self.state_manager=self.container.resolve("StateManager")
+            self.state_manager = self.container.resolve("StateManager")
             if self.state_manager:
                 print("   ✅ StateManager component resolved successfully")
                 self.logger.info("   ✅ StateManager component resolved successfully")
@@ -371,7 +371,7 @@ class AresPipeline:
 
             print("   📡 Resolving EventBus component...")
             self.logger.info("   📡 Resolving EventBus component...")
-            self.event_bus=self.container.resolve("EventBus")
+            self.event_bus = self.container.resolve("EventBus")
             if self.event_bus:
                 print("   ✅ EventBus component resolved successfully")
                 self.logger.info("   ✅ EventBus component resolved successfully")
@@ -389,7 +389,8 @@ class AresPipeline:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="component initialization",
+        default_return=None,
+        context="component initialization",
     )
     async def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
@@ -420,7 +421,8 @@ class AresPipeline:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="signal handler setup",
+        default_return=None,
+        context="signal handler setup",
     )
     def _setup_signal_handlers(self) -> None:
         """Setup signal handlers for graceful shutdown."""
@@ -444,11 +446,11 @@ class AresPipeline:
             TimeoutError: (None, "Pipeline operation timed out"),
             ValueError: (None, "Invalid pipeline state"),
         },
-        default_return=None, context="pipeline execution",
+        default_return=None,
+        context="pipeline execution",
     )
     async def run(self) -> dict[str, Any] | None:
-        """
-        Run the Ares pipeline with comprehensive logging and timeout protection.
+        """Run the Ares pipeline with comprehensive logging and timeout protection.
 
         Returns:
             dict[str, Any] | None: Pipeline execution results or None if failed
@@ -464,22 +466,22 @@ class AresPipeline:
 
             print("🚀 Starting Ares Pipeline...")
             self.logger.info("🚀 Starting Ares Pipeline...")
-            self.is_running=True
+            self.is_running = True
             self.start_time = datetime.now()
 
             print(f"📅 Pipeline start time: {self.start_time}")
             self.logger.info(f"📅 Pipeline start time: {self.start_time}")
 
             # Add timeout protection
-            max_cycles=10  # Maximum number of cycles to prevent infinite loops
+            max_cycles = 10  # Maximum number of cycles to prevent infinite loops
             max_duration = 300  # Maximum duration in seconds (5 minutes)
 
             # Main pipeline loop with timeout protection
             while self.is_running:
                 try:
                     # Check timeout conditions
-                    current_time=datetime.now()
-                    elapsed_time=(current_time - self.start_time).total_seconds()
+                    current_time = datetime.now()
+                    elapsed_time = (current_time - self.start_time).total_seconds()
 
                     if self.cycle_count >= max_cycles:
                         print(
@@ -508,7 +510,7 @@ class AresPipeline:
 
                     await self._execute_cycle()
                     self.cycle_count += 1
-                    self.last_cycle_time=datetime.now()
+                    self.last_cycle_time = datetime.now()
 
                     print(f"✅ Cycle {self.cycle_count} completed successfully")
                     self.logger.info(
@@ -517,8 +519,8 @@ class AresPipeline:
 
                     # Get cycle interval from configuration
                     try:
-                        config_service=self.container.resolve("ConfigurationService")
-                        cycle_interval=config_service.get_value(
+                        config_service = self.container.resolve("ConfigurationService")
+                        cycle_interval = config_service.get_value(
                             "pipeline.loop_interval_seconds",
                             10,
                         )
@@ -535,7 +537,7 @@ class AresPipeline:
                         self.logger.warning(
                             f"Error getting cycle interval, using default: {e}",
                         )
-                        cycle_interval=10
+                        cycle_interval = 10
 
                     await asyncio.sleep(cycle_interval)
 
@@ -548,8 +550,8 @@ class AresPipeline:
                     self.logger.exception("Error in pipeline cycle")
                     await asyncio.sleep(5)  # Wait before retrying
 
-            end_time=datetime.now()
-            duration=(end_time - self.start_time).total_seconds()
+            end_time = datetime.now()
+            duration = (end_time - self.start_time).total_seconds()
 
             print("✅ Pipeline completed successfully!")
             print(f"📊 Total cycles executed: {self.cycle_count}")
@@ -572,18 +574,19 @@ class AresPipeline:
             self.logger.exception("Error running pipeline")
             return None
         finally:
-            self.is_running=False
+            self.is_running = False
             print("🧹 Pipeline cleanup completed")
             self.logger.info("🧹 Pipeline cleanup completed")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="pipeline cycle execution",
+        default_return=None,
+        context="pipeline cycle execution",
     )
     async def _execute_cycle(self) -> None:
         """Execute a single pipeline cycle with comprehensive logging."""
         try:
-            cycle_start=datetime.now()
+            cycle_start = datetime.now()
             print(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
             self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 
@@ -594,7 +597,7 @@ class AresPipeline:
                 print("   🔍 Executing market analysis...")
                 self.logger.info("   🔍 Executing market analysis...")
                 # Provide complete analysis input with all required fields
-                analysis_input={
+                analysis_input = {
                     "symbol": "ETHUSDT",
                     "timeframe": "1h",
                     "limit": 100,
@@ -602,7 +605,7 @@ class AresPipeline:
                     "include_indicators": True,
                     "include_patterns": True,
                 }
-                analysis_result=await self.analyst.execute_analysis(analysis_input)
+                analysis_result = await self.analyst.execute_analysis(analysis_input)
                 if analysis_result:
                     print("   ✅ Market analysis completed successfully")
                     self.logger.info("   ✅ Market analysis completed successfully")
@@ -620,7 +623,7 @@ class AresPipeline:
                 print("   🎯 Developing trading strategy...")
                 self.logger.info("   🎯 Developing trading strategy...")
                 # Provide basic market context for strategist
-                strategy_market_data=pd.DataFrame(
+                strategy_market_data = pd.DataFrame(
                     {
                         "open": [100.0] * 100,
                         "high": [101.0] * 100,
@@ -629,9 +632,10 @@ class AresPipeline:
                         "volume": [1000.0] * 100,
                     },
                 )
-                strategy_current_price=100.5
+                strategy_current_price = 100.5
                 strategy_result = await self.strategist.generate_strategy(
-                    market_data=strategy_market_data, current_price=strategy_current_price,
+                    market_data=strategy_market_data,
+                    current_price=strategy_current_price,
                 )
                 if strategy_result:
                     print("   ✅ Strategy development completed successfully")
@@ -651,7 +655,7 @@ class AresPipeline:
             if self.tactician:
                 print("   ⚡ Executing tactical decisions...")
                 self.logger.info("   ⚡ Executing tactical decisions...")
-                tactical_result=await self.tactician.run()
+                tactical_result = await self.tactician.run()
                 if tactical_result:
                     print("   ✅ Tactical execution completed successfully")
                     self.logger.info("   ✅ Tactical execution completed successfully")
@@ -672,7 +676,7 @@ class AresPipeline:
                 )
 
                 # Create mock market data for demonstration
-                market_data=pd.DataFrame(
+                market_data = pd.DataFrame(
                     {
                         "open": [100.0] * 100,
                         "high": [101.0] * 100,
@@ -681,11 +685,12 @@ class AresPipeline:
                         "volume": [1000.0] * 100,
                     },
                 )
-                current_price=100.5
+                current_price = 100.5
 
                 # Make trading decision
                 decision_result = await self.dual_model_system.make_trading_decision(
-                    market_data=market_data, current_price=current_price,
+                    market_data=market_data,
+                    current_price=current_price,
                 )
 
                 if decision_result:
@@ -695,7 +700,7 @@ class AresPipeline:
                     )
 
                     # Integrate with tactician for position sizing and leverage
-                    integrated_decision=(
+                    integrated_decision = (
                         await self._integrate_dual_model_with_tactician(
                             dual_model_decision=decision_result,
                             market_data=market_data,
@@ -704,20 +709,20 @@ class AresPipeline:
                     )
 
                     # Log decision details
-                    action=decision_result.get("action", "UNKNOWN")
-                    analyst_confidence=decision_result.get("analyst_confidence", 0.0)
-                    tactician_confidence=decision_result.get(
+                    action = decision_result.get("action", "UNKNOWN")
+                    analyst_confidence = decision_result.get("analyst_confidence", 0.0)
+                    tactician_confidence = decision_result.get(
                         "tactician_confidence",
                         0.0,
                     )
-                    final_confidence=decision_result.get("final_confidence", 0.0)
+                    final_confidence = decision_result.get("final_confidence", 0.0)
 
                     # Log position sizing and leverage
-                    position_size=integrated_decision.get("position_sizing", {}).get(
+                    position_size = integrated_decision.get("position_sizing", {}).get(
                         "final_position_size",
                         0.0,
                     )
-                    leverage=integrated_decision.get("leverage_sizing", {}).get(
+                    leverage = integrated_decision.get("leverage_sizing", {}).get(
                         "final_leverage",
                         1.0,
                     )
@@ -745,7 +750,7 @@ class AresPipeline:
                         )
 
                         # Trigger model training
-                        training_result=(
+                        training_result = (
                             await self.dual_model_system.trigger_model_training(
                                 market_data=market_data,
                                 force_training=False,
@@ -778,7 +783,7 @@ class AresPipeline:
                 print("   📊 Monitoring system performance...")
                 self.logger.info("   📊 Monitoring system performance...")
                 # Use a simple method that exists
-                supervision_result=True  # Assume success for now
+                supervision_result = True  # Assume success for now
                 if supervision_result:
                     print("   ✅ Supervision completed successfully")
                     self.logger.info("   ✅ Supervision completed successfully")
@@ -789,7 +794,7 @@ class AresPipeline:
                 print("   ❌ Supervisor component not available")
                 self.logger.error("   ❌ Supervisor component not available")
 
-            cycle_duration=(datetime.now() - cycle_start).total_seconds()
+            cycle_duration = (datetime.now() - cycle_start).total_seconds()
             print(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
             self.logger.info(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
 
@@ -799,11 +804,13 @@ class AresPipeline:
             raise
 
     async def _integrate_dual_model_with_tactician(
-        self, dual_model_decision: dict[str, Any],
-        market_data: pd.DataFrame, current_price: float,
+        self,
+        dual_model_decision: dict[str, Any],
+        market_data: pd.DataFrame,
+        current_price: float,
     ) -> dict[str, Any]:
-        """
-        Integrate dual model system decisions with tactician for position sizing and leverage.
+        """Integrate dual model system decisions with tactician for position sizing and
+        leverage.
 
         Args:
             dual_model_decision: Decision from dual model system
@@ -818,16 +825,16 @@ class AresPipeline:
                 return {"error": "Tactician or dual model decision not available"}
 
             # Extract confidence scores from dual model decision
-            analyst_confidence=dual_model_decision.get("analyst_confidence", 0.5)
-            tactician_confidence=dual_model_decision.get("tactician_confidence", 0.5)
-            final_confidence=dual_model_decision.get("final_confidence", 0.5)
-            normalized_confidence=dual_model_decision.get(
+            analyst_confidence = dual_model_decision.get("analyst_confidence", 0.5)
+            tactician_confidence = dual_model_decision.get("tactician_confidence", 0.5)
+            final_confidence = dual_model_decision.get("final_confidence", 0.5)
+            normalized_confidence = dual_model_decision.get(
                 "normalized_confidence",
                 0.5,
             )
 
             # Create ML predictions for tactician
-            ml_predictions={
+            ml_predictions = {
                 "price_target_confidences": {
                     "0.5%": analyst_confidence,
                     "1.0%": analyst_confidence * 0.9,
@@ -848,37 +855,39 @@ class AresPipeline:
             }
 
             # Calculate position size using tactician
-            position_sizer=getattr(self.tactician, "position_sizer", None)
+            position_sizer = getattr(self.tactician, "position_sizer", None)
             if position_sizer:
-                position_size_result=await position_sizer.calculate_position_size(
-                    ml_predictions=ml_predictions, current_price=current_price,
+                position_size_result = await position_sizer.calculate_position_size(
+                    ml_predictions=ml_predictions,
+                    current_price=current_price,
                     account_balance=1000.0,  # Default balance
                     analyst_confidence=analyst_confidence,
                     tactician_confidence=tactician_confidence,
                 )
             else:
-                position_size_result={
+                position_size_result = {
                     "final_position_size": 0.0,
                     "error": "Position sizer not available",
                 }
 
             # Calculate leverage using tactician
-            leverage_sizer=getattr(self.tactician, "leverage_sizer", None)
+            leverage_sizer = getattr(self.tactician, "leverage_sizer", None)
             if leverage_sizer:
-                leverage_result=await leverage_sizer.calculate_leverage(
-                    ml_predictions=ml_predictions, current_price=current_price,
+                leverage_result = await leverage_sizer.calculate_leverage(
+                    ml_predictions=ml_predictions,
+                    current_price=current_price,
                     target_direction=dual_model_decision.get("action", "HOLD"),
                     analyst_confidence=analyst_confidence,
                     tactician_confidence=tactician_confidence,
                 )
             else:
-                leverage_result={
+                leverage_result = {
                     "final_leverage": 1.0,
                     "error": "Leverage sizer not available",
                 }
 
             # Integrate results
-            integrated_decision={
+            integrated_decision = {
                 **dual_model_decision,
                 "position_sizing": position_size_result,
                 "leverage_sizing": leverage_result,
@@ -901,13 +910,12 @@ class AresPipeline:
             }
 
     def get_pipeline_status(self) -> dict[str, Any]:
-        """
-        Get current pipeline status.
+        """Get current pipeline status.
 
         Returns:
             Dict[str, Any]: Pipeline status information
         """
-        status={
+        status = {
             "is_running": self.is_running,
             "start_time": self.start_time,
             "cycle_count": self.cycle_count,
@@ -926,7 +934,7 @@ class AresPipeline:
         # Add dual model system status if available
         if self.dual_model_system:
             try:
-                dual_model_status=self.dual_model_system.get_system_info()
+                dual_model_status = self.dual_model_system.get_system_info()
                 status["dual_model_system_status"] = dual_model_status
             except Exception as e:
                 status["dual_model_system_status"] = {"error": str(e)}
@@ -934,14 +942,14 @@ class AresPipeline:
         # Add performance monitoring status if available
         if self.performance_monitor:
             try:
-                performance_status=self.performance_monitor.get_performance_summary()
+                performance_status = self.performance_monitor.get_performance_summary()
                 status["performance_monitoring_status"] = performance_status
             except Exception as e:
                 status["performance_monitoring_status"] = {"error": str(e)}
 
         if self.performance_dashboard:
             try:
-                dashboard_status=self.performance_dashboard.get_dashboard_summary()
+                dashboard_status = self.performance_dashboard.get_dashboard_summary()
                 status["performance_dashboard_status"] = dashboard_status
             except Exception as e:
                 status["performance_dashboard_status"] = {"error": str(e)}
@@ -950,7 +958,8 @@ class AresPipeline:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="pipeline cleanup",
+        default_return=None,
+        context="pipeline cleanup",
     )
     async def stop(self) -> None:
         """Stop the pipeline gracefully."""
@@ -958,7 +967,7 @@ class AresPipeline:
 
         try:
             # Stop pipeline loop
-            self.is_running=False
+            self.is_running = False
 
             # Stop components in reverse dependency order
             if self.dual_model_system:
@@ -989,7 +998,7 @@ class AresPipeline:
                 await self.state_manager.stop()
 
             # Close database connections
-            db_manager=self.container.resolve("DatabaseManager")
+            db_manager = self.container.resolve("DatabaseManager")
             if db_manager:
                 await db_manager.close()
 
@@ -1002,14 +1011,14 @@ class AresPipeline:
         """Initialize dual model system."""
         try:
             # Get proper configuration for dual model system
-            dual_model_config=self._get_dual_model_config()
+            dual_model_config = self._get_dual_model_config()
 
-            self.dual_model_system=await setup_dual_model_system(dual_model_config)
+            self.dual_model_system = await setup_dual_model_system(dual_model_config)
             if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
 
                 # Log system information
-                system_info=self.dual_model_system.get_system_info()
+                system_info = self.dual_model_system.get_system_info()
                 self.logger.info(
                     f"   📊 Analyst timeframes: {system_info.get('analyst_timeframes', [])}",
                 )
@@ -1033,13 +1042,13 @@ class AresPipeline:
             self.logger.info("📊 Initializing Performance Monitoring...")
 
             # Setup performance monitor
-            self.performance_monitor=await setup_performance_monitor(self.config)
+            self.performance_monitor = await setup_performance_monitor(self.config)
 
             if self.performance_monitor:
                 self.logger.info("✅ Performance Monitor initialized successfully")
 
                 # Setup performance dashboard
-                self.performance_dashboard=await setup_performance_dashboard(
+                self.performance_dashboard = await setup_performance_dashboard(
                     self.config,
                     self.performance_monitor,
                 )
@@ -1060,7 +1069,7 @@ class AresPipeline:
         """Get dual model system configuration."""
         try:
             # Get configuration from the centralized config system
-            dual_model_config=get_dual_model_config()
+            dual_model_config = get_dual_model_config()
 
             if dual_model_config:
                 return {"dual_model_system": dual_model_config}
@@ -1103,24 +1112,24 @@ async def main():
     """Main entry point for the Ares Pipeline."""
 
     # Add the project root to the Python path
-    project_root=Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent
     sys.path.insert(0, str(project_root))
 
     # Setup logging
     setup_logging()
     init_observability({})
-    logger=system_logger.getChild("AresPipelineMain")
+    logger = system_logger.getChild("AresPipelineMain")
 
     # Parse command line arguments
-    parser=argparse.ArgumentParser(description="Ares Trading Pipeline")
+    parser = argparse.ArgumentParser(description="Ares Trading Pipeline")
     parser.add_argument("symbol", help="Trading symbol (e.g., ETHUSDT)")
     parser.add_argument("exchange", help="Exchange name (e.g., BINANCE)")
     parser.add_argument("--config", help="Path to configuration file")
 
-    args=parser.parse_args()
+    args = parser.parse_args()
 
     # Get trading mode from environment variable
-    trading_mode=os.environ.get("TRADING_MODE", "PAPER").upper()
+    trading_mode = os.environ.get("TRADING_MODE", "PAPER").upper()
 
     logger.info(f"🚀 Starting Ares Pipeline in {trading_mode} mode")
     logger.info(f"📊 Symbol: {args.symbol}")
@@ -1128,7 +1137,7 @@ async def main():
     logger.info(f"🔧 Trading Mode: {trading_mode}")
 
     # Create pipeline instance
-    pipeline=AresPipeline()
+    pipeline = AresPipeline()
 
     try:
         # Initialize pipeline
@@ -1137,7 +1146,7 @@ async def main():
             sys.exit(1)
 
         # Run pipeline
-        result=await pipeline.run()
+        result = await pipeline.run()
 
         if result:
             logger.info("✅ Pipeline completed successfully")
@@ -1154,5 +1163,5 @@ async def main():
         sys.exit(1)
 
 
-if __name__== "__main__":
+if __name__ == "__main__":
     asyncio.run(main())

@@ -48,12 +48,7 @@ from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    timeout,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, timeout, warning
 
 # Suppress Optuna's verbose logging to keep the output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -616,9 +611,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Try to load from unified data loader first (more efficient)
             try:
-                from src.config.constants import (
-                    BLANK_TRAINING_LOOKBACK_DAYS,
-                )
+                from src.config.constants import BLANK_TRAINING_LOOKBACK_DAYS
 
                 # Use lookback_days from config (should be passed from enhanced training manager)
                 config_lookback: int = int(self.config.get(
@@ -2875,8 +2868,11 @@ class RegimeAwareAnalystEnhancementStep:
                 try:
                     y = data[target_column]
                     
-                    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-                    
+                    from sklearn.feature_selection import (
+                        mutual_info_classif,
+                        mutual_info_regression,
+                    )
+
                     # Determine task type
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
                     
@@ -2899,7 +2895,7 @@ class RegimeAwareAnalystEnhancementStep:
             if target_column and target_column in data.columns and len(X_clean.columns) > 50:
                 try:
                     from src.analyst.meta_label_relevance import compute_shap_importance
-                    
+
                     # Calculate SHAP importance
                     shap_scores = compute_shap_importance(X_clean, y, task=task_type)
                     
@@ -2918,8 +2914,11 @@ class RegimeAwareAnalystEnhancementStep:
             # Stage 5: RandomForest importance filtering (if target available)
             if target_column and target_column in data.columns and len(X_clean.columns) > 30:
                 try:
-                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-                    
+                    from sklearn.ensemble import (
+                        RandomForestClassifier,
+                        RandomForestRegressor,
+                    )
+
                     # Train RF for feature importance
                     if task_type == "classification":
                         rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
@@ -3680,18 +3679,18 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     # Import logger for step-level logging
-    from src.utils.logger import system_logger
     from src.utils.enhanced_mlflow_integration import (
-import copy
-import os.path
-
-        with_enhanced_mlflow_logging,
-        log_step_report,
+        copy,
         create_detailed_step_report,
-        log_step_metrics,
+        log_step_artifact_with_standardized_name,
         log_step_dataframe_with_standardized_name,
-        log_step_artifact_with_standardized_name
+        log_step_metrics,
+        log_step_report,
+        os.path,
+        rt,
+        with_enhanced_mlflow_logging,
     )
+    from src.utils.logger import system_logger
 
     logger = system_logger.getChild("Step6.AnalystEnhancement")
 

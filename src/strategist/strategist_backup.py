@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from src.utils.error_handler import (
-import asyncio
-
+    asyncio,
     handle_errors,
     handle_specific_errors,
+    import,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
@@ -32,7 +32,9 @@ from src.utils.warning_symbols import (
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
+
 import copy
+
 import numpy as np
 
 

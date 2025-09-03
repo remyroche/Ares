@@ -6,11 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    missing,
-)
+from src.utils.warning_symbols import error, failed, missing
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -39,7 +35,6 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
-
         """
         self.logger.info("🔍 Validating confidence calibration step...")
 
@@ -95,7 +90,10 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         return True
 
     def _validate_calibration_files(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate that calibration files exist.
 
@@ -106,7 +104,6 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
-
         """
         try:
             # Expected calibration file patterns
@@ -119,7 +116,9 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
             missing_files = [f for f in expected_files if not os.path.exists(f)]
 
             if missing_files:
-                self.logger.error(missing(f"Missing calibration files: {missing_files}"))
+                self.logger.error(
+                    missing(f"Missing calibration files: {missing_files}")
+                )
                 return False
 
             self.logger.info("✅ Calibration files validation passed")

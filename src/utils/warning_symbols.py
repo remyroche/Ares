@@ -1,7 +1,7 @@
 """Warning symbols and color utilities for enhanced logging output.
 
-This module provides warning symbols = color codes = and formatting utilities
-for making log messages more visually distinctive and informative.
+This module provides warning symbols = color codes = and formatting utilities for making
+log messages more visually distinctive and informative.
 """
 
 import os
@@ -93,7 +93,6 @@ def should_use_colors() -> bool:
 
     Returns:
         bool: True if colors should be used
-
     """
     # Check if we're in a terminal
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
@@ -118,7 +117,6 @@ def colorize(text: str, color: str, bold: bool = False) -> str:
 
     Returns:
         Colorized text or original text if colors disabled
-
     """
     if not should_use_colors():
         return text
@@ -146,7 +144,6 @@ def format_warning_message(
 
     Returns:
         Formatted warning message
-
     """
     formatted_symbol = colorize(symbol, color, bold)
     formatted_message = colorize(message, color, bold)
@@ -169,7 +166,6 @@ def format_error_message(
 
     Returns:
         Formatted error message
-
     """
     formatted_symbol = colorize(symbol, color, bold)
     formatted_message = colorize(message, color, bold)
@@ -192,7 +188,6 @@ def format_critical_message(
 
     Returns:
         Formatted critical error message
-
     """
     formatted_symbol = colorize(symbol, color, bold)
     formatted_message = colorize(message, color, bold)
@@ -215,7 +210,6 @@ def format_problem_message(
 
     Returns:
         Formatted problem message
-
     """
     formatted_symbol = colorize(symbol, color, bold)
     formatted_message = colorize(message, color, bold)
@@ -238,7 +232,6 @@ def format_success_message(
 
     Returns:
         Formatted success message
-
     """
     formatted_symbol = colorize(symbol, color, bold)
     formatted_message = colorize(message, color, bold)
@@ -261,7 +254,6 @@ def format_info_message(
 
     Returns:
         Formatted info message
-
     """
     formatted_symbol = colorize(symbol, color, bold)
     formatted_message = colorize(message, color, bold)

@@ -7,21 +7,17 @@ with partial fill management.
 """
 
 import uuid
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-# from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
-from src.utils.warning_symbols import (
-import copy
-import asyncio
+from src.utils.logger import system_logger
 
-    failed,
-    missing,
-)
+# from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
+from src.utils.warning_symbols import asyncio, copy, failed, import, missing
+
 
 class OrderType(Enum):
     """Order types supported by the enhanced order manager."""

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Real-time Metrics Dashboard
+"""Real-time Metrics Dashboard.
 
 Provides real-time metrics visualization scaffolding for the Ares trading bot.
 """
@@ -61,7 +60,11 @@ class MetricsDashboard:
         self.metrics: List[DashboardMetric] = []
         self.update_interval: int = int(self.dashboard_config["update_interval_seconds"])  # type: ignore[index]
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="metrics_dashboard.initialize")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="metrics_dashboard.initialize",
+    )
     async def initialize(self) -> bool:
         self.logger.info("📊 Initializing Metrics Dashboard ...")
         self.metrics.clear()

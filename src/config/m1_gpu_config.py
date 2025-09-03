@@ -1,12 +1,11 @@
 # src/config/m1_gpu_config.py
+"""Configuration for Mac M1 GPU acceleration and optimization.
 
-"""
-Configuration for Mac M1 GPU acceleration and optimization.
 Provides comprehensive settings for Metal Performance Shaders (MPS) integration.
 """
 
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass

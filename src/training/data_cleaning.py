@@ -1,8 +1,8 @@
 import logging
 from typing import Any
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def handle_missing_data(
@@ -11,6 +11,7 @@ def handle_missing_data(
     fill_value: Any | None = 0,
 ) -> pd.DataFrame:
     """Handle missing data in a DataFrame with various strategies.
+
     Supported strategies: 'drop', 'fill', 'mean', 'median', 'mode', 'ffill', 'bfill', 'knn' (placeholder).
     Logs missing data rates and strategy used.
     """

@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""
-Comprehensive Trade Tracking System
+"""Comprehensive Trade Tracking System.
 
-This module provides detailed tracking of trades with model ensemble data = regime analysis, feature importance, decision paths, and model behavior monitoring.
+This module provides detailed tracking of trades with model ensemble data = regime
+analysis, feature importance, decision paths, and model behavior monitoring.
 """
 
-from dataclasses_json import dataclass_json
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
+import asyncio
+import copy
 import json
 import time
-
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import failed, missing
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import copy
-import asyncio
+from dataclasses_json import dataclass_json
+
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import failed, missing
+
 
 class TradeStatus(Enum):
     """Trade status enumeration."""
@@ -30,6 +32,7 @@ class TradeStatus(Enum):
     CANCELLED = "cancelled"
     FAILED = "failed"
 
+
 class ModelType(Enum):
     """Model type enumeration."""
 
@@ -39,9 +42,9 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
 
+
 @dataclass_json
 @dataclass
-
 class FeatureImportance:
     """Feature importance tracking."""
 
@@ -52,9 +55,9 @@ class FeatureImportance:
     timeframe: str
     regime: str
 
+
 @dataclass_json
 @dataclass
-
 class ModelPrediction:
     """Individual model prediction tracking."""
 
@@ -68,9 +71,9 @@ class ModelPrediction:
     prediction_time: datetime
     model_version: str
 
+
 @dataclass_json
 @dataclass
-
 class EnsembleDecision:
     """Ensemble decision tracking."""
 
@@ -83,9 +86,9 @@ class EnsembleDecision:
     meta_learner_prediction: str | None = None
     meta_learner_confidence: float | None = None
 
+
 @dataclass_json
 @dataclass
-
 class RegimeAnalysis:
     """Market regime analysis tracking."""
 
@@ -97,9 +100,9 @@ class RegimeAnalysis:
     regime_transition_probability: float
     regime_duration: int | None = None
 
+
 @dataclass_json
 @dataclass
-
 class DecisionPath:
     """Decision path analysis tracking."""
 
@@ -109,9 +112,9 @@ class DecisionPath:
     decision_thresholds: dict[str, float]
     decision_metadata: dict[str, Any]
 
+
 @dataclass_json
 @dataclass
-
 class ModelBehavior:
     """Model behavior monitoring."""
 
@@ -123,9 +126,9 @@ class ModelBehavior:
     model_performance_metrics: dict[str, float]
     last_retraining: datetime | None = None
 
+
 @dataclass_json
 @dataclass
-
 class TradeRecord:
     """Comprehensive trade record."""
 
@@ -163,15 +166,13 @@ class TradeRecord:
     close_price: float | None = None
     close_reason: str | None = None
 
+
 class TradeTracker:
-    """
-    Comprehensive trade tracking system with model ensemble = regime analysis,
-    feature importance, decision path, and model behavior monitoring.
-    """
+    """Comprehensive trade tracking system with model ensemble = regime analysis,
+    feature importance, decision path, and model behavior monitoring."""
 
     def __init__(self, config: dict[str, Any]):
-        """
-        Initialize trade tracker.
+        """Initialize trade tracker.
 
         Args:
             config: Configuration dictionary
@@ -230,8 +231,7 @@ class TradeTracker:
         decision_path: dict[str, Any],
         model_behaviors: list[dict[str, Any]],
     ) -> bool:
-        """
-        Record a comprehensive trade with all tracking data.
+        """Record a comprehensive trade with all tracking data.
 
         Args:
             trade_data: Basic trade information
@@ -356,8 +356,7 @@ class TradeTracker:
         trade_id: str,
         update_data: dict[str, Any],
     ) -> bool:
-        """
-        Update an existing trade record.
+        """Update an existing trade record.
 
         Args:
             trade_id: Trade ID to update
@@ -400,8 +399,7 @@ class TradeTracker:
         end_time: datetime | None = None,
         limit: int | None = None,
     ) -> list[TradeRecord]:
-        """
-        Get trade history with optional filtering.
+        """Get trade history with optional filtering.
 
         Args:
             symbol: Filter by symbol
@@ -465,8 +463,7 @@ class TradeTracker:
         timeframe: str | None = None,
         regime: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Analyze feature importance across trades.
+        """Analyze feature importance across trades.
 
         Args:
             model_type: Filter by model type
@@ -624,8 +621,7 @@ class TradeTracker:
         format: str = "json",
         filepath: str | None = None,
     ) -> str:
-        """
-        Export trade data to file.
+        """Export trade data to file.
 
         Args:
             format: Export format ("json", "csv")
@@ -679,8 +675,7 @@ class TradeTracker:
         return flattened
 
     async def cleanup_old_records(self, max_age_days: int = 30) -> int:
-        """
-        Clean up old trade records.
+        """Clean up old trade records.
 
         Args:
             max_age_days: Maximum age in days

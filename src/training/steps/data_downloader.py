@@ -1,17 +1,17 @@
 """Data downloader adapter for training steps.
 
-This module provides a unified interface for downloading data
-using either the optimized or clean downloader.
+This module provides a unified interface for downloading data using either the optimized
+or clean downloader.
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 @handle_errors(
@@ -27,8 +27,8 @@ async def download_all_data_with_consolidation(
 ) -> bool:
     """Unified entrypoint used by training steps to download raw data.
 
-    Tries the optimized downloader first, falls back to the clean downloader.
-    Returns True on success, False otherwise.
+    Tries the optimized downloader first, falls back to the clean downloader. Returns
+    True on success, False otherwise.
     """
     logger = system_logger.getChild("DataDownloaderAdapter")
 
@@ -50,9 +50,7 @@ async def download_all_data_with_consolidation(
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig,
         )
-        from backtesting.ares_data_downloader_optimized import (
-            OptimizedDataDownloader,
-        )
+        from backtesting.ares_data_downloader_optimized import OptimizedDataDownloader
 
         opt_cfg = OptimizedDownloadConfig(
             symbol=symbol,
@@ -70,9 +68,7 @@ async def download_all_data_with_consolidation(
 
     # Fallback: clean downloader
     try:
-        from backtesting.ares_data_downloader_clean import (
-            CleanDataDownloader,
-        )
+        from backtesting.ares_data_downloader_clean import CleanDataDownloader
         from backtesting.ares_data_downloader_clean import (
             DownloadConfig as CleanDownloadConfig,
         )

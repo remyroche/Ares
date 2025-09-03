@@ -1,8 +1,5 @@
 # src/types/config_types.py
-
-"""
-Configuration type definitions for type-safe configuration management.
-"""
+"""Configuration type definitions for type-safe configuration management."""
 
 from typing import Literal, TypedDict
 
@@ -65,7 +62,7 @@ class MLConfig(TypedDict, total=False):
     max_iterations: int | None
 
 
-class MonitoringConfig(TypedDict, total = False):
+class MonitoringConfig(TypedDict, total=False):
     """Type-safe monitoring configuration."""
 
     enable_prometheus: bool
@@ -78,7 +75,7 @@ class MonitoringConfig(TypedDict, total = False):
     max_log_file_size: int | None
 
 
-class SystemConfig(TypedDict, total = False):
+class SystemConfig(TypedDict, total=False):
     """Type-safe system configuration."""
 
     environment: Literal["development", "staging", "production"]
@@ -89,31 +86,34 @@ class SystemConfig(TypedDict, total = False):
     data_cache_size_mb: int | None
 
 
-class TrainingConfig(TypedDict, total = False):
+class TrainingConfig(TypedDict, total=False):
     """Type-safe training configuration."""
 
     training_pipeline: dict[str, int | float]
     MODEL_TRAINING: dict[
-        str, int | float | str | bool | dict[str, int | float | str | bool],
+        str,
+        int | float | str | bool | dict[str, int | float | str | bool],
     ]
     DATA_CONFIG: dict[str, int | float | str]
     ENHANCED_TRAINING: dict[str, int | float | str | bool]
     MULTI_TIMEFRAME_TRAINING: dict[
-        str, int | float | str | bool | dict[str, int | float | str | bool],
+        str,
+        int | float | str | bool | dict[str, int | float | str | bool],
     ]
     TIMEFRAMES: dict[str, dict[str, int | float | str]]
     TIMEFRAME_SETS: dict[str, dict[str, list[str] | str]]
     DEFAULT_TIMEFRAME_SET: str
     TWO_TIER_DECISION: dict[str, int | float | str | bool | list[str]]
     ENHANCED_ENSEMBLE: dict[
-        str, int | float | str | bool | dict[str, int | float | str],
+        str,
+        int | float | str | bool | dict[str, int | float | str],
     ]
 
 
 # Main configuration type
 
 
-class ConfigDict(TypedDict, total = False):
+class ConfigDict(TypedDict, total=False):
     """Complete type-safe configuration dictionary."""
 
     database: DatabaseConfig

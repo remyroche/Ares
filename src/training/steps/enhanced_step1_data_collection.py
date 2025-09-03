@@ -11,9 +11,9 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -24,18 +24,27 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
+    from src.utils.enhanced_config_management import Step1Config
+    from src.utils.enhanced_data_quality_validator import (
+        EnhancedDataQualityValidator,
+        QualityResult,
+        QualityThresholds,
+    )
     from src.utils.enhanced_error_handling import (
-        retry_with_backoff, circuit_breaker, categorize_errors,
-        RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
+        DATA_OPERATION_ERRORS,
+        NonRetryableError,
+        RetryableError,
+        categorize_errors,
+        circuit_breaker,
+        retry_with_backoff,
     )
     from src.utils.enhanced_memory_management import (
-        MemoryMonitor, memory_efficient, optimize_dataframe_dtypes,
-        MemoryOptimizedProcessor, MemoryConfig
+        MemoryConfig,
+        MemoryMonitor,
+        MemoryOptimizedProcessor,
+        memory_efficient,
+        optimize_dataframe_dtypes,
     )
-    from src.utils.enhanced_data_quality_validator import (
-        EnhancedDataQualityValidator, QualityThresholds, QualityResult
-    )
-    from src.utils.enhanced_config_management import Step1Config
     from src.utils.logger import system_logger
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
@@ -154,7 +163,9 @@ class EnhancedStep1DataCollection:
             global download_all_data_with_consolidation
             if download_all_data_with_consolidation is None:
                 try:
-                    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
+                    from src.training.steps.data_downloader import (
+                        download_all_data_with_consolidation as _dl,
+                    )
                     download_all_data_with_consolidation = _dl
                 except ImportError:
                     self.logger.warning("Could not import data downloader, using fallback")
@@ -400,8 +411,9 @@ async def run_enhanced_step1(
 # Example usage
 if __name__ == "__main__":
     import asyncio
+
 import os.path
-    
+
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,

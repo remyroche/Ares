@@ -1,5 +1,4 @@
-"""
-Comprehensive Data Quality Framework
+"""Comprehensive Data Quality Framework.
 
 This module provides a comprehensive data quality framework that includes:
 - Data validation and schema enforcement
@@ -10,6 +9,7 @@ This module provides a comprehensive data quality framework that includes:
 - Cross-step quality consistency
 """
 
+import copy
 import logging
 from datetime import datetime
 from enum import Enum
@@ -20,7 +20,6 @@ import pandas as pd
 
 from .enhanced_outlier_handler import OutlierSeverity, enhanced_outlier_handler
 from .logger import system_logger
-import copy
 
 
 class DataQualityLevel(Enum):
@@ -65,7 +64,14 @@ class DataQualityFramework:
         # Validation rules
         self.validation_rules = {
             "klines_schema": {
-                "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+                "required_columns": [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                ],
                 "data_types": {
                     "timestamp": "int64",
                     "open": "float64",
@@ -91,7 +97,10 @@ class DataQualityFramework:
             "labels_schema": {
                 "required_columns": ["timestamp", "label"],
                 "data_types": {"timestamp": "int64", "label": "int64"},
-                "constraints": {"timestamp": {"min": 0, "max": None}, "label": {"min": 0, "max": None}},
+                "constraints": {
+                    "timestamp": {"min": 0, "max": None},
+                    "label": {"min": 0, "max": None},
+                },
             },
         }
 
@@ -112,7 +121,9 @@ class DataQualityFramework:
 
         self.logger.info("🔧 Comprehensive Data Quality Framework initialized")
 
-    def clean_data(self, data: pd.DataFrame, cleaning_rules: Dict[str, Any] = None) -> pd.DataFrame:
+    def clean_data(
+        self, data: pd.DataFrame, cleaning_rules: Dict[str, Any] = None
+    ) -> pd.DataFrame:
         """Clean data according to specified rules.
 
         Args:
@@ -161,7 +172,9 @@ class DataQualityFramework:
 
         return cleaned_data
 
-    def validate_data(self, data: pd.DataFrame, validation_rules: List[str] = None) -> Dict[str, Any]:
+    def validate_data(
+        self, data: pd.DataFrame, validation_rules: List[str] = None
+    ) -> Dict[str, Any]:
         """Validate data according to specified validation rules.
 
         Args:
@@ -190,7 +203,9 @@ class DataQualityFramework:
 
         for rule_name in validation_rules:
             if rule_name not in self.validation_rules:
-                validation_results["warnings"].append(f"Unknown validation rule: {rule_name}")
+                validation_results["warnings"].append(
+                    f"Unknown validation rule: {rule_name}"
+                )
                 continue
 
             rule = self.validation_rules[rule_name]
@@ -225,7 +240,9 @@ class DataQualityFramework:
 
         return validation_results
 
-    def _apply_validation_rule(self, data: pd.DataFrame, rule: Dict[str, Any], rule_name: str) -> Dict[str, Any]:
+    def _apply_validation_rule(
+        self, data: pd.DataFrame, rule: Dict[str, Any], rule_name: str
+    ) -> Dict[str, Any]:
         """Apply a specific validation rule to data."""
         rule_result = {"passed": True, "issues": [], "warnings": []}
 
@@ -253,7 +270,11 @@ class DataQualityFramework:
                                 "type": "data_type_mismatch",
                                 "severity": "medium",
                                 "message": f"Column '{column}' has type {actual_type}, expected {expected_type}",
-                                "details": {"column": column, "actual": actual_type, "expected": expected_type},
+                                "details": {
+                                    "column": column,
+                                    "actual": actual_type,
+                                    "expected": expected_type,
+                                },
                             }
                         )
 
@@ -310,7 +331,9 @@ class DataQualityFramework:
                         )
 
             # Check OHLC consistency for klines data
-            if rule_name == "klines_schema" and all(col in data.columns for col in ["open", "high", "low", "close"]):
+            if rule_name == "klines_schema" and all(
+                col in data.columns for col in ["open", "high", "low", "close"]
+            ):
                 ohlc_violations = (
                     (data["high"] < data["low"])
                     | (data["high"] < data["open"])
@@ -346,7 +369,9 @@ class DataQualityFramework:
 
         return rule_result
 
-    def _check_quality_policy_compliance(self, validation_results: Dict[str, Any]) -> bool:
+    def _check_quality_policy_compliance(
+        self, validation_results: Dict[str, Any]
+    ) -> bool:
         """Check if validation results comply with quality policies."""
         summary = validation_results
 
@@ -364,7 +389,9 @@ class DataQualityFramework:
         """Log validation results."""
 
         if results["overall_passed"]:
-            self.logger.info(f"Data validation passed: {results['passed_rules']}/{results['total_rules']} rules passed")
+            self.logger.info(
+                f"Data validation passed: {results['passed_rules']}/{results['total_rules']} rules passed"
+            )
         else:
             self.logger.error(
                 f"Data validation failed: {results['failed_rules']}/{results['total_rules']} rules failed"
@@ -373,19 +400,29 @@ class DataQualityFramework:
                 f"Issues: Critical={results['critical_issues']}, High={results['high_issues']}, Medium={results['medium_issues']}, Low={results['low_issues']}"
             )
 
-    def _validate_schema(self, data: pd.DataFrame, rules: Dict[str, Any]) -> pd.DataFrame:
+    def _validate_schema(
+        self, data: pd.DataFrame, rules: Dict[str, Any]
+    ) -> pd.DataFrame:
         """Validate data schema."""
         try:
             # Try to validate against klines schema first
-            validation_result = self.outlier_handler.validate_data_schema(data, "klines")
+            validation_result = self.outlier_handler.validate_data_schema(
+                data, "klines"
+            )
 
             if not validation_result["valid"]:
-                self.logger.warning(f"Schema validation issues: {validation_result['errors']}")
+                self.logger.warning(
+                    f"Schema validation issues: {validation_result['errors']}"
+                )
 
                 # Try features schema
-                validation_result = self.outlier_handler.validate_data_schema(data, "features")
+                validation_result = self.outlier_handler.validate_data_schema(
+                    data, "features"
+                )
                 if not validation_result["valid"]:
-                    self.logger.warning(f"Features schema validation issues: {validation_result['errors']}")
+                    self.logger.warning(
+                        f"Features schema validation issues: {validation_result['errors']}"
+                    )
 
             return data
 
@@ -393,7 +430,9 @@ class DataQualityFramework:
             self.logger.error(f"Schema validation error: {e}")
             return data
 
-    def _validate_data_types(self, data: pd.DataFrame, rules: Dict[str, Any]) -> pd.DataFrame:
+    def _validate_data_types(
+        self, data: pd.DataFrame, rules: Dict[str, Any]
+    ) -> pd.DataFrame:
         """Validate and fix data types."""
         try:
             # Check for common data type issues
@@ -401,7 +440,9 @@ class DataQualityFramework:
                 if col == "timestamp" and data[col].dtype != "int64":
                     try:
                         # Try to convert to int64
-                        data[col] = pd.to_numeric(data[col], errors="coerce").astype("Int64")
+                        data[col] = pd.to_numeric(data[col], errors="coerce").astype(
+                            "Int64"
+                        )
                         self.logger.info(f"Converted {col} to int64")
                     except:
                         self.logger.warning(f"Could not convert {col} to int64")
@@ -438,7 +479,11 @@ class DataQualityFramework:
                     if data[col].dtype in ["float64", "float32", "int64"]:
                         data[col] = data[col].fillna(data[col].median())
                     else:
-                        data[col] = data[col].fillna(data[col].mode()[0] if len(data[col].mode()) > 0 else "unknown")
+                        data[col] = data[col].fillna(
+                            data[col].mode()[0]
+                            if len(data[col].mode()) > 0
+                            else "unknown"
+                        )
 
                 self.logger.info("Filled null values with appropriate defaults")
 
@@ -448,7 +493,9 @@ class DataQualityFramework:
             self.logger.error(f"Null handling error: {e}")
             return data
 
-    def _handle_duplicates(self, data: pd.DataFrame, rules: Dict[str, Any]) -> pd.DataFrame:
+    def _handle_duplicates(
+        self, data: pd.DataFrame, rules: Dict[str, Any]
+    ) -> pd.DataFrame:
         """Handle duplicate values according to rules."""
         try:
             duplicate_handling = rules.get("duplicate_handling", "drop_first")
@@ -473,7 +520,9 @@ class DataQualityFramework:
             self.logger.error(f"Duplicate handling error: {e}")
             return data
 
-    def _handle_outliers(self, data: pd.DataFrame, rules: Dict[str, Any]) -> pd.DataFrame:
+    def _handle_outliers(
+        self, data: pd.DataFrame, rules: Dict[str, Any]
+    ) -> pd.DataFrame:
         """Handle outliers according to rules."""
         try:
             outlier_handling = rules.get("outlier_handling", "detect_only")
@@ -509,7 +558,9 @@ class DataQualityFramework:
                 )
 
                 # Remove outliers above threshold
-                high_severity_outliers = [o for o in outliers if o.severity.value >= threshold_level]
+                high_severity_outliers = [
+                    o for o in outliers if o.severity.value >= threshold_level
+                ]
 
                 if high_severity_outliers:
                     outlier_indices = set()
@@ -520,7 +571,9 @@ class DataQualityFramework:
                     data = data.drop(data.index[list(outlier_indices)])
                     rows_removed = original_rows - len(data)
 
-                    self.logger.info(f"Removed {rows_removed} rows with {severity_threshold}+ severity outliers")
+                    self.logger.info(
+                        f"Removed {rows_removed} rows with {severity_threshold}+ severity outliers"
+                    )
 
             elif outlier_handling == "cap":
                 # Cap outliers at threshold boundaries
@@ -544,7 +597,9 @@ class DataQualityFramework:
                         capped_upper = (data[col] == upper_bound).sum()
 
                         if capped_lower > 0 or capped_upper > 0:
-                            self.logger.info(f"Capped {capped_lower + capped_upper} outliers in {col}")
+                            self.logger.info(
+                                f"Capped {capped_lower + capped_upper} outliers in {col}"
+                            )
 
                     elif method == "zscore":
                         mean_val = data[col].mean()
@@ -560,7 +615,9 @@ class DataQualityFramework:
                         capped_upper = (data[col] == upper_bound).sum()
 
                         if capped_lower > 0 or capped_upper > 0:
-                            self.logger.info(f"Capped {capped_lower + capped_upper} outliers in {col}")
+                            self.logger.info(
+                                f"Capped {capped_lower + capped_upper} outliers in {col}"
+                            )
 
             return data
 
@@ -606,7 +663,9 @@ class DataQualityFramework:
                 "columns_with_nulls": null_counts[null_counts > 0].to_dict(),
                 "null_percentages": null_percentages[null_percentages > 0].to_dict(),
                 "worst_column": null_counts.idxmax() if null_counts.max() > 0 else None,
-                "worst_percentage": null_percentages.max() if null_percentages.max() > 0 else 0,
+                "worst_percentage": (
+                    null_percentages.max() if null_percentages.max() > 0 else 0
+                ),
             }
         except Exception as e:
             return {"error": str(e)}
@@ -629,7 +688,9 @@ class DataQualityFramework:
         """Analyze outliers in data."""
         try:
             # Use default outlier detection
-            outliers = self.outlier_handler.detect_outliers(data, method="iqr", threshold=1.5, raise_errors=False)
+            outliers = self.outlier_handler.detect_outliers(
+                data, method="iqr", threshold=1.5, raise_errors=False
+            )
 
             if not outliers:
                 return {"total_outlier_groups": 0, "severity_distribution": {}}
@@ -653,7 +714,9 @@ class DataQualityFramework:
                 "severity_distribution": severity_counts,
                 "column_distribution": column_counts,
                 "worst_column": (
-                    max(column_counts.items(), key=lambda x: x[1]["total_values"])[0] if column_counts else None
+                    max(column_counts.items(), key=lambda x: x[1]["total_values"])[0]
+                    if column_counts
+                    else None
                 ),
             }
 
@@ -666,7 +729,9 @@ class DataQualityFramework:
             score = 100.0
 
             # Deduct for null values
-            null_percentage = (data.isnull().sum().sum() / (len(data) * len(data.columns))) * 100
+            null_percentage = (
+                data.isnull().sum().sum() / (len(data) * len(data.columns))
+            ) * 100
             score -= null_percentage * 0.5  # 0.5 penalty per percentage point
 
             # Deduct for duplicates
@@ -674,10 +739,16 @@ class DataQualityFramework:
             score -= duplicate_percentage * 0.3  # 0.3 penalty per percentage point
 
             # Deduct for outliers
-            outliers = self.outlier_handler.detect_outliers(data, method="iqr", threshold=1.5, raise_errors=False)
+            outliers = self.outlier_handler.detect_outliers(
+                data, method="iqr", threshold=1.5, raise_errors=False
+            )
             if outliers:
-                critical_outliers = len([o for o in outliers if o.severity == OutlierSeverity.CRITICAL])
-                high_outliers = len([o for o in outliers if o.severity == OutlierSeverity.HIGH])
+                critical_outliers = len(
+                    [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
+                )
+                high_outliers = len(
+                    [o for o in outliers if o.severity == OutlierSeverity.HIGH]
+                )
 
                 score -= critical_outliers * 5.0  # 5 points per critical outlier group
                 score -= high_outliers * 2.0  # 2 points per high outlier group
@@ -703,29 +774,47 @@ class DataQualityFramework:
             # Duplicate recommendations
             duplicate_analysis = self._analyze_duplicates(data)
             if duplicate_analysis.get("has_duplicates", False):
-                recommendations.append(f"Remove {duplicate_analysis['duplicate_rows']} duplicate rows")
+                recommendations.append(
+                    f"Remove {duplicate_analysis['duplicate_rows']} duplicate rows"
+                )
 
             # Outlier recommendations
             outlier_analysis = self._analyze_outliers(data)
             if outlier_analysis.get("total_outlier_groups", 0) > 0:
                 severity_dist = outlier_analysis.get("severity_distribution", {})
                 if severity_dist.get("critical", 0) > 0:
-                    recommendations.append("Critical outliers detected - investigate data source")
+                    recommendations.append(
+                        "Critical outliers detected - investigate data source"
+                    )
                 if severity_dist.get("high", 0) > 5:
-                    recommendations.append("Many high-severity outliers - consider outlier removal")
+                    recommendations.append(
+                        "Many high-severity outliers - consider outlier removal"
+                    )
 
             # Data type recommendations
             for col, dtype in data.dtypes.items():
                 if col == "timestamp" and dtype != "int64":
-                    recommendations.append(f"Convert {col} to int64 for timestamp consistency")
-                elif col in ["open", "high", "low", "close", "volume"] and dtype not in ["float64", "float32"]:
-                    recommendations.append(f"Convert {col} to numeric type for calculations")
+                    recommendations.append(
+                        f"Convert {col} to int64 for timestamp consistency"
+                    )
+                elif col in [
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                ] and dtype not in ["float64", "float32"]:
+                    recommendations.append(
+                        f"Convert {col} to numeric type for calculations"
+                    )
 
             # Size recommendations
             if len(data) < 1000:
                 recommendations.append("Small dataset - consider collecting more data")
             if len(data.columns) > 100:
-                recommendations.append("High-dimensional data - consider feature selection")
+                recommendations.append(
+                    "High-dimensional data - consider feature selection"
+                )
 
             return recommendations
 
@@ -733,7 +822,9 @@ class DataQualityFramework:
             self.logger.error(f"Error generating recommendations: {e}")
             return ["Error generating recommendations"]
 
-    def format_data(self, data: pd.DataFrame, data_type: str = "klines") -> pd.DataFrame:
+    def format_data(
+        self, data: pd.DataFrame, data_type: str = "klines"
+    ) -> pd.DataFrame:
         """Format data according to standardized formats.
 
         Args:
@@ -762,13 +853,17 @@ class DataQualityFramework:
 
         # Ensure timestamp is int64
         if "timestamp" in formatted.columns:
-            formatted["timestamp"] = pd.to_numeric(formatted["timestamp"], errors="coerce").astype("int64")
+            formatted["timestamp"] = pd.to_numeric(
+                formatted["timestamp"], errors="coerce"
+            ).astype("int64")
 
         # Ensure OHLCV columns are float64
         ohlcv_columns = ["open", "high", "low", "close", "volume"]
         for col in ohlcv_columns:
             if col in formatted.columns:
-                formatted[col] = pd.to_numeric(formatted[col], errors="coerce").astype("float64")
+                formatted[col] = pd.to_numeric(formatted[col], errors="coerce").astype(
+                    "float64"
+                )
 
         # Sort by timestamp
         if "timestamp" in formatted.columns:
@@ -783,7 +878,9 @@ class DataQualityFramework:
         # Ensure all numeric columns are float64
         numeric_columns = formatted.select_dtypes(include=[np.number]).columns
         for col in numeric_columns:
-            formatted[col] = pd.to_numeric(formatted[col], errors="coerce").astype("float64")
+            formatted[col] = pd.to_numeric(formatted[col], errors="coerce").astype(
+                "float64"
+            )
 
         # Handle infinite values
         formatted = formatted.replace([np.inf, -np.inf], np.nan)
@@ -797,7 +894,9 @@ class DataQualityFramework:
         # Ensure label columns are int64
         label_columns = [col for col in formatted.columns if "label" in col.lower()]
         for col in label_columns:
-            formatted[col] = pd.to_numeric(formatted[col], errors="coerce").astype("int64")
+            formatted[col] = pd.to_numeric(formatted[col], errors="coerce").astype(
+                "int64"
+            )
 
         return formatted
 
@@ -824,8 +923,12 @@ class DataQualityFramework:
                 "missing_values": data.isnull().sum().sum(),
                 "duplicate_rows": data.duplicated().sum(),
                 "numeric_columns": len(data.select_dtypes(include=[np.number]).columns),
-                "categorical_columns": len(data.select_dtypes(include=["object"]).columns),
-                "datetime_columns": len(data.select_dtypes(include=["datetime"]).columns),
+                "categorical_columns": len(
+                    data.select_dtypes(include=["object"]).columns
+                ),
+                "datetime_columns": len(
+                    data.select_dtypes(include=["datetime"]).columns
+                ),
             },
         }
 
@@ -844,11 +947,25 @@ class DataQualityFramework:
             if pd.api.types.is_numeric_dtype(col_data):
                 col_profile.update(
                     {
-                        "min": float(col_data.min()) if not col_data.isna().all() else None,
-                        "max": float(col_data.max()) if not col_data.isna().all() else None,
-                        "mean": float(col_data.mean()) if not col_data.isna().all() else None,
-                        "median": float(col_data.median()) if not col_data.isna().all() else None,
-                        "std": float(col_data.std()) if not col_data.isna().all() else None,
+                        "min": (
+                            float(col_data.min()) if not col_data.isna().all() else None
+                        ),
+                        "max": (
+                            float(col_data.max()) if not col_data.isna().all() else None
+                        ),
+                        "mean": (
+                            float(col_data.mean())
+                            if not col_data.isna().all()
+                            else None
+                        ),
+                        "median": (
+                            float(col_data.median())
+                            if not col_data.isna().all()
+                            else None
+                        ),
+                        "std": (
+                            float(col_data.std()) if not col_data.isna().all() else None
+                        ),
                         "zero_count": (col_data == 0).sum(),
                         "negative_count": (col_data < 0).sum(),
                         "infinite_count": np.isinf(col_data).sum(),
@@ -862,7 +979,10 @@ class DataQualityFramework:
                     {
                         "top_values": value_counts.head(5).to_dict(),
                         "empty_string_count": (col_data == "").sum(),
-                        "whitespace_only_count": col_data.astype(str).str.strip().eq("").sum(),
+                        "whitespace_only_count": col_data.astype(str)
+                        .str.strip()
+                        .eq("")
+                        .sum(),
                     }
                 )
 
@@ -870,7 +990,9 @@ class DataQualityFramework:
 
         return profile
 
-    def get_quality_report(self, data: pd.DataFrame, include_profile: bool = True) -> Dict[str, Any]:
+    def get_quality_report(
+        self, data: pd.DataFrame, include_profile: bool = True
+    ) -> Dict[str, Any]:
         """Generate comprehensive data quality report.
 
         Args:
@@ -922,7 +1044,9 @@ class DataQualityFramework:
         # Validity score (no infinite values in numeric columns)
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 0:
-            infinite_ratio = np.isinf(data[numeric_cols]).sum().sum() / (len(data) * len(numeric_cols))
+            infinite_ratio = np.isinf(data[numeric_cols]).sum().sum() / (
+                len(data) * len(numeric_cols)
+            )
             validity = 1 - infinite_ratio
         else:
             validity = 1.0
@@ -984,7 +1108,9 @@ class DataQualityFramework:
             timestamps = pd.to_datetime(data["timestamp"], unit="s")
             now = pd.Timestamp.now()
             time_diff = abs((timestamps - now).dt.total_seconds())
-            timeliness = 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)  # Normalize to 1 year
+            timeliness = 1 - min(
+                time_diff.mean() / (365 * 24 * 3600), 1.0
+            )  # Normalize to 1 year
             return timeliness
         except:
             return 0.5  # Default score if timestamp parsing fails

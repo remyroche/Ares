@@ -1,25 +1,20 @@
 # src/database/influxdb_manager.py
 
+import copy
 from typing import Optional
 
+import influxdb_client
 import numpy as np
 import pandas as pd
-import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-from src.config import (
-    INFLUXDB_BUCKET,
-    INFLUXDB_ORG,
-    INFLUXDB_TOKEN,
-    INFLUXDB_URL,
-)
+from src.config import INFLUXDB_BUCKET, INFLUXDB_ORG, INFLUXDB_TOKEN, INFLUXDB_URL
 from src.utils.logger import logger
-import copy
 
 
 class InfluxDBManager:
-    """
-    Manages connections and data operations with an InfluxDB database.
+    """Manages connections and data operations with an InfluxDB database.
+
     This class is optimized for handling time-series financial data.
     """
 
@@ -30,8 +25,7 @@ class InfluxDBManager:
         org: str = INFLUXDB_ORG,
         bucket: str = INFLUXDB_BUCKET,
     ) -> None:
-        """
-        Initializes the InfluxDB client.
+        """Initializes the InfluxDB client.
 
         Args:
             url: The URL of the InfluxDB instance.
@@ -61,8 +55,7 @@ class InfluxDBManager:
         interval: str,
         measurement_name: str = "kline_data",
     ) -> None:
-        """
-        Writes a DataFrame of kline data to InfluxDB.
+        """Writes a DataFrame of kline data to InfluxDB.
 
         Args:
             df: DataFrame containing kline data. Must have a 'timestamp' column.
@@ -100,8 +93,7 @@ class InfluxDBManager:
         start_date: str,
         end_date: str,
     ) -> pd.DataFrame:
-        """
-        Queries kline data from InfluxDB for a specific symbol and date range.
+        """Queries kline data from InfluxDB for a specific symbol and date range.
 
         Args:
             symbol: The trading symbol (e.g., 'BTCUSDT').
@@ -132,7 +124,9 @@ class InfluxDBManager:
 
         # Convert timestamp to milliseconds integer as expected by the rest of the application
         if "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
+            df["timestamp"] = (
+                pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
+            )
 
             # Validate that timestamps are reasonable (>= 2000-01-01)
             min_reasonable_ts = 946684800000  # 2000-01-01 in milliseconds

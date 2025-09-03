@@ -1,21 +1,20 @@
 # src/components/modular_tactician.py
 
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import error, initialization_error, invalid, missing
-import copy
 import asyncio
+import copy
+from datetime import datetime
+from typing import Any
+
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, initialization_error, invalid, missing
+
 
 class ModularTactician:
-    """
-    Enhanced modular tactician with comprehensive error handling and type safety.
-    """
+    """Enhanced modular tactician with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize modular tactician with enhanced type safety.
+        """Initialize modular tactician with enhanced type safety.
 
         Args:
             config: Configuration dictionary
@@ -57,8 +56,7 @@ class ModularTactician:
         context="modular tactician initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize modular tactician with enhanced error handling.
+        """Initialize modular tactician with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -100,8 +98,12 @@ class ModularTactician:
             # Update configuration
             self.tactician_interval = self.tactician_config["tactician_interval"]
             self.max_tactician_history = self.tactician_config["max_tactician_history"]
-            self.enable_entry_monitoring = self.tactician_config["enable_entry_monitoring"]
-            self.enable_exit_monitoring = self.tactician_config["enable_exit_monitoring"]
+            self.enable_entry_monitoring = self.tactician_config[
+                "enable_entry_monitoring"
+            ]
+            self.enable_exit_monitoring = self.tactician_config[
+                "enable_exit_monitoring"
+            ]
 
             self.logger.info("Tactician configuration loaded successfully")
 
@@ -114,8 +116,7 @@ class ModularTactician:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate tactician configuration.
+        """Validate tactician configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -177,7 +178,9 @@ class ModularTactician:
             self.logger.info("Tactician modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing tactician modules: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing tactician modules: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -198,7 +201,9 @@ class ModularTactician:
             self.logger.info("Entry monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing entry monitoring: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing entry monitoring: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -219,7 +224,9 @@ class ModularTactician:
             self.logger.info("Exit monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing exit monitoring: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing exit monitoring: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -240,7 +247,9 @@ class ModularTactician:
             self.logger.info("Position monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing position monitoring: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing position monitoring: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -261,7 +270,9 @@ class ModularTactician:
             self.logger.info("Risk monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk monitoring: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing risk monitoring: {e}")
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -277,8 +288,7 @@ class ModularTactician:
         market_data: dict[str, Any],
         strategy_data: dict[str, Any],
     ) -> bool:
-        """
-        Execute tactician monitoring.
+        """Execute tactician monitoring.
 
         Args:
             market_data: Market data dictionary
@@ -348,8 +358,7 @@ class ModularTactician:
         market_data: dict[str, Any],
         strategy_data: dict[str, Any],
     ) -> bool:
-        """
-        Validate tactician inputs.
+        """Validate tactician inputs.
 
         Args:
             market_data: Market data dictionary
@@ -363,14 +372,18 @@ class ModularTactician:
             required_market_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_market_fields:
                 if field not in market_data:
-                    self.logger.error(missing(f"Missing required market data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required market data field: {field}")
+                    )
                     return False
 
             # Check required strategy data fields
             required_strategy_fields = ["signal", "position_size"]
             for field in required_strategy_fields:
                 if field not in strategy_data:
-                    self.logger.error(missing(f"Missing required strategy data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required strategy data field: {field}")
+                    )
                     return False
 
             # Validate data types
@@ -398,8 +411,7 @@ class ModularTactician:
         market_data: dict[str, Any],
         strategy_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform entry monitoring.
+        """Perform entry monitoring.
 
         Args:
             market_data: Market data dictionary
@@ -456,8 +468,7 @@ class ModularTactician:
         market_data: dict[str, Any],
         strategy_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform exit monitoring.
+        """Perform exit monitoring.
 
         Args:
             market_data: Market data dictionary
@@ -514,8 +525,7 @@ class ModularTactician:
         market_data: dict[str, Any],
         strategy_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform position monitoring.
+        """Perform position monitoring.
 
         Args:
             market_data: Market data dictionary
@@ -572,8 +582,7 @@ class ModularTactician:
         market_data: dict[str, Any],
         strategy_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform risk monitoring.
+        """Perform risk monitoring.
 
         Args:
             market_data: Market data dictionary
@@ -933,8 +942,7 @@ class ModularTactician:
         self,
         tactician_type: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Get tactician results.
+        """Get tactician results.
 
         Args:
             tactician_type: Optional tactician type filter
@@ -957,8 +965,7 @@ class ModularTactician:
         context="tactician history getting",
     )
     def get_tactician_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get tactician history.
+        """Get tactician history.
 
         Args:
             limit: Optional limit on number of records
@@ -979,8 +986,7 @@ class ModularTactician:
             return []
 
     def get_tactician_status(self) -> dict[str, Any]:
-        """
-        Get tactician status information.
+        """Get tactician status information.
 
         Returns:
             Dict[str, Any]: Tactician status
@@ -1026,8 +1032,10 @@ class ModularTactician:
         except Exception as e:
             self.logger.error(error(f"Error stopping modular tactician: {e}"))
 
+
 # Global modular tactician instance
 modular_tactician: ModularTactician | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),
@@ -1037,8 +1045,7 @@ modular_tactician: ModularTactician | None = None
 async def setup_modular_tactician(
     config: dict[str, Any] | None = None,
 ) -> ModularTactician | None:
-    """
-    Setup global modular tactician.
+    """Setup global modular tactician.
 
     Args:
         config: Optional configuration dictionary

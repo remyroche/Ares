@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-HMM Composite Cluster Manager
+"""HMM Composite Cluster Manager.
 
 Centralized manager for HMM composite cluster files that can be used by:
 - step3_hmm_regime_discovery (to create files)
@@ -12,8 +11,10 @@ This ensures consistent behavior and prevents infinite loops.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import os.path
 import time
 from typing import Any
 
@@ -23,8 +24,6 @@ from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import os.path
-import asyncio
 
 # Module-level sets to avoid duplicate logs across multiple instances
 # This prevents log spam when different components instantiate the manager separately
@@ -37,13 +36,17 @@ class HMMCompositeManager:
 
     def __init__(self) -> None:
         self.logger = system_logger.getChild("HMMCompositeManager")
-        self._cache: dict[str, dict[str, Any]] = {}  # Simple cache to avoid repeated file checks/loads
+        self._cache: dict[str, dict[str, Any]] = (
+            {}
+        )  # Simple cache to avoid repeated file checks/loads
         # Use shared global sets so multiple instances do not re-log the same events
         self._logged_loads = _GLOBAL_LOGGED_LOADS
         self._logged_events = _GLOBAL_LOGGED_EVENTS
 
         # Enhanced features
-        self._file_metadata_cache: dict[str, dict[str, Any]] = {}  # Cache for file metadata
+        self._file_metadata_cache: dict[str, dict[str, Any]] = (
+            {}
+        )  # Cache for file metadata
         self._last_cleanup = time.time()
         self._cleanup_interval = 3600  # Cleanup cache every hour
 
@@ -95,7 +98,9 @@ class HMMCompositeManager:
             # Remove old cache entries (older than 1 hour)
             cutoff_time = current_time - 3600
             old_keys = [
-                k for k, v in self._cache.items() if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
+                k
+                for k, v in self._cache.items()
+                if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
             ]
             for key in old_keys:
                 try:
@@ -120,8 +125,7 @@ class HMMCompositeManager:
         timeframe: str,
         data_dir: str = "data/training",
     ) -> pd.DataFrame | None:
-        """
-        Load HMM block states if they exist.
+        """Load HMM block states if they exist.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -176,8 +180,7 @@ class HMMCompositeManager:
         data_dir: str = "data/training",
         auto_create: bool = False,
     ) -> pd.DataFrame | None:
-        """
-        Load HMM composite clusters if they exist.
+        """Load HMM composite clusters if they exist.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -201,7 +204,9 @@ class HMMCompositeManager:
             return self._cache[cache_key]["data"]  # type: ignore[return-value]
 
         if not os.path.exists(composite_path):
-            event_key = f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
+            event_key = (
+                f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
+            )
             if auto_create:
                 if event_key not in self._logged_events:
                     self.logger.info(
@@ -243,8 +248,7 @@ class HMMCompositeManager:
         timeframe: str,
         data_dir: str = "data/training",
     ) -> dict[str, Any] | None:
-        """
-        Load HMM meta information if it exists.
+        """Load HMM meta information if it exists.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -297,8 +301,7 @@ class HMMCompositeManager:
         timeframe: str,
         data_dir: str = "data/training",
     ) -> pd.DataFrame | None:
-        """
-        Load HMM composite intensity if it exists.
+        """Load HMM composite intensity if it exists.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -352,8 +355,7 @@ class HMMCompositeManager:
         timeframe: str,
         data_dir: str = "data/training",
     ) -> dict[str, Any] | None:
-        """
-        Load HMM basic meta information if it exists.
+        """Load HMM basic meta information if it exists.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -410,8 +412,7 @@ class HMMCompositeManager:
         force_rerun: bool = False,
         lookback_days: int = 180,
     ) -> bool:
-        """
-        Create HMM composite clusters if they don't exist or if force_rerun is True.
+        """Create HMM composite clusters if they don't exist or if force_rerun is True.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -481,8 +482,7 @@ class HMMCompositeManager:
         force_rerun: bool = False,
         lookback_days: int = 180,
     ) -> pd.DataFrame | None:
-        """
-        Get HMM composite clusters, creating them if they don't exist.
+        """Get HMM composite clusters, creating them if they don't exist.
 
         Args:
             exchange: Exchange name (e.g., 'BINANCE')
@@ -524,8 +524,7 @@ class HMMCompositeManager:
         timeframe: str,
         data_dir: str = "data/training",
     ) -> dict[str, Any]:
-        """
-        Get information about HMM files for a given symbol/exchange/timeframe.
+        """Get information about HMM files for a given symbol/exchange/timeframe.
 
         Args:
             exchange: Exchange name
@@ -568,8 +567,7 @@ class HMMCompositeManager:
         timeframe: str,
         data_dir: str = "data/training",
     ) -> dict[str, Any]:
-        """
-        Validate HMM files for a given symbol/exchange/timeframe.
+        """Validate HMM files for a given symbol/exchange/timeframe.
 
         Args:
             exchange: Exchange name
@@ -624,8 +622,7 @@ class HMMCompositeManager:
         symbol: str | None = None,
         timeframe: str | None = None,
     ) -> None:
-        """
-        Clear cache entries for specific or all files.
+        """Clear cache entries for specific or all files.
 
         Args:
             exchange: Exchange name (optional; if None clears all)
@@ -660,8 +657,7 @@ class HMMCompositeManager:
             )
 
     def get_cache_stats(self) -> dict[str, Any]:
-        """
-        Get cache statistics.
+        """Get cache statistics.
 
         Returns:
             Dictionary with cache statistics

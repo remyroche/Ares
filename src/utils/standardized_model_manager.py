@@ -1,5 +1,4 @@
-"""
-Standardized Model Manager
+"""Standardized Model Manager.
 
 This module provides centralized model management functionality including:
 - Model saving/loading with standardized paths
@@ -105,9 +104,15 @@ class StandardizedModelManager:
         except Exception as e:
             self.logger.error(f"Could not save model registry: {e}")
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="model saving")
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="model saving"
+    )
     def save_model(
-        self, model: Any, metadata: Union[ModelMetadata, Dict[str, Any]], step_name: str, model_id: Optional[str] = None
+        self,
+        model: Any,
+        metadata: Union[ModelMetadata, Dict[str, Any]],
+        step_name: str,
+        model_id: Optional[str] = None,
     ) -> bool:
         """Save a model with metadata.
 
@@ -176,8 +181,12 @@ class StandardizedModelManager:
             self.logger.error(f"Error saving model: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="model loading")
-    def load_model(self, model_id: str, step_name: Optional[str] = None) -> Optional[Tuple[Any, ModelMetadata]]:
+    @handle_errors(
+        exceptions=(Exception,), default_return=None, context="model loading"
+    )
+    def load_model(
+        self, model_id: str, step_name: Optional[str] = None
+    ) -> Optional[Tuple[Any, ModelMetadata]]:
         """Load a model and its metadata.
 
         Args:
@@ -233,9 +242,14 @@ class StandardizedModelManager:
             self.logger.error(f"Error loading model: {e}")
             return None
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="model validation")
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="model validation"
+    )
     def validate_model(
-        self, model: Any, test_data: Union[pd.DataFrame, np.ndarray], expected_output_shape: Optional[Tuple] = None
+        self,
+        model: Any,
+        test_data: Union[pd.DataFrame, np.ndarray],
+        expected_output_shape: Optional[Tuple] = None,
     ) -> bool:
         """Validate a model with test data.
 
@@ -260,7 +274,9 @@ class StandardizedModelManager:
                 # Check output shape if specified
                 if expected_output_shape is not None:
                     if predictions.shape != expected_output_shape:
-                        self.logger.error(f"Output shape mismatch: {predictions.shape} != {expected_output_shape}")
+                        self.logger.error(
+                            f"Output shape mismatch: {predictions.shape} != {expected_output_shape}"
+                        )
                         return False
 
                 # Check for NaN/Inf values
@@ -303,7 +319,11 @@ class StandardizedModelManager:
         if step_name is None:
             return list(self.registry.values())
         else:
-            return [metadata for metadata in self.registry.values() if metadata.get("step_name") == step_name]
+            return [
+                metadata
+                for metadata in self.registry.values()
+                if metadata.get("step_name") == step_name
+            ]
 
     def delete_model(self, model_id: str) -> bool:
         """Delete a model and its metadata.
@@ -348,7 +368,12 @@ class StandardizedModelManager:
         Returns:
             Dictionary with model statistics
         """
-        stats = {"total_models": len(self.registry), "models_by_step": {}, "models_by_type": {}, "total_size": 0}
+        stats = {
+            "total_models": len(self.registry),
+            "models_by_step": {},
+            "models_by_type": {},
+            "total_size": 0,
+        }
 
         for model_id, metadata in self.registry.items():
             step_name = metadata.get("step_name", "unknown")
@@ -356,10 +381,14 @@ class StandardizedModelManager:
             file_size = metadata.get("file_size", 0)
 
             # Count by step
-            stats["models_by_step"][step_name] = stats["models_by_step"].get(step_name, 0) + 1
+            stats["models_by_step"][step_name] = (
+                stats["models_by_step"].get(step_name, 0) + 1
+            )
 
             # Count by type
-            stats["models_by_type"][model_type] = stats["models_by_type"].get(model_type, 0) + 1
+            stats["models_by_type"][model_type] = (
+                stats["models_by_type"].get(model_type, 0) + 1
+            )
 
             # Total size
             stats["total_size"] += file_size

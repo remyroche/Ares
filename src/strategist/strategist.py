@@ -9,26 +9,40 @@ This module provides the Strategist class which is responsible for:
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
 
 # Import Pydantic models and utilities
-from .config import StrategistConfig, MarketIndicators, StrategyResult, RiskLevel
+from .config import MarketIndicators, RiskLevel, StrategistConfig, StrategyResult
 from .utils import (
-import asyncio
-
-    StrategistError, ValidationError, CalculationError,
-    log_error, validate_required_columns, validate_data_sufficiency,
-    PerformanceOptimizer, create_strategy_validator, StrategyComponentExtractor
+    CalculationError,
+    PerformanceOptimizer,
+    StrategistError,
+    StrategyComponentExtractor,
+    ValidationError,
+    asyncio,
+    create_strategy_validator,
+    import,
+    log_error,
+    validate_data_sufficiency,
+    validate_required_columns,
 )
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
+
 import copy
 
 

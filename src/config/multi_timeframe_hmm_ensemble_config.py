@@ -1,14 +1,12 @@
 # src/config/multi_timeframe_hmm_ensemble_config.py
+"""Multi-Timeframe HMM Ensemble Configuration.
 
-"""
-Multi-Timeframe HMM Ensemble Configuration
-
-Configuration settings for the multi-timeframe HMM cluster ensemble system
-that combines predictions from HMM clusters across multiple timeframes.
+Configuration settings for the multi-timeframe HMM cluster ensemble system that combines
+predictions from HMM clusters across multiple timeframes.
 """
 
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -39,8 +37,7 @@ class EnsembleConfig:
 
 
 def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
-    """
-    Get multi-timeframe HMM ensemble configuration.
+    """Get multi-timeframe HMM ensemble configuration.
 
     NOTE: This system predicts REGIME TRANSITIONS only = not price direction.
     Price direction predictions (BUY/SELL/HOLD) are made in:
@@ -53,26 +50,31 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
     """
     return {
         "MULTI_TIMEFRAME_HMM_ENSEMBLE": {
-            "enabled": True,             "timeframes": {
+            "enabled": True,
+            "timeframes": {
                 "1m": {
                     "weight": 0.20,  # High frequency signals for quick reactions
                     "min_samples": 50,
-                    "enable_hazard_model": True, "enable_price_prediction": False,
+                    "enable_hazard_model": True,
+                    "enable_price_prediction": False,
                 },
                 "5m": {
                     "weight": 0.30,  # Primary timeframe for high leverage trading
                     "min_samples": 50,
-                    "enable_hazard_model": True, "enable_price_prediction": False,
+                    "enable_hazard_model": True,
+                    "enable_price_prediction": False,
                 },
                 "15m": {
                     "weight": 0.35,  # Higher weight for medium-term trends and stability
                     "min_samples": 50,
-                    "enable_hazard_model": True, "enable_price_prediction": False,
+                    "enable_hazard_model": True,
+                    "enable_price_prediction": False,
                 },
                 "1h": {
                     "weight": 0.15,  # Lower weight but higher quality signals for trend confirmation
                     "min_samples": 50,
-                    "enable_hazard_model": True, "enable_price_prediction": False,  # Hazard models are for regime transitions only
+                    "enable_hazard_model": True,
+                    "enable_price_prediction": False,  # Hazard models are for regime transitions only
                 },
             },
             "meta_learner": {
@@ -85,7 +87,8 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
             },
             "ensemble_method": "stacking",  # "meta_learner", "stacking" (weighted_average is fallback only)
             "dynamic_weighting": {
-                "enabled": True, "update_frequency": 100,  # Update weights every N predictions
+                "enabled": True,
+                "update_frequency": 100,  # Update weights every N predictions
                 "performance_window": 1000,  # Keep last N predictions for performance tracking
                 "min_weight": 0.1,  # Minimum weight for any timeframe
                 "max_weight": 0.5,  # Maximum weight for any timeframe
@@ -99,16 +102,19 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
                 "cross_validation_folds": 3,
                 "test_size": 0.2,
                 "random_state": 42,
-                "enable_early_stopping": True, "patience": 10,
+                "enable_early_stopping": True,
+                "patience": 10,
             },
             "model_storage": {
                 "base_dir": "models/multi_timeframe_hmm_ensemble",
-                "save_metadata": True, "save_models": True,
+                "save_metadata": True,
+                "save_models": True,
                 "compression": "gzip",
             },
             "logging": {
                 "level": "INFO",
-                "enable_performance_tracking": True, "log_predictions": True,
+                "enable_performance_tracking": True,
+                "log_predictions": True,
                 "log_weight_updates": True,
             },
         },
@@ -116,8 +122,7 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
 
 
 def get_default_timeframe_configs() -> list[TimeframeConfig]:
-    """
-    Get default timeframe configurations.
+    """Get default timeframe configurations.
 
     Returns:
         List[TimeframeConfig]: List of timeframe configurations
@@ -127,32 +132,35 @@ def get_default_timeframe_configs() -> list[TimeframeConfig]:
             timeframe="1m",
             weight=0.20,
             min_samples=50,
-            enable_hazard_model=True, enable_price_prediction=False,
+            enable_hazard_model=True,
+            enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="5m",
             weight=0.30,
             min_samples=50,
-            enable_hazard_model=True, enable_price_prediction=False,
+            enable_hazard_model=True,
+            enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="15m",
             weight=0.35,
             min_samples=50,
-            enable_hazard_model=True, enable_price_prediction=False,
+            enable_hazard_model=True,
+            enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="1h",
             weight=0.15,
             min_samples=50,
-            enable_hazard_model=True, enable_price_prediction=False,
+            enable_hazard_model=True,
+            enable_price_prediction=False,
         ),
     ]
 
 
 def get_default_ensemble_config() -> EnsembleConfig:
-    """
-    Get default ensemble configuration.
+    """Get default ensemble configuration.
 
     Returns:
         EnsembleConfig: Default ensemble configuration
@@ -160,15 +168,15 @@ def get_default_ensemble_config() -> EnsembleConfig:
     return EnsembleConfig(
         timeframes=get_default_timeframe_configs(),
         meta_learner_type="lgbm",
-        enable_dynamic_weighting=True, weight_update_frequency=100,
+        enable_dynamic_weighting=True,
+        weight_update_frequency=100,
         min_confidence_threshold=0.6,
         ensemble_method="meta_learner",
     )
 
 
 def validate_ensemble_config(config: dict[str, Any]) -> bool:
-    """
-    Validate ensemble configuration.
+    """Validate ensemble configuration.
 
     Args:
         config: Configuration dictionary
@@ -209,8 +217,7 @@ def validate_ensemble_config(config: dict[str, Any]) -> bool:
 
 
 def get_optimized_timeframe_weights() -> dict[str, float]:
-    """
-    Get optimized timeframe weights based on typical market behavior.
+    """Get optimized timeframe weights based on typical market behavior.
 
     Returns:
         Dict[str, float]: Optimized weights for each timeframe
@@ -223,15 +230,15 @@ def get_optimized_timeframe_weights() -> dict[str, float]:
     }
 
 
-def get_adaptive_weighting_config() -> dict[str , Any]:
-    """
-    Get adaptive weighting configuration for dynamic weight updates.
+def get_adaptive_weighting_config() -> dict[str, Any]:
+    """Get adaptive weighting configuration for dynamic weight updates.
 
     Returns:
         Dict[str = Any]: Adaptive weighting configuration
     """
     return {
-        "enabled": True , "update_frequency": 100,
+        "enabled": True,
+        "update_frequency": 100,
         "performance_window": 1000,
         "min_weight": 0.1,
         "max_weight": 0.5,

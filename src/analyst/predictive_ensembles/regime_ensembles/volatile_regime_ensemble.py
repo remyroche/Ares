@@ -1,19 +1,4 @@
 import numpy as np
-from src.utils.warning_symbols import (
-import logging
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 import pandas as pd
 from arch import arch_model
 from keras.layers import (
@@ -28,6 +13,23 @@ from keras.layers import (
 from keras.models import Model
 from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
+
+from src.utils.warning_symbols import (
+    connection_error,
+    critical,
+    error,
+    execution_error,
+    failed,
+    import,
+    initialization_error,
+    invalid,
+    logging,
+    missing,
+    problem,
+    timeout,
+    validation_error,
+    warning,
+)
 
 from .base_ensemble import BaseEnsemble
 

@@ -1,9 +1,9 @@
+import asyncio
 from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class StageRegistry:
@@ -14,7 +14,6 @@ class StageRegistry:
 
         Args:
             config: Configuration dictionary
-
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("StageRegistry")
@@ -51,7 +50,6 @@ class StageRegistry:
 
         Returns:
             bool: True if initialization successful, False otherwise
-
         """
         try:
             self.logger.info("Initializing Stage Registry...")

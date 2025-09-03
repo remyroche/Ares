@@ -6,15 +6,15 @@ This step performs HMM-based model training with timeframe-specific architecture
 and S/R integration, using standardized data quality management patterns.
 """
 
+import asyncio
 import json
 import os
 import pickle
 import sys
 import warnings
 from datetime import datetime
-from typing import Any
 from pathlib import Path
-import asyncio
+from typing import Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -22,8 +22,13 @@ sys.path.insert(0, str(project_root))
 
 # Import common operations
 from src.utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_read_parquet, safe_to_parquet, safe_copy, safe_json_dump
+    ensure_directory,
+    format_datetime,
+    get_current_datetime,
+    safe_copy,
+    safe_json_dump,
+    safe_read_parquet,
+    safe_to_parquet,
 )
 
 # Import pipeline standards
@@ -595,6 +600,7 @@ class HMMBasedTrainingStep:
             try:
                 import json
                 import os
+
                 import pandas as _pd
 
                 rf_dir = os.path.join(data_dir, "regime_forecasting")
@@ -2255,7 +2261,7 @@ class HMMBasedTrainingStep:
 
             # Initialize multi-output probability trainer
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
-            
+
             # Configure multi-output training with advanced models
             multi_output_config = {
                 "use_lightgbm": True,
@@ -2369,7 +2375,9 @@ class HMMBasedTrainingStep:
             # Save model with probabilities using multi-output format
             model_path = f"models/{timeframe}_multi_output_lightgbm_model.pkl"
             try:
-                from ..model_saving_utils import save_multi_output_model_with_probabilities
+                from ..model_saving_utils import (
+                    save_multi_output_model_with_probabilities,
+                )
                 save_multi_output_model_with_probabilities(
                     model_data, model_path, save_format="joblib"
                 )
@@ -4286,8 +4294,11 @@ class TCNTrainer:
                     y = X[target_col]
                     
                     # Calculate mutual information
-                    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-                    
+                    from sklearn.feature_selection import (
+                        mutual_info_classif,
+                        mutual_info_regression,
+                    )
+
                     # Determine task type
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
                     
@@ -4313,7 +4324,7 @@ class TCNTrainer:
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 50:
                     from src.analyst.meta_label_relevance import compute_shap_importance
-                    
+
                     # Calculate SHAP importance
                     shap_scores = compute_shap_importance(
                         X_clean[uncorr_features], y, task=task_type
@@ -4337,8 +4348,11 @@ class TCNTrainer:
             # Stage 7: RandomForest importance filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 30:
-                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-                    
+                    from sklearn.ensemble import (
+                        RandomForestClassifier,
+                        RandomForestRegressor,
+                    )
+
                     # Train RF for feature importance
                     if task_type == "classification":
                         rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
@@ -5246,9 +5260,11 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
     """
     try:
         from src.utils.logger import system_logger
+
 import copy
-import numpy as np
 import os.path
+
+import numpy as np
 
         # Create configuration
         config = {

@@ -5,6 +5,7 @@ Integrates matrix enhancements with existing training workflows to improve
 performance, accuracy, and computational efficiency.
 """
 
+import copy
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -14,13 +15,12 @@ import pandas as pd
 
 from src.training.matrix_enhancement_manager import MatrixEnhancementManager
 from src.training.steps.vectorized_advanced_feature_engineering import (
-import asyncio
-
     VectorizedAdvancedFeatureEngineering,
+    asyncio,
+    import,
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import copy
 
 
 @dataclass

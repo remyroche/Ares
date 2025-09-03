@@ -822,8 +822,12 @@ class EnhancedLMOptimizer:
             if hasattr(self, "mlflow_available") and self.mlflow_available:
                 try:
                     import mlflow
-                    from src.utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
-                    
+
+                    from src.utils.mlflow_utils import (
+                        log_metrics_with_metadata,
+                        log_params_with_metadata,
+                    )
+
                     # Extract metadata from config
                     config = getattr(self, 'config', {})
                     symbol = config.get('trading_symbol', 'ETHUSDT')
@@ -1355,6 +1359,7 @@ class EnhancedFeatureSelector:
         """Analyze feature stability across multiple CV folds."""
         try:
             from sklearn.model_selection import TimeSeriesSplit
+
 import copy
 
             feature_stability = dict.fromkeys(features_df.columns, 0)

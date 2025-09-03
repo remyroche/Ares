@@ -1,31 +1,22 @@
 # src/validation/critical_path_validators.py
+"""Critical path type validators for trading system safety."""
 
-"""
-Critical path type validators for trading system safety.
-"""
-
+import copy
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from typing import Any, TypeVar
 
+from src.custom_types import OrderRequest, PositionInfo, TradeDecision, TradingSignal
 from src.custom_types.validation import (
     RuntimeTypeError,
     TypeValidator,
     validate_market_data,
     validate_model_input,
 )
-from src.custom_types import (
-    OrderRequest,
-    PositionInfo,
-    TradeDecision,
-    TradingSignal,
-)
 from src.utils.structured_logging import get_correlation_id
 from src.utils.warning_symbols import error, failed
-
-import logging
-import copy
 
 logger = logging.getLogger(__name__)
 
@@ -311,8 +302,7 @@ def get_type_safety_monitor() -> TypeSafetyMonitor:
 
 
 def safe_execute_with_validation(func: Callable[..., T], *args, **kwargs) -> T | None:
-    """
-    Execute function with comprehensive type validation and error handling.
+    """Execute function with comprehensive type validation and error handling.
 
     Args:
         func: Function to execute

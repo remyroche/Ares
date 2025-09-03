@@ -1,7 +1,7 @@
-"""
-Type definitions and type safety utilities for the Ares trading system.
-This module provides comprehensive type coverage to eliminate Any types
-and improve type safety throughout the codebase.
+"""Type definitions and type safety utilities for the Ares trading system.
+
+This module provides comprehensive type coverage to eliminate Any types and improve type
+safety throughout the codebase.
 """
 
 from src.utils.warning_symbols import (
@@ -20,15 +20,7 @@ from src.utils.warning_symbols import (
 )
 
 # Import specific types from each module
-from .base_types import (
-    Interval,
-    Percentage,
-    Price,
-    Score,
-    Symbol,
-    Timestamp,
-    Volume,
-)
+from .base_types import Interval, Percentage, Price, Score, Symbol, Timestamp, Volume
 from .config_types import (
     ConfigDict,
     DatabaseConfig,
@@ -68,10 +60,10 @@ from .trading_types import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PerformanceMetrics,
     PositionSide,
     RiskLevel,
     TradeAction,
-    PerformanceMetrics,
 )
 from .validation import (
     RuntimeTypeError,

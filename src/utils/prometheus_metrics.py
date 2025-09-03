@@ -1,17 +1,10 @@
-"""
-Prometheus metrics collection utility for training step validators.
-"""
+"""Prometheus metrics collection utility for training step validators."""
 
 import logging
 from collections import Counter
 
 try:
-    from prometheus_client import (
-        Counter,
-        Gauge,
-        Histogram,
-        generate_latest,
-    )
+    from prometheus_client import Counter, Gauge, Histogram, generate_latest
     from prometheus_client.exposition import start_http_server
 
     _PROM_AVAILABLE = True
@@ -148,7 +141,9 @@ class PrometheusMetrics:
             sock.close()
             if result == 0:
                 # Port is already in use, don't start another server
-                logger.info(f"Prometheus metrics server already running on port {self.port}")
+                logger.info(
+                    f"Prometheus metrics server already running on port {self.port}"
+                )
                 self.metrics_initialized = True
                 return
         except Exception:

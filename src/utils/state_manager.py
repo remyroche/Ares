@@ -1,9 +1,7 @@
-"""
-State manager for managing application state and persistence.
+"""State manager for managing application state and persistence.
 
-This module provides state management functionality for the Ares trading bot,
-including state persistence = kill switch functionality = and trading state
-management.
+This module provides state management functionality for the Ares trading bot, including
+state persistence = kill switch functionality = and trading state management.
 """
 
 import asyncio
@@ -21,12 +19,7 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.warning_symbols import (
-    error,
-    invalid,
-    missing,
-    warning,
-)
+from src.utils.warning_symbols import error, invalid, missing, warning
 
 
 class StateManager:

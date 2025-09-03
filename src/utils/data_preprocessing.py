@@ -1,13 +1,13 @@
 import logging
 
 logger = logging.getLogger(__name__)
-
 """
 Data Preprocessing Utilities for Ares Trading System
 Provides functions for regularizing timestamps, handling data quality issues,
 and preparing data for feature engineering.
 """
 
+import copy
 import warnings
 from datetime import timedelta
 from typing import Any
@@ -16,7 +16,6 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
 
 warnings.filterwarnings("ignore")
 
@@ -27,8 +26,7 @@ def regularize_timestamps(
     tolerance_seconds: int = 30,
     method: str = "forward_fill",
 ) -> pd.DataFrame:
-    """
-    Regularize timestamps in a DataFrame to ensure consistent intervals.
+    """Regularize timestamps in a DataFrame to ensure consistent intervals.
 
     Args:
         data: DataFrame with timestamp index or timestamp column
@@ -66,13 +64,21 @@ def regularize_timestamps(
         # Calculate expected interval if not provided
         if expected_interval is None:
             # Fallback implementation for expected_interval
-            expected_interval = (time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median())
+            expected_interval = (
+                time_diffs.mode().iloc[0]
+                if len(time_diffs.mode()) > 0
+                else time_diffs.median()
+            )
 
         # Identify irregular intervals
-        irregular_mask = abs(time_diffs - expected_interval) > timedelta(seconds=tolerance_seconds)
+        irregular_mask = abs(time_diffs - expected_interval) > timedelta(
+            seconds=tolerance_seconds
+        )
         irregular_ratio = irregular_mask.sum() / len(time_diffs)
 
-        if irregular_ratio > 0.0001:  # If more than 0.01% irregular intervals (more sensitive)
+        if (
+            irregular_ratio > 0.0001
+        ):  # If more than 0.01% irregular intervals (more sensitive)
             logger.info(
                 f"🔄 Regularizing timestamps (irregular ratio: {irregular_ratio:.3f})",
             )
@@ -135,8 +141,7 @@ def preprocess_data_for_multi_timeframe(
     volume_data: pd.DataFrame | None = None,
     order_flow_data: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None, pd.DataFrame | None]:
-    """
-    Preprocess data for multi-timeframe feature engineering.
+    """Preprocess data for multi-timeframe feature engineering.
 
     Args:
         price_data: Price data DataFrame
@@ -151,8 +156,14 @@ def preprocess_data_for_multi_timeframe(
     try:
         # Regularize timestamps for all data
         processed_price = regularize_timestamps(price_data)
-        processed_volume = regularize_timestamps(volume_data) if volume_data is not None else None
-        processed_order_flow = regularize_timestamps(order_flow_data) if order_flow_data is not None else None
+        processed_volume = (
+            regularize_timestamps(volume_data) if volume_data is not None else None
+        )
+        processed_order_flow = (
+            regularize_timestamps(order_flow_data)
+            if order_flow_data is not None
+            else None
+        )
 
         logger.info("✅ Data preprocessed for multi-timeframe feature engineering")
 
@@ -167,8 +178,7 @@ def validate_and_fix_data_quality(
     data: pd.DataFrame,
     data_type: str = "klines_ohlcv",
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """
-    Validate and fix common data quality issues.
+    """Validate and fix common data quality issues.
 
     Args:
         data: DataFrame to validate and fix
@@ -227,13 +237,17 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
         # High should be >= max of open, close
         high_violations = data["high"] < data[["open", "close"]].max(axis=1)
         if high_violations.any():
-            data.loc[high_violations, "high"] = data.loc[high_violations, ["open", "close"]].max(axis=1)
+            data.loc[high_violations, "high"] = data.loc[
+                high_violations, ["open", "close"]
+            ].max(axis=1)
             issues.append(f"Fixed {high_violations.sum()} high price violations")
 
         # Low should be <= min of open, close
         low_violations = data["low"] > data[["open", "close"]].min(axis=1)
         if low_violations.any():
-            data.loc[low_violations, "low"] = data.loc[low_violations, ["open", "close"]].min(axis=1)
+            data.loc[low_violations, "low"] = data.loc[
+                low_violations, ["open", "close"]
+            ].min(axis=1)
             issues.append(f"Fixed {low_violations.sum()} low price violations")
 
     # Fix zero volume

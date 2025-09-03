@@ -18,20 +18,18 @@ from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
-import logging
-import asyncio
     AnalysisResult,
     IAnalyst,
     IEventBus,
     IExchangeClient,
     IStateManager,
     MarketData,
+    asyncio,
+    import,
+    logging,
 )
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import (
-    failed,
-    initialization_error,
-)
+from src.utils.warning_symbols import failed, initialization_error
 
 
 class DIAnalyst(AnalystBase, IAnalyst):

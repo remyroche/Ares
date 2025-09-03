@@ -1,5 +1,6 @@
 # src/training/enhanced_training_manager_optimized.py
 
+import asyncio
 import gc
 import multiprocessing as mp
 import os
@@ -12,7 +13,6 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 import psutil
-import asyncio
 
 # Optional dependency: pyarrow is used for efficient parquet streaming; import lazily
 try:
@@ -420,6 +420,7 @@ class StreamingDataProcessor:
             # With pyarrow, write in append mode
             import pyarrow as pa  # type: ignore
             import pyarrow.parquet as pq_mod  # type: ignore
+
 import copy
 import json
 

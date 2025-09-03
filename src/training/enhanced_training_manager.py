@@ -1,6 +1,7 @@
 # src/training/enhanced_training_manager.py
 
 # Added optimized imports
+import asyncio
 import gc
 import json
 import os
@@ -15,12 +16,17 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 import psutil
-import asyncio
 
 from src.utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_read_parquet, safe_to_parquet,
-    generate_cache_key, safe_copy
+    ensure_directory,
+    format_datetime,
+    generate_cache_key,
+    get_current_datetime,
+    safe_copy,
+    safe_json_dump,
+    safe_json_load,
+    safe_read_parquet,
+    safe_to_parquet,
 )
 
 # Optional dependency: pyarrow is used for efficient parquet streaming; import lazily in methods
@@ -61,35 +67,32 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
     MultiTimeframeTrainingManager,
 )
 
-# Import model performance monitor
-from src.utils.model_performance_monitor import ModelPerformanceMonitor
+# Import enhanced validation modules
+from src.utils.cross_step_validation import CrossStepValidator
 
 # Import the auto-fix decorator for data quality issues
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
+from src.utils.logger import system_logger
+
+# Import model performance monitor
+from src.utils.model_performance_monitor import ModelPerformanceMonitor
+from src.utils.statistical_distribution_validation import StatisticalValidator
+from src.utils.step_dependency_validator import step_dependency_validator
 
 # Import new QA decorators
 from src.utils.training_pipeline_decorators import (
-    validate_pipeline_step,
-    ensure_data_integrity,
-    monitor_step_execution,
-    secure_step_execution,
-    monitor_pipeline_step,
-    validate_pipeline_input,
-    monitor_pipeline_performance,
     PipelineStage,
     PipelineValidationLevel,
+    ensure_data_integrity,
+    monitor_pipeline_performance,
+    monitor_pipeline_step,
+    monitor_step_execution,
+    secure_step_execution,
+    validate_pipeline_input,
+    validate_pipeline_step,
 )
-from src.utils.logger import system_logger
-from src.utils.step_dependency_validator import step_dependency_validator
 from src.utils.validator_orchestrator import validator_orchestrator
-
-# Import enhanced validation modules
-from src.utils.cross_step_validation import CrossStepValidator
-from src.utils.statistical_distribution_validation import StatisticalValidator
-from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 
 
 # ==== Helpers for robust data path and JSON formatting ====
@@ -1634,7 +1637,9 @@ class EnhancedTrainingManager:
 
                     step_start_1_5 = time.time()
                     try:
-                        from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+                        from src.training.steps.step1_5_data_converter import (
+                            run_step as step1_5_run_step,
+                        )
 
                         # Execute step 1.5 with QA decorators
                         step1_5_success = await self._execute_step1_5_with_qa(
@@ -2460,8 +2465,9 @@ class EnhancedTrainingManager:
                     self._heartbeat("Step 9.5: Multi-Timeframe HMM Ensemble Training")
                     step_start_9_5 = time.time()
                     try:
-                        from src.training.steps import step9_5_multi_timeframe_hmm_ensemble
-
+                        from src.training.steps import (
+                            step9_5_multi_timeframe_hmm_ensemble,
+                        )
 
                         # Derive available regimes from regime forecasting artifacts (if present)
                         regimes: list[str] = []
@@ -2610,7 +2616,9 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 7 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
+                    from src.training.steps.step12_analyst_enhancement import (
+                        RegimeAwareAnalystEnhancementStep,
+                    )
 
                     # Initialize regime-aware analyst enhancement step
                     analyst_enhancement_step = RegimeAwareAnalystEnhancementStep(self.config)
@@ -2711,7 +2719,9 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 9 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
+                    from src.training.steps.step15_tactician_specialist_training import (
+                        RegimeAwareTacticianSpecialistTrainingStep,
+                    )
 
                     # Initialize regime-aware tactician specialist training step
                     tactician_step = RegimeAwareTacticianSpecialistTrainingStep(self.config)
@@ -2764,7 +2774,9 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 10 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
+                    from src.training.steps.step16_confidence_calibration import (
+                        RegimeAwareConfidenceCalibrationStep,
+                    )
 
                     # Initialize regime-aware confidence calibration step
                     calibration_step = RegimeAwareConfidenceCalibrationStep(self.config)
@@ -2806,7 +2818,9 @@ class EnhancedTrainingManager:
 
                 # Run meta-label relevance evaluation with complementarity and persist active labels
                 try:
-                    from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+                    from src.analyst.meta_label_relevance import (
+                        MetaLabelRelevanceEvaluator,
+                    )
 
                     # Load the latest processed frame if available
                     processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.parquet"
@@ -5152,8 +5166,8 @@ class EnhancedTrainingManager:
                 return True
 
             # Check if at least one critical artifact exists with proper pattern substitution
-            from pathlib import Path
             import glob
+            from pathlib import Path
             artifacts_found = []
 
             for artifact_pattern in previous_artifacts:
@@ -5207,6 +5221,7 @@ class EnhancedTrainingManager:
         try:
             import glob
             from pathlib import Path
+
 import copy
 import os.path
 

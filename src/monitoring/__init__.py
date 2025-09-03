@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""
-Advanced Monitoring and Tracking System
+"""Advanced Monitoring and Tracking System.
 
 This package provides comprehensive monitoring capabilities for the Ares trading bot,
-including real-time metrics visualization, advanced tracing, ML monitoring,
-automated reporting, and comprehensive tracking.
+including real-time metrics visualization, advanced tracing, ML monitoring, automated
+reporting, and comprehensive tracking.
 """
 
 from .advanced_tracer import AdvancedTracer

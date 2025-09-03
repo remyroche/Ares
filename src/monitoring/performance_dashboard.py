@@ -1,9 +1,6 @@
 # src/monitoring/performance_dashboard.py
-
-"""
-Performance Dashboard for Dual Model System
-Real-time monitoring and visualization of system performance metrics.
-"""
+"""Performance Dashboard for Dual Model System Real-time monitoring and visualization of
+system performance metrics."""
 
 from __future__ import annotations
 
@@ -13,13 +10,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
-    performance_monitor,
     PerformanceLevel,
-    resource_monitor,
     memory_efficient,
+    performance_monitor,
+    resource_monitor,
 )
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
@@ -73,7 +70,11 @@ class PerformanceDashboard:
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @resource_monitor()
     @memory_efficient()
-    @handle_errors(exceptions=(Exception,), default_return=False, context="performance_dashboard.initialize")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="performance_dashboard.initialize",
+    )
     async def initialize(self) -> bool:
         """Initialize performance dashboard."""
         self.logger.info("📊 Initializing Performance Dashboard...")

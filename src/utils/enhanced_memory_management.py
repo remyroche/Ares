@@ -4,13 +4,13 @@ Enhanced Memory Management Utilities
 This module provides memory monitoring and optimization capabilities for the training pipeline.
 """
 
+import asyncio
 import functools
 import gc
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
-import asyncio
 
 try:
     import psutil
@@ -30,6 +30,7 @@ except ImportError:
 try:
     from src.utils.logger import system_logger
     from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
 import copy
 
 except ImportError:

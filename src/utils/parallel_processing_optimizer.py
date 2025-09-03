@@ -1,14 +1,14 @@
-"""
-Parallel Processing Optimizer for Mac M1
+"""Parallel Processing Optimizer for Mac M1.
 
-This module provides optimized parallel processing utilities designed
-for Apple Silicon as well as other platforms. It offers a simple
-parallel apply for DataFrame workloads and a convenience decorator.
+This module provides optimized parallel processing utilities designed for Apple Silicon
+as well as other platforms. It offers a simple parallel apply for DataFrame workloads
+and a convenience decorator.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import multiprocessing as mp
 import os
@@ -25,15 +25,12 @@ import pandas as pd
 import psutil
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
 
 logger = logging.getLogger(__name__)
 
 
 class MacM1ParallelOptimizer:
-    """
-    Parallel processing optimizer with Apple Silicon awareness.
-    """
+    """Parallel processing optimizer with Apple Silicon awareness."""
 
     def __init__(
         self,
@@ -43,8 +40,7 @@ class MacM1ParallelOptimizer:
         use_process_pool: bool = True,
         memory_limit_mb: int = 2048,
     ) -> None:
-        """
-        Initialize the parallel optimizer.
+        """Initialize the parallel optimizer.
 
         Args:
             max_workers: Maximum parallel workers. Defaults to cpu_count() or 4 on M1.
@@ -56,7 +52,9 @@ class MacM1ParallelOptimizer:
         self.is_m1_mac: bool = self._detect_m1_mac()
         # On M1, favor 4 workers by default; otherwise default to cpu_count
         default_workers = 4 if self.is_m1_mac else min(8, cpu_count)
-        self.max_workers: int = max_workers if max_workers and max_workers > 0 else default_workers
+        self.max_workers: int = (
+            max_workers if max_workers and max_workers > 0 else default_workers
+        )
         self.chunk_size: int = max(1, chunk_size)
         self.use_process_pool: bool = bool(use_process_pool)
         self.memory_limit_mb: int = max(128, memory_limit_mb)
@@ -74,9 +72,7 @@ class MacM1ParallelOptimizer:
         logger.info(f"   M1 Mac detected: {self.is_m1_mac}")
 
     def _detect_m1_mac(self) -> bool:
-        """
-        Detect if running on Apple Silicon macOS.
-        """
+        """Detect if running on Apple Silicon macOS."""
         try:
             if platform.system() != "Darwin":
                 return False
@@ -99,9 +95,7 @@ class MacM1ParallelOptimizer:
             return False
 
     def _get_optimal_chunk_size(self, data_size: int) -> int:
-        """
-        Calculate optimal chunk size for parallel processing.
-        """
+        """Calculate optimal chunk size for parallel processing."""
         base_chunk_size = self.chunk_size * (2 if self.is_m1_mac else 1)
         # Aim for ~4x workers chunks at minimum
         denom = max(1, self.max_workers * 4)
@@ -115,9 +109,7 @@ class MacM1ParallelOptimizer:
         *,
         chunk_size: Optional[int] = None,
     ) -> list[pd.DataFrame]:
-        """
-        Split DataFrame into chunks.
-        """
+        """Split DataFrame into chunks."""
         size = len(df)
         if size == 0:
             return [df.copy()]
@@ -126,14 +118,14 @@ class MacM1ParallelOptimizer:
             chunk_size = self._get_optimal_chunk_size(size)
         chunks: list[pd.DataFrame] = []
         for i in range(0, size, chunk_size):
-            chunks.append(df.iloc[i: i + chunk_size].copy())
-        logger.debug(f"📦 Split DataFrame into {len(chunks)} chunks of ~{chunk_size} rows each")
+            chunks.append(df.iloc[i : i + chunk_size].copy())
+        logger.debug(
+            f"📦 Split DataFrame into {len(chunks)} chunks of ~{chunk_size} rows each"
+        )
         return chunks
 
     def _merge_chunks(self, chunks: Iterable[pd.DataFrame]) -> pd.DataFrame:
-        """
-        Merge DataFrame chunks back into a single DataFrame.
-        """
+        """Merge DataFrame chunks back into a single DataFrame."""
         chunks_list = list(chunks)
         if not chunks_list:
             return pd.DataFrame()
@@ -146,15 +138,18 @@ class MacM1ParallelOptimizer:
     def parallel_apply(
         self,
         df: pd.DataFrame,
-        func: Callable[[pd.DataFrame, Any], pd.DataFrame] | Callable[[pd.DataFrame], pd.DataFrame],
+        func: (
+            Callable[[pd.DataFrame, Any], pd.DataFrame]
+            | Callable[[pd.DataFrame], pd.DataFrame]
+        ),
         *args: Any,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        """
-        Apply a function to DataFrame chunks in parallel.
-        """
+        """Apply a function to DataFrame chunks in parallel."""
         if not isinstance(df, pd.DataFrame):
-            raise TypeError("parallel_apply expects a pandas DataFrame as first argument")
+            raise TypeError(
+                "parallel_apply expects a pandas DataFrame as first argument"
+            )
 
         # For small datasets, process sequentially to avoid overhead
         if len(df) < self.chunk_size * 2:
@@ -195,9 +190,8 @@ class MacM1ParallelOptimizer:
         *args: Any,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        """
-        Apply multiple feature engineering functions in parallel and concat columns.
-        """
+        """Apply multiple feature engineering functions in parallel and concat
+        columns."""
         if not feature_funcs:
             return df.copy()
         if len(feature_funcs) == 1:
@@ -229,31 +223,40 @@ class MacM1ParallelOptimizer:
         window_sizes: list[int],
         operation: str = "mean",
     ) -> pd.DataFrame:
-        """
-        Perform rolling operations with different window sizes in parallel.
-        """
+        """Perform rolling operations with different window sizes in parallel."""
 
-        def rolling_operation(chunk_df: pd.DataFrame, window_size: int, op: str) -> pd.DataFrame:
+        def rolling_operation(
+            chunk_df: pd.DataFrame, window_size: int, op: str
+        ) -> pd.DataFrame:
             numeric_cols = chunk_df.select_dtypes(include=[np.number]).columns
             result = chunk_df.copy()
             for col in numeric_cols:
                 if op == "mean":
-                    result[f"{col}_rolling_{window_size}"] = chunk_df[col].rolling(window_size).mean()
+                    result[f"{col}_rolling_{window_size}"] = (
+                        chunk_df[col].rolling(window_size).mean()
+                    )
                 elif op == "std":
-                    result[f"{col}_rolling_{window_size}_std"] = chunk_df[col].rolling(window_size).std()
+                    result[f"{col}_rolling_{window_size}_std"] = (
+                        chunk_df[col].rolling(window_size).std()
+                    )
                 elif op == "min":
-                    result[f"{col}_rolling_{window_size}_min"] = chunk_df[col].rolling(window_size).min()
+                    result[f"{col}_rolling_{window_size}_min"] = (
+                        chunk_df[col].rolling(window_size).min()
+                    )
                 elif op == "max":
-                    result[f"{col}_rolling_{window_size}_max"] = chunk_df[col].rolling(window_size).max()
+                    result[f"{col}_rolling_{window_size}_max"] = (
+                        chunk_df[col].rolling(window_size).max()
+                    )
             return result
 
-        feature_funcs = [partial(rolling_operation, window_size=w, op=operation) for w in window_sizes]
+        feature_funcs = [
+            partial(rolling_operation, window_size=w, op=operation)
+            for w in window_sizes
+        ]
         return self.parallel_feature_engineering(df, feature_funcs)
 
     def get_system_info(self) -> dict[str, Any]:
-        """
-        Get system information for optimization.
-        """
+        """Get system information for optimization."""
         cpu_count = mp.cpu_count()
         memory_gb = psutil.virtual_memory().total / (1024**3)
         return {
@@ -282,9 +285,7 @@ _parallel_optimizer: MacM1ParallelOptimizer | None = None
 
 
 def get_parallel_optimizer() -> MacM1ParallelOptimizer:
-    """
-    Get the global parallel optimizer instance.
-    """
+    """Get the global parallel optimizer instance."""
     global _parallel_optimizer
     if _parallel_optimizer is None:
         # Fallback implementation for _parallel_optimizer
@@ -292,9 +293,11 @@ def get_parallel_optimizer() -> MacM1ParallelOptimizer:
     return _parallel_optimizer
 
 
-def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """
-    Decorator for parallel feature engineering functions that return a DataFrame.
+def parallel_feature_engineering(
+    max_workers: int = 4,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator for parallel feature engineering functions that return a DataFrame.
+
     Skips parallelization for async functions.
     """
 
@@ -331,7 +334,11 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
             # Run function in parallel by applying it to chunks and merging
             def apply_func(chunk: pd.DataFrame) -> pd.DataFrame:
                 # type: ignore[misc]
-                return func(chunk, *[a for a in args if not isinstance(a, pd.DataFrame)], **kwargs)
+                return func(
+                    chunk,
+                    *[a for a in args if not isinstance(a, pd.DataFrame)],
+                    **kwargs,
+                )
 
             return optimizer.parallel_apply(df_arg, apply_func)
 
@@ -341,9 +348,7 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
 
 
 def optimize_for_m1_mac() -> None:
-    """
-    Apply Mac M1 specific optimizations via environment hints.
-    """
+    """Apply Mac M1 specific optimizations via environment hints."""
     optimizer = get_parallel_optimizer()
     optimizer.log_system_info()
 

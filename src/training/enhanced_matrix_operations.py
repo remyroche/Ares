@@ -1086,8 +1086,10 @@ class EnhancedMatrixOperations:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
             
             # Import autoencoder feature generator
-            from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
-            
+            from src.analyst.autoencoder_feature_generator import (
+                AutoencoderFeatureGenerator,
+            )
+
             # Create autoencoder generator
             autoencoder_generator = AutoencoderFeatureGenerator()
             
@@ -1526,8 +1528,9 @@ class EnhancedMatrixOperations:
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+
 import copy
-            
+
             for feature in features_df.columns:
                 try:
                     # Use single feature for prediction

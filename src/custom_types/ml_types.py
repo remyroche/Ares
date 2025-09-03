@@ -1,5 +1,4 @@
 # src/types/ml_types.py
-
 """Machine learning type definitions for model inputs = outputs, and metrics."""
 
 from typing import Literal, TypedDict

@@ -29,24 +29,41 @@ sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("Step1Runner")
 
+
 def main() -> None:
     """Main function to run step01 processes."""
     start_time = datetime.now()
-    
+
     logger.info("🚀 STEP1 LAUNCHER STARTING")
     logger.info("=" * 80)
-    
-    parser = argparse.ArgumentParser(description="Step 1 Data Collection and Validation")
+
+    parser = argparse.ArgumentParser(
+        description="Step 1 Data Collection and Validation"
+    )
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
-    parser.add_argument("--no-auto-fix", action="store_true", help="Disable auto-fixing")
-    parser.add_argument("--mode", choices=["complete", "gap-detection", "validation", "preparation", "health-check", "status", "download-missing"],
-                       default="complete", help="Operation mode")
+    parser.add_argument(
+        "--no-auto-fix", action="store_true", help="Disable auto-fixing"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=[
+            "complete",
+            "gap-detection",
+            "validation",
+            "preparation",
+            "health-check",
+            "status",
+            "download-missing",
+        ],
+        default="complete",
+        help="Operation mode",
+    )
 
     args = parser.parse_args()
-    
+
     logger.info(f"🎯 TARGET: {args.exchange}_{args.symbol}")
     logger.info(f"📅 Date range: {args.start_date} to {args.end_date}")
     logger.info(f"🔧 Auto-fix: {'Disabled' if args.no_auto_fix else 'Enabled'}")
@@ -66,13 +83,15 @@ def main() -> None:
 
     if args.mode == "complete":
         # Run complete step01 process
-        results = asyncio.run(orchestrator.run_complete_step1(
-            symbol=args.symbol,
-            exchange=args.exchange,
-            start_date=start_date,
-            end_date=end_date,
-            auto_fix=not args.no_auto_fix
-        ))
+        results = asyncio.run(
+            orchestrator.run_complete_step1(
+                symbol=args.symbol,
+                exchange=args.exchange,
+                start_date=start_date,
+                end_date=end_date,
+                auto_fix=not args.no_auto_fix,
+            )
+        )
 
         # Print report
         if "report" in results:
@@ -81,13 +100,13 @@ def main() -> None:
         # Print summary
         end_time = datetime.now()
         execution_time = end_time - start_time
-        
+
         logger.info("=" * 80)
         logger.info("📊 STEP1 LAUNCHER SUMMARY")
         logger.info(f"⏱️  Total execution time: {execution_time}")
         logger.info(f"🎯 Target: {args.exchange}_{args.symbol}")
         logger.info(f"⚙️  Mode: {args.mode}")
-        
+
         if results["success"]:
             logger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
             print("✅ Step1 completed successfully!")
@@ -97,7 +116,7 @@ def main() -> None:
             for error in results["errors"]:
                 logger.error(f"  - {error}")
                 print(f"  - {error}")
-        
+
         logger.info("=" * 80)
 
     elif args.mode == "gap-detection":
@@ -105,7 +124,9 @@ def main() -> None:
         gap_detector = DataGapDetector()
 
         # Detect missing data
-        missing_data = gap_detector.detect_missing_data(args.symbol, args.exchange, start_date, end_date)
+        missing_data = gap_detector.detect_missing_data(
+            args.symbol, args.exchange, start_date, end_date
+        )
 
         # Detect aggtrades gaps
         aggtrades_gaps = gap_detector.detect_aggtrades_gaps(args.symbol, args.exchange)
@@ -134,14 +155,18 @@ def main() -> None:
         validator.generate_validation_report(args.symbol, args.exchange)
 
         # Print summary
-        print(f"Validation completed: {validation_results['valid_files']} valid, {validation_results['invalid_files']} invalid")
+        print(
+            f"Validation completed: {validation_results['valid_files']} valid, {validation_results['invalid_files']} invalid"
+        )
 
     elif args.mode == "preparation":
         # Run preparation only
         preparation = DataPreparation()
 
         # Prepare data for step1_5
-        preparation_results = preparation.prepare_for_step1_5(args.symbol, args.exchange)
+        preparation_results = preparation.prepare_for_step1_5(
+            args.symbol, args.exchange
+        )
 
         if preparation_results["ready"]:
             print("✅ Data preparation completed successfully")

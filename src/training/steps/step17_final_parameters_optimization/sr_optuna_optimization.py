@@ -1,7 +1,5 @@
 # src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py
-
-"""
-S/R Parameter Optimization with Optuna
+"""S/R Parameter Optimization with Optuna.
 
 This module provides comprehensive optimization of Support/Resistance parameters
 using Optuna, integrating with the existing HPO framework. It optimizes:
@@ -31,7 +29,10 @@ import pandas as pd
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
+from src.tactician.sr_breakout_predictor import (
+    ensure_optimized_sr_config,
+    setup_sr_breakout_predictor,
+)
 from src.tactician.sr_weight_optimizer import SRWeightOptimizer
 from src.utils.logger import setup_logging
 
@@ -39,6 +40,7 @@ setup_logging()
 
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
 
 @dataclass
 class SROptimizationResult:
@@ -67,9 +69,9 @@ class SROptimizationResult:
     study_name: str
     best_trial_number: int
 
+
 class SROptunaOptimizer:
-    """
-    Comprehensive S/R parameter optimizer using Optuna.
+    """Comprehensive S/R parameter optimizer using Optuna.
 
     This optimizer integrates with the existing HPO framework and provides
     multi-objective optimization for S/R parameters with advanced features:
@@ -83,10 +85,12 @@ class SROptunaOptimizer:
     """
 
     def __init__(
-        self, config: dict[str, Any], storage_url: str = "sqlite:///sr_optuna_studies.db", study_name_prefix: str = "sr_optimization"
+        self,
+        config: dict[str, Any],
+        storage_url: str = "sqlite:///sr_optuna_studies.db",
+        study_name_prefix: str = "sr_optimization",
     ):
-        """
-        Initialize the S/R Optuna optimizer.
+        """Initialize the S/R Optuna optimizer.
 
         Args:
             config: Configuration dictionary
@@ -232,10 +236,12 @@ class SROptunaOptimizer:
         }
 
     async def optimize_sr_parameters(
-        self, price_data: pd.DataFrame, target_returns: pd.Series, study_name: str | None = None
+        self,
+        price_data: pd.DataFrame,
+        target_returns: pd.Series,
+        study_name: str | None = None,
     ) -> SROptimizationResult:
-        """
-        Optimize S/R parameters using Optuna.
+        """Optimize S/R parameters using Optuna.
 
         Args:
             price_data: OHLCV price data
@@ -278,9 +284,7 @@ class SROptunaOptimizer:
             # Define objective function
 
             def objective(trial: optuna.Trial):
-                return self._evaluate_sr_parameters(
-                    trial, price_data, target_returns
-                )
+                return self._evaluate_sr_parameters(trial, price_data, target_returns)
 
             # Run optimization
             study.optimize(
@@ -322,8 +326,7 @@ class SROptunaOptimizer:
     async def _evaluate_sr_parameters(
         self, trial: optuna.Trial, price_data: pd.DataFrame, target_returns: pd.Series
     ) -> float:
-        """
-        Evaluate S/R parameters for a given trial.
+        """Evaluate S/R parameters for a given trial.
 
         Args:
             trial: Optuna trial
@@ -362,7 +365,12 @@ class SROptunaOptimizer:
 
             # Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(
-                sr_features, target_sample, level_params, breakout_params, zone_params, confidence_params
+                sr_features,
+                target_sample,
+                level_params,
+                breakout_params,
+                zone_params,
+                confidence_params,
             )
 
             # Report intermediate values for pruning
@@ -381,21 +389,25 @@ class SROptunaOptimizer:
             return 0.0 if not self.multi_objective else [0.0] * len(self.objectives)
 
     def _calculate_performance_metrics(
-        self, sr_features: dict[str, pd.Series], target_returns: pd.Series, level_params: dict[str, Any], breakout_params: dict[str, float], zone_params: dict[str, float], confidence_params: dict[str, float], ) -> dict[str , float]:
+        self,
+        sr_features: dict[str, pd.Series],
+        target_returns: pd.Series,
+        level_params: dict[str, Any],
+        breakout_params: dict[str, float],
+        zone_params: dict[str, float],
+        confidence_params: dict[str, float],
+    ) -> dict[str, float]:
         """Calculate comprehensive performance metrics."""
         try:
             # Extract key features
             strength_scores = sr_features.get(
-                "strength_score",
-                pd.Series(0.5, index=target_returns.index)
+                "strength_score", pd.Series(0.5, index=target_returns.index)
             )
             sr_proximity = sr_features.get(
-                "sr_proximity_score",
-                pd.Series(0.5, index=target_returns.index)
+                "sr_proximity_score", pd.Series(0.5, index=target_returns.index)
             )
             directional_pressure = sr_features.get(
-                "directional_pressure",
-                pd.Series(0.0, index=target_returns.index)
+                "directional_pressure", pd.Series(0.0, index=target_returns.index)
             )
 
             # Calculate trading signals
@@ -418,9 +430,12 @@ class SROptunaOptimizer:
             noise_reduction = self._calculate_noise_reduction(sr_features)
 
             return {
-                "sharpe_ratio": sharpe_ratio, "max_drawdown": max_drawdown,
-                "win_rate": win_rate, "profit_factor": profit_factor,
-                "total_return": total_return, "signal_clarity": signal_clarity,
+                "sharpe_ratio": sharpe_ratio,
+                "max_drawdown": max_drawdown,
+                "win_rate": win_rate,
+                "profit_factor": profit_factor,
+                "total_return": total_return,
+                "signal_clarity": signal_clarity,
                 "noise_reduction": noise_reduction,
             }
         except Exception as e:
@@ -436,7 +451,12 @@ class SROptunaOptimizer:
             }
 
     def _calculate_trading_signals(
-        self, strength_scores: pd.Series, sr_proximity: pd.Series, directional_pressure: pd.Series, confidence_params: dict[str, float], ) -> pd.Series:
+        self,
+        strength_scores: pd.Series,
+        sr_proximity: pd.Series,
+        directional_pressure: pd.Series,
+        confidence_params: dict[str, float],
+    ) -> pd.Series:
         """Calculate trading signals based on S/R parameters."""
         try:
             # Combine signals
@@ -549,7 +569,11 @@ class SROptunaOptimizer:
             return 0.0
 
     def _create_optimization_result(
-        self, study: optuna.Study, best_trial: optuna.Trial, optimization_time: float, study_name: str = "sr_optimization"
+        self,
+        study: optuna.Study,
+        best_trial: optuna.Trial,
+        optimization_time: float,
+        study_name: str = "sr_optimization",
     ) -> SROptimizationResult:
         """Create optimization result object."""
         try:
@@ -650,7 +674,11 @@ class SROptunaOptimizer:
                 total_return=0.1,  # Default
                 signal_clarity=signal_clarity,
                 noise_reduction=0.7,  # Default
-                optimization_score=(best_trial.value if not self.multi_objective else sum(best_trial.values)),
+                optimization_score=(
+                    best_trial.value
+                    if not self.multi_objective
+                    else sum(best_trial.values)
+                ),
                 n_trials=len(study.trials),
                 optimization_time=optimization_time,
                 study_name=study_name,
@@ -752,12 +780,14 @@ class SROptunaOptimizer:
             self.logger.exception(f"Error creating visualizations: {e}")
             return {}
 
+
 async def setup_sr_optuna_optimizer(config: dict[str, Any]) -> SROptunaOptimizer:
     """Setup and initialize S/R Optuna optimizer."""
     optimizer = SROptunaOptimizer(config)
     if await optimizer.initialize():
         return optimizer
     return None
+
 
 if __name__ == "__main__":
     # Example usage
@@ -766,7 +796,8 @@ if __name__ == "__main__":
         # Sample configuration
         config = {
             "sr_optimization": {
-                "multi_objective": True , "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
+                "multi_objective": True,
+                "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
                 "objective_weights": {
                     "sharpe_ratio": 0.4,
                     "win_rate": 0.3,
@@ -787,6 +818,7 @@ if __name__ == "__main__":
 
         # Create sample data
         import numpy as np
+
         np.random.seed(42)
         n_samples = 1000
         price_data = pd.DataFrame(
@@ -805,10 +837,10 @@ if __name__ == "__main__":
         result = await optimizer.optimize_sr_parameters(price_data, target_returns)
 
         if result:
-        # Generate report
+            # Generate report
             report = optimizer.generate_optimization_report(result)
             print(report)
         else:
             print("❌ Optimization failed")
 
-    asyncio.run( main())
+    asyncio.run(main())

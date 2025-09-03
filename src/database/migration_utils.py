@@ -11,18 +11,18 @@ from typing import Any
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    warning,
+    connection_error,
     critical,
-    problem,
+    error,
+    execution_error,
     failed,
+    initialization_error,
     invalid,
     missing,
+    problem,
     timeout,
-    connection_error,
     validation_error,
-    initialization_error,
-    execution_error,
+    warning,
 )
 
 
@@ -408,6 +408,7 @@ async def validate_migration_file(file_path: str) -> dict[str, Any]:
 
 if __name__ == "__main__":
     import sys
+
 import os.path
 
     if len(sys.argv) < 2:

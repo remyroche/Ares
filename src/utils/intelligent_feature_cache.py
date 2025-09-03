@@ -1,14 +1,14 @@
-"""
-Intelligent Feature Caching System
+"""Intelligent Feature Caching System.
 
-This module provides an intelligent caching system for feature engineering
-that optimizes memory usage and computational efficiency.
+This module provides an intelligent caching system for feature engineering that
+optimizes memory usage and computational efficiency.
 """
 
 import asyncio
 import gc
 import gzip
 import hashlib
+import json
 import logging
 import pickle
 import time
@@ -20,15 +20,12 @@ import numpy as np
 import pandas as pd
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import json
 
 logger = logging.getLogger(__name__)
 
 
 class IntelligentFeatureCache:
-    """
-    Intelligent caching system for feature engineering with memory optimization.
-    """
+    """Intelligent caching system for feature engineering with memory optimization."""
 
     def __init__(
         self,
@@ -37,8 +34,7 @@ class IntelligentFeatureCache:
         max_cache_size_mb: int = 1024,
         enable_compression: bool = True,
     ) -> None:
-        """
-        Initialize the intelligent feature cache.
+        """Initialize the intelligent feature cache.
 
         Args:
             cache_dir: Directory to store cache files
@@ -74,8 +70,7 @@ class IntelligentFeatureCache:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ) -> str:
-        """
-        Generate a unique cache key for function call.
+        """Generate a unique cache key for function call.
 
         Args:
             function_name: Name of the function
@@ -100,8 +95,7 @@ class IntelligentFeatureCache:
             return hashlib.md5(key_str.encode()).hexdigest()
 
     def _make_pickle_safe(self, obj: Any) -> Any:
-        """
-        Make an object pickle-safe by removing coroutines and async objects.
+        """Make an object pickle-safe by removing coroutines and async objects.
 
         Args:
             obj: Object to make pickle-safe
@@ -125,8 +119,7 @@ class IntelligentFeatureCache:
         return obj
 
     def _get_cache_file_path(self, cache_key: str) -> Path:
-        """
-        Get the file path for a cache key.
+        """Get the file path for a cache key.
 
         Args:
             cache_key: Cache key
@@ -138,8 +131,7 @@ class IntelligentFeatureCache:
         return self.cache_dir / f"{cache_key}{suffix}"
 
     def _get_memory_usage_mb(self) -> float:
-        """
-        Get current memory usage in MB.
+        """Get current memory usage in MB.
 
         Returns:
             Memory usage in MB
@@ -155,8 +147,7 @@ class IntelligentFeatureCache:
         return total_memory / (1024 * 1024)
 
     def _evict_least_used(self, target_memory_mb: float) -> None:
-        """
-        Evict least recently used items from memory cache.
+        """Evict least recently used items from memory cache.
 
         Args:
             target_memory_mb: Target memory usage in MB
@@ -183,8 +174,7 @@ class IntelligentFeatureCache:
         gc.collect()
 
     def _save_to_disk(self, cache_key: str, data: Any, metadata: dict) -> None:
-        """
-        Save data to disk cache.
+        """Save data to disk cache.
 
         Args:
             cache_key: Cache key
@@ -205,8 +195,7 @@ class IntelligentFeatureCache:
             logger.warning(f"Failed to save to disk cache {cache_key}: {e}")
 
     def _load_from_disk(self, cache_key: str) -> tuple[Any, dict] | None:
-        """
-        Load data from disk cache.
+        """Load data from disk cache.
 
         Args:
             cache_key: Cache key
@@ -234,8 +223,7 @@ class IntelligentFeatureCache:
             return None
 
     def get(self, cache_key: str) -> Any | None:
-        """
-        Get data from cache (memory first, then disk).
+        """Get data from cache (memory first, then disk).
 
         Args:
             cache_key: Cache key
@@ -258,7 +246,9 @@ class IntelligentFeatureCache:
 
             # Load into memory cache if there's space
             data_size_mb = self._estimate_data_size_mb(data)
-            if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
+            if (
+                data_size_mb < self.max_memory_mb * 0.1
+            ):  # Only load if < 10% of max memory
                 self.memory_cache[cache_key] = data
                 self.cache_metadata[cache_key] = metadata
                 self.cache_metadata[cache_key]["last_access"] = time.time()
@@ -270,8 +260,7 @@ class IntelligentFeatureCache:
         return None
 
     def set(self, cache_key: str, data: Any, metadata: dict | None = None) -> None:
-        """
-        Store data in cache.
+        """Store data in cache.
 
         Args:
             cache_key: Cache key
@@ -308,8 +297,7 @@ class IntelligentFeatureCache:
         self._save_to_disk(cache_key, data, metadata)
 
     def _estimate_data_size_mb(self, data: Any) -> float:
-        """
-        Estimate the size of data in MB.
+        """Estimate the size of data in MB.
 
         Args:
             data: Data to estimate size for
@@ -338,14 +326,15 @@ class IntelligentFeatureCache:
         logger.info("🧹 Cleared all caches")
 
     def get_stats(self) -> dict:
-        """
-        Get cache statistics.
+        """Get cache statistics.
 
         Returns:
             Dictionary with cache statistics
         """
         memory_usage = self._get_memory_usage_mb()
-        disk_usage = sum(f.stat().st_size for f in self.cache_dir.glob("*.pkl*")) / (1024 * 1024)
+        disk_usage = sum(f.stat().st_size for f in self.cache_dir.glob("*.pkl*")) / (
+            1024 * 1024
+        )
 
         total_requests = self.hit_count + self.miss_count
         hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
@@ -378,8 +367,7 @@ _feature_cache: IntelligentFeatureCache | None = None
 
 
 def get_feature_cache() -> IntelligentFeatureCache:
-    """
-    Get the global feature cache instance.
+    """Get the global feature cache instance.
 
     Returns:
         Global feature cache instance
@@ -392,9 +380,8 @@ def get_feature_cache() -> IntelligentFeatureCache:
 
 
 def cache_feature_engineering(max_memory_mb: int = 2048):
-    """
-    Decorator for caching feature engineering functions.
-    Supports both sync and async functions.
+    """Decorator for caching feature engineering functions. Supports both sync and async
+    functions.
 
     Args:
         max_memory_mb: Maximum memory usage for cache

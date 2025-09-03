@@ -1,7 +1,6 @@
 # src/types/base_types.py
+"""Base type definitions for the Ares trading system.
 
-"""
-Base type definitions for the Ares trading system.
 Provides fundamental types used throughout the system.
 """
 

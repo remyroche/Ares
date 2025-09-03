@@ -7,7 +7,17 @@ import inspect
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Protocol, TypeVar, Union, runtime_checkable
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    TypeVar,
+    Union,
+    runtime_checkable,
+)
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -434,6 +444,7 @@ def _get_cpu_usage() -> float:
     """Get current CPU usage percentage."""
     try:
         import psutil
+
 import os.path
 
         return psutil.cpu_percent(interval=0.1)

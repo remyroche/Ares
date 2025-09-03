@@ -17,12 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    validation_error,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, validation_error, warning
 
 
 class DataEfficiencyOptimizer:
@@ -1015,6 +1010,7 @@ class DataEfficiencyOptimizer:
 
             # Load pickle data
             import pickle
+
 import asyncio
 import copy
 

@@ -1,5 +1,4 @@
 # src/training/steps/step17_final_parameters_optimization/evaluation_engine.py
-
 """Advanced Evaluation Engine for Hyperparameter Optimization.
 
 This module provides comprehensive evaluation capabilities for assessing the performance
@@ -14,10 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-)
+from src.utils.warning_symbols import error, warning
 
 
 @dataclass
@@ -110,7 +106,10 @@ class AdvancedEvaluationEngine:
         )
 
     def evaluate_parameters(
-        self, parameters: dict[str, Any], calibration_results: dict[str, Any], backtest_data: pd.DataFrame | None = None
+        self,
+        parameters: dict[str, Any],
+        calibration_results: dict[str, Any],
+        backtest_data: pd.DataFrame | None = None,
     ) -> PerformanceMetrics:
         """Evaluate a set of parameters using comprehensive metrics.
 
@@ -121,7 +120,6 @@ class AdvancedEvaluationEngine:
 
         Returns:
             PerformanceMetrics object with evaluation results
-
         """
         try:
             self.logger.info(f"Evaluating parameters: {list(parameters.keys())}")
@@ -146,7 +144,10 @@ class AdvancedEvaluationEngine:
             return PerformanceMetrics()
 
     def _simulate_trading_performance(
-        self, parameters: dict[str, Any], calibration_results: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        parameters: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Simulate trading performance based on parameters."""
         try:
             # Extract key parameters
@@ -243,7 +244,9 @@ class AdvancedEvaluationEngine:
             }
 
     def _calculate_performance_metrics(
-        self, performance_data: dict[str, Any], ) -> PerformanceMetrics:
+        self,
+        performance_data: dict[str, Any],
+    ) -> PerformanceMetrics:
         """Calculate comprehensive performance metrics."""
         try:
             trades = performance_data.get("trades", [])
@@ -286,26 +289,34 @@ class AdvancedEvaluationEngine:
             drawdowns = rolling_max - cumulative_returns
             max_drawdown = drawdowns.max() if not drawdowns.empty else 0.0
 
-            volatility = returns_series.std() * (252 ** 0.5) if not returns_series.empty else 0.0
+            volatility = (
+                returns_series.std() * (252**0.5) if not returns_series.empty else 0.0
+            )
 
             # Risk-adjusted performance metrics
             risk_free_rate_daily = self.risk_free_rate / 252
             excess_returns = returns_series - risk_free_rate_daily
             sharpe_ratio = (
-                (excess_returns.mean() / (excess_returns.std() + 1e-9)) * (252 ** 0.5)
+                (excess_returns.mean() / (excess_returns.std() + 1e-9)) * (252**0.5)
                 if not returns_series.empty
                 else 0.0
             )
 
             negative_returns = returns_series[returns_series < 0]
-            downside_deviation = negative_returns.std() * (252 ** 0.5) if not negative_returns.empty else 0.0
+            downside_deviation = (
+                negative_returns.std() * (252**0.5)
+                if not negative_returns.empty
+                else 0.0
+            )
             sortino_ratio = (
                 (excess_returns.mean() / (downside_deviation + 1e-9))
                 if downside_deviation > 0
                 else 0.0
             )
 
-            max_drawdown_pct = max_drawdown if isinstance(max_drawdown, float) else float(max_drawdown)
+            max_drawdown_pct = (
+                max_drawdown if isinstance(max_drawdown, float) else float(max_drawdown)
+            )
             calmar_ratio = (
                 (total_return / (max_drawdown_pct + 1e-9))
                 if max_drawdown_pct > 0
@@ -313,12 +324,28 @@ class AdvancedEvaluationEngine:
             )
 
             # Additional metrics
-            average_trade_duration = float((df["timestamp"].diff().mean() or pd.Timedelta(0)).total_seconds())
-            max_consecutive_wins = int((df["is_win"].rolling(window=5).sum() == 5).sum())
-            max_consecutive_losses = int((df["is_win"].rolling(window=5).sum() == 0).sum())
-            recovery_factor = (total_return / abs(max_drawdown_pct + 1e-9)) if max_drawdown_pct != 0 else 0.0
-            profit_factor_ratio = profit_factor / (win_rate + 1e-9) if win_rate > 0 else float("inf")
-            risk_reward_ratio = (average_win / (abs(average_loss) + 1e-9)) if average_loss < 0 else float("inf")
+            average_trade_duration = float(
+                (df["timestamp"].diff().mean() or pd.Timedelta(0)).total_seconds()
+            )
+            max_consecutive_wins = int(
+                (df["is_win"].rolling(window=5).sum() == 5).sum()
+            )
+            max_consecutive_losses = int(
+                (df["is_win"].rolling(window=5).sum() == 0).sum()
+            )
+            recovery_factor = (
+                (total_return / abs(max_drawdown_pct + 1e-9))
+                if max_drawdown_pct != 0
+                else 0.0
+            )
+            profit_factor_ratio = (
+                profit_factor / (win_rate + 1e-9) if win_rate > 0 else float("inf")
+            )
+            risk_reward_ratio = (
+                (average_win / (abs(average_loss) + 1e-9))
+                if average_loss < 0
+                else float("inf")
+            )
 
             return PerformanceMetrics(
                 win_rate=float(win_rate),
@@ -329,8 +356,16 @@ class AdvancedEvaluationEngine:
                 calmar_ratio=float(calmar_ratio),
                 max_drawdown=float(max_drawdown_pct),
                 volatility=float(volatility),
-                value_at_risk=float(np.percentile(returns, 5)) if len(returns) > 0 else 0.0,
-                conditional_value_at_risk=float(np.mean([r for r in returns if r <= np.percentile(returns, 5)])) if len(returns) > 0 else 0.0,
+                value_at_risk=(
+                    float(np.percentile(returns, 5)) if len(returns) > 0 else 0.0
+                ),
+                conditional_value_at_risk=(
+                    float(
+                        np.mean([r for r in returns if r <= np.percentile(returns, 5)])
+                    )
+                    if len(returns) > 0
+                    else 0.0
+                ),
                 total_trades=int(total_trades),
                 winning_trades=int(winning_trades),
                 losing_trades=int(losing_trades),
@@ -396,7 +431,10 @@ class AdvancedEvaluationEngine:
             return 0.0
 
     def _calculate_value_at_risk(
-        self, returns: pd.Series, confidence_level: float, ) -> float:
+        self,
+        returns: pd.Series,
+        confidence_level: float,
+    ) -> float:
         """Calculate Value at Risk."""
         try:
             if len(returns) == 0:
@@ -408,7 +446,10 @@ class AdvancedEvaluationEngine:
             return 0.0
 
     def _calculate_conditional_value_at_risk(
-        self, returns: pd.Series, confidence_level: float, ) -> float:
+        self,
+        returns: pd.Series,
+        confidence_level: float,
+    ) -> float:
         """Calculate Conditional Value at Risk (Expected Shortfall)."""
         try:
             if len(returns) == 0:
@@ -506,7 +547,8 @@ class AdvancedEvaluationEngine:
             return False
 
     def calculate_composite_score(self, metrics: PerformanceMetrics) -> float:
-        """Calculate a composite score prioritizing win rate and actual win/loss amounts."""
+        """Calculate a composite score prioritizing win rate and actual win/loss
+        amounts."""
         try:
             # Calculate actual win/loss amounts and ratios
             avg_win_amount = metrics.average_win if metrics.average_win > 0 else 0.01
@@ -517,12 +559,15 @@ class AdvancedEvaluationEngine:
             # Revised: capped win/loss frequency ratio (concise)
             if metrics.losing_trades <= 0:
                 win_loss_frequency_ratio = 10.0 if metrics.winning_trades > 0 else 1.0
-            else: win_loss_frequency_ratio = min(
+            else:
+                win_loss_frequency_ratio = min(
                     metrics.winning_trades / metrics.losing_trades,
                     10.0,
                 )
             # Combined win/loss score (both amount and frequency)
-            composite_score = (win_loss_amount_ratio * 0.6) + (win_loss_frequency_ratio * 0.4)
+            composite_score = (win_loss_amount_ratio * 0.6) + (
+                win_loss_frequency_ratio * 0.4
+            )
             # Use configurable weights if present in config
             weights = self.config.get(
                 "composite_score_weights",
@@ -647,7 +692,6 @@ if __name__ == "__main__":
 
     # Generate report
     report = engine.generate_evaluation_report(metrics)
-
 
     for data in report.values():
         if isinstance(data, dict):

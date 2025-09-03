@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""
-Enhanced Model Monitor
+"""Enhanced Model Monitor.
 
-This module provides comprehensive model behavior monitoring, feature importance tracking,
-decision path analysis, and ensemble performance monitoring that integrates with the
-existing performance monitoring infrastructure.
+This module provides comprehensive model behavior monitoring, feature importance
+tracking, decision path analysis, and ensemble performance monitoring that integrates
+with the existing performance monitoring infrastructure.
 """
 
 import asyncio
@@ -94,14 +93,11 @@ class EnsemblePerformanceMetrics:
 
 
 class EnhancedModelMonitor:
-    """
-    Enhanced model monitor that integrates with existing performance monitoring
-    to provide comprehensive model behavior tracking.
-    """
+    """Enhanced model monitor that integrates with existing performance monitoring to
+    provide comprehensive model behavior tracking."""
 
     def __init__(self, config: dict[str, Any], performance_monitor: PerformanceMonitor):
-        """
-        Initialize enhanced model monitor.
+        """Initialize enhanced model monitor.
 
         Args:
             config: Configuration dictionary

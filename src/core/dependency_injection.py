@@ -1,18 +1,18 @@
 # src/core/dependency_injection.py
 
 from collections.abc import Callable
-from src.utils.logger import system_logger
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from dataclasses import dataclass
 from src.interfaces import (
-import asyncio
-
     IAnalyst,
     IStrategist,
     ISupervisor,
     ITactician,
+    asyncio,
+    import,
 )
+from src.utils.logger import system_logger
 
 T = TypeVar("T")
 

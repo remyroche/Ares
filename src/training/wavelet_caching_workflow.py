@@ -1,6 +1,6 @@
 # examples/wavelet_caching_workflow.py
-
 """Complete workflow example for wavelet feature caching and backtesting.
+
 Demonstrates the full pipeline from pre-computation to fast backtesting.
 """
 
@@ -116,7 +116,9 @@ async def step1_precompute_features(config: dict) -> bool | None:
         )
 
         processing_time = time.time() - start_time
-        logger.info(f"Precomputation finished in {processing_time:.2f}s, success={success}")
+        logger.info(
+            f"Precomputation finished in {processing_time:.2f}s, success={success}"
+        )
 
         if success:
             # Print cache statistics
@@ -140,7 +142,8 @@ async def step2_run_backtests(config: dict) -> bool | None:
         # Load sample data (project OHLCV)
         try:
             _ = pd.read_parquet(
-                "data/price_data/sample_data.parquet", columns=ohlcv_columns(),
+                "data/price_data/sample_data.parquet",
+                columns=ohlcv_columns(),
             )
         except Exception:
             _ = pd.read_parquet("data/price_data/sample_data.parquet")
@@ -241,9 +244,8 @@ async def step4_cache_management(config: dict) -> bool | None:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
-import copy
-
             WaveletFeatureCache,
+            opy,
         )
 
         cache = WaveletFeatureCache(config)

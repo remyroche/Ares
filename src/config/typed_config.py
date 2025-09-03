@@ -4,10 +4,10 @@
 Type-safe configuration management with runtime validation.
 """
 
-from pathlib import Path
-from typing import Any
 import json
 import logging
+from pathlib import Path
+from typing import Any
 
 from src.custom_types import (
     ConfigDict,
@@ -15,10 +15,10 @@ from src.custom_types import (
     ExchangeConfig,
     MLConfig,
     MonitoringConfig,
+    RuntimeTypeError,
     SystemConfig,
     TradingConfig,
     TrainingConfig,
-    RuntimeTypeError,
     TypeValidator,
     validate_config,
 )

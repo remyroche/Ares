@@ -7,13 +7,13 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import (
-    validate_file_operation,
     validate_dataframe_operation,
+    validate_file_operation,
     validate_step2_operation,
 )
-from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step9_5HMMLMGeneralistTrainingValidator")
 
@@ -63,16 +63,23 @@ class Step9_5HMMLMGeneralistTrainingValidator:
                     return False
 
             # Check for training metadata file
-            metadata_file = hmm_lm_models_dir / f"{exchange}_{symbol}_1m_hmm_lm_training_metadata.json"
+            metadata_file = (
+                hmm_lm_models_dir
+                / f"{exchange}_{symbol}_1m_hmm_lm_training_metadata.json"
+            )
             if not metadata_file.exists():
-                self.logger.warning(f"⚠️ HMM LM training metadata file not found: {metadata_file}")
+                self.logger.warning(
+                    f"⚠️ HMM LM training metadata file not found: {metadata_file}"
+                )
                 return False
 
             # Validate metadata file
             if not self._validate_metadata_file(metadata_file):
                 return False
 
-            self.logger.info("✅ Step 9.5: HMM LM Generalist Training validation passed")
+            self.logger.info(
+                "✅ Step 9.5: HMM LM Generalist Training validation passed"
+            )
             return True
 
         except Exception as e:
@@ -94,15 +101,20 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             # Try to load the model to ensure it's valid
             try:
                 import joblib
+
                 model = joblib.load(model_file)
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
                     return False
-                
-                self.logger.info(f"✅ HMM LM model file validated: {model_file.name} ({file_size} bytes)")
+
+                self.logger.info(
+                    f"✅ HMM LM model file validated: {model_file.name} ({file_size} bytes)"
+                )
                 return True
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not load model file {model_file.name}: {e}")
+                self.logger.warning(
+                    f"⚠️ Could not load model file {model_file.name}: {e}"
+                )
                 return False
 
         except Exception as e:
@@ -120,12 +132,16 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
             # Check if metadata is a dictionary
             if not isinstance(metadata, dict):
-                self.logger.warning(f"⚠️ Metadata file is not a valid JSON object: {metadata_file.name}")
+                self.logger.warning(
+                    f"⚠️ Metadata file is not a valid JSON object: {metadata_file.name}"
+                )
                 return False
 
             # Check for required fields
             required_fields = ["training_date", "model_count", "training_metrics"]
-            missing_fields = [field for field in required_fields if field not in metadata]
+            missing_fields = [
+                field for field in required_fields if field not in metadata
+            ]
             if missing_fields:
                 self.logger.warning(
                     f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
@@ -158,17 +174,25 @@ class Step9_5HMMLMGeneralistTrainingValidator:
                             f"⚠️ Invalid {metric} value in {metadata_file.name}: {value}"
                         )
 
-            self.logger.info(f"✅ Metadata file validated: {model_count} models, {len(training_metrics)} metrics")
+            self.logger.info(
+                f"✅ Metadata file validated: {model_count} models, {len(training_metrics)} metrics"
+            )
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
+            self.logger.exception(
+                f"❌ Error validating metadata file {metadata_file}: {e}"
+            )
             return False
 
 
 @validate_step2_operation
 def step9_5_hmm_lm_generalist_training_validator(
-    symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]
+    symbol: str,
+    exchange: str,
+    data_dir: str,
+    training_input: dict[str, Any],
+    config: dict[str, Any],
 ) -> bool:
     """Step 9.5: HMM LM Generalist Training Validator.
 

@@ -1,24 +1,24 @@
-"""
-Live Trading Wavelet Integration
+"""Live Trading Wavelet Integration.
 
-This module integrates the computationally-aware wavelet analyzer
-into the live trading pipeline with performance monitoring.
+This module integrates the computationally-aware wavelet analyzer into the live trading
+pipeline with performance monitoring.
 """
 
-from src.utils.logger import system_logger
-from typing import Any
+import asyncio
 import time
+from typing import Any
+
+import numpy as np
+import pandas as pd
 
 from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed
-import numpy as np
-import pandas as pd
-import asyncio
+
 
 class LiveWaveletIntegration:
-    """
-    Integration layer for wavelet analysis in live trading.
+    """Integration layer for wavelet analysis in live trading.
 
     Provides:
     - Performance monitoring
@@ -92,10 +92,10 @@ class LiveWaveletIntegration:
         context="wavelet signal processing",
     )
     async def process_market_data(
-        self, market_data: dict[str, Any],
+        self,
+        market_data: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Process market data and generate wavelet signals.
+        """Process market data and generate wavelet signals.
 
         Args:
             market_data: Market data from trading pipeline
@@ -116,7 +116,8 @@ class LiveWaveletIntegration:
 
             # Generate wavelet signal
             signal = await self.wavelet_analyzer.generate_signal(
-                price_data, volume_data,
+                price_data,
+                volume_data,
             )
 
             if signal is None:
@@ -154,7 +155,8 @@ class LiveWaveletIntegration:
             return None
 
     def _extract_price_data(
-        self, market_data: dict[str, Any],
+        self,
+        market_data: dict[str, Any],
     ) -> pd.DataFrame | None:
         """Extract price data from market data."""
         try:
@@ -185,7 +187,8 @@ class LiveWaveletIntegration:
             return None
 
     def _extract_volume_data(
-        self, market_data: dict[str, Any],
+        self,
+        market_data: dict[str, Any],
     ) -> pd.DataFrame | None:
         """Extract volume data from market data."""
         try:
@@ -230,7 +233,8 @@ class LiveWaveletIntegration:
             return False
 
     def _create_analysis_results(
-        self, signal: WaveletSignal,
+        self,
+        signal: WaveletSignal,
         market_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Create analysis results for trading pipeline."""
@@ -254,7 +258,8 @@ class LiveWaveletIntegration:
                     "wavelet_signal": signal.signal_type,
                     "wavelet_confidence": signal.confidence,
                     "combined_signal": self._combine_with_existing_signals(
-                        signal, market_data,
+                        signal,
+                        market_data,
                     ),
                 },
                 # Performance metrics
@@ -277,7 +282,8 @@ class LiveWaveletIntegration:
             return {}
 
     def _combine_with_existing_signals(
-        self, wavelet_signal: WaveletSignal,
+        self,
+        wavelet_signal: WaveletSignal,
         market_data: dict[str, Any],
     ) -> str:
         """Combine wavelet signal with existing trading signals."""
@@ -351,12 +357,12 @@ class LiveWaveletIntegration:
                             "buy_count": signal_types.count("buy"),
                             "sell_count": signal_types.count("sell"),
                             "hold_count": signal_types.count("hold"),
-                            "avg_confidence": np.mean(confidences)
-                            if confidences
-                            else 0.0,
-                            "avg_computation_time": np.mean(computation_times)
-                            if computation_times
-                            else 0.0,
+                            "avg_confidence": (
+                                np.mean(confidences) if confidences else 0.0
+                            ),
+                            "avg_computation_time": (
+                                np.mean(computation_times) if computation_times else 0.0
+                            ),
                         },
                     },
                 )

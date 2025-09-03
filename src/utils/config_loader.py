@@ -1,19 +1,17 @@
 # src/utils/config_loader.py
 
 import os
+import os.path
 from typing import Any
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, missing, yaml
-import os.path
 
 
 class ConfigLoader:
-    """
-    Utility class for loading YAML configuration files.
-    """
+    """Utility class for loading YAML configuration files."""
 
     def __init__(self):
         self.logger = system_logger.getChild("ConfigLoader")
@@ -24,8 +22,7 @@ class ConfigLoader:
         context="YAML config loading",
     )
     def load_yaml_config(self, config_path: str) -> dict[str, Any]:
-        """
-        Load configuration from a YAML file.
+        """Load configuration from a YAML file.
 
         Args:
             config_path: Path to the YAML configuration file
@@ -54,8 +51,7 @@ class ConfigLoader:
         context="position sizing config loading",
     )
     def load_position_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
-        """
-        Load position sizing configuration.
+        """Load position sizing configuration.
 
         Args:
             config_dir: Directory containing config files
@@ -72,8 +68,7 @@ class ConfigLoader:
         context="leverage sizing config loading",
     )
     def load_leverage_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
-        """
-        Load leverage sizing configuration.
+        """Load leverage sizing configuration.
 
         Args:
             config_dir: Directory containing config files
@@ -90,8 +85,7 @@ class ConfigLoader:
         context="combined sizing config loading",
     )
     def load_combined_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
-        """
-        Load combined position and leverage sizing configuration.
+        """Load combined position and leverage sizing configuration.
 
         Args:
             config_dir: Directory containing config files
@@ -108,8 +102,7 @@ class ConfigLoader:
         context="config validation",
     )
     def validate_config(self, config: dict[str, Any], config_type: str) -> bool:
-        """
-        Validate configuration structure.
+        """Validate configuration structure.
 
         Args:
             config: Configuration dictionary to validate
@@ -166,8 +159,7 @@ class ConfigLoader:
         context="config merging",
     )
     def merge_configs(self, *configs: dict[str, Any]) -> dict[str, Any]:
-        """
-        Merge multiple configuration dictionaries.
+        """Merge multiple configuration dictionaries.
 
         Args:
             *configs: Configuration dictionaries to merge
@@ -184,15 +176,18 @@ class ConfigLoader:
         return merged_config
 
     def _deep_merge(self, target: dict[str, Any], source: dict[str, Any]) -> None:
-        """
-        Deep merge source dictionary into target dictionary.
+        """Deep merge source dictionary into target dictionary.
 
         Args:
             target: Target dictionary to merge into
             source: Source dictionary to merge from
         """
         for key, value in source.items():
-            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            if (
+                key in target
+                and isinstance(target[key], dict)
+                and isinstance(value, dict)
+            ):
                 self._deep_merge(target[key], value)
             else:
                 target[key] = value
@@ -208,8 +203,7 @@ class ConfigLoader:
         fallback_config: str = "config",
         config_dir: str = "config",
     ) -> dict[str, Any]:
-        """
-        Load configuration with fallback to another config file.
+        """Load configuration with fallback to another config file.
 
         Args:
             primary_config: Primary configuration file name
@@ -264,4 +258,6 @@ class ConfigLoader:
     ) -> dict[str, Any]:
         """Load configuration with fallback."""
         loader = ConfigLoader()
-        return loader.load_config_with_fallback(primary_config, fallback_config, config_dir)
+        return loader.load_config_with_fallback(
+            primary_config, fallback_config, config_dir
+        )

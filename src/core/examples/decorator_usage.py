@@ -11,27 +11,27 @@ from typing import Dict, List
 
 # Import decorators
 from src.core.decorators import (
+    CachePolicy,
+    authenticated,
+    cached,
+    circuit_breaker,
     compose,
     handles_errors,
-    validates,
-    validate_schema,
+    import,
+    log_call,
+)
+from src.core.decorators import numpy as np
+from src.core.decorators import (
+    requires_role,
     retry,
     timeout,
-    circuit_breaker,
-    log_call,
     traced,
-    cached,
-    authenticated,
-    requires_role,
-    CachePolicy,
+    validate_schema,
+    validates,
 )
 
 # Import errors
-from src.core.errors import (
-    ValidationError,
-    NotFoundError,
-    register_exception_mapping,
-)
+from src.core.errors import NotFoundError, ValidationError, register_exception_mapping
 
 
 # Example 1: Simple validation and error handling
@@ -175,7 +175,7 @@ async def get_user_from_db(user_id: str) -> dict:
     await asyncio.sleep(0.05)
     
     # Add trace events
-    from src.core.decorators import span_event, span_attribute
+    from src.core.decorators import span_attribute, span_event
     span_event("query_started", {"user_id": user_id})
     
     result = {"id": user_id, "name": f"User {user_id}"}
@@ -188,6 +188,7 @@ async def get_user_from_db(user_id: str) -> dict:
 
 # Example 9: Method decorator on a class
 from src.core.decorators import trace_method
+
 
 @trace_method(span_prefix="UserService")
 class UserService:

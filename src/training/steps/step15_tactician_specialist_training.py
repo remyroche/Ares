@@ -12,12 +12,13 @@ import json
 import os
 import pickle
 from datetime import datetime
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 import sys
+
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
@@ -755,7 +756,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             # Save model with probabilities using multi-output format
             model_path = f"models/{exchange}_{symbol}_multi_output_lightgbm_tactician_model.pkl"
             try:
-                from ..model_saving_utils import save_multi_output_model_with_probabilities
+                from ..model_saving_utils import (
+                    save_multi_output_model_with_probabilities,
+                )
                 save_multi_output_model_with_probabilities(
                     model_data, model_path, save_format="joblib"
                 )
@@ -1123,6 +1126,19 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             raise
 
 
+from src.utils.enhanced_mlflow_integration import (
+    copy,
+    create_detailed_step_report,
+    import,
+    log_step_artifact_with_standardized_name,
+    log_step_dataframe_with_standardized_name,
+    log_step_metrics,
+    log_step_report,
+)
+from src.utils.enhanced_mlflow_integration import numpy as np
+from src.utils.enhanced_mlflow_integration import pandas as pd
+from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -1140,18 +1156,6 @@ from src.utils.training_pipeline_decorators import (
     time_budget_watchdog,
     validate_step_output,
     validate_step_prerequisites,
-)
-from src.utils.enhanced_mlflow_integration import (
-import copy
-import numpy as np
-import pandas as pd
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
 )
 
 

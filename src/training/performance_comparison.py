@@ -20,12 +20,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.comprehensive_logger import get_logger
-from src.utils.warning_symbols import (
-import asyncio
-
-    error,
-    initialization_error,
-)
+from src.utils.warning_symbols import asyncio, error, import, initialization_error
 
 
 @dataclass

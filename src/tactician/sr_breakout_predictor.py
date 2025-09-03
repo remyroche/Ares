@@ -1,17 +1,19 @@
 # src/tactician/sr_breakout_predictor.py
 
 # from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier  # Temporarily commented due to syntax errors
-from src.utils.logger import system_logger
+import asyncio
+import json
+import os
+from copy import copy
+from pathlib import Path
 from typing import Any
+
 import numpy as np
 import pandas as pd
-import os
-import json
-from pathlib import Path
-from src.utils.error_handler import handle_errors, handle_specific_errors
+
 from src.utils.centralized_decorators import validate_data_quality
-from copy import copy
-import asyncio
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 
 # DBSCAN clustering for S/R level analysis
 try:
@@ -469,7 +471,7 @@ class SRBreakoutPredictor:
         try:
             import os
             from pathlib import Path
-            
+
             # Create report directory if it doesn't exist
             report_path = Path(self.report_directory)
             report_path.mkdir(parents=True, exist_ok=True)
@@ -487,8 +489,8 @@ class SRBreakoutPredictor:
 
     def _generate_report_id(self) -> str:
         """Generate a unique report ID."""
-        from datetime import datetime
         import uuid
+        from datetime import datetime
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = str(uuid.uuid4())[:8]
@@ -755,9 +757,9 @@ class SRBreakoutPredictor:
     async def _save_report_to_file(self, report: dict[str, Any]) -> None:
         """Save report to file in specified format."""
         try:
+            import json
             import os
             from pathlib import Path
-            import json
             
             report_path = Path(self.report_directory)
             
@@ -930,8 +932,8 @@ class SRBreakoutPredictor:
         """Clean up old reports based on retention policy."""
         try:
             import os
-            from pathlib import Path
             from datetime import datetime, timedelta
+            from pathlib import Path
 
             if not self.reporting_enabled:
                 return

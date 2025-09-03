@@ -1,3 +1,5 @@
+import asyncio
+import copy
 from datetime import datetime
 from typing import Any
 
@@ -5,24 +7,22 @@ from keras import backend as K
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import copy
-import asyncio
+
 
 def create_pnl_aware_loss(
     pnl_multiplier=0.1,
     liquidation_penalty=2.0,
     reward_boost=1.5,
 ):
-    """
-    This is a factory function that creates a custom Keras loss function.
-    It combines standard classification loss (cross-entropy) with a financial
-    component that heavily penalizes high-risk errors and rewards high-profit
-    correct predictions, teaching the model to prioritize capital preservation.
+    """This is a factory function that creates a custom Keras loss function.
+
+    It combines standard classification loss (cross-entropy) with a financial component
+    that heavily penalizes high-risk errors and rewards high-profit correct predictions,
+    teaching the model to prioritize capital preservation.
     """
 
     def pnl_aware_loss(y_true, y_pred):
-        """
-        Calculates the combined loss.
+        """Calculates the combined loss.
 
         Args:
             y_true: Ground truth tensor with shape (batch_size, num_classes + 2).
@@ -56,9 +56,11 @@ def create_pnl_aware_loss(
         # Calculate the financial loss:
         # - If correct, we get a "negative loss" (a reward) proportional to the profit potential.
         # - If wrong, we get a large penalty proportional to the liquidation risk.
-        financial_loss = (1.0 - true_class_probs) * (risk_potential * liquidation_penalty) * is_wrong - (
-            true_class_probs * reward_potential * reward_boost
-        ) * (1.0 - is_wrong)
+        financial_loss = (1.0 - true_class_probs) * (
+            risk_potential * liquidation_penalty
+        ) * is_wrong - (true_class_probs * reward_potential * reward_boost) * (
+            1.0 - is_wrong
+        )
 
         # --- 3. Combine the Losses ---
         return ce_loss + (financial_loss * pnl_multiplier)
@@ -67,13 +69,10 @@ def create_pnl_aware_loss(
 
 
 class PnLLossFunctions:
-    """
-    PnL Loss Functions with comprehensive error handling and type safety.
-    """
+    """PnL Loss Functions with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize PnL loss functions with enhanced type safety.
+        """Initialize PnL loss functions with enhanced type safety.
 
         Args:
             config: Configuration dictionary
@@ -96,11 +95,21 @@ class PnLLossFunctions:
             "max_calculation_history",
             100,
         )
-        self.enable_pnl_calculation: bool = self.pnl_config.get("enable_pnl_calculation", True)
-        self.enable_loss_calculation: bool = self.pnl_config.get("enable_loss_calculation", True)
-        self.enable_risk_metrics: bool = self.pnl_config.get("enable_risk_metrics", True)
-        self.enable_performance_metrics: bool = self.pnl_config.get("enable_performance_metrics", True)
-        self.enable_optimization_metrics: bool = self.pnl_config.get("enable_optimization_metrics", True)
+        self.enable_pnl_calculation: bool = self.pnl_config.get(
+            "enable_pnl_calculation", True
+        )
+        self.enable_loss_calculation: bool = self.pnl_config.get(
+            "enable_loss_calculation", True
+        )
+        self.enable_risk_metrics: bool = self.pnl_config.get(
+            "enable_risk_metrics", True
+        )
+        self.enable_performance_metrics: bool = self.pnl_config.get(
+            "enable_performance_metrics", True
+        )
+        self.enable_optimization_metrics: bool = self.pnl_config.get(
+            "enable_optimization_metrics", True
+        )
 
         # PnL calculation components
         self.pnl_calculation_components: dict[str, bool] = {}
@@ -119,8 +128,7 @@ class PnLLossFunctions:
         context="PnL loss functions initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize PnL loss functions with enhanced error handling.
+        """Initialize PnL loss functions with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -171,8 +179,12 @@ class PnLLossFunctions:
             self.enable_pnl_calculation = self.pnl_config["enable_pnl_calculation"]
             self.enable_loss_calculation = self.pnl_config["enable_loss_calculation"]
             self.enable_risk_metrics = self.pnl_config["enable_risk_metrics"]
-            self.enable_performance_metrics = self.pnl_config["enable_performance_metrics"]
-            self.enable_optimization_metrics = self.pnl_config["enable_optimization_metrics"]
+            self.enable_performance_metrics = self.pnl_config[
+                "enable_performance_metrics"
+            ]
+            self.enable_optimization_metrics = self.pnl_config[
+                "enable_optimization_metrics"
+            ]
 
             self.logger.info("PnL loss functions configuration loaded successfully")
 
@@ -185,8 +197,7 @@ class PnLLossFunctions:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate PnL loss functions configuration.
+        """Validate PnL loss functions configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -369,8 +380,7 @@ class PnLLossFunctions:
         context="PnL loss functions execution",
     )
     async def execute_calculation(self, calculation_input: dict[str, Any]) -> bool:
-        """
-        Execute PnL loss functions calculation with comprehensive error handling.
+        """Execute PnL loss functions calculation with comprehensive error handling.
 
         Args:
             calculation_input: Input data for calculation
@@ -402,11 +412,15 @@ class PnLLossFunctions:
             self.calculation_results["risk_metrics"] = risk_results
 
             # Perform performance metrics
-            performance_results = await self._perform_performance_metrics(calculation_input)
+            performance_results = await self._perform_performance_metrics(
+                calculation_input
+            )
             self.calculation_results["performance_metrics"] = performance_results
 
             # Perform optimization metrics
-            optimization_results = await self._perform_optimization_metrics(calculation_input)
+            optimization_results = await self._perform_optimization_metrics(
+                calculation_input
+            )
             self.calculation_results["optimization_metrics"] = optimization_results
 
             # Update calculation history
@@ -427,8 +441,7 @@ class PnLLossFunctions:
         context="calculation inputs validation",
     )
     def _validate_calculation_inputs(self, calculation_input: dict[str, Any]) -> bool:
-        """
-        Validate calculation inputs.
+        """Validate calculation inputs.
 
         Args:
             calculation_input: Input data for validation
@@ -459,7 +472,9 @@ class PnLLossFunctions:
         default_return=None,
         context="PnL calculation",
     )
-    async def _perform_pnl_calculation(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_pnl_calculation(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform PnL-based calculation."""
         try:
             results = {}
@@ -470,7 +485,9 @@ class PnLLossFunctions:
 
             # Unrealized PnL
             if self.pnl_calculation_components.get("unrealized_pnl", False):
-                results["unrealized_pnl"] = self._perform_unrealized_pnl(calculation_input)
+                results["unrealized_pnl"] = self._perform_unrealized_pnl(
+                    calculation_input
+                )
 
             # Total PnL
             if self.pnl_calculation_components.get("total_pnl", False):
@@ -478,7 +495,9 @@ class PnLLossFunctions:
 
             # PnL attribution
             if self.pnl_calculation_components.get("pnl_attribution", False):
-                results["pnl_attribution"] = self._perform_pnl_attribution(calculation_input)
+                results["pnl_attribution"] = self._perform_pnl_attribution(
+                    calculation_input
+                )
 
             return results
 
@@ -491,26 +510,36 @@ class PnLLossFunctions:
         default_return=None,
         context="loss calculation",
     )
-    async def _perform_loss_calculation(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_loss_calculation(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform loss-based calculation."""
         try:
             results = {}
 
             # Maximum drawdown
             if self.loss_calculation_components.get("maximum_drawdown", False):
-                results["maximum_drawdown"] = self._perform_maximum_drawdown(calculation_input)
+                results["maximum_drawdown"] = self._perform_maximum_drawdown(
+                    calculation_input
+                )
 
             # VaR calculation
             if self.loss_calculation_components.get("var_calculation", False):
-                results["var_calculation"] = self._perform_var_calculation(calculation_input)
+                results["var_calculation"] = self._perform_var_calculation(
+                    calculation_input
+                )
 
             # CVaR calculation
             if self.loss_calculation_components.get("cvar_calculation", False):
-                results["cvar_calculation"] = self._perform_cvar_calculation(calculation_input)
+                results["cvar_calculation"] = self._perform_cvar_calculation(
+                    calculation_input
+                )
 
             # Loss distribution
             if self.loss_calculation_components.get("loss_distribution", False):
-                results["loss_distribution"] = self._perform_loss_distribution(calculation_input)
+                results["loss_distribution"] = self._perform_loss_distribution(
+                    calculation_input
+                )
 
             return results
 
@@ -523,7 +552,9 @@ class PnLLossFunctions:
         default_return=None,
         context="risk metrics",
     )
-    async def _perform_risk_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_risk_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform risk metrics calculation."""
         try:
             results = {}
@@ -546,7 +577,9 @@ class PnLLossFunctions:
 
             # Expected shortfall
             if self.risk_metrics_components.get("expected_shortfall", False):
-                results["expected_shortfall"] = self._perform_expected_shortfall(calculation_input)
+                results["expected_shortfall"] = self._perform_expected_shortfall(
+                    calculation_input
+                )
 
             # Tail risk
             if self.risk_metrics_components.get("tail_risk", False):
@@ -563,7 +596,9 @@ class PnLLossFunctions:
         default_return=None,
         context="performance metrics",
     )
-    async def _perform_performance_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_performance_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform performance metrics calculation."""
         try:
             results = {}
@@ -574,7 +609,9 @@ class PnLLossFunctions:
 
             # Sortino ratio
             if self.performance_metrics_components.get("sortino_ratio", False):
-                results["sortino_ratio"] = self._perform_sortino_ratio(calculation_input)
+                results["sortino_ratio"] = self._perform_sortino_ratio(
+                    calculation_input
+                )
 
             # Calmar ratio
             if self.performance_metrics_components.get("calmar_ratio", False):
@@ -582,11 +619,15 @@ class PnLLossFunctions:
 
             # Information ratio
             if self.performance_metrics_components.get("information_ratio", False):
-                results["information_ratio"] = self._perform_information_ratio(calculation_input)
+                results["information_ratio"] = self._perform_information_ratio(
+                    calculation_input
+                )
 
             # Treynor ratio
             if self.performance_metrics_components.get("treynor_ratio", False):
-                results["treynor_ratio"] = self._perform_treynor_ratio(calculation_input)
+                results["treynor_ratio"] = self._perform_treynor_ratio(
+                    calculation_input
+                )
 
             # Jensen alpha
             if self.performance_metrics_components.get("jensen_alpha", False):
@@ -603,22 +644,30 @@ class PnLLossFunctions:
         default_return=None,
         context="optimization metrics",
     )
-    async def _perform_optimization_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_optimization_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform optimization metrics calculation."""
         try:
             results = {}
 
             # Kelly criterion
             if self.optimization_metrics_components.get("kelly_criterion", False):
-                results["kelly_criterion"] = self._perform_kelly_criterion(calculation_input)
+                results["kelly_criterion"] = self._perform_kelly_criterion(
+                    calculation_input
+                )
 
             # Optimal leverage
             if self.optimization_metrics_components.get("optimal_leverage", False):
-                results["optimal_leverage"] = self._perform_optimal_leverage(calculation_input)
+                results["optimal_leverage"] = self._perform_optimal_leverage(
+                    calculation_input
+                )
 
             # Position sizing
             if self.optimization_metrics_components.get("position_sizing", False):
-                results["position_sizing"] = self._perform_position_sizing(calculation_input)
+                results["position_sizing"] = self._perform_position_sizing(
+                    calculation_input
+                )
 
             # Risk budget
             if self.optimization_metrics_components.get("risk_budget", False):
@@ -632,7 +681,9 @@ class PnLLossFunctions:
 
     # PnL calculation methods
 
-    def _perform_realized_pnl(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_realized_pnl(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform realized PnL calculation."""
         try:
             # Simulate realized PnL calculation
@@ -647,7 +698,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing realized PnL: {e}")
             return {}
 
-    def _perform_unrealized_pnl(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_unrealized_pnl(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform unrealized PnL calculation."""
         try:
             # Simulate unrealized PnL calculation
@@ -677,7 +730,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing total PnL: {e}")
             return {}
 
-    def _perform_pnl_attribution(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_pnl_attribution(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform PnL attribution calculation."""
         try:
             # Simulate PnL attribution calculation
@@ -694,7 +749,9 @@ class PnLLossFunctions:
 
     # Loss calculation methods
 
-    def _perform_maximum_drawdown(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_maximum_drawdown(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform maximum drawdown calculation."""
         try:
             # Simulate maximum drawdown calculation
@@ -709,7 +766,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing maximum drawdown: {e}")
             return {}
 
-    def _perform_var_calculation(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_var_calculation(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform VaR calculation."""
         try:
             # Simulate VaR calculation
@@ -724,7 +783,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing VaR calculation: {e}")
             return {}
 
-    def _perform_cvar_calculation(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_cvar_calculation(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform CVaR calculation."""
         try:
             # Simulate CVaR calculation
@@ -739,7 +800,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing CVaR calculation: {e}")
             return {}
 
-    def _perform_loss_distribution(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_loss_distribution(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform loss distribution calculation."""
         try:
             # Simulate loss distribution calculation
@@ -756,7 +819,9 @@ class PnLLossFunctions:
 
     # Risk metrics methods
 
-    def _perform_sharpe_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_sharpe_ratio(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform Sharpe ratio calculation."""
         try:
             # Simulate Sharpe ratio calculation
@@ -771,7 +836,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing Sharpe ratio: {e}")
             return {}
 
-    def _perform_sortino_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_sortino_ratio(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform Sortino ratio calculation."""
         try:
             # Simulate Sortino ratio calculation
@@ -786,7 +853,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing Sortino ratio: {e}")
             return {}
 
-    def _perform_calmar_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_calmar_ratio(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform Calmar ratio calculation."""
         try:
             # Simulate Calmar ratio calculation
@@ -801,7 +870,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing Calmar ratio: {e}")
             return {}
 
-    def _perform_information_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_information_ratio(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform information ratio calculation."""
         try:
             # Simulate information ratio calculation
@@ -818,7 +889,9 @@ class PnLLossFunctions:
 
     # Performance metrics methods
 
-    def _perform_return_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_return_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform return metrics calculation."""
         try:
             # Simulate return metrics calculation
@@ -833,7 +906,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing return metrics: {e}")
             return {}
 
-    def _perform_volatility_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volatility_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform volatility metrics calculation."""
         try:
             # Simulate volatility metrics calculation
@@ -848,7 +923,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing volatility metrics: {e}")
             return {}
 
-    def _perform_correlation_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_correlation_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform correlation metrics calculation."""
         try:
             # Simulate correlation metrics calculation
@@ -863,7 +940,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing correlation metrics: {e}")
             return {}
 
-    def _perform_beta_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_beta_metrics(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform beta metrics calculation."""
         try:
             # Simulate beta metrics calculation
@@ -880,7 +959,9 @@ class PnLLossFunctions:
 
     # Optimization metrics methods
 
-    def _perform_objective_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_objective_functions(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform objective functions calculation."""
         try:
             # Simulate objective functions calculation
@@ -895,7 +976,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing objective functions: {e}")
             return {}
 
-    def _perform_constraint_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_constraint_functions(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform constraint functions calculation."""
         try:
             # Simulate constraint functions calculation
@@ -910,7 +993,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing constraint functions: {e}")
             return {}
 
-    def _perform_penalty_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_penalty_functions(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform penalty functions calculation."""
         try:
             # Simulate penalty functions calculation
@@ -925,7 +1010,9 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing penalty functions: {e}")
             return {}
 
-    def _perform_reward_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_reward_functions(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform reward functions calculation."""
         try:
             # Simulate reward functions calculation
@@ -968,9 +1055,10 @@ class PnLLossFunctions:
         default_return=None,
         context="calculation results getting",
     )
-    def get_calculation_results(self, calculation_type: str | None = None) -> dict[str, Any]:
-        """
-        Get calculation results.
+    def get_calculation_results(
+        self, calculation_type: str | None = None
+    ) -> dict[str, Any]:
+        """Get calculation results.
 
         Args:
             calculation_type: Optional calculation type filter
@@ -993,8 +1081,7 @@ class PnLLossFunctions:
         context="calculation history getting",
     )
     def get_calculation_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get calculation history.
+        """Get calculation history.
 
         Args:
             limit: Optional limit on number of records
@@ -1015,8 +1102,7 @@ class PnLLossFunctions:
             return []
 
     def get_calculation_status(self) -> dict[str, Any]:
-        """
-        Get calculation status information.
+        """Get calculation status information.
 
         Returns:
             dict[str, Any]: Calculation status
@@ -1070,8 +1156,7 @@ pnl_loss_functions: PnLLossFunctions | None = None
 async def setup_pnl_loss_functions(
     config: dict[str, Any] | None = None,
 ) -> PnLLossFunctions | None:
-    """
-    Setup global PnL loss functions.
+    """Setup global PnL loss functions.
 
     Args:
         config: Optional configuration dictionary
@@ -1108,183 +1193,194 @@ async def setup_pnl_loss_functions(
         system_logger.error(f"Error setting up PnL loss functions: {e}")
         return None
 
+    def _perform_treynor_ratio(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Perform Treynor ratio calculation."""
+        try:
+            # Simulate Treynor ratio calculation
+            return {
+                "treynor_ratio_completed": True,
+                "treynor_ratio_value": 1.15,
+                "beta": 0.85,
+                "risk_free_rate": 0.02,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing Treynor ratio: {e}")
+            return {}
 
-    def _perform_treynor_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform Treynor ratio calculation."""
-            try:
-                # Simulate Treynor ratio calculation
-                return {
-                    "treynor_ratio_completed": True,
-                    "treynor_ratio_value": 1.15,
-                    "beta": 0.85,
-                    "risk_free_rate": 0.02,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing Treynor ratio: {e}")
-                return {}
-
-    def _perform_jensen_alpha(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform Jensen alpha calculation."""
-            try:
-                # Simulate Jensen alpha calculation
-                return {
-                    "jensen_alpha_completed": True,
-                    "jensen_alpha_value": 0.05,
-                    "expected_return": 0.12,
-                    "actual_return": 0.17,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing Jensen alpha: {e}")
-                return {}
+    def _perform_jensen_alpha(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Perform Jensen alpha calculation."""
+        try:
+            # Simulate Jensen alpha calculation
+            return {
+                "jensen_alpha_completed": True,
+                "jensen_alpha_value": 0.05,
+                "expected_return": 0.12,
+                "actual_return": 0.17,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing Jensen alpha: {e}")
+            return {}
 
     def _perform_var_95(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform VaR 95% calculation."""
-            try:
-                # Simulate VaR 95% calculation
-                return {
-                    "var_95_completed": True,
-                    "var_95_value": -0.025,
-                    "confidence_level": 0.95,
-                    "calculation_method": "historical",
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing VaR 95%: {e}")
-                return {}
+        """Perform VaR 95% calculation."""
+        try:
+            # Simulate VaR 95% calculation
+            return {
+                "var_95_completed": True,
+                "var_95_value": -0.025,
+                "confidence_level": 0.95,
+                "calculation_method": "historical",
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing VaR 95%: {e}")
+            return {}
 
     def _perform_var_99(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform VaR 99% calculation."""
-            try:
-                # Simulate VaR 99% calculation
-                return {
-                    "var_99_completed": True,
-                    "var_99_value": -0.035,
-                    "confidence_level": 0.99,
-                    "calculation_method": "historical",
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing VaR 99%: {e}")
-                return {}
+        """Perform VaR 99% calculation."""
+        try:
+            # Simulate VaR 99% calculation
+            return {
+                "var_99_completed": True,
+                "var_99_value": -0.035,
+                "confidence_level": 0.99,
+                "calculation_method": "historical",
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing VaR 99%: {e}")
+            return {}
 
     def _perform_cvar_95(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform CVaR 95% calculation."""
-            try:
-                # Simulate CVaR 95% calculation
-                return {
-                    "cvar_95_completed": True,
-                    "cvar_95_value": -0.032,
-                    "confidence_level": 0.95,
-                    "calculation_method": "historical",
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing CVaR 95%: {e}")
-                return {}
+        """Perform CVaR 95% calculation."""
+        try:
+            # Simulate CVaR 95% calculation
+            return {
+                "cvar_95_completed": True,
+                "cvar_95_value": -0.032,
+                "confidence_level": 0.95,
+                "calculation_method": "historical",
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing CVaR 95%: {e}")
+            return {}
 
     def _perform_cvar_99(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform CVaR 99% calculation."""
-            try:
-                # Simulate CVaR 99% calculation
-                return {
-                    "cvar_99_completed": True,
-                    "cvar_99_value": -0.045,
-                    "confidence_level": 0.99,
-                    "calculation_method": "historical",
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing CVaR 99%: {e}")
-                return {}
+        """Perform CVaR 99% calculation."""
+        try:
+            # Simulate CVaR 99% calculation
+            return {
+                "cvar_99_completed": True,
+                "cvar_99_value": -0.045,
+                "confidence_level": 0.99,
+                "calculation_method": "historical",
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing CVaR 99%: {e}")
+            return {}
 
-    def _perform_expected_shortfall(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform expected shortfall calculation."""
-            try:
-                # Simulate expected shortfall calculation
-                return {
-                    "expected_shortfall_completed": True,
-                    "expected_shortfall_value": -0.038,
-                    "calculation_method": "historical",
-                    "tail_percentile": 0.05,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing expected shortfall: {e}")
-                return {}
+    def _perform_expected_shortfall(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Perform expected shortfall calculation."""
+        try:
+            # Simulate expected shortfall calculation
+            return {
+                "expected_shortfall_completed": True,
+                "expected_shortfall_value": -0.038,
+                "calculation_method": "historical",
+                "tail_percentile": 0.05,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing expected shortfall: {e}")
+            return {}
 
     def _perform_tail_risk(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform tail risk calculation."""
-            try:
-                # Simulate tail risk calculation
-                return {
-                    "tail_risk_completed": True,
-                    "tail_risk_value": 0.15,
-                    "calculation_method": "kurtosis",
-                    "tail_threshold": 0.05,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing tail risk: {e}")
-                return {}
+        """Perform tail risk calculation."""
+        try:
+            # Simulate tail risk calculation
+            return {
+                "tail_risk_completed": True,
+                "tail_risk_value": 0.15,
+                "calculation_method": "kurtosis",
+                "tail_threshold": 0.05,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing tail risk: {e}")
+            return {}
 
-    def _perform_kelly_criterion(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform Kelly criterion calculation."""
-            try:
-                # Simulate Kelly criterion calculation
-                return {
-                    "kelly_criterion_completed": True,
-                    "kelly_fraction": 0.25,
-                    "win_probability": 0.55,
-                    "win_loss_ratio": 1.2,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing Kelly criterion: {e}")
-                return {}
+    def _perform_kelly_criterion(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Perform Kelly criterion calculation."""
+        try:
+            # Simulate Kelly criterion calculation
+            return {
+                "kelly_criterion_completed": True,
+                "kelly_fraction": 0.25,
+                "win_probability": 0.55,
+                "win_loss_ratio": 1.2,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing Kelly criterion: {e}")
+            return {}
 
-    def _perform_optimal_leverage(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform optimal leverage calculation."""
-            try:
-                # Simulate optimal leverage calculation
-                return {
-                    "optimal_leverage_completed": True,
-                    "optimal_leverage": 1.5,
-                    "risk_tolerance": 0.02,
-                    "expected_return": 0.15,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing optimal leverage: {e}")
-                return {}
+    def _perform_optimal_leverage(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Perform optimal leverage calculation."""
+        try:
+            # Simulate optimal leverage calculation
+            return {
+                "optimal_leverage_completed": True,
+                "optimal_leverage": 1.5,
+                "risk_tolerance": 0.02,
+                "expected_return": 0.15,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing optimal leverage: {e}")
+            return {}
 
-    def _perform_position_sizing(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform position sizing calculation."""
-            try:
-                # Simulate position sizing calculation
-                return {
-                    "position_sizing_completed": True,
-                    "position_size": 0.1,
-                    "risk_per_trade": 0.02,
-                    "account_size": 100000,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing position sizing: {e}")
-                return {}
+    def _perform_position_sizing(
+        self, calculation_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Perform position sizing calculation."""
+        try:
+            # Simulate position sizing calculation
+            return {
+                "position_sizing_completed": True,
+                "position_size": 0.1,
+                "risk_per_trade": 0.02,
+                "account_size": 100000,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing position sizing: {e}")
+            return {}
 
     def _perform_risk_budget(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-            """Perform risk budget calculation."""
-            try:
-                # Simulate risk budget calculation
-                return {
-                    "risk_budget_completed": True,
-                    "total_risk_budget": 0.05,
-                    "allocated_risk": 0.03,
-                    "remaining_risk": 0.02,
-                    "training_time": datetime.now().isoformat(),
-                }
-            except Exception as e:
-                self.logger.error(f"Error performing risk budget: {e}")
-                return {}
+        """Perform risk budget calculation."""
+        try:
+            # Simulate risk budget calculation
+            return {
+                "risk_budget_completed": True,
+                "total_risk_budget": 0.05,
+                "allocated_risk": 0.03,
+                "remaining_risk": 0.02,
+                "training_time": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error performing risk budget: {e}")
+            return {}

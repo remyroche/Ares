@@ -1,5 +1,7 @@
 # src/training/adaptive_optimizer.py
 
+import copy
+import datetime as datetime
 from typing import Any
 
 import numpy as np
@@ -8,8 +10,6 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import copy
-import datetime as datetime
 
 
 class MarketRegime:
@@ -32,7 +32,8 @@ class MarketRegime:
 
 
 class AdaptiveOptimizer:
-    """Adaptive hyperparameter optimizer that adjusts parameters based on market regime detection."""
+    """Adaptive hyperparameter optimizer that adjusts parameters based on market regime
+    detection."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -244,7 +245,9 @@ class AdaptiveOptimizer:
 
         return results
 
-    def _update_regime_performance(self, regime_name: str, results: dict[str, Any]) -> None:
+    def _update_regime_performance(
+        self, regime_name: str, results: dict[str, Any]
+    ) -> None:
         """Update performance tracking for regime."""
         if regime_name not in self.regime_performance:
             self.regime_performance[regime_name] = []

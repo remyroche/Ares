@@ -1,17 +1,16 @@
-"""
-Data Type Optimization Utilities
+"""Data Type Optimization Utilities.
 
-This module provides utilities for optimizing data types to reduce memory usage
-and improve computational efficiency in feature engineering.
+This module provides utilities for optimizing data types to reduce memory usage and
+improve computational efficiency in feature engineering.
 """
 
+import copy
 import logging
 
 import numpy as np
 import pandas as pd
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +20,8 @@ def optimize_dataframe_dtypes(
     target_memory_reduction: float = 0.5,
     preserve_categorical: bool = True,
 ) -> pd.DataFrame:
-    """
-    Optimize DataFrame data types to reduce memory usage while preserving functionality.
+    """Optimize DataFrame data types to reduce memory usage while preserving
+    functionality.
 
     Args:
         df: Input DataFrame
@@ -74,7 +73,9 @@ def optimize_dataframe_dtypes(
     # Optimize categorical columns
     if preserve_categorical:
         for col in df.select_dtypes(include=["object"]).columns:
-            if len(df) > 0 and df[col].nunique() / len(df) < 0.5:  # Less than 50% unique values
+            if (
+                len(df) > 0 and df[col].nunique() / len(df) < 0.5
+            ):  # Less than 50% unique values
                 optimized_df[col] = df[col].astype("category")
 
     # Optimize boolean columns
@@ -97,7 +98,9 @@ def optimize_dataframe_dtypes(
                 )
 
     final_memory = optimized_df.memory_usage(deep=True).sum()
-    memory_reduction = (initial_memory - final_memory) / initial_memory if initial_memory else 0.0
+    memory_reduction = (
+        (initial_memory - final_memory) / initial_memory if initial_memory else 0.0
+    )
 
     logger.info("🔧 Data type optimization complete:")
     logger.info(f"   Initial memory: {initial_memory / 1024**2:.2f} MB")
@@ -108,8 +111,7 @@ def optimize_dataframe_dtypes(
 
 
 def get_optimal_dtypes_for_features() -> dict[str, str]:
-    """
-    Get optimal data types for common feature engineering outputs.
+    """Get optimal data types for common feature engineering outputs.
 
     Returns:
         Dictionary mapping feature patterns to optimal data types
@@ -154,8 +156,7 @@ def get_optimal_dtypes_for_features() -> dict[str, str]:
 
 
 def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Apply feature-specific data type optimizations based on feature names.
+    """Apply feature-specific data type optimizations based on feature names.
 
     Args:
         df: Input DataFrame with features
@@ -191,7 +192,10 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
                         if df[col].dtype == "int64":
                             c_min = df[col].min()
                             c_max = df[col].max()
-                            if c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                            if (
+                                c_min > np.iinfo(np.int32).min
+                                and c_max < np.iinfo(np.int32).max
+                            ):
                                 optimized_df[col] = df[col].astype("int32")
                 except Exception as e:
                     logger.debug(f"Could not optimize {col} to {dtype}: {e}")
@@ -204,8 +208,7 @@ def optimize_feature_engineering_pipeline(
     df: pd.DataFrame,
     stage: str = "input",
 ) -> pd.DataFrame:
-    """
-    Optimize DataFrame for feature engineering pipeline stages.
+    """Optimize DataFrame for feature engineering pipeline stages.
 
     Args:
         df: Input DataFrame

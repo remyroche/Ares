@@ -30,17 +30,13 @@ from sklearn.model_selection import cross_val_score
 
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.training.steps.vectorized_advanced_feature_engineering import (
-import asyncio
-
     VectorizedAdvancedFeatureEngineering,
+    asyncio,
+    import,
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-)
+from src.utils.warning_symbols import error, failed, initialization_error
 
 
 @dataclass

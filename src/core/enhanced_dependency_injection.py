@@ -5,13 +5,11 @@ Deprecated: Forward to src.core.dependency_injection
 This module remains for backward compatibility and forwards to the canonical DI container.
 """
 
-from src.core.dependency_injection import (
-import asyncio
-
-    DependencyContainer as _DependencyContainer,
-    ServiceLifetime as _ServiceLifetime,
-)
 from typing import Any, TypeVar
+
+from src.core.dependency_injection import DependencyContainer as _DependencyContainer
+from src.core.dependency_injection import ServiceLifetime as _ServiceLifetime
+from src.core.dependency_injection import asyncio, import
 
 T = TypeVar("T")
 

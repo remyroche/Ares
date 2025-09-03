@@ -14,9 +14,7 @@ from sklearn.metrics import accuracy_score, f1_score
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-)
+from src.utils.warning_symbols import error
 
 try:
     import joblib  # Optional; used when loading joblib artifacts
@@ -801,6 +799,18 @@ class _PrefitWrapper:
         return proba
 
 
+from src.utils.enhanced_mlflow_integration import (
+    copy,
+    create_detailed_step_report,
+    import,
+    log_step_artifact_with_standardized_name,
+    log_step_dataframe_with_standardized_name,
+    log_step_metrics,
+    log_step_report,
+    os.path,
+    with_enhanced_mlflow_logging,
+)
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -818,17 +828,6 @@ from src.utils.training_pipeline_decorators import (
     time_budget_watchdog,
     validate_step_output,
     validate_step_prerequisites,
-)
-from src.utils.enhanced_mlflow_integration import (
-import copy
-import os.path
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
 )
 
 

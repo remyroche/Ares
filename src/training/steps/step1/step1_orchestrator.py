@@ -9,16 +9,14 @@ Note: Data conversion and formatting is handled by step1_5_data_converter.py
 """
 
 import asyncio
+import os.path
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from src.utils.centralized_decorators import (
-    handle_errors,
-    with_tracing_span,
-)
+from src.utils.centralized_decorators import handle_errors, with_tracing_span
 from src.utils.logger import system_logger
 
 from .aggtrades_validator import AggtradesValidator
@@ -26,7 +24,6 @@ from .comprehensive_gap_filler import ComprehensiveGapFiller
 from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
-import os.path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -36,7 +33,8 @@ logger = system_logger.getChild("Step1Orchestrator")
 
 
 class Step1Orchestrator:
-    """Orchestrates step01 data collection processes with proper decorators and security."""
+    """Orchestrates step01 data collection processes with proper decorators and
+    security."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
@@ -66,10 +64,15 @@ class Step1Orchestrator:
             "warnings": [],
             "step1_5_ready": False,
         },
-        context="step1_orchestrator.run_complete_step1"
+        context="step1_orchestrator.run_complete_step1",
     )
     async def run_complete_step1(
-        self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None, auto_fix: bool = True
+        self,
+        symbol: str,
+        exchange: str,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        auto_fix: bool = True,
     ) -> dict:
         """Run complete step01 data collection process including:
         1. Detect missing data gaps (aggtrades, klines, futures)
@@ -110,10 +113,16 @@ class Step1Orchestrator:
         logger.info("-" * 60)
 
         try:
-            gap_filling_results = await self.comprehensive_gap_filler.process_all_data_types(symbol, exchange)
+            gap_filling_results = (
+                await self.comprehensive_gap_filler.process_all_data_types(
+                    symbol, exchange
+                )
+            )
             if gap_filling_results:
                 results["gap_filling"] = gap_filling_results
-                logger.info(f"✅ Gap filling completed: {gap_filling_results.get('gaps_filled', 0)} gaps filled")
+                logger.info(
+                    f"✅ Gap filling completed: {gap_filling_results.get('gaps_filled', 0)} gaps filled"
+                )
             else:
                 logger.warning("⚠️ Gap filling returned no results")
                 results["warnings"].append("Gap filling returned no results")
@@ -128,7 +137,10 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             missing_data = self.gap_detector.detect_missing_data(
-                symbol, exchange, start_date, end_date,
+                symbol,
+                exchange,
+                start_date,
+                end_date,
             )
             results["missing_data"] = missing_data
 
@@ -152,7 +164,9 @@ class Step1Orchestrator:
 
                 # Run async download process
                 download_results = await self.data_downloader.download_all_missing_data(
-                    symbol, exchange, end_date,
+                    symbol,
+                    exchange,
+                    end_date,
                 )
                 results["download_results"] = download_results
 
@@ -199,7 +213,8 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             conversion_results = self.aggtrades_validator.convert_to_parquet(
-                symbol, exchange,
+                symbol,
+                exchange,
             )
             results["parquet_conversion"] = conversion_results
 
@@ -213,7 +228,8 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             consolidation_results = self.data_preparation.create_1m_consolidated_data(
-                symbol, exchange,
+                symbol,
+                exchange,
             )
             results["1m_consolidation"] = consolidation_results
 
@@ -233,7 +249,7 @@ class Step1Orchestrator:
                 timeframes=["5m", "15m", "30m"],
                 start_date=start_date,
                 end_date=end_date,
-                create_partitions=True
+                create_partitions=True,
             )
             results["resampling"] = resampling_results
 
@@ -250,7 +266,8 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             preparation_results = self.data_preparation.prepare_for_step1_5(
-                symbol, exchange,
+                symbol,
+                exchange,
             )
             results["data_preparation"] = preparation_results
 
@@ -282,7 +299,7 @@ class Step1Orchestrator:
             # Calculate execution time
             end_time = datetime.now()
             execution_time = end_time - start_time
-            
+
             logger.info("=" * 80)
             logger.info("📊 STEP1 EXECUTION SUMMARY")
             logger.info(f"⏱️  Total execution time: {execution_time}")
@@ -292,30 +309,36 @@ class Step1Orchestrator:
             logger.info(f"❌ Errors: {len(results['errors'])}")
             logger.info(f"⚠️  Warnings: {len(results['warnings'])}")
             logger.info(f"🎯 Step1_5 ready: {results['step1_5_ready']}")
-            
+
             if results["errors"]:
                 logger.error("❌ ERRORS ENCOUNTERED:")
                 for i, error in enumerate(results["errors"], 1):
                     logger.error(f"  {i}. {error}")
-            
+
             if results["warnings"]:
                 logger.warning("⚠️  WARNINGS ENCOUNTERED:")
                 for i, warning in enumerate(results["warnings"], 1):
                     logger.warning(f"  {i}. {warning}")
-            
+
             if results["success"]:
                 logger.info("🎉 STEP1 PROCESS COMPLETED SUCCESSFULLY!")
-                logger.info(f"📈 Ready for step1_5: {'Yes' if results['step1_5_ready'] else 'No'}")
+                logger.info(
+                    f"📈 Ready for step1_5: {'Yes' if results['step1_5_ready'] else 'No'}"
+                )
             else:
                 logger.error("❌ STEP1 PROCESS COMPLETED WITH ERRORS!")
-                logger.error("🔍 Please review the errors above and fix issues before proceeding")
+                logger.error(
+                    "🔍 Please review the errors above and fix issues before proceeding"
+                )
 
             return results
 
         except Exception as e:
             end_time = datetime.now()
             execution_time = end_time - start_time
-            logger.exception(f"❌ CRITICAL ERROR in step01 process after {execution_time}: {e}")
+            logger.exception(
+                f"❌ CRITICAL ERROR in step01 process after {execution_time}: {e}"
+            )
             results["success"] = False
             results["errors"].append(f"Critical error: {str(e)}")
             return results
@@ -336,7 +359,7 @@ class Step1Orchestrator:
             "required_files": [],
             "missing_files": [],
         },
-        context="step1_orchestrator.validate_step1_5_readiness"
+        context="step1_orchestrator.validate_step1_5_readiness",
     )
     def validate_step1_5_readiness(self, symbol: str, exchange: str) -> dict:
         """Validate that the data is ready for step1_5_data_converter.py processing.
@@ -347,7 +370,6 @@ class Step1Orchestrator:
 
         Returns:
             Dictionary with readiness results
-
         """
         logger.info(f"🔍 Validating step1_5 compatibility for {exchange}_{symbol}")
 
@@ -410,7 +432,7 @@ class Step1Orchestrator:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError, AttributeError),
         default_return="❌ ERROR: Failed to generate comprehensive report",
-        context="step1_orchestrator.generate_comprehensive_report"
+        context="step1_orchestrator.generate_comprehensive_report",
     )
     def generate_comprehensive_report(
         self, symbol: str, exchange: str, results: dict
@@ -424,7 +446,6 @@ class Step1Orchestrator:
 
         Returns:
             Comprehensive report string
-
         """
         report = f"""
 🎯 COMPREHENSIVE STEP1 REPORT FOR {exchange}_{symbol}
@@ -542,9 +563,20 @@ class Step1Orchestrator:
 
     @with_tracing_span("quick_health_check")
     @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
-        default_return={"healthy": False, "issues": ["Health check failed"], "recommendations": ["Check system status"]},
-        context="step1_orchestrator.quick_health_check"
+        exceptions=(
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            FileNotFoundError,
+            PermissionError,
+        ),
+        default_return={
+            "healthy": False,
+            "issues": ["Health check failed"],
+            "recommendations": ["Check system status"],
+        },
+        context="step1_orchestrator.quick_health_check",
     )
     def quick_health_check(self, symbol: str, exchange: str) -> dict:
         """Perform a quick health check of the data.
@@ -555,7 +587,6 @@ class Step1Orchestrator:
 
         Returns:
             Dictionary with health check results
-
         """
         logger.info(f"🔍 Performing quick health check for {exchange}_{symbol}")
 
@@ -605,7 +636,6 @@ class Step1Orchestrator:
 
         Returns:
             Dictionary with step01 status
-
         """
         status = {
             "symbol": symbol,

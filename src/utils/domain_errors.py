@@ -10,8 +10,8 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 class DomainError(Exception):
     """Base class for domain-specific errors raised by decorators.
 
-    Contains a machine-readable "code" and an optional context payload
-    for consistent error handling and logging.
+    Contains a machine-readable "code" and an optional context payload for consistent
+    error handling and logging.
     """
 
     def __init__(

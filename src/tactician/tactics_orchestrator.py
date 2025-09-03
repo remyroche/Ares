@@ -5,6 +5,9 @@ Tactics Orchestrator for coordinating all tactical components.
 """
 
 import asyncio
+
+# Temporary TradeDecision definition to allow imports
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -15,8 +18,6 @@ import pandas as pd
 # from src.interfaces.base_interfaces import TradeDecision  # Temporarily commented due to syntax errors
 # from src.interfaces.event_bus import EventType  # Temporarily commented due to syntax errors
 
-# Temporary TradeDecision definition to allow imports
-from dataclasses import dataclass
 
 @dataclass
 class TradeDecision:
@@ -31,17 +32,17 @@ from src.tactician.leverage_sizer import LeverageSizer
 from src.tactician.ml_tactics_manager import MLTacticsManager
 from src.tactician.position_closing import PositionCloser
 from src.tactician.position_division_strategy import PositionDivisionStrategy
-from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
+from src.tactician.position_monitor import (
+    PositionAction,
+    PositionAssessment,
+    PositionMonitor,
+)
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-import copy
+from src.utils.warning_symbols import copy, failed, import, invalid
 
-    failed,
-    invalid,
-)
 
 class DecisionPolicy:
     """

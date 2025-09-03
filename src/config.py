@@ -1,17 +1,15 @@
 # src/config.py
+"""Legacy configuration module for backward compatibility.
 
-"""
-Legacy configuration module for backward compatibility.
 This module now uses the new modular configuration structure.
 """
 
-from src.utils.logger import system_logger
-from typing import Any
-from src.config.environment import get_environment_settings, get_env_settings
-from dataclasses import dataclass
-
 # Import the new modular configuration
 import asyncio
+from dataclasses import dataclass
+from typing import Any
+
+from src.config.environment import get_env_settings, get_environment_settings
 from src.config.modular_config import (
     CONFIG,
     AresConfig,
@@ -30,9 +28,10 @@ from src.config.modular_config import (
     get_trading_config_section,
     get_training_config_section,
 )
+from src.utils.logger import system_logger
 
 # Re-export all the functions and classes for backward compatibility
-__all__=[
+__all__ = [
     "get_complete_config",
     "get_environment_config",
     "get_system_config_section",
@@ -53,37 +52,40 @@ __all__=[
 
 # Legacy compatibility - maintain the old CONFIG structure
 
+
 def get_config() -> dict[str, Any]:
-    """
-    Get the complete configuration (legacy function).
+    """Get the complete configuration (legacy function).
 
     Returns:
         dict: Complete configuration dictionary
     """
     return get_complete_config()
 
+
 def get_environment_settings():
-    """
-    Get environment settings (legacy function).
+    """Get environment settings (legacy function).
 
     Returns:
         EnvironmentSettings: Environment settings instance
     """
     return get_env_settings()
 
+
 # Legacy dataclass definitions for backward compatibility
+
 
 @dataclass
 class DatabaseConfig:
     """Database configuration settings."""
 
-    host: str="localhost"
+    host: str = "localhost"
     port: int = 5432
     database: str = "ares_trading"
     username: str = "postgres"
     password: str = ""
     max_connections: int = 10
     connection_timeout: int = 30
+
 
 @dataclass
 class ExchangeConfig:
@@ -95,6 +97,7 @@ class ExchangeConfig:
     testnet: bool = True
     rate_limit: int = 1200
     timeout: int = 30
+
 
 @dataclass
 class ModelTrainingConfig:
@@ -113,9 +116,10 @@ class ModelTrainingConfig:
 
     def __post_init__(self):
         if self.enhanced_lm_optimizer is None:
-            self.enhanced_lm_optimizer={
+            self.enhanced_lm_optimizer = {
                 "feature_selection": {
-                    "enable": True, "methods": ["mutual_info", "lasso", "random_forest", "shap"],
+                    "enable": True,
+                    "methods": ["mutual_info", "lasso", "random_forest", "shap"],
                     "target_features": {"step06": 80, "step6_5": 100, "step09": 90},
                     "vif_threshold": 10.0,
                     "correlation_threshold": 0.95,
@@ -124,7 +128,8 @@ class ModelTrainingConfig:
                     "shap_threshold": 0.001,
                 },
                 "regularization": {
-                    "enable": True, "l1_alpha_range": [0.001, 0.1],
+                    "enable": True,
+                    "l1_alpha_range": [0.001, 0.1],
                     "l2_alpha_range": [0.0001, 0.01],
                     "dropout_range": [0.1, 0.5],
                     "model_specific": {
@@ -139,52 +144,58 @@ class ModelTrainingConfig:
                     },
                 },
                 "optuna": {
-                    "enable": True, "n_trials_per_batch": 50,
+                    "enable": True,
+                    "n_trials_per_batch": 50,
                     "n_batches": 3,
                     "timeout_per_batch": 300,  # 5 minutes per batch
                     "sampler": "tpe",
                     "pruner": "median",
-                    "storage": None, # Can be set to database URL
+                    "storage": None,  # Can be set to database URL
                 },
                 "vectorization": {
-                    "enable": True, "batch_size": 1024,
-                    "use_gpu": True, "memory_efficient": True,
+                    "enable": True,
+                    "batch_size": 1024,
+                    "use_gpu": True,
+                    "memory_efficient": True,
                 },
             }
+
 
 @dataclass
 class RiskConfig:
     """Risk management configuration settings."""
 
-    max_position_size: float=0.1
+    max_position_size: float = 0.1
     max_drawdown: float = 0.15
     stop_loss_pct: float = 0.05
     take_profit_pct: float = 0.1
     max_leverage: int = 10
 
-# Legacy ConfigurationManager class for backward compatibility
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import invalid, warning, failed
+
 import copy
 
+# Legacy ConfigurationManager class for backward compatibility
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.warning_symbols import failed, invalid, warning
+
+
 class ConfigurationManager:
-    """
-    Legacy configuration manager for backward compatibility.
+    """Legacy configuration manager for backward compatibility.
+
     This class now uses the new modular configuration structure.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize configuration manager.
+        """Initialize configuration manager.
 
         Args:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
-        self.logger=system_logger.getChild("ConfigurationManager")
+        self.logger = system_logger.getChild("ConfigurationManager")
 
         # Configuration manager state
-        self.is_initialized: bool=False
+        self.is_initialized: bool = False
         self.config_history: list[dict[str, Any]] = []
         self.config_sections: dict[str, Any] = {}
 
@@ -193,7 +204,7 @@ class ConfigurationManager:
             "config_manager",
             {},
         )
-        self.max_config_history: int=self.config_manager_config.get(
+        self.max_config_history: int = self.config_manager_config.get(
             "max_config_history",
             100,
         )
@@ -202,15 +213,16 @@ class ConfigurationManager:
         error_handlers={
             ValueError: (False, "Invalid configuration manager configuration"),
             AttributeError: (
-                False, "Missing required configuration manager parameters",
+                False,
+                "Missing required configuration manager parameters",
             ),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False, context="configuration manager initialization",
+        default_return=False,
+        context="configuration manager initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize configuration manager.
+        """Initialize configuration manager.
 
         Returns:
             bool: True if initialization successful=False otherwise
@@ -232,7 +244,7 @@ class ConfigurationManager:
             # Initialize configuration service
             await self._initialize_config_service()
 
-            self.is_initialized=True
+            self.is_initialized = True
             self.logger.info("✅ Configuration Manager initialized successfully")
             return True
 
@@ -254,7 +266,8 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="config manager configuration loading",
+        default_return=None,
+        context="config manager configuration loading",
     )
     async def _load_config_manager_configuration(self) -> None:
         """Load configuration manager specific configuration."""
@@ -275,12 +288,11 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False, context="configuration validation",
+        default_return=False,
+        context="configuration validation",
     )
-
     def _validate_configuration(self) -> bool:
-        """
-        Validate configuration manager configuration.
+        """Validate configuration manager configuration.
 
         Returns:
             bool: True if configuration is valid=False otherwise
@@ -304,13 +316,14 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="config sections initialization",
+        default_return=None,
+        context="config sections initialization",
     )
     async def _initialize_config_sections(self) -> None:
         """Initialize configuration sections."""
         try:
             # Initialize all configuration sections
-            self.config_sections={
+            self.config_sections = {
                 "environment": get_environment_config(),
                 "system": get_system_config_section(),
                 "trading": get_trading_config_section(),
@@ -327,7 +340,8 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="config service initialization",
+        default_return=None,
+        context="config service initialization",
     )
     async def _initialize_config_service(self) -> None:
         """Initialize configuration service."""
@@ -343,11 +357,11 @@ class ConfigurationManager:
         error_handlers={
             Exception: (False, "Configuration manager run failed"),
         },
-        default_return=False, context="configuration manager run",
+        default_return=False,
+        context="configuration manager run",
     )
     async def run(self) -> bool:
-        """
-        Run the configuration manager.
+        """Run the configuration manager.
 
         Returns:
             bool: True if successful=False otherwise
@@ -373,13 +387,14 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="configuration update",
+        default_return=None,
+        context="configuration update",
     )
     async def _update_configuration(self) -> None:
         """Update configuration."""
         try:
             # Add to configuration history
-            history_entry={
+            history_entry = {
                 "timestamp": "2024-01-01T00:00:00",  # Placeholder timestamp
                 "config_sections": self.config_sections.copy(),
             }
@@ -388,7 +403,7 @@ class ConfigurationManager:
 
             # Limit history size
             if len(self.config_history) > self.max_config_history:
-                self.config_history=self.config_history[-self.max_config_history :]
+                self.config_history = self.config_history[-self.max_config_history :]
 
             self.logger.info(
                 f"📁 Updated configuration (history: {len(self.config_history)} entries)",
@@ -399,7 +414,8 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="configuration reload",
+        default_return=None,
+        context="configuration reload",
     )
     async def _reload_configuration(self) -> None:
         """Reload configuration."""
@@ -414,7 +430,8 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="configuration sections validation",
+        default_return=None,
+        context="configuration sections validation",
     )
     async def _validate_configuration_sections(self) -> None:
         """Validate configuration sections."""
@@ -435,7 +452,8 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="config service update",
+        default_return=None,
+        context="config service update",
     )
     async def _update_config_service(self) -> None:
         """Update configuration service."""
@@ -448,13 +466,14 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="configuration manager stop",
+        default_return=None,
+        context="configuration manager stop",
     )
     async def stop(self) -> None:
         """Stop the configuration manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Configuration Manager...")
-            self.is_initialized=False
+            self.is_initialized = False
             self.logger.info("✅ Configuration Manager stopped successfully")
 
         except Exception:
@@ -463,15 +482,16 @@ class ConfigurationManager:
     def get_status(self) -> dict[str, Any]:
         """Get configuration manager status."""
         return {
-            "is_initialized": self.is_initialized, "config_sections_count": len(self.config_sections),
+            "is_initialized": self.is_initialized,
+            "config_sections_count": len(self.config_sections),
             "history_count": len(self.config_history),
         }
 
-    def get_history(self, limit: int | None=None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get configuration history."""
-        history=self.config_history.copy()
+        history = self.config_history.copy()
         if limit:
-            history=history[-limit:]
+            history = history[-limit:]
         return history
 
     def get_config_sections(self) -> dict[str, Any]:
@@ -519,16 +539,17 @@ class ConfigurationManager:
         """Get complete configuration."""
         return get_complete_config()
 
+
 # Legacy setup function
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None, context="configuration manager setup",
+    default_return=None,
+    context="configuration manager setup",
 )
 async def setup_configuration_manager(
-    config: dict[str, Any] | None=None,
+    config: dict[str, Any] | None = None,
 ) -> ConfigurationManager | None:
-    """
-    Setup and return a configured ConfigurationManager instance.
+    """Setup and return a configured ConfigurationManager instance.
 
     Args:
         config: Configuration dictionary
@@ -538,9 +559,9 @@ async def setup_configuration_manager(
     """
     try:
         if config is None:
-            config=get_complete_config()
+            config = get_complete_config()
 
-        manager=ConfigurationManager(config)
+        manager = ConfigurationManager(config)
         if await manager.initialize():
             return manager
         return None

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Monitoring Integration Manager (minimal scaffold)
+"""Monitoring Integration Manager (minimal scaffold)
 
 Coordinates monitoring components.
 """
@@ -11,11 +10,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from src.utils.centralized_decorators import PerformanceLevel, performance_monitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.centralized_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-)
 from src.utils.logger import system_logger
 
 

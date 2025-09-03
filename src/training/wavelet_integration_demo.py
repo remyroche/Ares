@@ -1,7 +1,6 @@
 # src/training/wavelet_integration_demo.py
-
-"""Comprehensive Wavelet Transform Integration Demo
-Demonstrates the complete wavelet workflow with all advanced features integrated.
+"""Comprehensive Wavelet Transform Integration Demo Demonstrates the complete wavelet
+workflow with all advanced features integrated.
 
 This script shows:
 1. All features from advanced_feature_engineering.py & feature_engineering_orchestrator.py (except Autoencoder)
@@ -27,17 +26,14 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     WaveletFeatureCache,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    problem,
-)
+from src.utils.warning_symbols import error, failed, problem
 
 
 class WaveletIntegrationDemo:
     """Comprehensive demonstration of the complete wavelet workflow integration.
-    Shows all features from advanced_feature_engineering.py and feature_engineering_orchestrator.py
-    using price differences instead of raw prices.
+
+    Shows all features from advanced_feature_engineering.py and
+    feature_engineering_orchestrator.py using price differences instead of raw prices.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -186,7 +182,8 @@ class WaveletIntegrationDemo:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> None:
-        """Demonstrate complete feature integration from advanced_feature_engineering.py."""
+        """Demonstrate complete feature integration from
+        advanced_feature_engineering.py."""
         try:
             self.logger.info("\n" + "=" * 60)
             self.logger.info("DEMONSTRATING COMPLETE FEATURE INTEGRATION")
@@ -518,4 +515,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run( main())
+    asyncio.run(main())

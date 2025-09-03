@@ -6,22 +6,28 @@ from typing import Any, Literal
 try:
     from dotenv import load_dotenv
 except Exception:  # soft-fallback for smoke tests without dotenv
+
     def load_dotenv(*args, **kwargs):
         return False
+
 
 try:
     from pydantic import Field
     from pydantic_settings import BaseSettings
 except Exception:  # minimal fallback types for smoke test
+
     class BaseSettings:  # type: ignore
         def __init__(self, **kwargs):
             for k, v in kwargs.items():
                 setattr(self, k, v)
+
     def Field(default=None, env: str | None = None):  # type: ignore
         return default
 
-from src.utils.logger import system_logger
+
 import os.path
+
+from src.utils.logger import system_logger
 
 # --- Environment Loading ---
 dotenv_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
@@ -140,7 +146,6 @@ class EnvironmentSettings(BaseSettings):
 
         Returns:
             dict: Exchange credentials
-
         """
         exchange_name_lower = exchange_name.lower()
 
@@ -175,7 +180,6 @@ class EnvironmentSettings(BaseSettings):
 
         Returns:
             bool: True if credentials are available
-
         """
         credentials = self.get_exchange_credentials(exchange_name)
         return (
@@ -190,7 +194,6 @@ class EnvironmentSettings(BaseSettings):
 
         Returns:
             dict: Database configuration
-
         """
         if database_type.lower() == "firestore":
             return {
@@ -211,7 +214,6 @@ class EnvironmentSettings(BaseSettings):
 
         Returns:
             dict: Email configuration
-
         """
         return {
             "sender_address": self.email_sender_address,
@@ -224,7 +226,6 @@ class EnvironmentSettings(BaseSettings):
 
         Returns:
             dict: MLflow configuration
-
         """
         return {
             "tracking_uri": self.mlflow_tracking_uri,
@@ -245,7 +246,6 @@ def get_environment_settings() -> EnvironmentSettings:
 
     Returns:
         EnvironmentSettings: Environment settings instance
-
     """
     try:
         return EnvironmentSettings()

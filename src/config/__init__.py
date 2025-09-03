@@ -17,7 +17,6 @@ def get_complete_config() -> dict[str, Any]:
 
     Returns:
         dict: Complete configuration dictionary
-
     """
     # Get all domain-specific configurations
     environment_settings = get_environment_settings()
@@ -77,7 +76,6 @@ def get_config_section(section_name: str) -> dict[str, Any]:
 
     Returns:
         dict: Configuration section
-
     """
     complete_config = get_complete_config()
     return complete_config.get(section_name, {})
@@ -88,7 +86,6 @@ def get_environment_config() -> dict[str, Any]:
 
     Returns:
         dict: Environment configuration
-
     """
     return get_config_section("environment")
 
@@ -98,7 +95,6 @@ def get_system_config_section() -> dict[str, Any]:
 
     Returns:
         dict: System configuration
-
     """
     return get_config_section("system")
 
@@ -108,7 +104,6 @@ def get_trading_config_section() -> dict[str, Any]:
 
     Returns:
         dict: Trading configuration
-
     """
     return get_config_section("trading")
 
@@ -118,7 +113,6 @@ def get_training_config_section() -> dict[str, Any]:
 
     Returns:
         dict: Training configuration
-
     """
     return get_config_section("training")
 

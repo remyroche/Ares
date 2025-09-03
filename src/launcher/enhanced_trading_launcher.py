@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
-"""
-Enhanced Trading Launcher
+"""Enhanced Trading Launcher.
 
-Provides a comprehensive launcher for paper trading, live trading, and
-backtesting with integrated detailed reporting capabilities.
+Provides a comprehensive launcher for paper trading, live trading, and backtesting with
+integrated detailed reporting capabilities.
 """
 
-from datetime import datetime
-from typing import Any, TYPE_CHECKING
+import asyncio
 import json
 import os
-import asyncio
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 try:
     import pandas as pd
 except Exception:  # Fallback for environments without pandas
+
     class _PD:
         DataFrame = Any  # type: ignore
+
     pd = _PD()  # type: ignore
 
-from src.utils.logger import system_logger
+from src.integration.paper_trading_integration import (
+    PaperTradingIntegration,
+    setup_paper_trading_integration,
+)
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     execution_error,
@@ -29,22 +34,18 @@ from src.utils.warning_symbols import (
     invalid,
     warning,
 )
-from src.integration.paper_trading_integration import (
-    PaperTradingIntegration,
-    setup_paper_trading_integration,
-)
+
 if TYPE_CHECKING:
     from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
-from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+
+from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
+
 
 class EnhancedTradingLauncher:
-    """
-    Enhanced trading launcher with comprehensive reporting integration.
-    """
+    """Enhanced trading launcher with comprehensive reporting integration."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize enhanced trading launcher.
+        """Initialize enhanced trading launcher.
 
         Args:
             config: Configuration dictionary
@@ -86,8 +87,7 @@ class EnhancedTradingLauncher:
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
     async def initialize(self) -> bool:
-        """
-        Initialize enhanced trading launcher.
+        """Initialize enhanced trading launcher.
 
         Returns:
             bool: True if initialization successful = False otherwise
@@ -124,7 +124,11 @@ class EnhancedTradingLauncher:
         """Validate launcher configuration."""
         try:
             # Check if at least one trading mode is enabled
-            if not (self.enable_paper_trading or self.enable_live_trading or self.enable_backtesting):
+            if not (
+                self.enable_paper_trading
+                or self.enable_live_trading
+                or self.enable_backtesting
+            ):
                 self.logger.error(error("At least one trading mode must be enabled"))
                 return False
 
@@ -159,10 +163,9 @@ class EnhancedTradingLauncher:
             if self.enable_backtesting:
                 try:
                     from src.backtesting.enhanced_backtester import (
-import os.path
-
                         setup_enhanced_backtester as _setup_backtester,
                     )
+
                     self.enhanced_backtester = await _setup_backtester(self.config)
                 except Exception as e:
                     self.logger.error(failed(f"Backtester import/setup failed: {e}"))
@@ -170,10 +173,14 @@ import os.path
                 if self.enhanced_backtester:
                     self.logger.info("✅ Enhanced backtester initialized")
                 else:
-                    self.logger.error(failed("⚠️ Failed to initialize enhanced backtester"))
+                    self.logger.error(
+                        failed("⚠️ Failed to initialize enhanced backtester")
+                    )
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing components: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing components: {e}")
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -188,8 +195,7 @@ import os.path
         self,
         trading_config: dict[str, Any] | None = None,
     ) -> bool:
-        """
-        Launch paper trading with enhanced reporting.
+        """Launch paper trading with enhanced reporting.
 
         Args:
             trading_config: Additional trading configuration
@@ -238,8 +244,7 @@ import os.path
         self,
         trading_config: dict[str, Any] | None = None,
     ) -> bool:
-        """
-        Launch live trading with enhanced reporting.
+        """Launch live trading with enhanced reporting.
 
         Args:
             trading_config: Additional trading configuration
@@ -288,8 +293,7 @@ import os.path
         strategy_signals: pd.DataFrame,
         backtest_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """
-        Launch enhanced backtest with comprehensive reporting.
+        """Launch enhanced backtest with comprehensive reporting.
 
         Args:
             historical_data: Historical market data
@@ -352,8 +356,7 @@ import os.path
         timestamp: datetime,
         trade_metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """
-        Execute trade with integrated reporting.
+        """Execute trade with integrated reporting.
 
         Args:
             symbol: Trading symbol
@@ -382,7 +385,9 @@ import os.path
                 )
             if self.current_mode == "live":
                 # TODO: Implement live trading execution
-                self.logger.error(execution_error("⚠️ Live trading execution not yet implemented"))
+                self.logger.error(
+                    execution_error("⚠️ Live trading execution not yet implemented")
+                )
                 return False
             self.logger.error(
                 f"Trade execution not available for mode: {self.current_mode}",
@@ -453,9 +458,11 @@ import os.path
                 export_formats = ["json", "csv", "html"]
 
             if self.current_mode == "paper" and self.paper_trading_integration:
-                return await self.paper_trading_integration.generate_comprehensive_report(
-                    report_type,
-                    export_formats,
+                return (
+                    await self.paper_trading_integration.generate_comprehensive_report(
+                        report_type,
+                        export_formats,
+                    )
                 )
             if self.current_mode == "backtest" and self.enhanced_backtester:
                 return await self.enhanced_backtester.generate_backtest_report(
@@ -556,6 +563,7 @@ import os.path
         except Exception as e:
             self.logger.error(error(f"Error stopping launcher: {e}"))
 
+
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
@@ -564,8 +572,7 @@ import os.path
 async def setup_enhanced_trading_launcher(
     config: dict[str, Any] | None = None,
 ) -> EnhancedTradingLauncher | None:
-    """
-    Setup enhanced trading launcher.
+    """Setup enhanced trading launcher.
 
     Args:
         config: Configuration dictionary

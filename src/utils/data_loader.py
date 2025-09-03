@@ -1,13 +1,13 @@
-"""
-Data loading utilities for partitioned datasets.
+"""Data loading utilities for partitioned datasets.
 
-This module provides utilities for loading data from partitioned Parquet datasets
-in a memory-efficient manner = supporting both full dataset loading and streaming
-for large datasets.
+This module provides utilities for loading data from partitioned Parquet datasets in a
+memory-efficient manner = supporting both full dataset loading and streaming for large
+datasets.
 """
 
 import logging
 import os
+import os.path
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -21,7 +21,6 @@ import pyarrow.parquet as pq
 from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import os.path
 
 try:
     PYARROW_AVAILABLE = True
@@ -55,8 +54,8 @@ class PartitionedDataLoader:
         cache_key: str | None = None,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        """
-        Load data from partitioned Parquet dataset with enhanced performance optimizations.
+        """Load data from partitioned Parquet dataset with enhanced performance
+        optimizations.
 
         Args:
             base_dir: Base directory for partitioned data
@@ -78,9 +77,7 @@ class PartitionedDataLoader:
         """
         # Generate cache key if not provided
         if cache_key is None and use_cache:
-            cache_key = (
-                f"{base_dir}_{exchange}_{symbol}_{data_type}_{timeframe}_{hash(str(filters))}_{hash(str(columns))}"
-            )
+            cache_key = f"{base_dir}_{exchange}_{symbol}_{data_type}_{timeframe}_{hash(str(filters))}_{hash(str(columns))}"
 
         # Check cache first
         if use_cache and cache_key in self._partition_cache:
@@ -123,11 +120,19 @@ class PartitionedDataLoader:
 
         if use_streaming and PYARROW_AVAILABLE:
             result = self._load_with_pyarrow_streaming(
-                dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs
+                dataset_path=dataset_path,
+                filters=filters,
+                columns=columns,
+                max_rows=max_rows,
+                **kwargs,
             )
         else:
             result = self._load_with_pandas(
-                dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs
+                dataset_path=dataset_path,
+                filters=filters,
+                columns=columns,
+                max_rows=max_rows,
+                **kwargs,
             )
 
         # Cache the result
@@ -282,7 +287,11 @@ class PartitionedDataLoader:
                 expressions.append(ds.field(field).isin(value))
 
         if expressions:
-            return expressions[0] if len(expressions) == 1 else expressions[0] & expressions[1]
+            return (
+                expressions[0]
+                if len(expressions) == 1
+                else expressions[0] & expressions[1]
+            )
         return None
 
     def get_available_partitions(
@@ -343,9 +352,15 @@ class PartitionedDataLoader:
 
         partition_count += 1
 
-        return {"total_rows": total_rows, "total_size_mb": round(total_size_mb, 2), "partitions": partition_count}
+        return {
+            "total_rows": total_rows,
+            "total_size_mb": round(total_size_mb, 2),
+            "partitions": partition_count,
+        }
 
-    def _optimize_filters_for_pruning(self, filters: List[Tuple], dataset_path: str) -> List[Tuple]:
+    def _optimize_filters_for_pruning(
+        self, filters: List[Tuple], dataset_path: str
+    ) -> List[Tuple]:
         """Optimize filters for better partition pruning."""
         optimized_filters = []
 
@@ -379,10 +394,22 @@ class PartitionedDataLoader:
                 # Extract partition columns from schema
                 partition_columns = []
                 for field in schema:
-                    if field.name in ["exchange", "symbol", "timeframe", "year", "month", "day", "hour"]:
+                    if field.name in [
+                        "exchange",
+                        "symbol",
+                        "timeframe",
+                        "year",
+                        "month",
+                        "day",
+                        "hour",
+                    ]:
                         partition_columns.append(field.name)
 
-                return {"partition_columns": partition_columns, "schema": schema, "dataset_path": dataset_path}
+                return {
+                    "partition_columns": partition_columns,
+                    "schema": schema,
+                    "dataset_path": dataset_path,
+                }
             except Exception:
                 pass
 
@@ -435,7 +462,9 @@ class PartitionedDataLoader:
 
             # Calculate additional statistics
             if stats["file_sizes"]:
-                stats["avg_file_size"] = sum(stats["file_sizes"]) / len(stats["file_sizes"])
+                stats["avg_file_size"] = sum(stats["file_sizes"]) / len(
+                    stats["file_sizes"]
+                )
                 stats["min_file_size"] = min(stats["file_sizes"])
                 stats["max_file_size"] = max(stats["file_sizes"])
 
@@ -512,8 +541,7 @@ def load_partitioned_data(
     use_streaming: bool = True,
     logger: logging.Logger | None = None,
 ) -> pd.DataFrame:
-    """
-    Convenience function to load partitioned data.
+    """Convenience function to load partitioned data.
 
     Args:
         exchange: Exchange name

@@ -1,7 +1,6 @@
 # src/training/gpu_acceleration_m1.py
+"""GPU Acceleration for Mac M1 (Apple Silicon) using Metal Performance Shaders.
 
-"""
-GPU Acceleration for Mac M1 (Apple Silicon) using Metal Performance Shaders.
 Provides optimized matrix operations leveraging Apple's Metal framework.
 """
 
@@ -30,7 +29,6 @@ class GPUAccelerationM1:
 
         Args:
             config: Configuration dictionary
-
         """
         self.config = config
         self.logger = system_logger.getChild("GPUAccelerationM1")
@@ -60,8 +58,7 @@ class GPUAccelerationM1:
     def gpu_matrix_multiplication(
         self, A: np.ndarray, B: np.ndarray
     ) -> tuple[np.ndarray, dict[str, Any]]:
-        """
-        GPU-accelerated matrix multiplication using MPS.
+        """GPU-accelerated matrix multiplication using MPS.
 
         Args:
             A: First matrix
@@ -126,8 +123,7 @@ class GPUAccelerationM1:
     def gpu_svd_decomposition(
         self, matrix: np.ndarray, k: int | None = None
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
-        """
-        GPU-accelerated SVD decomposition using MPS.
+        """GPU-accelerated SVD decomposition using MPS.
 
         Args:
             matrix: Input matrix
@@ -145,7 +141,9 @@ class GPUAccelerationM1:
                 return self._cpu_svd_decomposition(matrix, k)
 
             # Convert to PyTorch tensor
-            matrix_tensor = torch.tensor(matrix, dtype=torch.float32, device=self.device)
+            matrix_tensor = torch.tensor(
+                matrix, dtype=torch.float32, device=self.device
+            )
 
             # Perform SVD decomposition
             with torch.no_grad():
@@ -201,7 +199,6 @@ class GPUAccelerationM1:
 
         Returns:
             bool: True if GPU should be used, False otherwise
-
         """
         try:
             # Check if MPS is available
@@ -234,7 +231,6 @@ class GPUAccelerationM1:
 
         Returns:
             Result matrix and metadata
-
         """
         start_time = time.time()
         result = np.matmul(A, B)
@@ -260,7 +256,6 @@ class GPUAccelerationM1:
 
         Returns:
             U, S, Vt matrices and metadata
-
         """
         start_time = time.time()
         U, S, Vt = np.linalg.svd(matrix, full_matrices=False)
@@ -288,7 +283,6 @@ class GPUAccelerationM1:
 
         Returns:
             float: Memory usage as a fraction of total memory
-
         """
         try:
             if self.mps_available:
@@ -304,7 +298,6 @@ class GPUAccelerationM1:
 
         Returns:
             dict: Performance statistics
-
         """
         return {
             "gpu_operations_count": self.gpu_operations_count,

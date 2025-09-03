@@ -1,5 +1,4 @@
-"""
-Enhanced Error Handling for Training Steps with Comprehensive Logging and Recovery.
+"""Enhanced Error Handling for Training Steps with Comprehensive Logging and Recovery.
 
 This module provides specialized error handling for training steps with:
 - Detailed step-by-step logging
@@ -10,8 +9,10 @@ This module provides specialized error handling for training steps with:
 """
 
 import asyncio
+import copy
 import functools
 import logging
+import os.path
 import time
 import traceback
 from collections.abc import Callable
@@ -25,8 +26,6 @@ from typing import TypeVar, cast
 import pandas as pd
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
-import os.path
 
 # Type variables
 T = TypeVar("T")
@@ -110,7 +109,9 @@ class TrainingStepErrorHandler:
 
         # Log key parameters
         if kwargs:
-            param_str = ", ".join([f"{k}={v}" for k, v in kwargs.items() if v is not None])
+            param_str = ", ".join(
+                [f"{k}={v}" for k, v in kwargs.items() if v is not None]
+            )
             context.add_progress(f"Parameters: {param_str}")
         else:
             param_str = ""
@@ -119,7 +120,9 @@ class TrainingStepErrorHandler:
         if kwargs:
             self.logger.info(f"📋 {step_name} parameters: {param_str}")
 
-    def log_step_progress(self, step_name: str, message: str, level: str = "info") -> None:
+    def log_step_progress(
+        self, step_name: str, message: str, level: str = "info"
+    ) -> None:
         """Log step progress with context."""
         context = self.get_context(step_name)
         context.add_progress(message)
@@ -147,7 +150,9 @@ class TrainingStepErrorHandler:
                 context.add_progress(f"Result: {result}")
                 self.logger.info(f"📊 {step_name} result: {result}")
 
-    def log_step_error(self, step_name: str, error: Exception, recovery_attempt: bool = False) -> None:
+    def log_step_error(
+        self, step_name: str, error: Exception, recovery_attempt: bool = False
+    ) -> None:
         """Log step error with context."""
         context = self.get_context(step_name)
         context.set_error(error)
@@ -221,7 +226,9 @@ class TrainingStepErrorHandler:
                 StepStatus.NOT_STARTED: "⏳",
             }.get(context.status, "❓")
 
-            duration_str = f"{context.get_duration():.2f}s" if context.end_time else "running"
+            duration_str = (
+                f"{context.get_duration():.2f}s" if context.end_time else "running"
+            )
             self.logger.info(
                 f"{status_emoji} {step_name}: {context.status.value} ({duration_str})",
             )
@@ -262,8 +269,7 @@ def training_step_error_handler(
     log_performance: bool = True,
     validate_output: bool = True,
 ) -> Callable[[F], F]:
-    """
-    Enhanced error handling decorator for training steps.
+    """Enhanced error handling decorator for training steps.
 
     Args:
         step_name: Name of the training step
@@ -302,7 +308,9 @@ def training_step_error_handler(
                 # Log performance metrics
                 if log_performance:
                     context.performance_metrics["execution_time"] = execution_time
-                    context.performance_metrics["memory_usage"] = "N/A"  # Could be enhanced
+                    context.performance_metrics["memory_usage"] = (
+                        "N/A"  # Could be enhanced
+                    )
                     handler.log_step_progress(
                         step_name,
                         f"Performance: {execution_time:.2f}s execution time",
@@ -327,7 +335,10 @@ def training_step_error_handler(
                 handler.log_step_error(step_name, e)
 
                 # Attempt recovery if enabled
-                if enable_recovery and context.recovery_attempts < max_recovery_attempts:
+                if (
+                    enable_recovery
+                    and context.recovery_attempts < max_recovery_attempts
+                ):
                     recovery_result = await _attempt_recovery(
                         step_name,
                         cast(Callable[..., Awaitable[T | None]], func),
@@ -391,7 +402,10 @@ def training_step_error_handler(
                 handler.log_step_error(step_name, e)
 
                 # Attempt recovery if enabled
-                if enable_recovery and context.recovery_attempts < max_recovery_attempts:
+                if (
+                    enable_recovery
+                    and context.recovery_attempts < max_recovery_attempts
+                ):
                     try:
                         recovery_result = _attempt_sync_recovery(
                             step_name,
@@ -404,11 +418,17 @@ def training_step_error_handler(
                             handler.log_step_recovery(step_name, "automatic recovery")
                             return recovery_result
                     except Exception as recovery_error:  # noqa: BLE001
-                        handler.log_step_error(step_name, recovery_error, recovery_attempt=True)
+                        handler.log_step_error(
+                            step_name, recovery_error, recovery_attempt=True
+                        )
 
                 return default_return
 
-        return cast(F, async_wrapper) if asyncio.iscoroutinefunction(func) else cast(F, sync_wrapper)
+        return (
+            cast(F, async_wrapper)
+            if asyncio.iscoroutinefunction(func)
+            else cast(F, sync_wrapper)
+        )
 
     return decorator
 

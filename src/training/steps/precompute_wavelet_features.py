@@ -18,14 +18,10 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
-from src.utils.data_optimizer import ohlcv_columns
 from src.utils.centralized_decorators import validate_wavelet_data_quality
+from src.utils.data_optimizer import ohlcv_columns
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-)
+from src.utils.warning_symbols import error, failed, initialization_error
 
 
 class WaveletFeaturePrecomputer:
@@ -161,6 +157,7 @@ class WaveletFeaturePrecomputer:
                         dataset = pd.read_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
+
 import copy
 
                 with log_io_operation(self.logger, "read_csv", data_path):

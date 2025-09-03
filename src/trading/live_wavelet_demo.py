@@ -1,23 +1,23 @@
-"""
-Live Trading Wavelet Demo
+"""Live Trading Wavelet Demo.
 
-This script demonstrates the computationally-aware wavelet integration
-for live trading with performance monitoring and real-time signal generation.
+This script demonstrates the computationally-aware wavelet integration for live trading
+with performance monitoring and real-time signal generation.
 """
 
-from src.trading.live_wavelet_integration import LiveWaveletIntegration
-from src.utils.logger import system_logger
 import asyncio
 import time
 
-from src.utils.warning_symbols import error, failed, initialization_error, warning
 import numpy as np
 import pandas as pd
 import yaml
 
+from src.trading.live_wavelet_integration import LiveWaveletIntegration
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, failed, initialization_error, warning
+
+
 class LiveWaveletDemo:
-    """
-    Demo class for computationally-aware wavelet integration.
+    """Demo class for computationally-aware wavelet integration.
 
     Demonstrates:
     - Real-time signal generation
@@ -118,8 +118,7 @@ class LiveWaveletDemo:
             self.logger.error(f"Error generating demo data: {e}")
 
     async def run_demo(self, duration: int = 60) -> None:
-        """
-        Run the live wavelet demo.
+        """Run the live wavelet demo.
 
         Args:
             duration: Demo duration in seconds
@@ -281,6 +280,7 @@ class LiveWaveletDemo:
         self.is_running = False
         self.logger.info("🛑 Demo stopped by user")
 
+
 async def main():
     """Main demo function."""
     try:
@@ -300,5 +300,6 @@ async def main():
     except Exception as e:
         print(f"Error in demo: {e}")
 
+
 if __name__ == "__main__":
-    asyncio.run( main())
+    asyncio.run(main())

@@ -1,7 +1,9 @@
 # src/training/memory_profiler.py
 
+import asyncio
 import gc
 import os
+import os.path
 import threading
 import time
 import tracemalloc
@@ -13,17 +15,16 @@ import numpy as np
 import psutil
 
 from src.utils.logger import system_logger
-import asyncio
-import os.path
 
 
 class MemoryProfiler:
-    """Comprehensive memory profiler for detecting memory leaks and optimizing memory usage
-    during training processes.
-    """
+    """Comprehensive memory profiler for detecting memory leaks and optimizing memory
+    usage during training processes."""
 
     def __init__(
-        self, enable_tracemalloc: bool = True, enable_continuous_monitoring: bool = True,
+        self,
+        enable_tracemalloc: bool = True,
+        enable_continuous_monitoring: bool = True,
     ) -> None:
         self.logger = system_logger.getChild("MemoryProfiler")
         self.enable_tracemalloc = enable_tracemalloc
@@ -94,9 +95,9 @@ class MemoryProfiler:
                 "rss_mb": process_memory.rss / (1024**2),
                 "vms_mb": process_memory.vms / (1024**2),
                 "percent": process_memory_percent,
-                "num_fds": self.process.num_fds()
-                if hasattr(self.process, "num_fds")
-                else None,
+                "num_fds": (
+                    self.process.num_fds() if hasattr(self.process, "num_fds") else None
+                ),
             },
             "object_counts": object_counts,
             "tracemalloc_info": tracemalloc_info,
@@ -147,9 +148,11 @@ class MemoryProfiler:
         for _index, stat in enumerate(top_stats[:10]):
             top_allocations.append(
                 {
-                    "filename": stat.traceback.format()[0]
-                    if stat.traceback.format()
-                    else "unknown",
+                    "filename": (
+                        stat.traceback.format()[0]
+                        if stat.traceback.format()
+                        else "unknown"
+                    ),
                     "size_mb": stat.size / (1024**2),
                     "count": stat.count,
                 },
@@ -206,7 +209,9 @@ class MemoryProfiler:
 
         if object_growth:
             top_growth = sorted(
-                object_growth.items(), key=lambda x: x[1], reverse=True,
+                object_growth.items(),
+                key=lambda x: x[1],
+                reverse=True,
             )[:5]
             for obj_type, growth in top_growth:
                 if growth > 1000:  # Significant object growth
@@ -565,7 +570,8 @@ class MemoryLeakDetector:
 
         # Method 1: RSS growth analysis
         rss_analysis = self._analyze_rss_growth(
-            threshold_mb=threshold_mb, window_size=window_size,
+            threshold_mb=threshold_mb,
+            window_size=window_size,
         )
         results["detection_methods"]["rss_growth"] = rss_analysis
 
@@ -604,7 +610,9 @@ class MemoryLeakDetector:
         return results
 
     def _analyze_rss_growth(
-        self, threshold_mb: float, window_size: int,
+        self,
+        threshold_mb: float,
+        window_size: int,
     ) -> dict[str, Any]:
         """Analyze RSS memory growth for leak detection."""
         if len(self.profiler.memory_snapshots) < window_size:
@@ -679,9 +687,7 @@ class MemoryLeakDetector:
 
         # Look for large allocations that might indicate leaks
         large_allocations = [
-            stat
-            for stat in top_stats
-            if stat.size > 10 * 1024 * 1024  # > 10MB
+            stat for stat in top_stats if stat.size > 10 * 1024 * 1024  # > 10MB
         ]
 
         return {

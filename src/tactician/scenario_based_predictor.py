@@ -1,5 +1,4 @@
-"""
-Scenario-Based Predictor for Tactician
+"""Scenario-Based Predictor for Tactician.
 
 Streamlined implementation:
 - Proper LightGBM initialization
@@ -9,24 +8,22 @@ Streamlined implementation:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
-import asyncio
-
 
 logger = logging.getLogger(__name__)
 
 
 class ScenarioBasedPredictor:
-    """
-    Implements probabilistic scenario analysis for Tactician.
+    """Implements probabilistic scenario analysis for Tactician.
 
     Scenarios:
     - 0: Profit Zone 1 (Small Profit): +0.5% before -0.5%
@@ -47,28 +44,46 @@ class ScenarioBasedPredictor:
         self.scenarios: Dict[int, Dict[str, Any]] = {
             0: {
                 "name": "Profit Zone 1 (Small Profit)",
-                "profit_target": float(scenario_config.get("profit_zone_1_target", 0.005)),
-                "stop_loss": float(scenario_config.get("profit_zone_1_stop_loss", -0.005)),
+                "profit_target": float(
+                    scenario_config.get("profit_zone_1_target", 0.005)
+                ),
+                "stop_loss": float(
+                    scenario_config.get("profit_zone_1_stop_loss", -0.005)
+                ),
             },
             1: {
                 "name": "Profit Zone 2 (Medium Profit)",
-                "profit_target": float(scenario_config.get("profit_zone_2_target", 0.01)),
-                "stop_loss": float(scenario_config.get("profit_zone_2_stop_loss", -0.005)),
+                "profit_target": float(
+                    scenario_config.get("profit_zone_2_target", 0.01)
+                ),
+                "stop_loss": float(
+                    scenario_config.get("profit_zone_2_stop_loss", -0.005)
+                ),
             },
             2: {
                 "name": "Profit Zone 3 (Large Profit)",
-                "profit_target": float(scenario_config.get("profit_zone_3_target", 0.015)),
-                "stop_loss": float(scenario_config.get("profit_zone_3_stop_loss", -0.005)),
+                "profit_target": float(
+                    scenario_config.get("profit_zone_3_target", 0.015)
+                ),
+                "stop_loss": float(
+                    scenario_config.get("profit_zone_3_stop_loss", -0.005)
+                ),
             },
             3: {
                 "name": "Risk Zone 1 (Small Loss)",
-                "profit_target": float(scenario_config.get("risk_zone_1_target", 0.005)),
-                "stop_loss": float(scenario_config.get("risk_zone_1_stop_loss", -0.005)),
+                "profit_target": float(
+                    scenario_config.get("risk_zone_1_target", 0.005)
+                ),
+                "stop_loss": float(
+                    scenario_config.get("risk_zone_1_stop_loss", -0.005)
+                ),
             },
             4: {
                 "name": "Risk Zone 2 (Medium Loss)",
                 "profit_target": float(scenario_config.get("risk_zone_2_target", 0.01)),
-                "stop_loss": float(scenario_config.get("risk_zone_2_stop_loss", -0.005)),
+                "stop_loss": float(
+                    scenario_config.get("risk_zone_2_stop_loss", -0.005)
+                ),
             },
             5: {
                 "name": "Neutral",
@@ -77,7 +92,9 @@ class ScenarioBasedPredictor:
             },
         }
 
-        self.time_limit_minutes: int = int(scenario_config.get("time_limit_minutes", 30))
+        self.time_limit_minutes: int = int(
+            scenario_config.get("time_limit_minutes", 30)
+        )
 
         self.model_config: Dict[str, Any] = {
             "n_estimators": int(scenario_config.get("n_estimators", 100)),
@@ -91,11 +108,19 @@ class ScenarioBasedPredictor:
         }
 
         self.decision_thresholds: Dict[str, float] = {
-            "profit_zone_combined": float(scenario_config.get("profit_zone_combined_threshold", 0.6)),
-            "risk_zone_combined": float(scenario_config.get("risk_zone_combined_threshold", 0.2)),
-            "exit_risk_threshold": float(scenario_config.get("exit_risk_threshold", 0.5)),
+            "profit_zone_combined": float(
+                scenario_config.get("profit_zone_combined_threshold", 0.6)
+            ),
+            "risk_zone_combined": float(
+                scenario_config.get("risk_zone_combined_threshold", 0.2)
+            ),
+            "exit_risk_threshold": float(
+                scenario_config.get("exit_risk_threshold", 0.5)
+            ),
             "neutral_threshold": float(scenario_config.get("neutral_threshold", 0.3)),
-            "confidence_threshold": float(scenario_config.get("confidence_threshold", 0.7)),
+            "confidence_threshold": float(
+                scenario_config.get("confidence_threshold", 0.7)
+            ),
         }
 
         self.feature_config: Dict[str, int] = {
@@ -130,7 +155,9 @@ class ScenarioBasedPredictor:
         try:
             for scenario_id, scenario in self.scenarios.items():
                 if scenario_id != 5 and float(scenario["profit_target"]) <= 0:
-                    self.logger.error(f"Invalid profit target for scenario {scenario_id}")
+                    self.logger.error(
+                        f"Invalid profit target for scenario {scenario_id}"
+                    )
                     return False
                 if scenario_id != 5 and float(scenario["stop_loss"]) >= 0:
                     self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
@@ -187,7 +214,9 @@ class ScenarioBasedPredictor:
             current_price = float(future_prices[0])
             look_ahead = future_prices[1 : min(len(future_prices), time_limit + 1)]
             for scenario_id in [0, 1, 2, 3, 4]:
-                if self._scenario_triggered(look_ahead, current_price, self.scenarios[scenario_id]):
+                if self._scenario_triggered(
+                    look_ahead, current_price, self.scenarios[scenario_id]
+                ):
                     return scenario_id
             return 5
         except Exception as e:
@@ -252,7 +281,10 @@ class ScenarioBasedPredictor:
             )
 
             self.feature_importance = dict(
-                zip([f"feature_{i}" for i in range(X_train.shape[1])], self.model.feature_importances_)
+                zip(
+                    [f"feature_{i}" for i in range(X_train.shape[1])],
+                    self.model.feature_importances_,
+                )
             )
 
             y_pred = self.model.predict(X_val)
@@ -290,7 +322,9 @@ class ScenarioBasedPredictor:
             confidence = self._calculate_confidence(probabilities[0])
 
             return {
-                "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0])),
+                "probabilities": dict(
+                    zip(range(len(probabilities[0])), probabilities[0])
+                ),
                 "predicted_scenario": predicted_scenario,
                 "scenario_name": self.scenarios[predicted_scenario]["name"],
                 "confidence": float(confidence),
@@ -299,14 +333,20 @@ class ScenarioBasedPredictor:
                     "model_type": "scenario_based",
                     "generation_timestamp": datetime.now().isoformat(),
                     "is_trained": self.is_trained,
-                    "last_training_time": self.last_training_time.isoformat() if self.last_training_time else None,
+                    "last_training_time": (
+                        self.last_training_time.isoformat()
+                        if self.last_training_time
+                        else None
+                    ),
                 },
             }
         except Exception as e:
             self.logger.error(f"Scenario prediction failed: {e}")
             return self._generate_fallback_predictions(X)
 
-    def _analyze_scenario_probabilities(self, probabilities: np.ndarray) -> Dict[str, Any]:
+    def _analyze_scenario_probabilities(
+        self, probabilities: np.ndarray
+    ) -> Dict[str, Any]:
         try:
             profit_zone_prob = float(sum(probabilities[i] for i in [0, 1, 2]))
             risk_zone_prob = float(sum(probabilities[i] for i in [3, 4]))
@@ -415,8 +455,12 @@ class ScenarioBasedPredictor:
             volatility_5 = np.std(returns[-5:])
             volatility_10 = np.std(returns[-10:])
             volatility_20 = np.std(returns[-20:])
-            volume_trend = (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
-            volume_ma_ratio = volumes[-1] / max(1e-9, np.mean(volumes[-self.feature_config["volume_ma_period"] :]))
+            volume_trend = (
+                (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
+            )
+            volume_ma_ratio = volumes[-1] / max(
+                1e-9, np.mean(volumes[-self.feature_config["volume_ma_period"] :])
+            )
 
             gains = np.where(returns > 0, returns, 0)
             losses = np.where(returns < 0, -returns, 0)
@@ -433,7 +477,9 @@ class ScenarioBasedPredictor:
             price_range = (high_prices[-1] - low_prices[-1]) / max(current_price, 1e-9)
             upper_shadow = (high_prices[-1] - current_price) / max(current_price, 1e-9)
             lower_shadow = (current_price - low_prices[-1]) / max(current_price, 1e-9)
-            latest_return = (current_price - close_prices[-2]) / max(close_prices[-2], 1e-9)
+            latest_return = (current_price - close_prices[-2]) / max(
+                close_prices[-2], 1e-9
+            )
 
             features = [
                 price_momentum_5,

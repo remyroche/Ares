@@ -1,16 +1,15 @@
 # src/types/validation.py
+"""Runtime type validation utilities for critical paths."""
 
-"""
-Runtime type validation utilities for critical paths.
-"""
-
-from collections.abc import Callable
-import logging
-from typing import Any, TypeVar, Union, get_args, get_origin, Type
-from src.utils.warning_symbols import validation_error
 import inspect
+import logging
 import types
+from collections.abc import Callable
 from functools import wraps
+from typing import Any, Type, TypeVar, Union, get_args, get_origin
+
+from src.utils.warning_symbols import validation_error
+
 from .base_types import Price, Symbol, Volume
 from .config_types import ConfigDict
 from .data_types import MarketDataDict, OHLCVData
@@ -19,6 +18,7 @@ from .ml_types import ModelInput
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
 
 class RuntimeTypeError(Exception):
     """Exception raised when runtime type validation fails."""
@@ -31,13 +31,13 @@ class RuntimeTypeError(Exception):
             f"Type validation failed in {context}: expected {expected_type}, got {type(actual_value)}",
         )
 
+
 class TypeValidator:
     """Runtime type validation utilities."""
 
     @staticmethod
     def validate_type(value: Any, expected_type: Any, context: str = "") -> T:
-        """
-        Validate that a value matches the expected type.
+        """Validate that a value matches the expected type.
 
         Args:
             value: The value to validate
@@ -107,25 +107,30 @@ class TypeValidator:
             # Fallback for complex types
             return True
 
+
 def validate_config(config: Any) -> ConfigDict:
     """Validate configuration dictionary."""
     return TypeValidator.validate_type(config, ConfigDict, "configuration")
+
 
 def validate_market_data(data: Any) -> MarketDataDict:
     """Validate market data structure."""
     return TypeValidator.validate_type(data, MarketDataDict, "market_data")
 
+
 def validate_model_input(input_data: Any) -> ModelInput:
     """Validate ML model input structure."""
     return TypeValidator.validate_type(input_data, ModelInput, "model_input")
+
 
 def validate_ohlcv_data(data: Any) -> OHLCVData:
     """Validate OHLCV data structure."""
     return TypeValidator.validate_type(data, OHLCVData, "ohlcv_data")
 
+
 def type_safe(func: Callable) -> Callable:
-    """
-    Decorator for type-safe function execution.
+    """Decorator for type-safe function execution.
+
     Validates inputs and outputs based on type hints.
     """
 
@@ -168,11 +173,12 @@ def type_safe(func: Callable) -> Callable:
 
     return wrapper
 
+
 def validate_critical_path(
     validator_func: Callable[[Any], T],
 ) -> Callable[[Callable], Callable]:
-    """
-    Decorator for critical path type validation.
+    """Decorator for critical path type validation.
+
     Used for functions where type safety is crucial.
     """
 
@@ -194,7 +200,9 @@ def validate_critical_path(
 
     return decorator
 
+
 # Specific validators for common types
+
 
 def validate_symbol(value: Any) -> Symbol:
     """Validate symbol type."""
@@ -202,11 +210,13 @@ def validate_symbol(value: Any) -> Symbol:
         raise RuntimeTypeError(Symbol, value, "symbol")
     return Symbol(value.upper())
 
+
 def validate_price(value: Any) -> Price:
     """Validate price type."""
     if not isinstance(value, int | float) or value < 0:
         raise RuntimeTypeError(Price, value, "price")
     return Price(float(value))
+
 
 def validate_volume(value: Any) -> Volume:
     """Validate volume type."""

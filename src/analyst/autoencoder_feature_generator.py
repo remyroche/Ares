@@ -40,21 +40,15 @@ import sys
 
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
-
 from src.config import CONFIG
-from src.utils.error_handler import (
-    handle_errors,
-)
-from src.utils.warning_symbols import (
-    error,
-    warning,
-)
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
 )
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, warning
 
 
 class AutoencoderConfig:
@@ -889,8 +883,8 @@ class FeatureFilter:
             self.logger.info("🔧 Optimized SHAP explainer created successfully")
 
             # Add timeout protection for SHAP computation
-            import signal
             import platform
+            import signal
 
             # EFFICIENCY OPTIMIZATION 6: Flexible timeout based on dataset size
             # Calculate timeout based on sample size: 1 minute per 5000 samples
@@ -1925,6 +1919,7 @@ class AutoencoderFeatureAnalyzer:
 
                 # Use a simple model for permutation importance
                 from sklearn.linear_model import LogisticRegression
+
 import copy
 import os.path
 

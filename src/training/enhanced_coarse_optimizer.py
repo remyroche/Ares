@@ -45,11 +45,7 @@ except ImportError:
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, warning
 
 
 class EnhancedCoarseOptimizer:
@@ -459,6 +455,7 @@ class EnhancedCoarseOptimizer:
                     from shap.explainers import TreeExplainer
                 except ImportError:
                     from shap import TreeExplainer
+
 import copy
 
                 explainer = TreeExplainer(model)

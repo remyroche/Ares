@@ -1,5 +1,6 @@
 # src/supervisor/optimizer.py
 import asyncio
+import copy
 from datetime import datetime
 from typing import Any
 
@@ -7,12 +8,10 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import copy
+
 
 class Optimizer:
-    """
-    Enhanced Optimizer component with DI, type hints, and robust error handling.
-    """
+    """Enhanced Optimizer component with DI, type hints, and robust error handling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
@@ -201,8 +200,7 @@ class Optimizer:
         agg_trades_df: pd.DataFrame,
         futures_df: pd.DataFrame,
     ) -> dict:
-        """
-        Implement global system optimization with enhanced error handling.
+        """Implement global system optimization with enhanced error handling.
 
         Args:
             historical_pnl_data: Historical PnL data

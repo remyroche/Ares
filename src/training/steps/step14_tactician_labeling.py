@@ -17,7 +17,7 @@ import contextlib
 import os
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,7 @@ import pandas as pd
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger, dependency_status
+from src.utils.logger import dependency_status, system_logger
 
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
@@ -61,7 +61,7 @@ class RegimeAwareTacticianLabeler:
         """Load enhanced configuration for regime-aware execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-        
+
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
 
@@ -618,9 +618,7 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
-            from src.config.constants import (
-                BLANK_TRAINING_LOOKBACK_DAYS,
-            )
+            from src.config.constants import BLANK_TRAINING_LOOKBACK_DAYS
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
@@ -940,16 +938,15 @@ from src.utils.centralized_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-
 from src.utils.enhanced_mlflow_integration import (
-import copy
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
+    copy,
     create_detailed_step_report,
-    log_step_metrics,
+    import,
+    log_step_artifact_with_standardized_name,
     log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
+    log_step_metrics,
+    log_step_report,
+    with_enhanced_mlflow_logging,
 )
 
 

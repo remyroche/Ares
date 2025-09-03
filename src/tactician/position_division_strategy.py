@@ -8,18 +8,10 @@ Defines strategies for multiple positions, take profit, stop loss, and position 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import (
-import asyncio
-
-    handle_errors,
-)
+from src.utils.error_handler import asyncio, handle_errors, import
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-import copy
+from src.utils.warning_symbols import copy, failed, import, warning
 
-    failed,
-    warning,
-)
 
 class PositionDivisionStrategy:
     """

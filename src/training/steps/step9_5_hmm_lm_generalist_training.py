@@ -36,16 +36,15 @@ from src.utils.centralized_decorators import (
     validate_step_prerequisites,
     with_tracing_span,
 )
-from src.utils.logger import system_logger
-
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
     create_detailed_step_report,
-    log_step_metrics,
+    log_step_artifact_with_standardized_name,
     log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
+    log_step_metrics,
+    log_step_report,
+    with_enhanced_mlflow_logging,
 )
+from src.utils.logger import system_logger
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -77,7 +76,9 @@ class HMMLMGeneralistTrainingStep:
         self.nhead: int = int(generalist_config.get("nhead", 8))
         self.num_layers: int = int(generalist_config.get("num_layers", 6))
         self.dropout_rate: float = float(generalist_config.get("dropout_rate", 0.1))
-        self.learning_rate: float = float(generalist_config.get("learning_rate", 0.0001))
+        self.learning_rate: float = float(
+            generalist_config.get("learning_rate", 0.0001)
+        )
         self.batch_size: int = int(generalist_config.get("batch_size", 32))
         self.epochs: int = int(generalist_config.get("epochs", 100))
 
@@ -140,7 +141,6 @@ class HMMLMGeneralistTrainingStep:
 
         Returns:
             Dict containing training results
-
         """
         try:
             self.logger.info("🔄 Executing HMM-LM Generalist Training...")
@@ -174,13 +174,15 @@ class HMMLMGeneralistTrainingStep:
             await self._save_generalist_model(model_result, exchange, symbol, data_dir)
 
             self.logger.info("✅ HMM-LM Generalist Training completed successfully")
-            
+
             # Log artifacts and create detailed report
             await self._log_step9_5_artifacts_and_report(
-            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
-                training_input, pipeline_state, model_result
+                # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                training_input,
+                pipeline_state,
+                model_result,
             )
-            
+
             return {
                 "status": "SUCCESS",
                 "model_trained": True,
@@ -198,14 +200,14 @@ class HMMLMGeneralistTrainingStep:
         self,
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
-        model_result: dict[str, Any]
+        model_result: dict[str, Any],
     ) -> None:
         """Log step 9.5 artifacts and create detailed report."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
-            
+
             # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.now().isoformat(),
@@ -216,31 +218,41 @@ class HMMLMGeneralistTrainingStep:
                 "data_quality_score": 1.0,
                 "processing_efficiency": 1.0,
             }
-            
+
             # Collect artifacts generated
             artifacts_generated = [
                 f"{exchange}_{symbol}_hmm_lm_generalist_model.pkl",
                 f"{exchange}_{symbol}_hmm_lm_generalist_metadata.json",
                 f"{exchange}_{symbol}_hmm_lm_generalist_vocabulary.json",
             ]
-            
+
             # Collect metrics
             metrics_calculated = {
                 "hmm_lm_training_success": 1.0,
-                "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
-                "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
-                "timeframes_count": len(self.timeframes) if hasattr(self, 'timeframes') else 0,
+                "vocabulary_size": (
+                    len(self.regime_change_vocab)
+                    if hasattr(self, "regime_change_vocab")
+                    else 0
+                ),
+                "hmm_states": self.hmm_states if hasattr(self, "hmm_states") else 0,
+                "timeframes_count": (
+                    len(self.timeframes) if hasattr(self, "timeframes") else 0
+                ),
                 "model_trained": 1.0,
             }
-            
+
             # Create step data for report
             step_data = {
                 "model_result": model_result,
-                "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
-                "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
-                "timeframes": self.timeframes if hasattr(self, 'timeframes') else [],
+                "vocabulary_size": (
+                    len(self.regime_change_vocab)
+                    if hasattr(self, "regime_change_vocab")
+                    else 0
+                ),
+                "hmm_states": self.hmm_states if hasattr(self, "hmm_states") else 0,
+                "timeframes": self.timeframes if hasattr(self, "timeframes") else [],
             }
-            
+
             # Create detailed report
             report_data = create_detailed_step_report(
                 step_name="step9_5_hmm_lm_generalist_training",
@@ -249,9 +261,9 @@ class HMMLMGeneralistTrainingStep:
                 execution_metadata=execution_metadata,
                 artifacts_generated=artifacts_generated,
                 metrics_calculated=metrics_calculated,
-                errors_encountered=[]
+                errors_encountered=[],
             )
-            
+
             # Log the report
             report_name = log_step_report(
                 config=self.config,
@@ -260,15 +272,21 @@ class HMMLMGeneralistTrainingStep:
                 report_type="hmm_lm_generalist_training_report",
                 additional_metadata={
                     "hmm_lm_training_success": True,
-                    "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
-                    "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
+                    "vocabulary_size": (
+                        len(self.regime_change_vocab)
+                        if hasattr(self, "regime_change_vocab")
+                        else 0
+                    ),
+                    "hmm_states": self.hmm_states if hasattr(self, "hmm_states") else 0,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                },
             )
-            self.logger.info(f"✅ Logged HMM-LM generalist training report: {report_name}")
-            
+            self.logger.info(
+                f"✅ Logged HMM-LM generalist training report: {report_name}"
+            )
+
             # Log model result
             if model_result:
                 model_report_name = log_step_report(
@@ -278,14 +296,18 @@ class HMMLMGeneralistTrainingStep:
                     report_type="hmm_lm_model_result",
                     additional_metadata={
                         "model_trained": True,
-                        "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
+                        "vocabulary_size": (
+                            len(self.regime_change_vocab)
+                            if hasattr(self, "regime_change_vocab")
+                            else 0
+                        ),
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
                         "project_version": self.config.get("project_version", "1.0.0"),
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged HMM-LM model result: {model_report_name}")
-            
+
             # Log metrics
             log_step_metrics(
                 config=self.config,
@@ -296,11 +318,11 @@ class HMMLMGeneralistTrainingStep:
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                },
             )
-            
+
             self.logger.info("✅ Step 9.5 artifacts and reports logged successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 9.5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
@@ -313,7 +335,9 @@ class HMMLMGeneralistTrainingStep:
         """Load HMM data from all timeframes in parallel."""
         hmm_data: dict[str, pd.DataFrame] = {}
 
-        async def load_timeframe_data(timeframe: str) -> tuple[str, pd.DataFrame | None]:
+        async def load_timeframe_data(
+            timeframe: str,
+        ) -> tuple[str, pd.DataFrame | None]:
             try:
                 # Load cluster assignments
                 cluster_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
@@ -331,9 +355,7 @@ class HMMLMGeneralistTrainingStep:
                 clusters_df = clusters_df.set_index("timestamp")
 
                 # Load intensity scores
-                intensity_path = (
-                    f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
-                )
+                intensity_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
                 if os.path.exists(intensity_path):
                     loop = asyncio.get_running_loop()
                     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -362,7 +384,9 @@ class HMMLMGeneralistTrainingStep:
                 return timeframe, clusters_df
 
             except Exception as e:  # noqa: BLE001
-                self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
+                self.logger.exception(
+                    f"❌ Failed to load HMM data for {timeframe}: {e}"
+                )
                 return timeframe, None
 
         # Load all timeframes in parallel
@@ -432,7 +456,8 @@ class HMMLMGeneralistTrainingStep:
     def _detect_regime_changes_and_tpsl_outcomes(
         self, df: pd.DataFrame
     ) -> list[dict[str, Any]]:
-        """Detect regime changes and associated TPSL outcomes using enhanced probability-based approach."""
+        """Detect regime changes and associated TPSL outcomes using enhanced
+        probability-based approach."""
         events: list[dict[str, Any]] = []
 
         try:
@@ -455,7 +480,9 @@ class HMMLMGeneralistTrainingStep:
                 return events
 
             # Enhanced regime change detection using probability-based approach
-            events = self._detect_regime_changes_enhanced(df, profit_take_multiplier, stop_loss_multiplier)
+            events = self._detect_regime_changes_enhanced(
+                df, profit_take_multiplier, stop_loss_multiplier
+            )
 
             return events
 
@@ -466,31 +493,31 @@ class HMMLMGeneralistTrainingStep:
             return []
 
     def _detect_regime_changes_enhanced(
-        self, 
-        df: pd.DataFrame, 
-        profit_take_multiplier: float, 
-        stop_loss_multiplier: float
+        self,
+        df: pd.DataFrame,
+        profit_take_multiplier: float,
+        stop_loss_multiplier: float,
     ) -> list[dict[str, Any]]:
         """Enhanced regime change detection using probability-based approach."""
         events: list[dict[str, Any]] = []
-        
+
         try:
             # Get regime data
             regime_col = "composite_cluster_id"
             regimes = df[regime_col].fillna(-1).astype(int)
-            
+
             # Calculate regime probabilities if available
             regime_probs = self._calculate_regime_probabilities(df)
-            
+
             # Calculate regime stability and entropy
             regime_stability = self._calculate_regime_stability(regime_probs)
             regime_entropy = self._calculate_regime_entropy(regime_probs)
-            
+
             # Detect regime changes using multiple signals
             regime_changes = self._detect_regime_changes_multi_signal(
                 regimes, regime_stability, regime_entropy
             )
-            
+
             # Process each potential regime change
             for i in range(len(regimes)):
                 event: dict[str, Any] = {
@@ -502,35 +529,40 @@ class HMMLMGeneralistTrainingStep:
                     "regime_confidence": 0.0,
                     "transition_probability": 0.0,
                 }
-                
+
                 if i > 0 and regime_changes[i]:
                     prev_regime = int(regimes.iloc[i - 1])
                     curr_regime = int(regimes.iloc[i])
-                    
+
                     if prev_regime >= 0 and curr_regime >= 0:
                         # Calculate transition probability
                         transition_prob = self._calculate_transition_probability(
                             prev_regime, curr_regime, regime_probs, i
                         )
-                        
+
                         # Determine regime change type
-                        if 0 <= prev_regime < self.hmm_states and 0 <= curr_regime < self.hmm_states:
-                            event["regime_change"] = f"transition_{prev_regime}_to_{curr_regime}"
+                        if (
+                            0 <= prev_regime < self.hmm_states
+                            and 0 <= curr_regime < self.hmm_states
+                        ):
+                            event["regime_change"] = (
+                                f"transition_{prev_regime}_to_{curr_regime}"
+                            )
                             event["transition_probability"] = transition_prob
-                            
+
                             # Calculate regime confidence
                             event["regime_confidence"] = float(regime_stability[i])
-                            
+
                             # Enhanced TPSL analysis
                             tpsl_outcomes = self._calculate_enhanced_tpsl_outcomes(
                                 df, i, profit_take_multiplier, stop_loss_multiplier
                             )
                             event.update(tpsl_outcomes)
-                
+
                 events.append(event)
-            
+
             return events
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Enhanced regime change detection failed: {e}")
             return []
@@ -540,7 +572,7 @@ class HMMLMGeneralistTrainingStep:
         try:
             # Look for probability features
             prob_cols = [col for col in df.columns if col.endswith("_p_state_")]
-            
+
             if prob_cols:
                 # Use existing probability features
                 probs = df[prob_cols].values
@@ -555,15 +587,15 @@ class HMMLMGeneralistTrainingStep:
                     regimes = df[regime_col].fillna(-1).astype(int)
                     n_states = max(regimes.max() + 1, self.hmm_states)
                     probs = np.zeros((len(regimes), n_states))
-                    
+
                     for i, regime in enumerate(regimes):
                         if regime >= 0:
                             probs[i, regime] = 1.0
-                    
+
                     return probs
                 else:
                     return np.zeros((len(df), self.hmm_states))
-                    
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating regime probabilities: {e}")
             return np.zeros((len(df), self.hmm_states))
@@ -588,49 +620,46 @@ class HMMLMGeneralistTrainingStep:
             return np.zeros(len(regime_probs))
 
     def _detect_regime_changes_multi_signal(
-        self, 
-        regimes: pd.Series, 
-        stability: np.ndarray, 
-        entropy: np.ndarray
+        self, regimes: pd.Series, stability: np.ndarray, entropy: np.ndarray
     ) -> np.ndarray:
         """Detect regime changes using multiple signals."""
         try:
             changes = np.zeros(len(regimes), dtype=bool)
-            
+
             # Signal 1: Simple state comparison
             state_changes = np.diff(regimes.values, prepend=regimes.iloc[0]) != 0
-            
+
             # Signal 2: Stability drops
             stability_threshold = np.percentile(stability, 25)  # Bottom 25%
             stability_changes = stability < stability_threshold
-            
+
             # Signal 3: High entropy (uncertainty)
             entropy_threshold = np.percentile(entropy, 75)  # Top 25%
             entropy_changes = entropy > entropy_threshold
-            
+
             # Combine signals with persistence filter
             for i in range(1, len(regimes)):
                 if state_changes[i] and stability_changes[i] and entropy_changes[i]:
                     # Check persistence (avoid noise)
                     if i >= 3:  # Minimum persistence of 3 bars
                         changes[i] = True
-            
+
             return changes
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error in multi-signal regime change detection: {e}")
             return np.zeros(len(regimes), dtype=bool)
 
     def _calculate_transition_probability(
-        self, 
-        from_regime: int, 
-        to_regime: int, 
-        regime_probs: np.ndarray, 
-        index: int
+        self, from_regime: int, to_regime: int, regime_probs: np.ndarray, index: int
     ) -> float:
         """Calculate transition probability between regimes."""
         try:
-            if index < len(regime_probs) and from_regime < regime_probs.shape[1] and to_regime < regime_probs.shape[1]:
+            if (
+                index < len(regime_probs)
+                and from_regime < regime_probs.shape[1]
+                and to_regime < regime_probs.shape[1]
+            ):
                 # Use the probability of the target regime
                 return float(regime_probs[index, to_regime])
             else:
@@ -640,11 +669,11 @@ class HMMLMGeneralistTrainingStep:
             return 0.0
 
     def _calculate_enhanced_tpsl_outcomes(
-        self, 
-        df: pd.DataFrame, 
-        index: int, 
-        profit_take_multiplier: float, 
-        stop_loss_multiplier: float
+        self,
+        df: pd.DataFrame,
+        index: int,
+        profit_take_multiplier: float,
+        stop_loss_multiplier: float,
     ) -> dict[str, Any]:
         """Calculate enhanced TPSL outcomes with confidence scoring."""
         try:
@@ -655,40 +684,42 @@ class HMMLMGeneralistTrainingStep:
                 "time_to_target": 0,
                 "tpsl_confidence": 0.0,
             }
-            
+
             if "close" in df.columns and index < len(df) - 1:
                 current_price = float(df.iloc[index]["close"])
                 future_prices = df.iloc[index + 1 : index + 31]["close"].values
-                
+
                 if len(future_prices) > 0:
                     # Calculate profit target and stop loss levels
                     profit_target = current_price * (1 + profit_take_multiplier)
                     stop_loss = current_price * (1 - stop_loss_multiplier)
-                    
+
                     # Enhanced TPSL detection with confidence
                     profit_target_hit = 0
                     stop_loss_hit = 0
                     time_to_target = 0
                     confidence_factors = []
-                    
+
                     for j, future_price in enumerate(future_prices):
                         fp = float(future_price)
-                        
+
                         if fp >= profit_target and profit_target_hit == 0:
                             profit_target_hit = 1
                             time_to_target = j + 1
-                            confidence_factors.append(1.0 - (j / 30))  # Higher confidence for earlier hits
-                            
+                            confidence_factors.append(
+                                1.0 - (j / 30)
+                            )  # Higher confidence for earlier hits
+
                         elif fp <= stop_loss and stop_loss_hit == 0:
                             stop_loss_hit = 1
                             if time_to_target == 0:
                                 time_to_target = j + 1
                             confidence_factors.append(1.0 - (j / 30))
-                    
+
                     # Calculate TPSL confidence
                     if confidence_factors:
                         outcomes["tpsl_confidence"] = float(np.mean(confidence_factors))
-                    
+
                     # Enhanced price direction determination
                     if profit_target_hit == 1 and stop_loss_hit == 0:
                         outcomes["price_direction"] = 0  # Up
@@ -702,13 +733,13 @@ class HMMLMGeneralistTrainingStep:
                             outcomes["price_direction"] = 2  # Down
                     else:
                         outcomes["price_direction"] = 1  # Sideways
-                    
+
                     outcomes["profit_target_hit"] = profit_target_hit
                     outcomes["stop_loss_hit"] = stop_loss_hit
                     outcomes["time_to_target"] = time_to_target
-            
+
             return outcomes
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating enhanced TPSL outcomes: {e}")
             return {
@@ -847,11 +878,15 @@ class HMMLMGeneralistTrainingStep:
 
             # Add cluster ID
             if "composite_cluster_id" in sequence.columns:
-                feature_cols.append(sequence["composite_cluster_id"].values.astype(float))
+                feature_cols.append(
+                    sequence["composite_cluster_id"].values.astype(float)
+                )
 
             # Add intensity features
             intensity_cols = [
-                col for col in sequence.columns if str(col).startswith("intensity_cluster_")
+                col
+                for col in sequence.columns
+                if str(col).startswith("intensity_cluster_")
             ]
             for col in intensity_cols:
                 feature_cols.append(sequence[col].values.astype(float))
@@ -911,7 +946,9 @@ class HMMLMGeneralistTrainingStep:
             }
 
             os.makedirs(data_dir, exist_ok=True)
-            metadata_path = f"{data_dir}/{exchange}_{symbol}_hmm_lm_generalist_metadata.json"
+            metadata_path = (
+                f"{data_dir}/{exchange}_{symbol}_hmm_lm_generalist_metadata.json"
+            )
             with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2, default=str)
 
@@ -928,7 +965,12 @@ class EfficientRegimePredictor(nn.Module):
     """Efficient regime prediction model for financial time series."""
 
     def __init__(
-        self, input_dim: int, num_regimes: int, d_model: int = 256, nhead: int = 8, num_layers: int = 6
+        self,
+        input_dim: int,
+        num_regimes: int,
+        d_model: int = 256,
+        nhead: int = 8,
+        num_layers: int = 6,
     ) -> None:
         super().__init__()
 
@@ -1015,7 +1057,9 @@ class EfficientRegimePredictor(nn.Module):
 
         # Predict price action and TPSL probabilities
         price_direction_probs = F.softmax(self.price_direction(final_features), dim=-1)
-        profit_target_prob = torch.sigmoid(self.profit_target_prob(final_features))  # 0-1
+        profit_target_prob = torch.sigmoid(
+            self.profit_target_prob(final_features)
+        )  # 0-1
         stop_loss_prob = torch.sigmoid(self.stop_loss_prob(final_features))  # 0-1
         time_to_target = torch.sigmoid(self.time_to_target(final_features)) * 30  # 0-30
 
@@ -1055,9 +1099,7 @@ class PositionalEncoding(nn.Module):
 class EfficientRegimeDataset(Dataset[Tuple[torch.Tensor, Dict[str, torch.Tensor]]]):
     """Custom dataset to return features and dict targets."""
 
-    def __init__(
-        self, X: torch.Tensor, targets: Dict[str, torch.Tensor]
-    ) -> None:
+    def __init__(self, X: torch.Tensor, targets: Dict[str, torch.Tensor]) -> None:
         super().__init__()
         self.X = X
         self.targets = targets
@@ -1102,15 +1144,27 @@ class EfficientRegimeTrainer:
 
         y_train_t: Dict[str, torch.Tensor] = {
             "regime_id": torch.from_numpy(y_train["regime_id"]).long().to(self.device),
-            "profit_target_hit": torch.from_numpy(y_train["profit_target_hit"]).float().to(self.device),
-            "stop_loss_hit": torch.from_numpy(y_train["stop_loss_hit"]).float().to(self.device),
-            "time_to_target": torch.from_numpy(y_train["time_to_target"]).float().to(self.device),
+            "profit_target_hit": torch.from_numpy(y_train["profit_target_hit"])
+            .float()
+            .to(self.device),
+            "stop_loss_hit": torch.from_numpy(y_train["stop_loss_hit"])
+            .float()
+            .to(self.device),
+            "time_to_target": torch.from_numpy(y_train["time_to_target"])
+            .float()
+            .to(self.device),
         }
         y_val_t: Dict[str, torch.Tensor] = {
             "regime_id": torch.from_numpy(y_val["regime_id"]).long().to(self.device),
-            "profit_target_hit": torch.from_numpy(y_val["profit_target_hit"]).float().to(self.device),
-            "stop_loss_hit": torch.from_numpy(y_val["stop_loss_hit"]).float().to(self.device),
-            "time_to_target": torch.from_numpy(y_val["time_to_target"]).float().to(self.device),
+            "profit_target_hit": torch.from_numpy(y_val["profit_target_hit"])
+            .float()
+            .to(self.device),
+            "stop_loss_hit": torch.from_numpy(y_val["stop_loss_hit"])
+            .float()
+            .to(self.device),
+            "time_to_target": torch.from_numpy(y_val["time_to_target"])
+            .float()
+            .to(self.device),
         }
 
         # Create data loaders
@@ -1204,18 +1258,22 @@ class EfficientRegimeTrainer:
         # Confidence regularization (encourage high confidence for correct predictions)
         confidence = outputs["confidence"]
         confidence_loss = F.binary_cross_entropy(
-            confidence, torch.ones_like(confidence),
+            confidence,
+            torch.ones_like(confidence),
         )
 
         # TPSL prediction losses
         profit_target_loss = F.binary_cross_entropy(
-            outputs["profit_target_prob"].squeeze(-1), targets["profit_target_hit"],
+            outputs["profit_target_prob"].squeeze(-1),
+            targets["profit_target_hit"],
         )
         stop_loss_loss = F.binary_cross_entropy(
-            outputs["stop_loss_prob"].squeeze(-1), targets["stop_loss_hit"],
+            outputs["stop_loss_prob"].squeeze(-1),
+            targets["stop_loss_hit"],
         )
         time_to_target_loss = F.mse_loss(
-            outputs["time_to_target"].squeeze(-1), targets["time_to_target"],
+            outputs["time_to_target"].squeeze(-1),
+            targets["time_to_target"],
         )
 
         # Combined loss with TPSL weighting
@@ -1238,9 +1296,7 @@ class EfficientRegimeTrainer:
 
         # TPSL accuracy (profit target prediction)
         predicted_profit = (outputs["profit_target_prob"].squeeze(-1) > 0.5).float()
-        profit_correct = (
-            (predicted_profit == targets["profit_target_hit"]).sum().item()
-        )
+        profit_correct = (predicted_profit == targets["profit_target_hit"]).sum().item()
 
         # Combined accuracy (weighted equally as counts)
         return int(regime_correct + profit_correct)
@@ -1254,7 +1310,8 @@ class EfficientRegimeTrainer:
             outputs = self.model(X_val)
             loss = float(self._compute_loss(outputs, y_val).item())
             accuracy = float(
-                self._compute_accuracy(outputs, y_val) / max(y_val["regime_id"].size(0), 1)
+                self._compute_accuracy(outputs, y_val)
+                / max(y_val["regime_id"].size(0), 1)
             )
         return loss, accuracy
 
@@ -1314,7 +1371,11 @@ class EfficientRegimeTrainer:
     model_performance_thresholds={"min_accuracy": 0.6},
     data_quality_metrics={"completeness_threshold": 0.95},
 )
-@handle_errors(exceptions=(Exception,), default_return=False, context="step9_5_hmm_lm_generalist_training")
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=False,
+    context="step9_5_hmm_lm_generalist_training",
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
@@ -1332,7 +1393,6 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-
     """
     try:
         # Create step instance
@@ -1364,4 +1424,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run( test())
+    asyncio.run(test())

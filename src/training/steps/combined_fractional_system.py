@@ -12,18 +12,18 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
+from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
+
+# Import fractional components
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
+    FractionalTripleBarrierLabeling,
+)
 from src.utils.centralized_decorators import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
-
-# Import fractional components
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
-    FractionalTripleBarrierLabeling
-)
-from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
+from src.utils.error_handler import handle_errors
+from src.utils.logger import get_logger
 
 
 class HMMFractionalIntegration:
@@ -455,6 +455,7 @@ class CombinedFractionalSystem:
             # Export to JSON
             report_file = output_path / "combined_system_performance.json"
             import json
+
 import copy
 import datetime as datetime
 

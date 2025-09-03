@@ -1,11 +1,11 @@
-"""
-Pipeline framework for Ares trading bot.
+"""Pipeline framework for Ares trading bot.
 
-This module provides the base framework and common components for all
-pipeline implementations (live trading, backtesting, training).
+This module provides the base framework and common components for all pipeline
+implementations (live trading, backtesting, training).
 """
 
 from .base_pipeline import BasePipeline, PipelineConfig
+
 # Optional imports if modules exist; keep namespace clean
 try:
     from .live_trading_pipeline import LiveTradingPipeline

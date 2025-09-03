@@ -13,14 +13,15 @@ comprehensive uncertainty quantification for the optimized models.
 """
 
 import asyncio
+import json
 import logging
-import numpy as np
-import pandas as pd
+import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
-import json
-import warnings
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -29,7 +30,7 @@ warnings.filterwarnings('ignore')
 try:
     from ..probabilistic_bayesian_optimizer import (
         ProbabilisticBayesianOptimizer,
-        ProbabilisticOptimizationConfig
+        ProbabilisticOptimizationConfig,
     )
     from ..probabilistic_model_integration import ProbabilisticModelIntegrator
 except ImportError:
@@ -52,8 +53,8 @@ except ImportError:
 # Import Optuna for optimization
 try:
     import optuna
-    from optuna.samplers import TPESampler, CmaEsSampler, NSGAIISampler
-    from optuna.pruners import MedianPruner, HyperbandPruner
+    from optuna.pruners import HyperbandPruner, MedianPruner
+    from optuna.samplers import CmaEsSampler, NSGAIISampler, TPESampler
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -512,8 +513,9 @@ class Step17ProbabilisticBayesianOptimization:
             # This would integrate with your actual Analyst model
             # For now, returning a placeholder
             from sklearn.ensemble import RandomForestRegressor
+
 import os.path
-            
+
             model = RandomForestRegressor(
                 n_estimators=params.get('n_estimators', 200),
                 max_depth=params.get('max_depth', 15),

@@ -6,15 +6,15 @@ with enhanced error handling, memory optimization, and data quality validation.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from concurrent.futures import ThreadPoolExecutor
-import contextlib
 
 import numpy as np
 import pandas as pd
@@ -25,18 +25,27 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
+    from src.utils.enhanced_config_management import Step1_5Config
+    from src.utils.enhanced_data_quality_validator import (
+        QualityResult,
+        QualityThresholds,
+        UnifiedDataQualityValidator,
+    )
     from src.utils.enhanced_error_handling import (
-        retry_with_backoff, circuit_breaker, categorize_errors,
-        RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
+        DATA_OPERATION_ERRORS,
+        NonRetryableError,
+        RetryableError,
+        categorize_errors,
+        circuit_breaker,
+        retry_with_backoff,
     )
     from src.utils.enhanced_memory_management import (
-        MemoryMonitor, memory_efficient, optimize_dataframe_dtypes,
-        MemoryOptimizedProcessor, MemoryConfig
+        MemoryConfig,
+        MemoryMonitor,
+        MemoryOptimizedProcessor,
+        memory_efficient,
+        optimize_dataframe_dtypes,
     )
-    from src.utils.enhanced_data_quality_validator import (
-        UnifiedDataQualityValidator, QualityThresholds, QualityResult
-    )
-    from src.utils.enhanced_config_management import Step1_5Config
     from src.utils.logger import system_logger
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
@@ -492,8 +501,9 @@ async def run_enhanced_step1_5(
 # Example usage
 if __name__ == "__main__":
     import asyncio
+
 import os.path
-    
+
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,

@@ -1,17 +1,20 @@
 # src/transition/event_window_dataset.py
 
 from __future__ import annotations
-from src.transition.state_sequence_builder import StateSequenceBuilder
-from src.utils.logger import system_logger
-from typing import Any
+
+import asyncio
+import copy
 import json
 import os
+import os.path
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import copy
-import os.path
-import asyncio
+
+from src.transition.state_sequence_builder import StateSequenceBuilder
+from src.utils.logger import system_logger
 
 
 @dataclass
@@ -24,8 +27,8 @@ class WindowDatasetConfig:
 
 
 class EventWindowDatasetBuilder:
-    """
-    Creates a dataset of pre/post windows centered on event triggers.
+    """Creates a dataset of pre/post windows centered on event triggers.
+
     - Builds per-timestep HMM states and coarse regimes
     - Preserves secondary labels as a multi-hot vector at t , 0
     - Early pruning: drop incomplete windows; optional down-sampling of near-duplicate X_pre
@@ -59,7 +62,8 @@ class EventWindowDatasetBuilder:
             ),
         )
         self.state_builder = StateSequenceBuilder(
-            config, exchange=exchange,
+            config,
+            exchange=exchange,
             symbol=symbol,
         )
         self.cache_dir = str(

@@ -16,11 +16,12 @@ except ImportError as e:
     raise ImportError(
         msg,
     ) from e
+import copy
+
 from sklearn.linear_model import LogisticRegression
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import get_logger
-import copy
 
 # Component logger
 logger = get_logger("TpSlOptimizer")
@@ -44,9 +45,10 @@ def _numba_backtest(
     enable_ml_early_exit: bool,
     early_exit_confidence: float,
 ) -> np.ndarray:
-    """A Numba-accelerated backtesting loop for both long and short trades,
-    including asymmetrical barriers and trading fees. Returns an array of
-    [pnl, direction] for each trade.
+    """A Numba-accelerated backtesting loop for both long and short trades, including
+    asymmetrical barriers and trading fees.
+
+    Returns an array of [pnl, direction] for each trade.
     """
     trades = []
     position_direction = 0  # 0: No position, 1: Long, -1: Short
@@ -105,9 +107,8 @@ def _numba_backtest(
 
 
 class TpSlOptimizer:
-    """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds
-    for LONG & SHORT strategies, including trading fees.
-    """
+    """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds for LONG &
+    SHORT strategies, including trading fees."""
 
     def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str) -> None:
         self.db_manager = db_manager
@@ -139,11 +140,13 @@ class TpSlOptimizer:
                 else:
                     # Best-effort: generate a datetime index if none present
                     self.data["timestamp"] = pd.to_datetime(
-                        self.data.index, errors="coerce",
+                        self.data.index,
+                        errors="coerce",
                     )
 
             self.data["timestamp"] = pd.to_datetime(
-                self.data["timestamp"], errors="coerce",
+                self.data["timestamp"],
+                errors="coerce",
             )
             # Drop any rows with invalid timestamps before indexing
             self.data = self.data.dropna(subset=["timestamp"]).copy()

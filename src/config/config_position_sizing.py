@@ -1,39 +1,38 @@
 # src/config/config_position_sizing.py
+"""Configuration file for optimizable position sizing parameters.
 
-"""
-Configuration file for optimizable position sizing parameters.
 These parameters can be optimized in step12.
 """
 
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
 class PositionSizingConfig:
     """Optimizable position sizing parameters."""
-    
+
     # Base position sizing
     base_position_size: float = 0.05  # 5% of portfolio
     max_position_size: float = 0.3  # 30% maximum position size
     min_position_size: float = 0.01  # 1% minimum position size
-    
+
     # Confidence-based scaling
     confidence_based_scaling: bool = True
     confidence_thresholds: dict[str, float] = None
     position_size_multipliers: dict[str, float] = None
-    
+
     # Volatility adjustment
     enable_volatility_scaling: bool = True
     atr_multiplier: float = 1.0
     volatility_thresholds: dict[str, float] = None
     volatility_multipliers: dict[str, float] = None
-    
+
     # Liquidation risk adjustment
     enable_liquidation_scaling: bool = True
     lss_thresholds: dict[str, float] = None
     lss_multipliers: dict[str, float] = None
-    
+
     # Successive position rules
     enable_successive_positions: bool = True
     min_confidence_for_successive: float = 0.85
@@ -41,22 +40,22 @@ class PositionSizingConfig:
     position_spacing_minutes: int = 15
     size_reduction_factor: float = 0.8
     max_total_exposure: float = 0.3
-    
+
     # Risk limits
     max_single_position: float = 0.15
     max_total_exposure: float = 0.3
     max_correlation_exposure: float = 0.2
     max_leverage: float = 10.0
-    
+
     # Kelly criterion parameters
     kelly_multiplier: float = 0.5
     kelly_max_fraction: float = 0.25
-    
+
     # Dynamic risk management
     enable_dynamic_risk: bool = True
     drawdown_thresholds: dict[str, float] = None
     position_size_reductions: dict[str, float] = None
-    
+
     def __post_init__(self):
         if self.confidence_thresholds is None:
             self.confidence_thresholds = {
@@ -65,7 +64,7 @@ class PositionSizingConfig:
                 "high_confidence": 0.85,
                 "very_high_confidence": 0.95,
             }
-        
+
         if self.position_size_multipliers is None:
             self.position_size_multipliers = {
                 "low_confidence": 0.5,
@@ -73,28 +72,28 @@ class PositionSizingConfig:
                 "high_confidence": 1.5,
                 "very_high_confidence": 2.0,
             }
-        
+
         if self.volatility_thresholds is None:
             self.volatility_thresholds = {
                 "low_volatility": 0.02,
                 "medium_volatility": 0.05,
                 "high_volatility": 0.10,
             }
-        
+
         if self.volatility_multipliers is None:
             self.volatility_multipliers = {
                 "low_volatility": 1.2,
                 "medium_volatility": 1.0,
                 "high_volatility": 0.7,
             }
-        
+
         if self.lss_thresholds is None:
             self.lss_thresholds = {
                 "very_safe": 80,
                 "safe": 60,
                 "moderate": 40,
             }
-        
+
         if self.lss_multipliers is None:
             self.lss_multipliers = {
                 "very_safe": 1.2,
@@ -102,14 +101,14 @@ class PositionSizingConfig:
                 "moderate": 0.8,
                 "dangerous": 0.5,
             }
-        
+
         if self.drawdown_thresholds is None:
             self.drawdown_thresholds = {
                 "light": 0.05,
                 "moderate": 0.15,
                 "severe": 0.25,
             }
-        
+
         if self.position_size_reductions is None:
             self.position_size_reductions = {
                 "light": 0.8,
@@ -140,21 +139,77 @@ def get_position_sizing_search_space() -> dict[str, dict[str, Any]]:
         "kelly_multiplier": {"min": 0.3, "max": 0.8, "type": "float"},
         "kelly_max_fraction": {"min": 0.15, "max": 0.4, "type": "float"},
         # Confidence thresholds
-        "confidence_thresholds.low_confidence": {"min": 0.5, "max": 0.7, "type": "float"},
-        "confidence_thresholds.medium_confidence": {"min": 0.7, "max": 0.8, "type": "float"},
-        "confidence_thresholds.high_confidence": {"min": 0.8, "max": 0.9, "type": "float"},
-        "confidence_thresholds.very_high_confidence": {"min": 0.9, "max": 0.98, "type": "float"},
+        "confidence_thresholds.low_confidence": {
+            "min": 0.5,
+            "max": 0.7,
+            "type": "float",
+        },
+        "confidence_thresholds.medium_confidence": {
+            "min": 0.7,
+            "max": 0.8,
+            "type": "float",
+        },
+        "confidence_thresholds.high_confidence": {
+            "min": 0.8,
+            "max": 0.9,
+            "type": "float",
+        },
+        "confidence_thresholds.very_high_confidence": {
+            "min": 0.9,
+            "max": 0.98,
+            "type": "float",
+        },
         # Position size multipliers
-        "position_size_multipliers.low_confidence": {"min": 0.3, "max": 0.7, "type": "float"},
-        "position_size_multipliers.medium_confidence": {"min": 0.8, "max": 1.2, "type": "float"},
-        "position_size_multipliers.high_confidence": {"min": 1.2, "max": 2.0, "type": "float"},
-        "position_size_multipliers.very_high_confidence": {"min": 1.5, "max": 3.0, "type": "float"},
+        "position_size_multipliers.low_confidence": {
+            "min": 0.3,
+            "max": 0.7,
+            "type": "float",
+        },
+        "position_size_multipliers.medium_confidence": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "position_size_multipliers.high_confidence": {
+            "min": 1.2,
+            "max": 2.0,
+            "type": "float",
+        },
+        "position_size_multipliers.very_high_confidence": {
+            "min": 1.5,
+            "max": 3.0,
+            "type": "float",
+        },
         # Volatility thresholds
-        "volatility_thresholds.low_volatility": {"min": 0.01, "max": 0.03, "type": "float"},
-        "volatility_thresholds.medium_volatility": {"min": 0.03, "max": 0.07, "type": "float"},
-        "volatility_thresholds.high_volatility": {"min": 0.07, "max": 0.15, "type": "float"},
+        "volatility_thresholds.low_volatility": {
+            "min": 0.01,
+            "max": 0.03,
+            "type": "float",
+        },
+        "volatility_thresholds.medium_volatility": {
+            "min": 0.03,
+            "max": 0.07,
+            "type": "float",
+        },
+        "volatility_thresholds.high_volatility": {
+            "min": 0.07,
+            "max": 0.15,
+            "type": "float",
+        },
         # Volatility multipliers
-        "volatility_multipliers.low_volatility": {"min": 1.0, "max": 1.5, "type": "float"},
-        "volatility_multipliers.medium_volatility": {"min": 0.8, "max": 1.2, "type": "float"},
-        "volatility_multipliers.high_volatility": {"min": 0.5, "max": 0.9, "type": "float"},
+        "volatility_multipliers.low_volatility": {
+            "min": 1.0,
+            "max": 1.5,
+            "type": "float",
+        },
+        "volatility_multipliers.medium_volatility": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "volatility_multipliers.high_volatility": {
+            "min": 0.5,
+            "max": 0.9,
+            "type": "float",
+        },
     }

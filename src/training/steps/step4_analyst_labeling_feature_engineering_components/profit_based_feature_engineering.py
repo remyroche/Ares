@@ -7,8 +7,8 @@ triple barrier labeling to create rich feature sets for machine learning models.
 """
 
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -625,6 +625,7 @@ class ProfitBasedFeatureEngineering:
             # Select features based on mutual information (requires scikit-learn)
             try:
                 from sklearn.feature_selection import mutual_info_regression
+
                 # Filter out categorical features for mutual info
                 numerical_features = []
                 for feature in profit_features:
@@ -701,8 +702,9 @@ if __name__ == "__main__":
     # Example usage
     import numpy as np
     import pandas as pd
+
 import copy
-    
+
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame({

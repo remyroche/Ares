@@ -1,31 +1,24 @@
 # src/core/injectable_base.py
+"""Base classes for dependency injection support.
 
-"""
-Base classes for dependency injection support.
-
-This module provides base classes that make it easy for trading components
-to participate in the dependency injection system.
+This module provides base classes that make it easy for trading components to
+participate in the dependency injection system.
 """
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from typing import TYPE_CHECKING, Any
 
 from src.utils.logger import system_logger
-import asyncio
 
 if TYPE_CHECKING:  # only for type checking; avoids runtime import cost
-    from src.interfaces.base_interfaces import (
-        IEventBus,
-        IExchangeClient,
-        IStateManager,
-    )
+    from src.interfaces.base_interfaces import IEventBus, IExchangeClient, IStateManager
 
 
 class InjectableBase:
-    """
-    Base class for all injectable trading components.
+    """Base class for all injectable trading components.
 
     Provides common dependency injection functionality and configuration support.
     """
@@ -36,6 +29,7 @@ class InjectableBase:
         self._initialized: bool = False
         # Provide a safe print shim so subclasses can call self.print
         if not hasattr(self, "print"):
+
             def _shim_print(message: str) -> None:
                 try:
                     self.logger.error(str(message))
@@ -69,7 +63,10 @@ class InjectableBase:
         return True
 
     async def shutdown(self) -> None:
-        """Shutdown the component. Override in subclasses for custom cleanup."""
+        """Shutdown the component.
+
+        Override in subclasses for custom cleanup.
+        """
         self.logger.info(f"Shutting down {self.__class__.__name__}")
         self._initialized = False
 
@@ -80,12 +77,10 @@ class InjectableBase:
 
 
 class TradingComponentBase(InjectableBase):
-    """
-    Base class for core trading components (Analyst, Strategist,
-    Tactician, Supervisor).
+    """Base class for core trading components (Analyst, Strategist, Tactician,
+    Supervisor).
 
-    Provides common dependencies and functionality needed by all trading
-    components.
+    Provides common dependencies and functionality needed by all trading components.
     """
 
     def __init__(

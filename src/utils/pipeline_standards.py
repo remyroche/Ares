@@ -1,5 +1,4 @@
-"""
-Pipeline Standards and Utilities
+"""Pipeline Standards and Utilities.
 
 This module provides standardized utilities for the data pipeline including:
 - Import management with consistent fallback patterns
@@ -11,6 +10,7 @@ This module provides standardized utilities for the data pipeline including:
 - Metadata standards
 """
 
+import copy
 import logging
 import os
 import sys
@@ -22,7 +22,6 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
-import copy
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -105,12 +104,27 @@ class PipelineStandards:
         },
         "aggtrades": {
             "required_columns": ["timestamp", "price", "quantity"],
-            "optional_columns": ["first_trade_id", "last_trade_id", "trade_time", "is_buyer_maker"],
-            "data_types": {"timestamp": "int64", "price": "float64", "quantity": "float64", "is_buyer_maker": "bool"},
+            "optional_columns": [
+                "first_trade_id",
+                "last_trade_id",
+                "trade_time",
+                "is_buyer_maker",
+            ],
+            "data_types": {
+                "timestamp": "int64",
+                "price": "float64",
+                "quantity": "float64",
+                "is_buyer_maker": "bool",
+            },
         },
         "futures": {
             "required_columns": ["timestamp", "fundingRate"],
-            "optional_columns": ["symbol", "mark_price", "index_price", "next_funding_time"],
+            "optional_columns": [
+                "symbol",
+                "mark_price",
+                "index_price",
+                "next_funding_time",
+            ],
             "data_types": {"timestamp": "int64", "fundingRate": "float64"},
         },
         "unified": {
@@ -168,9 +182,12 @@ class PipelineStandards:
         self.logger = logger or logging.getLogger(__name__)
 
     @staticmethod
-    def safe_import(module_name: str, fallback_value: Any = None, logger: Optional[logging.Logger] = None) -> Any:
-        """
-        Safely import a module with consistent fallback pattern.
+    def safe_import(
+        module_name: str,
+        fallback_value: Any = None,
+        logger: Optional[logging.Logger] = None,
+    ) -> Any:
+        """Safely import a module with consistent fallback pattern.
 
         Args:
             module_name: Name of the module to import
@@ -185,15 +202,16 @@ class PipelineStandards:
             return module
         except ImportError as e:
             if logger:
-                logger.warning(f"⚠️ Failed to import {module_name}: {e}. Using fallback.")
+                logger.warning(
+                    f"⚠️ Failed to import {module_name}: {e}. Using fallback."
+                )
             return fallback_value
 
     @staticmethod
     def validate_environment_dependencies(
         required_modules: List[str], logger: Optional[logging.Logger] = None
     ) -> Dict[str, bool]:
-        """
-        Validate that required dependencies are available.
+        """Validate that required dependencies are available.
 
         Args:
             required_modules: List of required module names
@@ -220,8 +238,7 @@ class PipelineStandards:
 
     @staticmethod
     def build_path(path_type: str, exchange: str, asset: str, **kwargs) -> str:
-        """
-        Build standardized path using the directory structure.
+        """Build standardized path using the directory structure.
 
         Args:
             path_type: Type of path (raw_data, unified_data, etc.)
@@ -236,14 +253,15 @@ class PipelineStandards:
             raise ValueError(f"Unknown path type: {path_type}")
 
         path_template = PipelineStandards.DIRECTORY_STRUCTURE[path_type]
-        return path_template.format(exchange=exchange.lower(), asset=asset.lower(), **kwargs)
+        return path_template.format(
+            exchange=exchange.lower(), asset=asset.lower(), **kwargs
+        )
 
     @staticmethod
     def standardize_timestamp(
         df: pd.DataFrame, column: str = "timestamp", target_format: str = "int64"
     ) -> pd.DataFrame:
-        """
-        Standardize timestamp column to consistent format.
+        """Standardize timestamp column to consistent format.
 
         Args:
             df: DataFrame to process
@@ -262,7 +280,9 @@ class PipelineStandards:
             if target_format == "int64":
                 # Convert to int64 milliseconds
                 if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = (pd.to_datetime(df[column], utc=True).astype("int64") // 10**6).astype("int64")
+                    df[column] = (
+                        pd.to_datetime(df[column], utc=True).astype("int64") // 10**6
+                    ).astype("int64")
                 else:
                     ts_numeric = pd.to_numeric(df[column], errors="coerce")
                     if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 1e14:
@@ -294,8 +314,7 @@ class PipelineStandards:
     def validate_timestamp_format(
         df: pd.DataFrame, column: str = "timestamp", expected_format: str = "int64"
     ) -> ValidationResult:
-        """
-        Validate timestamp format consistency.
+        """Validate timestamp format consistency.
 
         Args:
             df: DataFrame to validate
@@ -310,7 +329,10 @@ class PipelineStandards:
         if column not in df.columns:
             result.passed = False
             result.issues.append(
-                ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Timestamp column '{column}' not found")
+                ValidationIssue(
+                    severity=DataQualityLevel.CRITICAL,
+                    message=f"Timestamp column '{column}' not found",
+                )
             )
             return result
 
@@ -384,22 +406,25 @@ class PipelineStandards:
             if not df[column].is_monotonic_increasing:
                 result.warnings.append(
                     ValidationIssue(
-                        severity=DataQualityLevel.WARNING, message="Timestamps are not monotonically increasing"
+                        severity=DataQualityLevel.WARNING,
+                        message="Timestamps are not monotonically increasing",
                     )
                 )
 
         except Exception as e:
             result.passed = False
             result.issues.append(
-                ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Error validating timestamp format: {e}")
+                ValidationIssue(
+                    severity=DataQualityLevel.CRITICAL,
+                    message=f"Error validating timestamp format: {e}",
+                )
             )
 
         return result
 
     @staticmethod
     def validate_schema(df: pd.DataFrame, schema_name: str) -> ValidationResult:
-        """
-        Validate DataFrame against standard schema.
+        """Validate DataFrame against standard schema.
 
         Args:
             df: DataFrame to validate
@@ -415,7 +440,9 @@ class PipelineStandards:
         result = ValidationResult(passed=True)
 
         # Check required columns
-        missing_required = [col for col in schema["required_columns"] if col not in df.columns]
+        missing_required = [
+            col for col in schema["required_columns"] if col not in df.columns
+        ]
         if missing_required:
             result.passed = False
             result.issues.append(
@@ -436,7 +463,10 @@ class PipelineStandards:
                             severity=DataQualityLevel.WARNING,
                             message=f"Column '{column}' has type {actual_type}, expected {expected_type}",
                             column=column,
-                            details={"actual_type": actual_type, "expected_type": expected_type},
+                            details={
+                                "actual_type": actual_type,
+                                "expected_type": expected_type,
+                            },
                         )
                     )
 
@@ -446,13 +476,19 @@ class PipelineStandards:
                 null_count = df[column].isnull().sum()
                 if null_count > 0:
                     null_percentage = null_count / len(df)
-                    if null_percentage > PipelineStandards.QUALITY_THRESHOLDS["max_null_percentage"]:
+                    if (
+                        null_percentage
+                        > PipelineStandards.QUALITY_THRESHOLDS["max_null_percentage"]
+                    ):
                         result.issues.append(
                             ValidationIssue(
                                 severity=DataQualityLevel.CRITICAL,
                                 message=f"Column '{column}' has too many null values",
                                 column=column,
-                                details={"null_count": null_count, "null_percentage": null_percentage},
+                                details={
+                                    "null_count": null_count,
+                                    "null_percentage": null_percentage,
+                                },
                             )
                         )
                     else:
@@ -461,7 +497,10 @@ class PipelineStandards:
                                 severity=DataQualityLevel.WARNING,
                                 message=f"Column '{column}' has {null_count} null values",
                                 column=column,
-                                details={"null_count": null_count, "null_percentage": null_percentage},
+                                details={
+                                    "null_count": null_count,
+                                    "null_percentage": null_percentage,
+                                },
                             )
                         )
 
@@ -469,8 +508,7 @@ class PipelineStandards:
 
     @staticmethod
     def enforce_schema(df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
-        """
-        Enforce schema by converting data types and adding missing columns.
+        """Enforce schema by converting data types and adding missing columns.
 
         Args:
             df: DataFrame to enforce schema on
@@ -502,24 +540,35 @@ class PipelineStandards:
             if column in df.columns:
                 try:
                     if expected_type == "int64":
-                        df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0).astype("int64")
+                        df[column] = (
+                            pd.to_numeric(df[column], errors="coerce")
+                            .fillna(0)
+                            .astype("int64")
+                        )
                     elif expected_type == "float64":
-                        df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0).astype("float64")
+                        df[column] = (
+                            pd.to_numeric(df[column], errors="coerce")
+                            .fillna(0.0)
+                            .astype("float64")
+                        )
                     elif expected_type == "string":
                         df[column] = df[column].astype("string")
                     elif expected_type == "bool":
                         df[column] = df[column].astype("boolean")
                 except Exception as e:
-                    raise ValueError(f"Failed to convert column '{column}' to {expected_type}: {e}")
+                    raise ValueError(
+                        f"Failed to convert column '{column}' to {expected_type}: {e}"
+                    )
 
         return df
 
     @staticmethod
     def validate_data_quality(
-        df: pd.DataFrame, schema_name: str, quality_thresholds: Optional[Dict[str, Any]] = None
+        df: pd.DataFrame,
+        schema_name: str,
+        quality_thresholds: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
-        """
-        Comprehensive data quality validation.
+        """Comprehensive data quality validation.
 
         Args:
             df: DataFrame to validate
@@ -536,7 +585,10 @@ class PipelineStandards:
         if df is None or df.empty:
             result.passed = False
             result.issues.append(
-                ValidationIssue(severity=DataQualityLevel.CRITICAL, message="DataFrame is None or empty")
+                ValidationIssue(
+                    severity=DataQualityLevel.CRITICAL,
+                    message="DataFrame is None or empty",
+                )
             )
             return result
 
@@ -547,7 +599,10 @@ class PipelineStandards:
                 ValidationIssue(
                     severity=DataQualityLevel.CRITICAL,
                     message=f"Too few rows: {len(df)} < {thresholds['min_rows']}",
-                    details={"row_count": len(df), "min_required": thresholds["min_rows"]},
+                    details={
+                        "row_count": len(df),
+                        "min_required": thresholds["min_rows"],
+                    },
                 )
             )
 
@@ -570,7 +625,10 @@ class PipelineStandards:
                 ValidationIssue(
                     severity=DataQualityLevel.CRITICAL,
                     message=f"Too many duplicate rows: {duplicate_percentage:.2%}",
-                    details={"duplicate_count": duplicate_count, "duplicate_percentage": duplicate_percentage},
+                    details={
+                        "duplicate_count": duplicate_count,
+                        "duplicate_percentage": duplicate_percentage,
+                    },
                 )
             )
 
@@ -590,20 +648,23 @@ class PipelineStandards:
 
         # Calculate quality score
         total_checks = 5  # Basic checks, schema, timestamp, duplicates, infinite values
-        passed_checks = total_checks - len([i for i in result.issues if i.severity == DataQualityLevel.CRITICAL])
+        passed_checks = total_checks - len(
+            [i for i in result.issues if i.severity == DataQualityLevel.CRITICAL]
+        )
         result.quality_score = passed_checks / total_checks
 
         # Determine if validation passed
-        result.passed = result.quality_score >= thresholds["min_quality_score"] and not any(
-            i.severity == DataQualityLevel.CRITICAL for i in result.issues
-        )
+        result.passed = result.quality_score >= thresholds[
+            "min_quality_score"
+        ] and not any(i.severity == DataQualityLevel.CRITICAL for i in result.issues)
 
         return result
 
     @staticmethod
-    def generate_file_name(file_type: str, exchange: str, asset: str, timeframe: str = None, **kwargs) -> str:
-        """
-        Generate standardized file name.
+    def generate_file_name(
+        file_type: str, exchange: str, asset: str, timeframe: str = None, **kwargs
+    ) -> str:
+        """Generate standardized file name.
 
         Args:
             file_type: Type of file (klines, aggtrades, etc.)
@@ -630,9 +691,10 @@ class PipelineStandards:
         return template.format(**params)
 
     @staticmethod
-    def create_metadata(schema_name: str, exchange: str, asset: str, timeframe: str, **kwargs) -> Dict[str, Any]:
-        """
-        Create standardized metadata for files.
+    def create_metadata(
+        schema_name: str, exchange: str, asset: str, timeframe: str, **kwargs
+    ) -> Dict[str, Any]:
+        """Create standardized metadata for files.
 
         Args:
             schema_name: Schema name
@@ -662,8 +724,7 @@ class PipelineStandards:
     def validate_cross_step_consistency(
         data_dict: Dict[str, pd.DataFrame], step_sequence: List[str]
     ) -> ValidationResult:
-        """
-        Validate data consistency across pipeline steps.
+        """Validate data consistency across pipeline steps.
 
         Args:
             data_dict: Dictionary of dataframes from different steps
@@ -710,13 +771,19 @@ class PipelineStandards:
                     ValidationIssue(
                         severity=DataQualityLevel.WARNING,
                         message=f"Row count mismatch in {step}: {len(df)} vs {reference_length}",
-                        details={"step": step, "actual_count": len(df), "expected_count": reference_length},
+                        details={
+                            "step": step,
+                            "actual_count": len(df),
+                            "expected_count": reference_length,
+                        },
                     )
                 )
 
             # Check for common columns
             common_columns = reference_columns.intersection(set(df.columns))
-            if len(common_columns) < len(reference_columns) * 0.8:  # At least 80% common columns
+            if (
+                len(common_columns) < len(reference_columns) * 0.8
+            ):  # At least 80% common columns
                 result.warnings.append(
                     ValidationIssue(
                         severity=DataQualityLevel.WARNING,
@@ -733,9 +800,10 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def track_data_lineage(data: pd.DataFrame, source_step: str, transformations: List[str]) -> Dict[str, Any]:
-        """
-        Track data lineage and transformations.
+    def track_data_lineage(
+        data: pd.DataFrame, source_step: str, transformations: List[str]
+    ) -> Dict[str, Any]:
+        """Track data lineage and transformations.
 
         Args:
             data: The dataframe
@@ -758,9 +826,10 @@ class PipelineStandards:
         return lineage
 
     @staticmethod
-    def calculate_comprehensive_quality_score(data: pd.DataFrame, context: str = "general") -> float:
-        """
-        Calculate comprehensive data quality score.
+    def calculate_comprehensive_quality_score(
+        data: pd.DataFrame, context: str = "general"
+    ) -> float:
+        """Calculate comprehensive data quality score.
 
         Args:
             data: Dataframe to score
@@ -785,7 +854,9 @@ class PipelineStandards:
         # Validity score (no infinite values)
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 0:
-            infinite_ratio = np.isinf(data[numeric_cols]).sum().sum() / (len(data) * len(numeric_cols))
+            infinite_ratio = np.isinf(data[numeric_cols]).sum().sum() / (
+                len(data) * len(numeric_cols)
+            )
             validity = 1 - infinite_ratio
         else:
             validity = 1.0
@@ -798,7 +869,9 @@ class PipelineStandards:
                 timestamps = pd.to_datetime(data["timestamp"], unit="s")
                 now = pd.Timestamp.now()
                 time_diff = abs((timestamps - now).dt.total_seconds())
-                timeliness = 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)  # Normalize to 1 year
+                timeliness = 1 - min(
+                    time_diff.mean() / (365 * 24 * 3600), 1.0
+                )  # Normalize to 1 year
                 scores.append(timeliness)
             except:
                 scores.append(0.5)  # Default score if timestamp parsing fails
@@ -821,9 +894,10 @@ class PipelineStandards:
         return np.mean(scores)
 
     @staticmethod
-    def validate_feature_engineering_output(features: pd.DataFrame, original_data: pd.DataFrame) -> ValidationResult:
-        """
-        Validate feature engineering output.
+    def validate_feature_engineering_output(
+        features: pd.DataFrame, original_data: pd.DataFrame
+    ) -> ValidationResult:
+        """Validate feature engineering output.
 
         Args:
             features: Engineered features dataframe
@@ -836,7 +910,10 @@ class PipelineStandards:
 
         if features is None or original_data is None:
             result.issues.append(
-                ValidationIssue(severity=DataQualityLevel.CRITICAL, message="Features or original data is None")
+                ValidationIssue(
+                    severity=DataQualityLevel.CRITICAL,
+                    message="Features or original data is None",
+                )
             )
             result.passed = False
             return result
@@ -847,14 +924,19 @@ class PipelineStandards:
                 ValidationIssue(
                     severity=DataQualityLevel.CRITICAL,
                     message=f"Feature count mismatch: {len(features)} vs {len(original_data)}",
-                    details={"feature_count": len(features), "original_count": len(original_data)},
+                    details={
+                        "feature_count": len(features),
+                        "original_count": len(original_data),
+                    },
                 )
             )
             result.passed = False
 
         # Check for NaN values in features
         nan_counts = features.isnull().sum()
-        high_nan_cols = nan_counts[nan_counts > len(features) * 0.1]  # More than 10% NaN
+        high_nan_cols = nan_counts[
+            nan_counts > len(features) * 0.1
+        ]  # More than 10% NaN
         if len(high_nan_cols) > 0:
             result.warnings.append(
                 ValidationIssue(
@@ -894,7 +976,9 @@ class PipelineStandards:
             )
 
         # Calculate quality score
-        result.quality_score = PipelineStandards.calculate_comprehensive_quality_score(features, "features")
+        result.quality_score = PipelineStandards.calculate_comprehensive_quality_score(
+            features, "features"
+        )
 
         return result
 

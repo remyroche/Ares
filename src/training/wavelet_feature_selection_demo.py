@@ -11,6 +11,7 @@ This script demonstrates the complete wavelet feature selection workflow using t
 """
 
 import asyncio
+import datetime as datetime
 import time
 from typing import Any
 
@@ -22,13 +23,13 @@ from src.training.wavelet_feature_selection_workflow import (
     WaveletFeatureSelectionWorkflow,
 )
 from src.utils.logger import system_logger
-import datetime as datetime
 
 
 class WaveletFeatureSelectionDemo:
     """Demo class for the wavelet feature selection workflow using two-model strategy.
 
-    Demonstrates the complete process from full analysis to optimized live configurations.
+    Demonstrates the complete process from full analysis to optimized live
+    configurations.
     """
 
     def __init__(self, config_path: str = "src/config/trading.yaml") -> None:

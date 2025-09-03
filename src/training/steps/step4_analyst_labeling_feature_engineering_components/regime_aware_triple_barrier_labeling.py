@@ -16,8 +16,8 @@ Key Features:
 """
 
 import contextlib
-from typing import Any, Dict, List, Optional, Union
 import warnings
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -738,7 +738,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
     try:
         import json
         from pathlib import Path
-        
+
         # Load barrier map if path is provided
         if isinstance(barrier_map_or_path, str):
             barrier_path = Path(barrier_map_or_path)
@@ -793,6 +793,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
     except Exception as e:
         # Log error and return original data with error indicator
         import logging
+
 import copy
 
         logger = logging.getLogger(__name__)

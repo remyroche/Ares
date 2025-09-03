@@ -26,11 +26,8 @@ from src.tactician.enhanced_order_manager import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-import copy
+from src.utils.warning_symbols import copy, failed, import
 
-    failed,
-)
 
 class ExecutionStrategy(Enum):
     """Execution strategy types."""

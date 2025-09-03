@@ -12,21 +12,24 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.feature_selection import (
-    SelectKBest, f_regression, mutual_info_regression,
-    RFE, SelectFromModel
-)
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_selection import (
+    RFE,
+    SelectFromModel,
+    SelectKBest,
+    f_regression,
+    mutual_info_regression,
+)
 from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 
-from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
+from src.utils.error_handler import handle_errors
+from src.utils.logger import get_logger
 
 
 class FractionalFeatureSelector:
@@ -682,6 +685,7 @@ class FractionalFeatureSelector:
             # Export to JSON
             report_file = output_path / "feature_selection_performance.json"
             import json
+
 import datetime as datetime
 
             with open(report_file, 'w') as f:

@@ -12,19 +12,20 @@ These are production-ready implementations with robust error handling and optimi
 """
 
 import asyncio
-import logging
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, NamedTuple
+import itertools
 import json
+import logging
 import warnings
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import accuracy_score, mean_squared_error
 from sklearn.model_selection import KFold
-from sklearn.metrics import mean_squared_error, accuracy_score
-import itertools
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -32,8 +33,8 @@ warnings.filterwarnings('ignore')
 # Import Optuna for optimization
 try:
     import optuna
-    from optuna.samplers import NSGAIISampler, TPESampler
     from optuna.pruners import MedianPruner
+    from optuna.samplers import NSGAIISampler, TPESampler
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -41,6 +42,7 @@ except ImportError:
 # Import MLflow for experiment tracking
 try:
     import mlflow
+
 import copy
 
     MLFLOW_AVAILABLE = True

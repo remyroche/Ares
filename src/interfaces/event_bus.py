@@ -1,26 +1,21 @@
 # src/interfaces/event_bus.py
 
+import asyncio
+import copy
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
-import asyncio
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-    invalid,
-)
 from src.utils.logger import system_logger
-import copy
+from src.utils.warning_symbols import error, failed, initialization_error, invalid
 
 
 class EventType(Enum):
-    """Event types for the trading system"""
+    """Event types for the trading system."""
 
     MARKET_DATA_RECEIVED = "market_data_received"
     ANALYSIS_COMPLETED = "analysis_completed"
@@ -37,7 +32,7 @@ class EventType(Enum):
 
 @dataclass
 class Event:
-    """Event structure"""
+    """Event structure."""
 
     event_type: EventType
     data: Any
@@ -47,9 +42,7 @@ class Event:
 
 
 class EventBus:
-    """
-    Enhanced Event Bus component with DI, type hints, and robust error handling.
-    """
+    """Enhanced Event Bus component with DI, type hints, and robust error handling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
@@ -251,7 +244,9 @@ class EventBus:
         """Subscribe to an event type."""
         try:
             event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
+                event_type.value
+                if isinstance(event_type, EventType)
+                else str(event_type)
             )
             self.subscribers[event_key].append(callback)
             self.logger.info(f"Subscriber added for event type: {event_key}")
@@ -271,7 +266,9 @@ class EventBus:
         """Unsubscribe from an event type."""
         try:
             event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
+                event_type.value
+                if isinstance(event_type, EventType)
+                else str(event_type)
             )
             if event_key in self.subscribers:
                 self.subscribers[event_key] = [
@@ -290,7 +287,9 @@ class EventBus:
         """Publish an event to the bus."""
         try:
             event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
+                event_type.value
+                if isinstance(event_type, EventType)
+                else str(event_type)
             )
             event = {
                 "type": event_key,

@@ -7,20 +7,14 @@ from urllib.parse import urlencode
 import aiohttp
 
 from src.utils.error_handler import (
-import asyncio
-
+    asyncio,
     handle_errors,
     handle_network_operations,
     handle_specific_errors,
+    import,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    connection_error,
-    error,
-    failed,
-    invalid,
-    missing,
-)
+from src.utils.warning_symbols import connection_error, error, failed, invalid, missing
 
 
 class BinanceExchange:

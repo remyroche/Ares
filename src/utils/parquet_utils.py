@@ -7,23 +7,27 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.error_handler import handle_data_processing_errors, handle_file_operations
+from src.utils.error_handler import (
+    handle_data_processing_errors,
+    handle_file_operations,
+)
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class ParquetUtils:
-    """Utility class for safe parquet file operations with comprehensive error handling."""
+    """Utility class for safe parquet file operations with comprehensive error
+    handling."""
 
     def __init__(self) -> None:
         self.logger = system_logger.getChild("ParquetUtils")
 
     @handle_file_operations(
-        default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file"
+        default_return={"valid": False, "error": "validation_error"},
+        context="ParquetUtils.validate_parquet_file",
     )
     def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
-        """
-        Validate a parquet file and return detailed information about its structure.
+        """Validate a parquet file and return detailed information about its structure.
 
         Args:
             file_path: Path to the parquet file
@@ -57,7 +61,9 @@ class ParquetUtils:
             result["columns"] = sample_df.columns.tolist()
             result["shape"] = sample_df.shape
             # Convert dtypes to str to ensure JSON-serializable values
-            result["dtypes"] = {k: str(v) for k, v in sample_df.dtypes.to_dict().items()}
+            result["dtypes"] = {
+                k: str(v) for k, v in sample_df.dtypes.to_dict().items()
+            }
             result["valid"] = True
         except Exception as e:  # pragma: no cover - defensive guard
             result["error"] = f"Failed to read parquet file: {e}"
@@ -70,8 +76,12 @@ class ParquetUtils:
 
         return result
 
-    @handle_file_operations(default_return=None, context="ParquetUtils.safe_read_parquet")
-    @handle_data_processing_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
+    @handle_file_operations(
+        default_return=None, context="ParquetUtils.safe_read_parquet"
+    )
+    @handle_data_processing_errors(
+        default_return=None, context="ParquetUtils.safe_read_parquet"
+    )
     def safe_read_parquet(
         self,
         file_path: str,
@@ -79,8 +89,7 @@ class ParquetUtils:
         nrows: int | None = None,
         **kwargs: Any,
     ) -> pd.DataFrame | None:
-        """
-        Safely read a parquet file with multiple fallback strategies.
+        """Safely read a parquet file with multiple fallback strategies.
 
         Args:
             file_path: Path to the parquet file
@@ -98,7 +107,8 @@ class ParquetUtils:
         for idx, engine in enumerate(engines, start=1):
             try:
                 strategy_msg = (
-                    f"   Trying strategy {idx}/{len(engines)}: " f"{'default' if engine is None else engine} engine"
+                    f"   Trying strategy {idx}/{len(engines)}: "
+                    f"{'default' if engine is None else engine} engine"
                 )
                 self.logger.info(strategy_msg)
                 read_kwargs = dict(kwargs)
@@ -107,7 +117,9 @@ class ParquetUtils:
                 df = pd.read_parquet(file_path, columns=columns, **read_kwargs)
                 if nrows is not None and len(df) > nrows:
                     df = df.head(nrows)
-                self.logger.info(f"✅ Successfully read with strategy {idx}: {df.shape}")
+                self.logger.info(
+                    f"✅ Successfully read with strategy {idx}: {df.shape}"
+                )
                 return df
             except Exception as e:
                 self.logger.warning(f"   Strategy {idx} failed: {e}")
@@ -116,10 +128,13 @@ class ParquetUtils:
         self.logger.error(f"❌ All strategies failed for file: {file_path}")
         return None
 
-    @handle_file_operations(default_return=False, context="ParquetUtils.repair_parquet_file")
-    def repair_parquet_file(self, file_path: str, backup_path: str | None = None) -> bool:
-        """
-        Attempt to repair a corrupted parquet file.
+    @handle_file_operations(
+        default_return=False, context="ParquetUtils.repair_parquet_file"
+    )
+    def repair_parquet_file(
+        self, file_path: str, backup_path: str | None = None
+    ) -> bool:
+        """Attempt to repair a corrupted parquet file.
 
         Args:
             file_path: Path to the parquet file

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""
-Trade Conditions Monitor (minimal scaffold)
+"""Trade Conditions Monitor (minimal scaffold)
 
 Scaffolding for monitoring trade conditions and decisions.
 """
 
 from __future__ import annotations
 
+import asyncio
 from enum import Enum
 from typing import Any, Dict
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class TradeAction(Enum):

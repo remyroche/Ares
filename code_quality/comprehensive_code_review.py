@@ -69,6 +69,7 @@ class CodeIssue:
 @dataclass
 class FunctionCall:
     """Represents a function call found in the code."""
+    file_path: str
     name: str
     line_number: int
     args: List[str]
@@ -527,6 +528,7 @@ class CodeQualityASTVisitor(ast.NodeVisitor):
         
         # Store function call
         self.function_calls.append(FunctionCall(
+            file_path=str(self.file_path),
             name=func_name,
             line_number=node.lineno,
             args=[ast.unparse(arg) for arg in node.args],

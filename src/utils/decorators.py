@@ -18,13 +18,13 @@ ENHANCED FEATURES:
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
 import time
 from collections.abc import Callable
 from typing import Any, Dict, Iterable, Optional, TypeVar, cast
-import asyncio
 
 # Handle optional dependencies
 try:
@@ -833,6 +833,7 @@ except Exception:  # pragma: no cover
 
 try:  # aiohttp
     import aiohttp  # type: ignore
+
 import copy
 
     _EXCEPTION_MAP[aiohttp.ClientError] = ExternalServiceError  # type: ignore

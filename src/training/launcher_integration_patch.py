@@ -1,7 +1,8 @@
 # src/training/launcher_integration_patch.py
-
 """Integration patch for ares_launcher.py to enable the new optimization features.
-This module contains the updated training functions that use the optimized training manager.
+
+This module contains the updated training functions that use the optimized training
+manager.
 """
 
 import asyncio
@@ -16,13 +17,12 @@ from src.training.enhanced_training_manager_optimized import (
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-)
+from src.utils.warning_symbols import failed
 
 
 class OptimizedAresLauncherMixin:
     """Mixin class that provides optimized training methods for AresLauncher.
+
     This can be mixed into the existing AresLauncher class to add optimization features.
     """
 
@@ -88,7 +88,8 @@ class OptimizedAresLauncherMixin:
             context="optimized_enhanced_training_pipeline",
         )
         async def run_optimized_enhanced_training() -> bool:
-            """Execute optimized enhanced training using EnhancedTrainingManagerOptimized."""
+            """Execute optimized enhanced training using
+            EnhancedTrainingManagerOptimized."""
             from src.database.sqlite_manager import SQLiteManager
 
             logger = system_logger.getChild("OptimizedEnhancedTrainingPipeline")
@@ -385,6 +386,7 @@ def create_optimized_launcher_patch() -> Callable[[Any], Any]:
 # Quick integration function for immediate use
 def enable_optimizations_in_launcher() -> Optional[Callable[[Any], Any]]:
     """Quick function to enable optimizations in the current launcher.
+
     This can be called from ares_launcher.py to enable the new features.
     """
     import sys

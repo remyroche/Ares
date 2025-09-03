@@ -6,11 +6,13 @@ price direction and expected profit using the triple barrier method and
 profit-based feature engineering.
 """
 
+import asyncio
 import json
 import os
 import pickle
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import joblib
@@ -20,8 +22,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from pathlib import Path
-import asyncio
 
 # Optional imports for additional model types
 try:
@@ -41,33 +41,41 @@ except ImportError:
 # Import existing model architectures from step06
 try:
     from .steps.step9_hmm_based_training import (
-        CNNModel, CNNTrainer,
-        TCNModel, TCNTrainer,
-        TransformerModel, TransformerTrainer
+        CNNModel,
+        CNNTrainer,
+        TCNModel,
+        TCNTrainer,
+        TransformerModel,
+        TransformerTrainer,
     )
     EXISTING_MODELS_AVAILABLE = True
 except ImportError:
     EXISTING_MODELS_AVAILABLE = False
     CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
 from sklearn.metrics import (
-    accuracy_score, f1_score, precision_score, recall_score,
-    mean_squared_error, mean_absolute_error, r2_score
+    accuracy_score,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
 )
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.multioutput import MultiOutputRegressor, MultiOutputClassifier
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.multioutput import MultiOutputClassifier, MultiOutputRegressor
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
-    ProfitBasedFeatureEngineering
+    ProfitBasedFeatureEngineering,
 )
 from src.utils.centralized_decorators import (
-    handle_errors,
     comprehensive_validation,
-    performance_monitor,
-    validate_data_structure,
+    handle_errors,
     memory_efficient,
+    performance_monitor,
     secure_data_processing,
+    validate_data_structure,
 )
 from src.utils.logger import system_logger
 
@@ -699,7 +707,9 @@ class MultiOutputModelTrainer:
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.steps.step9_hmm_based_training import HMMBasedTrainingStep
+                from src.training.steps.step9_hmm_based_training import (
+                    HMMBasedTrainingStep,
+                )
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 
@@ -1501,8 +1511,11 @@ class MultiOutputModelTrainer:
         Returns:
             Dictionary containing predictions and confidence scores
         """
-        from src.utils.confidence import calculate_multi_output_confidence_batch, get_confidence_threshold_signals
-        
+        from src.utils.confidence import (
+            calculate_multi_output_confidence_batch,
+            get_confidence_threshold_signals,
+        )
+
         # Make basic predictions
         direction_pred, profit_pred, price_pred = self.predict(
             features, model_name, current_prices
@@ -1757,6 +1770,7 @@ class MultiOutputModelTrainer:
         # Handle class imbalance
         try:
             from sklearn.utils.class_weight import compute_class_weight
+
 import copy
 
             class_weights = compute_class_weight(

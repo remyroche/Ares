@@ -1,7 +1,7 @@
 """Constants for the Ares trading system.
 
-This module contains all the constants used throughout the system
-to ensure consistency and maintainability.
+This module contains all the constants used throughout the system to ensure consistency
+and maintainability.
 """
 
 from typing import Final
@@ -19,10 +19,10 @@ DEFAULT_LOOKBACK_DAYS: Final[int] = 730  # 2 years default lookback window
 
 # Import training mode constants from centralized configuration
 from .training_modes import (
-    FULL_TRAINING_LOOKBACK_DAYS,
     BLANK_TRAINING_LOOKBACK_DAYS,
-    SHORT_BLANK_LOOKBACK_DAYS,
+    FULL_TRAINING_LOOKBACK_DAYS,
     LIGHT_TRAINING_LOOKBACK_DAYS,
+    SHORT_BLANK_LOOKBACK_DAYS,
 )
 
 # Feature Engineering Constants

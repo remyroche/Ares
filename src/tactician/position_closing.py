@@ -6,17 +6,12 @@ Handles position closure based on dual model confidence scores and ATR-based exi
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-import copy
-import asyncio
+from src.utils.warning_symbols import asyncio, copy, failed, import, invalid
 
-    failed,
-    invalid,
-)
 
 class PositionCloser:
     """

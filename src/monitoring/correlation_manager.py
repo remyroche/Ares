@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""
-Correlation Manager
+"""Correlation Manager.
 
-Centralized correlation ID management and request/response correlation tracking
-for the Ares trading bot.
+Centralized correlation ID management and request/response correlation tracking for the
+Ares trading bot.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+import asyncio
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class CorrelationStatus(Enum):
@@ -43,9 +42,8 @@ class CorrelationRequest:
 
 
 class CorrelationManager:
-    """
-    Centralized correlation ID management and request/response correlation tracking.
-    """
+    """Centralized correlation ID management and request/response correlation
+    tracking."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -56,7 +54,9 @@ class CorrelationManager:
         self.enable_correlation_tracking: bool = bool(
             self.correlation_config.get("enable_correlation_tracking", True)
         )
-        self.correlation_timeout: int = int(self.correlation_config.get("correlation_timeout", 300))
+        self.correlation_timeout: int = int(
+            self.correlation_config.get("correlation_timeout", 300)
+        )
         self.max_correlation_history: int = int(
             self.correlation_config.get("max_correlation_history", 10000)
         )
@@ -120,7 +120,9 @@ class CorrelationManager:
         req.response_timestamp = datetime.now()
         req.response_data = dict(response_data or {})
         req.error_info = dict(error_info or {}) if error_info else None
-        req.status = CorrelationStatus.FAILED if error_info else CorrelationStatus.COMPLETED
+        req.status = (
+            CorrelationStatus.FAILED if error_info else CorrelationStatus.COMPLETED
+        )
 
     def get_request(self, correlation_id: str) -> Optional[CorrelationRequest]:
         return self.correlation_requests.get(correlation_id)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from typing import Any, Optional, Union, overload
 
@@ -9,7 +10,6 @@ import numpy as np
 import pandas as pd
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,7 @@ def safe_pct_change(
     freq: Any | None = None,
     **kwargs: Any,
 ) -> pd.Series:
-    """
-    Calculate percentage change with safe handling of infinite and NaN values.
+    """Calculate percentage change with safe handling of infinite and NaN values.
 
     Returns a Series of pct_change with infinities replaced by 0 and NaNs filled with 0.
     """
@@ -66,9 +65,8 @@ def safe_log_returns(
     freq: Any | None = None,
     **kwargs: Any,
 ) -> pd.Series:
-    """
-    Calculate log returns (log(1 + pct_change)) with safe handling of infinite and NaN values.
-    """
+    """Calculate log returns (log(1 + pct_change)) with safe handling of infinite and
+    NaN values."""
     try:
         if fill_method:
             series = series.fillna(method=fill_method, limit=limit)
@@ -106,7 +104,9 @@ def validate_dataframe_for_ml(
         df_clean = df.copy()
         numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) == 0:
-            logger.warning("No numeric columns found in DataFrame for context: %s", context)
+            logger.warning(
+                "No numeric columns found in DataFrame for context: %s", context
+            )
             return df_clean
 
         # Replace infinities
@@ -117,7 +117,9 @@ def validate_dataframe_for_ml(
                 int(inf_count),
                 context,
             )
-            df_clean[numeric_cols] = df_clean[numeric_cols].replace([np.inf, -np.inf], 0)
+            df_clean[numeric_cols] = df_clean[numeric_cols].replace(
+                [np.inf, -np.inf], 0
+            )
 
         # Clip extremes
         if clip_extreme_values:
@@ -129,12 +131,16 @@ def validate_dataframe_for_ml(
                     max_abs_value,
                     context,
                 )
-                df_clean[numeric_cols] = np.clip(df_clean[numeric_cols], -max_abs_value, max_abs_value)
+                df_clean[numeric_cols] = np.clip(
+                    df_clean[numeric_cols], -max_abs_value, max_abs_value
+                )
 
         # Fill NaNs
         nan_count = df_clean[numeric_cols].isna().sum().sum()
         if int(nan_count) > 0:
-            logger.warning("Found %d NaN values in %s - filling with 0", int(nan_count), context)
+            logger.warning(
+                "Found %d NaN values in %s - filling with 0", int(nan_count), context
+            )
             df_clean[numeric_cols] = df_clean[numeric_cols].fillna(0)
 
         final_inf_count = np.isinf(df_clean[numeric_cols]).sum().sum()
@@ -164,9 +170,11 @@ def safe_division(
     fill_value: float = 0.0,
     context: str = "unknown",
 ) -> NumberLike:
-    """
-    Perform safe division handling zero and tiny denominators with fill_value fallback.
-    Preserves type where possible (Series -> Series, ndarray -> ndarray, scalar -> float).
+    """Perform safe division handling zero and tiny denominators with fill_value
+    fallback.
+
+    Preserves type where possible (Series -> Series, ndarray -> ndarray, scalar ->
+    float).
     """
     try:
         # Series / Series
@@ -196,7 +204,12 @@ def safe_division(
             out = np.full_like(num_arr, fill_value, dtype=float)
             with np.errstate(divide="ignore", invalid="ignore"):
                 out[safe_mask] = num_arr[safe_mask] / den_arr[safe_mask]
-            return out if isinstance(numerator, np.ndarray) or isinstance(denominator, np.ndarray) else float(out)
+            return (
+                out
+                if isinstance(numerator, np.ndarray)
+                or isinstance(denominator, np.ndarray)
+                else float(out)
+            )
 
         # Mixed types -> coerce to numpy and compute
         num_arr = np.asarray(numerator)

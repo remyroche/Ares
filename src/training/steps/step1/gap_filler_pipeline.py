@@ -96,7 +96,13 @@ class GapFillerPipeline:
             return []
 
     async def _fetch_aggtrades_from_binance_vision(
-        self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int, market_segment: str = "um"
+        self,
+        symbol: str,
+        gap_start: datetime,
+        gap_end: datetime,
+        start_time_ms: int,
+        end_time_ms: int,
+        market_segment: str = "um",
     ) -> list[dict]:
         """Download aggregated trades from Binance Vision for a specific gap period."""
         await self._ensure_session()
@@ -124,7 +130,7 @@ class GapFillerPipeline:
                         f,
                         header=None,
                         names=["a", "p", "q", "f", "l", "T", "m", "M"],
-                        low_memory=False
+                        low_memory=False,
                     )
 
             if df.empty:
@@ -197,7 +203,11 @@ class GapFillerPipeline:
             end_time_ms = int(gap_end.timestamp() * 1000)
 
             missing_data = await self._fetch_aggtrades_from_binance_vision(
-                symbol=symbol, gap_start=gap_start, gap_end=gap_end, start_time_ms=start_time_ms, end_time_ms=end_time_ms
+                symbol=symbol,
+                gap_start=gap_start,
+                gap_end=gap_end,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
             )
 
             if missing_data and len(missing_data) > 0:
@@ -253,18 +263,14 @@ class GapFillerPipeline:
                     }
 
                 # Combine data
-                df_combined = pd.concat(
-                    [df_existing, df_missing], ignore_index=True
-                )
+                df_combined = pd.concat([df_existing, df_missing], ignore_index=True)
                 df_combined = df_combined.sort_values("timestamp").drop_duplicates(
                     subset=["timestamp"]
                 )
 
                 # Save back in the same format
                 if file_path.suffix.lower() == ".parquet":
-                    df_combined.to_parquet(
-                        file_path, compression="zstd", index=False
-                    )
+                    df_combined.to_parquet(file_path, compression="zstd", index=False)
                 elif file_path.suffix.lower() == ".csv":
                     df_combined.to_csv(file_path, index=False)
 
@@ -322,7 +328,9 @@ class GapFillerPipeline:
                         result = await self.fill_gap_until_complete(gap, symbol)
 
                         results["total_api_calls"] += result.get("api_calls_made", 0)
-                        results["total_successful_calls"] += result.get("successful_calls", 0)
+                        results["total_successful_calls"] += result.get(
+                            "successful_calls", 0
+                        )
 
                         if result["success"]:
                             results["total_gaps_filled"] += 1
@@ -337,16 +345,22 @@ class GapFillerPipeline:
 
         # Summary
         if results["total_gaps_found"] > 0:
-            success_rate = (results["total_gaps_filled"] / results["total_gaps_found"]) * 100
+            success_rate = (
+                results["total_gaps_filled"] / results["total_gaps_found"]
+            ) * 100
             logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
 
         if results["total_api_calls"] > 0:
-            api_success_rate = (results["total_successful_calls"] / results["total_api_calls"]) * 100
+            api_success_rate = (
+                results["total_successful_calls"] / results["total_api_calls"]
+            ) * 100
             logger.info(f"📊 API call success rate: {api_success_rate:.1f}%")
 
         return results
 
-    async def run_pipeline(self, symbol: str = "ETHUSDT", exchange: str = "BINANCE") -> dict:
+    async def run_pipeline(
+        self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
+    ) -> dict:
         """Run the complete gap filling pipeline."""
         logger.info(f"🚀 Starting gap filling pipeline for {exchange}_{symbol}")
 
@@ -359,11 +373,15 @@ class GapFillerPipeline:
 
 
 # Function to integrate with pipeline
-async def run_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"):
+async def run_gap_filling_pipeline(
+    symbol: str = "ETHUSDT",
+    exchange: str = "BINANCE",
+    data_cache_path: str = "data_cache",
+):
     """Run gap filling as part of the training pipeline."""
     gap_filler = GapFillerPipeline(data_cache_path)
     return await gap_filler.run_pipeline(symbol, exchange)
 
 
 if __name__ == "__main__":
-    asyncio.run( run_gap_filling_pipeline())
+    asyncio.run(run_gap_filling_pipeline())

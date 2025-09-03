@@ -6,14 +6,15 @@ with comprehensive reporting and analysis of regime characteristics.
 """
 
 import asyncio
+import json
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import time
-import json
+
 import numpy as np
 import pandas as pd
-from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -21,18 +22,18 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
+    ensure_data_integrity,
     handle_errors,
     memory_efficient,
+    monitor_feature_engineering,
+    monitor_step_execution,
+    quality_gate,
     resource_monitor,
     secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-    ensure_data_integrity,
-    monitor_step_execution,
     secure_step_execution,
-    validate_pipeline_step
+    validate_data_structure,
+    validate_pipeline_step,
+    with_tracing_span,
 )
 from src.utils.logger import system_logger
 
@@ -304,7 +305,7 @@ class FinalRegimeClusteringStep:
             try:
                 from hmmlearn import hmm
                 from sklearn.preprocessing import StandardScaler
-                
+
                 # Scale features
                 scaler = StandardScaler()
                 features_scaled = scaler.fit_transform(features)
@@ -874,8 +875,9 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
+
 import copy
-    
+
     # Load test configuration
     test_config = {
         "SYMBOL": "ETHUSDT",

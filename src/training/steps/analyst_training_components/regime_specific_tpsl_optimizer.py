@@ -9,6 +9,7 @@ The optimizer uses meta-label intensities and activations to determine optimal S
 for each label-driven regime, considering success proxies from backtest simulations.
 """
 
+import asyncio
 import os
 import sys
 from datetime import datetime
@@ -18,7 +19,6 @@ from typing import Any
 import numpy as np
 import optuna
 import pandas as pd
-import asyncio
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -28,12 +28,7 @@ sys.path.insert(0, str(project_root))
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-    warning,
-)
+from src.utils.warning_symbols import error, failed, initialization_error, warning
 
 
 class RegimeSpecificTPSLOptimizer:
@@ -291,6 +286,7 @@ class RegimeSpecificTPSLOptimizer:
         try:
             results_file = os.path.join(self.model_dir, "optimization_results.json")
             import json
+
 import os.path
 
             with open(results_file, "w") as f:

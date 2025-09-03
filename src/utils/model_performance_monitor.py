@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""
-Model Performance Monitoring System
+"""Model Performance Monitoring System.
 
 This module provides comprehensive monitoring and tracking of ML model performance
 across all steps in the enhanced training manager. It tracks accuracy, precision,
-recall, F1 scores, and other key metrics with proper error handling and quality assurance.
+recall, F1 scores, and other key metrics with proper error handling and quality
+assurance.
 """
 
 import asyncio
@@ -49,20 +49,34 @@ class ModelPerformanceMonitor:
 
         # Configuration
         self.monitor_config = config.get("model_performance_monitor", {})
-        self.enable_real_time_monitoring = self.monitor_config.get("enable_real_time_monitoring", True)
+        self.enable_real_time_monitoring = self.monitor_config.get(
+            "enable_real_time_monitoring", True
+        )
         self.performance_thresholds = self.monitor_config.get(
             "performance_thresholds",
-            {"min_accuracy": 0.6, "min_precision": 0.5, "min_recall": 0.5, "min_f1_score": 0.5, "max_drift": 0.1},
+            {
+                "min_accuracy": 0.6,
+                "min_precision": 0.5,
+                "min_recall": 0.5,
+                "min_f1_score": 0.5,
+                "max_drift": 0.1,
+            },
         )
 
         # Storage
-        self.results_dir = Path(self.monitor_config.get("results_dir", "results/model_performance"))
+        self.results_dir = Path(
+            self.monitor_config.get("results_dir", "results/model_performance")
+        )
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize performance tracking
         self._initialize_performance_tracking()
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="model_performance_monitor_initialization")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="model_performance_monitor_initialization",
+    )
     def _initialize_performance_tracking(self) -> None:
         """Initialize performance tracking structures."""
         self.logger.info("🔧 Initializing model performance tracking...")
@@ -87,17 +101,33 @@ class ModelPerformanceMonitor:
                 "failed_runs": 0,
             }
 
-        self.logger.info(f"✅ Performance tracking initialized for {len(model_types)} model types")
+        self.logger.info(
+            f"✅ Performance tracking initialized for {len(model_types)} model types"
+        )
 
     @validate_pipeline_step(
-        step_name="model_performance_monitoring", validation_level="CRITICAL", enable_rollback=True, max_retries=2
+        step_name="model_performance_monitoring",
+        validation_level="CRITICAL",
+        enable_rollback=True,
+        max_retries=2,
     )
-    @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
-    @monitor_step_execution(enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True)
-    @secure_step_execution(error_handling=True, rollback_on_failure=True, data_validation=True, resource_cleanup=True)
+    @ensure_data_integrity(
+        check_schema=True, check_constraints=True, validate_relationships=True
+    )
+    @monitor_step_execution(
+        enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True
+    )
+    @secure_step_execution(
+        error_handling=True,
+        rollback_on_failure=True,
+        data_validation=True,
+        resource_cleanup=True,
+    )
     @with_tracing_span("track_model_performance")
     @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
-    @handle_errors(exceptions=(Exception,), default_return=False, context="track_model_performance")
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="track_model_performance"
+    )
     async def track_model_performance(
         self,
         model_type: str,
@@ -124,7 +154,9 @@ class ModelPerformanceMonitor:
             self.logger.info(f"📊 Tracking performance for {model_type}:{model_name}")
 
             # Calculate basic metrics
-            metrics = await self._calculate_performance_metrics(predictions, actual_values, confidence_scores)
+            metrics = await self._calculate_performance_metrics(
+                predictions, actual_values, confidence_scores
+            )
 
             # Add additional metrics if provided
             if additional_metrics:
@@ -149,10 +181,14 @@ class ModelPerformanceMonitor:
             metrics["performance_status"] = performance_status
 
             # Update model registry
-            await self._update_model_registry(model_type, model_name, metrics, performance_status)
+            await self._update_model_registry(
+                model_type, model_name, metrics, performance_status
+            )
 
             # Log performance summary
-            await self._log_performance_summary(model_type, model_name, metrics, performance_status)
+            await self._log_performance_summary(
+                model_type, model_name, metrics, performance_status
+            )
 
             return metrics
 
@@ -167,9 +203,16 @@ class ModelPerformanceMonitor:
             }
 
     @with_tracing_span("calculate_performance_metrics")
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_performance_metrics")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_performance_metrics",
+    )
     async def _calculate_performance_metrics(
-        self, predictions: np.ndarray, actual_values: np.ndarray, confidence_scores: Optional[np.ndarray] = None
+        self,
+        predictions: np.ndarray,
+        actual_values: np.ndarray,
+        confidence_scores: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """Calculate comprehensive performance metrics.
 
@@ -199,15 +242,25 @@ class ModelPerformanceMonitor:
 
             # Classification metrics (if applicable)
             if len(np.unique(predictions)) <= 10:  # Likely classification
-                metrics.update(await self._calculate_classification_metrics(predictions, actual_values))
+                metrics.update(
+                    await self._calculate_classification_metrics(
+                        predictions, actual_values
+                    )
+                )
 
             # Regression metrics (if applicable)
             else:
-                metrics.update(await self._calculate_regression_metrics(predictions, actual_values))
+                metrics.update(
+                    await self._calculate_regression_metrics(predictions, actual_values)
+                )
 
             # Confidence metrics (if available)
             if confidence_scores is not None:
-                metrics.update(await self._calculate_confidence_metrics(confidence_scores, predictions, actual_values))
+                metrics.update(
+                    await self._calculate_confidence_metrics(
+                        confidence_scores, predictions, actual_values
+                    )
+                )
 
             # Model drift detection
             metrics.update(await self._detect_model_drift(predictions, actual_values))
@@ -219,7 +272,11 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error calculating performance metrics: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_classification_metrics")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_classification_metrics",
+    )
     async def _calculate_classification_metrics(
         self, predictions: np.ndarray, actual_values: np.ndarray
     ) -> Dict[str, Any]:
@@ -244,15 +301,23 @@ class ModelPerformanceMonitor:
 
             # Calculate basic classification metrics
             accuracy = accuracy_score(actual_values, predictions)
-            precision = precision_score(actual_values, predictions, average="weighted", zero_division=0)
-            recall = recall_score(actual_values, predictions, average="weighted", zero_division=0)
-            f1 = f1_score(actual_values, predictions, average="weighted", zero_division=0)
+            precision = precision_score(
+                actual_values, predictions, average="weighted", zero_division=0
+            )
+            recall = recall_score(
+                actual_values, predictions, average="weighted", zero_division=0
+            )
+            f1 = f1_score(
+                actual_values, predictions, average="weighted", zero_division=0
+            )
 
             # Confusion matrix
             cm = confusion_matrix(actual_values, predictions)
 
             # Classification report
-            report = classification_report(actual_values, predictions, output_dict=True, zero_division=0)
+            report = classification_report(
+                actual_values, predictions, output_dict=True, zero_division=0
+            )
 
             return {
                 "accuracy": float(accuracy),
@@ -275,8 +340,14 @@ class ModelPerformanceMonitor:
                 "model_type": "classification",
             }
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_regression_metrics")
-    async def _calculate_regression_metrics(self, predictions: np.ndarray, actual_values: np.ndarray) -> Dict[str, Any]:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_regression_metrics",
+    )
+    async def _calculate_regression_metrics(
+        self, predictions: np.ndarray, actual_values: np.ndarray
+    ) -> Dict[str, Any]:
         """Calculate regression-specific metrics.
 
         Args:
@@ -287,7 +358,11 @@ class ModelPerformanceMonitor:
             Dict containing regression metrics
         """
         try:
-            from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+            from sklearn.metrics import (
+                mean_absolute_error,
+                mean_squared_error,
+                r2_score,
+            )
 
             # Calculate regression metrics
             mse = mean_squared_error(actual_values, predictions)
@@ -319,9 +394,16 @@ class ModelPerformanceMonitor:
                 "model_type": "regression",
             }
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_confidence_metrics")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_confidence_metrics",
+    )
     async def _calculate_confidence_metrics(
-        self, confidence_scores: np.ndarray, predictions: np.ndarray, actual_values: np.ndarray
+        self,
+        confidence_scores: np.ndarray,
+        predictions: np.ndarray,
+        actual_values: np.ndarray,
     ) -> Dict[str, Any]:
         """Calculate confidence-related metrics.
 
@@ -340,7 +422,9 @@ class ModelPerformanceMonitor:
 
             # Calculate calibration metrics
             correct_predictions = (predictions == actual_values).astype(float)
-            calibration_error = float(np.mean(np.abs(confidence_scores - correct_predictions)))
+            calibration_error = float(
+                np.mean(np.abs(confidence_scores - correct_predictions))
+            )
 
             # Calculate reliability diagram data
             confidence_bins = np.linspace(0, 1, 11)
@@ -348,7 +432,9 @@ class ModelPerformanceMonitor:
             bin_confidences = []
 
             for i in range(len(confidence_bins) - 1):
-                mask = (confidence_scores >= confidence_bins[i]) & (confidence_scores < confidence_bins[i + 1])
+                mask = (confidence_scores >= confidence_bins[i]) & (
+                    confidence_scores < confidence_bins[i + 1]
+                )
                 if np.sum(mask) > 0:
                     bin_accuracy = np.mean(correct_predictions[mask])
                     bin_confidence = np.mean(confidence_scores[mask])
@@ -359,15 +445,27 @@ class ModelPerformanceMonitor:
                 "confidence_mean": confidence_mean,
                 "confidence_std": confidence_std,
                 "calibration_error": calibration_error,
-                "reliability_diagram": {"accuracies": bin_accuracies, "confidences": bin_confidences},
+                "reliability_diagram": {
+                    "accuracies": bin_accuracies,
+                    "confidences": bin_confidences,
+                },
             }
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating confidence metrics: {e}")
-            return {"confidence_mean": 0.0, "confidence_std": 0.0, "calibration_error": float("inf"), "error": str(e)}
+            return {
+                "confidence_mean": 0.0,
+                "confidence_std": 0.0,
+                "calibration_error": float("inf"),
+                "error": str(e),
+            }
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="detect_model_drift")
-    async def _detect_model_drift(self, predictions: np.ndarray, actual_values: np.ndarray) -> Dict[str, Any]:
+    @handle_errors(
+        exceptions=(Exception,), default_return={}, context="detect_model_drift"
+    )
+    async def _detect_model_drift(
+        self, predictions: np.ndarray, actual_values: np.ndarray
+    ) -> Dict[str, Any]:
         """Detect model drift using statistical tests.
 
         Args:
@@ -395,7 +493,10 @@ class ModelPerformanceMonitor:
             q1, q3 = np.percentile(errors, [25, 75])
             iqr = q3 - q1
             outlier_threshold = 1.5 * iqr
-            outliers = np.sum((errors < (q1 - outlier_threshold)) | (errors > (q3 + outlier_threshold)))
+            outliers = np.sum(
+                (errors < (q1 - outlier_threshold))
+                | (errors > (q3 + outlier_threshold))
+            )
 
             drift_metrics.update(
                 {
@@ -419,8 +520,14 @@ class ModelPerformanceMonitor:
             }
 
     @with_tracing_span("store_performance_metrics")
-    @handle_errors(exceptions=(Exception,), default_return=False, context="store_performance_metrics")
-    async def _store_performance_metrics(self, model_type: str, model_name: str, metrics: Dict[str, Any]) -> bool:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="store_performance_metrics",
+    )
+    async def _store_performance_metrics(
+        self, model_type: str, model_name: str, metrics: Dict[str, Any]
+    ) -> bool:
         """Store performance metrics in history.
 
         Args:
@@ -450,8 +557,12 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error storing performance metrics: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_metrics_to_file")
-    async def _save_metrics_to_file(self, model_type: str, model_name: str, metrics: Dict[str, Any]) -> bool:
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="save_metrics_to_file"
+    )
+    async def _save_metrics_to_file(
+        self, model_type: str, model_name: str, metrics: Dict[str, Any]
+    ) -> bool:
         """Save metrics to file for persistence.
 
         Args:
@@ -486,9 +597,13 @@ class ModelPerformanceMonitor:
             return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return={"status": "UNKNOWN"}, context="check_performance_thresholds"
+        exceptions=(Exception,),
+        default_return={"status": "UNKNOWN"},
+        context="check_performance_thresholds",
     )
-    async def _check_performance_thresholds(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+    async def _check_performance_thresholds(
+        self, metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Check if performance meets thresholds.
 
         Args:
@@ -507,8 +622,13 @@ class ModelPerformanceMonitor:
                         f"Accuracy below threshold: {metrics['accuracy']:.3f} < {self.performance_thresholds['min_accuracy']}"
                     )
                     status["overall_status"] = "FAIL"
-                elif metrics["accuracy"] < self.performance_thresholds["min_accuracy"] + 0.1:
-                    status["warnings"].append(f"Accuracy close to threshold: {metrics['accuracy']:.3f}")
+                elif (
+                    metrics["accuracy"]
+                    < self.performance_thresholds["min_accuracy"] + 0.1
+                ):
+                    status["warnings"].append(
+                        f"Accuracy close to threshold: {metrics['accuracy']:.3f}"
+                    )
 
             if "precision" in metrics:
                 if metrics["precision"] < self.performance_thresholds["min_precision"]:
@@ -541,9 +661,15 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error checking performance thresholds: {e}")
             return {"status": "ERROR", "error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="update_model_registry")
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="update_model_registry"
+    )
     async def _update_model_registry(
-        self, model_type: str, model_name: str, metrics: Dict[str, Any], performance_status: Dict[str, Any]
+        self,
+        model_type: str,
+        model_name: str,
+        metrics: Dict[str, Any],
+        performance_status: Dict[str, Any],
     ) -> bool:
         """Update model registry with latest performance information.
 
@@ -564,7 +690,8 @@ class ModelPerformanceMonitor:
             self.model_registry[model_type].update(
                 {
                     "last_updated": datetime.now().isoformat(),
-                    "total_runs": self.model_registry[model_type].get("total_runs", 0) + 1,
+                    "total_runs": self.model_registry[model_type].get("total_runs", 0)
+                    + 1,
                     "last_performance": metrics,
                     "last_status": performance_status,
                 }
@@ -586,9 +713,15 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error updating model registry: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="log_performance_summary")
+    @handle_errors(
+        exceptions=(Exception,), default_return=None, context="log_performance_summary"
+    )
     async def _log_performance_summary(
-        self, model_type: str, model_name: str, metrics: Dict[str, Any], performance_status: Dict[str, Any]
+        self,
+        model_type: str,
+        model_name: str,
+        metrics: Dict[str, Any],
+        performance_status: Dict[str, Any],
     ) -> None:
         """Log a summary of model performance.
 
@@ -599,8 +732,12 @@ class ModelPerformanceMonitor:
             performance_status: Performance status
         """
         try:
-            status_icon = "✅" if performance_status.get("overall_status") == "PASS" else "❌"
-            self.logger.info(f"{status_icon} Performance Summary for {model_type}:{model_name}")
+            status_icon = (
+                "✅" if performance_status.get("overall_status") == "PASS" else "❌"
+            )
+            self.logger.info(
+                f"{status_icon} Performance Summary for {model_type}:{model_name}"
+            )
 
             # Log key metrics
             if "accuracy" in metrics:
@@ -617,7 +754,9 @@ class ModelPerformanceMonitor:
                 self.logger.info(f"   📊 RMSE: {metrics['rmse']:.6f}")
 
             # Log status
-            self.logger.info(f"   🎯 Status: {performance_status.get('overall_status', 'UNKNOWN')}")
+            self.logger.info(
+                f"   🎯 Status: {performance_status.get('overall_status', 'UNKNOWN')}"
+            )
 
             # Log warnings and failures
             if performance_status.get("warnings"):
@@ -632,8 +771,14 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error logging performance summary: {e}")
 
     @with_tracing_span("generate_performance_report")
-    @handle_errors(exceptions=(Exception,), default_return={}, context="generate_performance_report")
-    async def generate_performance_report(self, model_type: Optional[str] = None) -> Dict[str, Any]:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generate_performance_report",
+    )
+    async def generate_performance_report(
+        self, model_type: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Generate a comprehensive performance report.
 
         Args:
@@ -655,14 +800,18 @@ class ModelPerformanceMonitor:
             # Generate summary statistics
             if model_type:
                 report["summary"] = await self._generate_model_type_summary(model_type)
-                report["detailed_metrics"] = self.performance_history.get(model_type, [])
+                report["detailed_metrics"] = self.performance_history.get(
+                    model_type, []
+                )
             else:
                 for mt in self.performance_history.keys():
                     report["summary"][mt] = await self._generate_model_type_summary(mt)
                     report["detailed_metrics"][mt] = self.performance_history[mt]
 
             # Generate recommendations
-            report["recommendations"] = await self._generate_recommendations(report["summary"])
+            report["recommendations"] = await self._generate_recommendations(
+                report["summary"]
+            )
 
             # Save report
             await self._save_performance_report(report)
@@ -674,7 +823,11 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating performance report: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="generate_model_type_summary")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generate_model_type_summary",
+    )
     async def _generate_model_type_summary(self, model_type: str) -> Dict[str, Any]:
         """Generate summary for a specific model type.
 
@@ -698,9 +851,18 @@ class ModelPerformanceMonitor:
             }
 
             # Calculate averages for key metrics
-            key_metrics = ["accuracy", "precision", "recall", "f1_score", "r2_score", "rmse"]
+            key_metrics = [
+                "accuracy",
+                "precision",
+                "recall",
+                "f1_score",
+                "r2_score",
+                "rmse",
+            ]
             for metric in key_metrics:
-                values = [h.get(metric, 0) for h in history if h.get(metric) is not None]
+                values = [
+                    h.get(metric, 0) for h in history if h.get(metric) is not None
+                ]
                 if values:
                     summary["average_metrics"][metric] = {
                         "mean": float(np.mean(values)),
@@ -715,7 +877,9 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating model type summary: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return=[], context="generate_recommendations")
+    @handle_errors(
+        exceptions=(Exception,), default_return=[], context="generate_recommendations"
+    )
     async def _generate_recommendations(self, summary: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on performance summary.
 
@@ -767,7 +931,9 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating recommendations: {e}")
             return [f"Error generating recommendations: {str(e)}"]
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_performance_report")
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="save_performance_report"
+    )
     async def _save_performance_report(self, report: Dict[str, Any]) -> bool:
         """Save performance report to file.
 
@@ -796,9 +962,14 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error saving performance report: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="get_model_performance")
+    @handle_errors(
+        exceptions=(Exception,), default_return={}, context="get_model_performance"
+    )
     async def get_model_performance(
-        self, model_type: str, model_name: Optional[str] = None, include_history: bool = False
+        self,
+        model_type: str,
+        model_name: Optional[str] = None,
+        include_history: bool = False,
     ) -> Dict[str, Any]:
         """Get performance data for a specific model.
 
@@ -818,7 +989,9 @@ class ModelPerformanceMonitor:
             }
 
             if include_history:
-                result["performance_history"] = self.performance_history.get(model_type, [])
+                result["performance_history"] = self.performance_history.get(
+                    model_type, []
+                )
 
             return result
 

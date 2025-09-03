@@ -1,29 +1,31 @@
 # src/transition/inference_combiner.py
 
 from __future__ import annotations
-from src.utils.logger import system_logger
-from typing import Any
+
 import json
 import os
-from dataclasses import dataclass
 import os.path
+from dataclasses import dataclass
+from typing import Any
+
+from src.utils.logger import system_logger
 
 
 @dataclass
 class EnsembleConfig:
     weights: dict[str, float]
     macro_thresholds: dict[
-        str, dict[str, dict[str, float]],
+        str,
+        dict[str, dict[str, float]],
     ]  # regime -> timeframe -> {class: thr}
     timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr}
     reliability_path: str | None
 
 
 class TransitionInferenceCombiner:
-    """
-    Combine per-timeframe path_class probabilities into a single, reliability-adjusted score,
-    apply macro-regime thresholds for gating, and compute an exit bias with conservative rules.
-    """
+    """Combine per-timeframe path_class probabilities into a single, reliability-
+    adjusted score, apply macro-regime thresholds for gating, and compute an exit bias
+    with conservative rules."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = system_logger.getChild("TransitionInferenceCombiner")
@@ -72,8 +74,9 @@ class TransitionInferenceCombiner:
         self,
         path_probs_by_timeframe: dict[str, dict[str, float]],
     ) -> dict[str, float]:
-        """
-        Weighted average of path_class probabilities across configured timeframes, after reliability scaling.
+        """Weighted average of path_class probabilities across configured timeframes,
+        after reliability scaling.
+
         path_probs_by_timeframe: {timeframe: {"continuation": p, "reversal": p, "beginning_of_trend": p, "end_of_trend": p}}
         """
         classes = ["continuation", "reversal", "beginning_of_trend", "end_of_trend"]
@@ -99,8 +102,9 @@ class TransitionInferenceCombiner:
         timeframe: str = None,
         macro_regime: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Decide if trade is allowed given thresholds. Neutral to long/short: we only check if favorable classes exceed thresholds.
+        """Decide if trade is allowed given thresholds.
+
+        Neutral to long/short: we only check if favorable classes exceed thresholds.
         Returns a dict with gating flag and which class triggered it.
         """
         cont = float(combined_probs.get("continuation", 0.0))

@@ -11,13 +11,8 @@ from typing import Any
 import joblib
 import numpy as np
 
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    missing,
-)
-
 from src.utils.common_operations import safe_json_load
+from src.utils.warning_symbols import error, failed, missing
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -44,7 +39,6 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
-
         """
         self.logger.info("=" * 80)
         self.logger.info("🔍 STEP 6 VALIDATION: HMM-Based Enhancement")
@@ -88,7 +82,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 self.print(error("❌ HMM-based enhancement step had errors"))
                 validation_phases["error_absence"] = False
         except Exception as e:
-            self.logger.exception(f"❌ Error absence validation failed with exception: {e}")
+            self.logger.exception(
+                f"❌ Error absence validation failed with exception: {e}"
+            )
             validation_phases["error_absence"] = False
 
         # Phase 2: Validate enhanced model files existence
@@ -219,11 +215,12 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
-
         """
         try:
             enhanced_models_dir = f"{data_dir}/enhanced_hmm_models"
-            summary_file = f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
+            summary_file = (
+                f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
+            )
 
             missing_paths: list[str] = []
             if not os.path.isdir(enhanced_models_dir):
@@ -283,7 +280,6 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if performance improved
-
         """
         try:
             # Load original metrics from step05 HMM history
@@ -293,7 +289,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             original_metrics: dict[str, Any] = {}
             if os.path.exists(original_history_file):
                 original_data = safe_json_load(original_history_file)
-                    original_metrics = original_data.get("metrics", {})
+                original_metrics = original_data.get("metrics", {})
 
             # Load enhanced HMM models summary produced by Step 6
             summary_file = (
@@ -338,7 +334,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 "positive_improvements": positive_improvements,
                 "total_improvements": total_improvements,
                 "improvement_ratio": (
-                    positive_improvements / total_improvements if total_improvements else 0
+                    positive_improvements / total_improvements
+                    if total_improvements
+                    else 0
                 ),
             }
 
@@ -363,7 +361,6 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if enhancement quality is acceptable
-
         """
         try:
             # Load enhancement summary to find a concrete model artifact
@@ -454,7 +451,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             return False
 
     def _extract_estimator_from_artifact(self, artifact: Any) -> Any:
-        """Unwrap saved artifacts to get the underlying estimator (adapted from Step 5)."""
+        """Unwrap saved artifacts to get the underlying estimator (adapted from Step
+        5)."""
         try:
             predict_attr = getattr(artifact, "predict", None)
             if callable(predict_attr):
@@ -499,7 +497,6 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-
     """
     validator = Step6HMMBasedEnhancementValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -530,4 +527,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( test_validator())
+    _asyncio.run(test_validator())

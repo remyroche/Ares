@@ -7,47 +7,51 @@ Includes detailed reporting and integration with all relevant SR files.
 """
 
 import asyncio
-import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-import time
 import json
 import os
-import pandas as pd
-import numpy as np
+import sys
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.tactician.sr_data_integration_simple import (
+    SRDataIntegrationSimple,
+    create_sr_data_integration_simple,
+)
+from src.tactician.sr_detection_optimization import SRDetectionOptimizer
+from src.tactician.sr_levels_manager import create_sr_levels_manager
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
+    ensure_data_integrity,
     handle_errors,
     memory_efficient,
+    monitor_feature_engineering,
+    monitor_step_execution,
+    quality_gate,
     resource_monitor,
     secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-    ensure_data_integrity,
-    monitor_step_execution,
     secure_step_execution,
-    validate_pipeline_step
+    validate_data_structure,
+    validate_pipeline_step,
+    with_tracing_span,
+)
+from src.utils.enhanced_mlflow_integration import (
+    create_detailed_step_report,
+    log_step_artifact_with_standardized_name,
+    log_step_metrics,
+    log_step_report,
+    with_enhanced_mlflow_logging,
 )
 from src.utils.logger import system_logger
-from src.tactician.sr_detection_optimization import SRDetectionOptimizer
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
-from src.tactician.sr_levels_manager import create_sr_levels_manager
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_artifact_with_standardized_name
-)
 
 logger = system_logger.getChild("Step2_5SROptimization")
 
@@ -1509,8 +1513,9 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
+
 import copy
-    
+
     # Load test configuration
     test_config = {
         "SYMBOL": "ETHUSDT",

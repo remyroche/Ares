@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""
-Error Detection and Alerting System (minimal scaffold)
+"""Error Detection and Alerting System (minimal scaffold)
 
 Provides scaffolding for error and anomaly detection.
 """
 
 from __future__ import annotations
 
+import asyncio
 from enum import Enum
 from typing import Any, Dict
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class AlertSeverity(Enum):

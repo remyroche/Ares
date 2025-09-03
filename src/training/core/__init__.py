@@ -1,7 +1,7 @@
 """Core training pipeline framework for Ares trading bot.
 
-This module provides the foundational classes and interfaces for the modular
-training pipeline architecture.
+This module provides the foundational classes and interfaces for the modular training
+pipeline architecture.
 """
 
 from src.utils.warning_symbols import (

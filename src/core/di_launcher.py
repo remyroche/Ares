@@ -1,27 +1,25 @@
 # src/core/di_launcher.py
+"""Dependency injection-aware launcher for the Ares trading system.
 
-"""
-Dependency injection-aware launcher for the Ares trading system.
-
-This module provides a launcher that uses proper dependency injection
-patterns for creating and managing trading system components.
+This module provides a launcher that uses proper dependency injection patterns for
+creating and managing trading system components.
 """
 
+import asyncio
+from typing import Any
+
+from src.config import CONFIG
 from src.core.dependency_injection import DependencyContainer
 from src.core.enhanced_factories import TradingSystemFactory
 from src.core.service_registry import ServiceRegistry
 from src.utils.logger import system_logger
-from typing import Any
-from src.config import CONFIG
-import asyncio
 
 
 class DILauncher:
-    """
-    Dependency injection-aware launcher for the Ares trading system.
+    """Dependency injection-aware launcher for the Ares trading system.
 
-    This launcher creates and manages trading system components using
-    proper dependency injection patterns.
+    This launcher creates and manages trading system components using proper dependency
+    injection patterns.
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -40,8 +38,7 @@ class DILauncher:
         self.is_running = False
 
     async def launch_paper_trading(self, symbol: str, exchange: str) -> dict[str, Any]:
-        """
-        Launch paper trading mode with dependency injection.
+        """Launch paper trading mode with dependency injection.
 
         Args:
             symbol: Trading symbol (e.g., ETHUSDT)
@@ -61,15 +58,20 @@ class DILauncher:
 
             # Create exchange client
             from src.exchange.binance import BinanceClient
+
             exchange_client = BinanceClient(trading_config.get("exchange", {}))
 
             # Create state manager
             from src.utils.state_manager import StateManager
+
             state_manager = StateManager(trading_config.get("state", {}))
 
             # Create performance reporter
             from src.supervisor.performance_reporter import PerformanceReporter
-            performance_reporter = PerformanceReporter(trading_config.get("performance", {}))
+
+            performance_reporter = PerformanceReporter(
+                trading_config.get("performance", {})
+            )
 
             # Create trading components
             self.system_components = await self.factory.create_complete_trading_system(
@@ -91,8 +93,7 @@ class DILauncher:
             raise
 
     async def launch_live_trading(self, symbol: str, exchange: str) -> dict[str, Any]:
-        """
-        Launch live trading mode with dependency injection.
+        """Launch live trading mode with dependency injection.
 
         Args:
             symbol: Trading symbol (e.g., ETHUSDT)
@@ -112,15 +113,20 @@ class DILauncher:
 
             # Create exchange client
             from src.exchange.binance import BinanceClient
+
             exchange_client = BinanceClient(trading_config.get("exchange", {}))
 
             # Create state manager
             from src.utils.state_manager import StateManager
+
             state_manager = StateManager(trading_config.get("state", {}))
 
             # Create performance reporter
             from src.supervisor.performance_reporter import PerformanceReporter
-            performance_reporter = PerformanceReporter(trading_config.get("performance", {}))
+
+            performance_reporter = PerformanceReporter(
+                trading_config.get("performance", {})
+            )
 
             # Create trading components
             self.system_components = await self.factory.create_complete_trading_system(
@@ -141,7 +147,9 @@ class DILauncher:
             self.logger.exception(f"Failed to launch live trading: {e}")
             raise
 
-    def _create_paper_trading_config(self, symbol: str, exchange: str) -> dict[str, Any]:
+    def _create_paper_trading_config(
+        self, symbol: str, exchange: str
+    ) -> dict[str, Any]:
         """Create configuration for paper trading mode."""
         return {
             "mode": "paper_trading",

@@ -1,7 +1,5 @@
-"""
-Enhanced Pipeline Decorators for Training Manager
-Provides comprehensive decorators, detailed reporting, and consistent storage for all pipeline steps.
-"""
+"""Enhanced Pipeline Decorators for Training Manager Provides comprehensive decorators,
+detailed reporting, and consistent storage for all pipeline steps."""
 
 import asyncio
 import functools
@@ -41,9 +39,10 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 
+import os.path
+
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import critical, error, success, warning
-import os.path
 
 
 class StepStatus(Enum):
@@ -67,9 +66,12 @@ class ReportLevel(Enum):
 
 
 class EnhancedPipelineDecorator:
-    """Enhanced decorator for pipeline steps with comprehensive monitoring and reporting."""
+    """Enhanced decorator for pipeline steps with comprehensive monitoring and
+    reporting."""
 
-    def __init__(self, step_name: str, report_level: ReportLevel = ReportLevel.DETAILED):
+    def __init__(
+        self, step_name: str, report_level: ReportLevel = ReportLevel.DETAILED
+    ):
         self.step_name = step_name
         self.report_level = report_level
         self.logger = system_logger.getChild(f"EnhancedPipeline.{step_name}")
@@ -81,15 +83,23 @@ class EnhancedPipelineDecorator:
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            return await self._execute_with_enhanced_monitoring(func, args, kwargs, is_async=True)
+            return await self._execute_with_enhanced_monitoring(
+                func, args, kwargs, is_async=True
+            )
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            return asyncio.run(self._execute_with_enhanced_monitoring(func, args, kwargs, is_async=False))
+            return asyncio.run(
+                self._execute_with_enhanced_monitoring(
+                    func, args, kwargs, is_async=False
+                )
+            )
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
-    async def _execute_with_enhanced_monitoring(self, func: Callable, args: tuple, kwargs: dict, is_async: bool) -> Any:
+    async def _execute_with_enhanced_monitoring(
+        self, func: Callable, args: tuple, kwargs: dict, is_async: bool
+    ) -> Any:
         """Execute function with comprehensive monitoring and reporting."""
 
         # Generate unique execution ID
@@ -155,10 +165,14 @@ class EnhancedPipelineDecorator:
             # Re-raise the exception
             raise
 
-    async def _pre_execution_monitoring(self, step_report: Dict[str, Any], args: tuple, kwargs: dict):
+    async def _pre_execution_monitoring(
+        self, step_report: Dict[str, Any], args: tuple, kwargs: dict
+    ):
         """Perform pre-execution monitoring and validation."""
 
-        self.logger.info(f"🚀 [ENHANCED] Starting {self.step_name} with execution ID: {step_report['execution_id']}")
+        self.logger.info(
+            f"🚀 [ENHANCED] Starting {self.step_name} with execution ID: {step_report['execution_id']}"
+        )
 
         # System resource monitoring
         if PSUTIL_AVAILABLE:
@@ -190,7 +204,9 @@ class EnhancedPipelineDecorator:
             data_quality_info = await self._check_data_quality(args, kwargs)
             step_report["pre_execution"]["data_quality"] = data_quality_info
 
-    async def _post_execution_monitoring(self, step_report: Dict[str, Any], result: Any, step_start_time: float):
+    async def _post_execution_monitoring(
+        self, step_report: Dict[str, Any], result: Any, step_start_time: float
+    ):
         """Perform post-execution monitoring and analysis."""
 
         execution_time = time.time() - step_start_time
@@ -212,7 +228,9 @@ class EnhancedPipelineDecorator:
             }
 
         # Result analysis
-        step_report["post_execution"]["result_analysis"] = await self._analyze_result(result)
+        step_report["post_execution"]["result_analysis"] = await self._analyze_result(
+            result
+        )
 
         # Performance recommendations
         if execution_time > 300:  # 5 minutes
@@ -221,7 +239,9 @@ class EnhancedPipelineDecorator:
             )
 
         if PSUTIL_AVAILABLE and psutil.virtual_memory().percent > 85:
-            step_report["recommendations"].append("High memory usage detected - consider memory optimization")
+            step_report["recommendations"].append(
+                "High memory usage detected - consider memory optimization"
+            )
 
     async def _check_data_quality(self, args: tuple, kwargs: dict) -> Dict[str, Any]:
         """Check data quality for pandas DataFrames in arguments."""
@@ -234,7 +254,8 @@ class EnhancedPipelineDecorator:
                 if PANDAS_AVAILABLE and isinstance(arg, pd.DataFrame):
                     data_quality_info[f"arg_{i}"] = {
                         "shape": arg.shape,
-                        "memory_usage_mb": arg.memory_usage(deep=True).sum() / (1024**2),
+                        "memory_usage_mb": arg.memory_usage(deep=True).sum()
+                        / (1024**2),
                         "null_counts": arg.isnull().sum().to_dict(),
                         "dtypes": arg.dtypes.to_dict(),
                     }
@@ -244,7 +265,8 @@ class EnhancedPipelineDecorator:
                 if PANDAS_AVAILABLE and isinstance(value, pd.DataFrame):
                     data_quality_info[f"kwarg_{key}"] = {
                         "shape": value.shape,
-                        "memory_usage_mb": value.memory_usage(deep=True).sum() / (1024**2),
+                        "memory_usage_mb": value.memory_usage(deep=True).sum()
+                        / (1024**2),
                         "null_counts": value.isnull().sum().to_dict(),
                         "dtypes": value.dtypes.to_dict(),
                     }
@@ -257,7 +279,11 @@ class EnhancedPipelineDecorator:
     async def _analyze_result(self, result: Any) -> Dict[str, Any]:
         """Analyze the result of the step execution."""
 
-        analysis = {"result_type": type(result).__name__, "result_size": None, "result_summary": None}
+        analysis = {
+            "result_type": type(result).__name__,
+            "result_size": None,
+            "result_summary": None,
+        }
 
         try:
             if PANDAS_AVAILABLE and isinstance(result, pd.DataFrame):
@@ -266,7 +292,8 @@ class EnhancedPipelineDecorator:
                         "result_size": result.shape,
                         "result_summary": {
                             "columns": list(result.columns),
-                            "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2),
+                            "memory_usage_mb": result.memory_usage(deep=True).sum()
+                            / (1024**2),
                             "null_counts": result.isnull().sum().to_dict(),
                         },
                     }
@@ -286,21 +313,27 @@ class EnhancedPipelineDecorator:
                     {
                         "result_size": len(result),
                         "result_summary": {
-                            "element_types": [type(item).__name__ for item in result[:10]]  # First 10 elements
+                            "element_types": [
+                                type(item).__name__ for item in result[:10]
+                            ]  # First 10 elements
                         },
                     }
                 )
             elif isinstance(result, bool):
                 analysis["result_summary"] = {"boolean_value": result}
             else:
-                analysis["result_summary"] = {"value": str(result)[:100]}  # Truncate long strings
+                analysis["result_summary"] = {
+                    "value": str(result)[:100]
+                }  # Truncate long strings
 
         except Exception as e:
             analysis["error"] = str(e)
 
         return analysis
 
-    def _analyze_dict_structure(self, data: dict, max_depth: int = 3, current_depth: int = 0) -> dict:
+    def _analyze_dict_structure(
+        self, data: dict, max_depth: int = 3, current_depth: int = 0
+    ) -> dict:
         """Recursively analyze dictionary structure."""
         if current_depth >= max_depth:
             return {"type": "max_depth_reached"}
@@ -311,10 +344,16 @@ class EnhancedPipelineDecorator:
                 structure[key] = {
                     "type": "dict",
                     "size": len(value),
-                    "structure": self._analyze_dict_structure(value, max_depth, current_depth + 1),
+                    "structure": self._analyze_dict_structure(
+                        value, max_depth, current_depth + 1
+                    ),
                 }
             elif PANDAS_AVAILABLE and isinstance(value, pd.DataFrame):
-                structure[key] = {"type": "DataFrame", "shape": value.shape, "columns": list(value.columns)}
+                structure[key] = {
+                    "type": "DataFrame",
+                    "shape": value.shape,
+                    "columns": list(value.columns),
+                }
             else:
                 structure[key] = {
                     "type": type(value).__name__,
@@ -334,7 +373,11 @@ class EnhancedPipelineDecorator:
                     "sample_data": result.head(5).to_dict() if not result.empty else {},
                 }
             elif isinstance(result, dict):
-                return {"type": "dict", "keys": list(result.keys()), "size": len(result)}
+                return {
+                    "type": "dict",
+                    "keys": list(result.keys()),
+                    "size": len(result),
+                }
             elif isinstance(result, (list, tuple)):
                 return {
                     "type": type(result).__name__,
@@ -342,7 +385,10 @@ class EnhancedPipelineDecorator:
                     "element_types": [type(item).__name__ for item in result[:5]],
                 }
             else:
-                return {"type": type(result).__name__, "value": str(result)[:200]}  # Truncate long values
+                return {
+                    "type": type(result).__name__,
+                    "value": str(result)[:200],
+                }  # Truncate long values
         except Exception:
             return {"type": "unserializable", "error": "Failed to serialize result"}
 
@@ -354,7 +400,9 @@ class EnhancedPipelineDecorator:
 
         # Generate report filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{self.step_name}_{timestamp}_{step_report['execution_id'][:8]}.json"
+        filename = (
+            f"{self.step_name}_{timestamp}_{step_report['execution_id'][:8]}.json"
+        )
         report_path = self.reports_dir / filename
 
         try:
@@ -371,8 +419,12 @@ class EnhancedPipelineDecorator:
                 f.write(summary_report)
 
             # Log completion
-            status_emoji = "✅" if step_report["status"] == StepStatus.SUCCESS.value else "❌"
-            self.logger.info(f"{status_emoji} [ENHANCED] {self.step_name} completed - Report saved to {report_path}")
+            status_emoji = (
+                "✅" if step_report["status"] == StepStatus.SUCCESS.value else "❌"
+            )
+            self.logger.info(
+                f"{status_emoji} [ENHANCED] {self.step_name} completed - Report saved to {report_path}"
+            )
 
             # Store report metadata
             await self._store_report_metadata(step_report, report_path, summary_path)
@@ -400,8 +452,12 @@ class EnhancedPipelineDecorator:
             metrics = step_report["performance_metrics"]
             summary.append("PERFORMANCE METRICS:")
             summary.append("-" * 40)
-            summary.append(f"Execution Time: {metrics.get('duration_formatted', 'N/A')}")
-            summary.append(f"Duration (seconds): {metrics.get('execution_time_seconds', 'N/A')}")
+            summary.append(
+                f"Execution Time: {metrics.get('duration_formatted', 'N/A')}"
+            )
+            summary.append(
+                f"Duration (seconds): {metrics.get('execution_time_seconds', 'N/A')}"
+            )
             summary.append("")
 
         # System resources
@@ -409,9 +465,13 @@ class EnhancedPipelineDecorator:
             resources = step_report["pre_execution"]["system_resources"]
             summary.append("SYSTEM RESOURCES (Pre-execution):")
             summary.append("-" * 40)
-            summary.append(f"Memory Usage: {resources.get('memory_usage_percent', 'N/A')}%")
+            summary.append(
+                f"Memory Usage: {resources.get('memory_usage_percent', 'N/A')}%"
+            )
             summary.append(f"CPU Usage: {resources.get('cpu_usage_percent', 'N/A')}%")
-            summary.append(f"Available Memory: {resources.get('memory_available_gb', 'N/A'):.2f} GB")
+            summary.append(
+                f"Available Memory: {resources.get('memory_available_gb', 'N/A'):.2f} GB"
+            )
             summary.append("")
 
         # Data quality summary
@@ -421,7 +481,9 @@ class EnhancedPipelineDecorator:
             summary.append("-" * 40)
             for key, info in data_quality.items():
                 if isinstance(info, dict) and "shape" in info:
-                    summary.append(f"{key}: Shape {info['shape']}, Memory {info.get('memory_usage_mb', 'N/A'):.2f} MB")
+                    summary.append(
+                        f"{key}: Shape {info['shape']}, Memory {info.get('memory_usage_mb', 'N/A'):.2f} MB"
+                    )
             summary.append("")
 
         # Result analysis
@@ -446,7 +508,9 @@ class EnhancedPipelineDecorator:
             summary.append("ERRORS:")
             summary.append("-" * 40)
             for error in step_report["errors"]:
-                summary.append(f"❌ {error.get('type', 'Unknown')}: {error.get('message', 'No message')}")
+                summary.append(
+                    f"❌ {error.get('type', 'Unknown')}: {error.get('message', 'No message')}"
+                )
             summary.append("")
 
         # Recommendations
@@ -463,7 +527,9 @@ class EnhancedPipelineDecorator:
 
         return "\n".join(summary)
 
-    async def _store_report_metadata(self, step_report: Dict[str, Any], report_path: Path, summary_path: Path):
+    async def _store_report_metadata(
+        self, step_report: Dict[str, Any], report_path: Path, summary_path: Path
+    ):
         """Store metadata about the report for indexing and retrieval."""
 
         metadata = {
@@ -504,7 +570,9 @@ class EnhancedPipelineDecorator:
 
 
 # Convenience decorators for different report levels
-def enhanced_pipeline_step(step_name: str, report_level: ReportLevel = ReportLevel.DETAILED):
+def enhanced_pipeline_step(
+    step_name: str, report_level: ReportLevel = ReportLevel.DETAILED
+):
     """Enhanced pipeline step decorator with comprehensive monitoring and reporting."""
     return EnhancedPipelineDecorator(step_name, report_level)
 
@@ -530,7 +598,9 @@ def debug_pipeline_step(step_name: str):
 
 
 # Utility functions for report management
-async def get_step_reports(step_name: str = None, limit: int = 50) -> List[Dict[str, Any]]:
+async def get_step_reports(
+    step_name: str = None, limit: int = 50
+) -> List[Dict[str, Any]]:
     """Retrieve step reports from the metadata index."""
 
     reports_dir = Path("reports/enhanced_training_pipeline")

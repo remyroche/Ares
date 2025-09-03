@@ -1,7 +1,5 @@
-"""
-Centralized Decorators Module v2
-This module provides a unified interface to all decorators with enhanced functionality.
-"""
+"""Centralized Decorators Module v2 This module provides a unified interface to all
+decorators with enhanced functionality."""
 
 import asyncio
 import functools
@@ -117,8 +115,8 @@ def validate_data_quality_v2(
     auto_fix: bool = False,
     **validation_kwargs,
 ):
-    """
-    Enhanced data quality validation decorator with configurable levels and auto-fixing.
+    """Enhanced data quality validation decorator with configurable levels and auto-
+    fixing.
 
     Args:
         validation_level: Validation severity level
@@ -138,17 +136,25 @@ def validate_data_quality_v2(
                     # Apply data quality checks based on validation level
                     if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
                         # Strict validation - fail on any issues
-                        await _validate_data_quality_strict(args, kwargs, context, logger)
+                        await _validate_data_quality_strict(
+                            args, kwargs, context, logger
+                        )
                     elif validation_level == "WARNING":
                         # Warning mode - log issues but continue
-                        await _validate_data_quality_warning(args, kwargs, context, logger)
+                        await _validate_data_quality_warning(
+                            args, kwargs, context, logger
+                        )
                     elif validation_level == "INFO":
                         # Info mode - just log information
                         await _validate_data_quality_info(args, kwargs, context, logger)
                 except Exception as e:
                     if auto_fix:
-                        logger.warning(f"Auto-fixing data quality issues in {context}: {e}")
-                        args, kwargs = await _apply_data_quality_fixes(args, kwargs, context)
+                        logger.warning(
+                            f"Auto-fixing data quality issues in {context}: {e}"
+                        )
+                        args, kwargs = await _apply_data_quality_fixes(
+                            args, kwargs, context
+                        )
                     else:
                         raise
 
@@ -165,7 +171,9 @@ def validate_data_quality_v2(
                     await _validate_output_quality(result, context, logger)
                 except Exception as e:
                     if auto_fix:
-                        logger.warning(f"Auto-fixing output quality issues in {context}: {e}")
+                        logger.warning(
+                            f"Auto-fixing output quality issues in {context}: {e}"
+                        )
                         result = await _apply_output_quality_fixes(result, context)
                     else:
                         raise
@@ -180,15 +188,23 @@ def validate_data_quality_v2(
             if global_config.enable_data_quality_checks:
                 try:
                     if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
-                        _validate_data_quality_strict_sync(args, kwargs, context, logger)
+                        _validate_data_quality_strict_sync(
+                            args, kwargs, context, logger
+                        )
                     elif validation_level == "WARNING":
-                        _validate_data_quality_warning_sync(args, kwargs, context, logger)
+                        _validate_data_quality_warning_sync(
+                            args, kwargs, context, logger
+                        )
                     elif validation_level == "INFO":
                         _validate_data_quality_info_sync(args, kwargs, context, logger)
                 except Exception as e:
                     if auto_fix:
-                        logger.warning(f"Auto-fixing data quality issues in {context}: {e}")
-                        args, kwargs = _apply_data_quality_fixes_sync(args, kwargs, context)
+                        logger.warning(
+                            f"Auto-fixing data quality issues in {context}: {e}"
+                        )
+                        args, kwargs = _apply_data_quality_fixes_sync(
+                            args, kwargs, context
+                        )
                     else:
                         raise
 
@@ -205,7 +221,9 @@ def validate_data_quality_v2(
                     _validate_output_quality_sync(result, context, logger)
                 except Exception as e:
                     if auto_fix:
-                        logger.warning(f"Auto-fixing output quality issues in {context}: {e}")
+                        logger.warning(
+                            f"Auto-fixing output quality issues in {context}: {e}"
+                        )
                         result = _apply_output_quality_fixes_sync(result, context)
                     else:
                         raise
@@ -234,8 +252,7 @@ def quality_gate_v2(
     action_on_failure: str = "warn",  # "warn", "raise", "degrade"
     context: str = "quality gate",
 ):
-    """
-    Enhanced quality gate decorator with configurable thresholds and actions.
+    """Enhanced quality gate decorator with configurable thresholds and actions.
 
     Args:
         min_quality_score: Minimum quality score required (0.0 to 1.0)
@@ -255,7 +272,9 @@ def quality_gate_v2(
             # Assess quality
             quality_score, grade = _assess_quality(result, context)
 
-            if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
+            if quality_score < min_quality_score or _grade_to_score(
+                grade
+            ) < _grade_to_score(required_grade):
                 msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
 
                 if action_on_failure == "raise":
@@ -267,7 +286,9 @@ def quality_gate_v2(
                     # Apply degradation logic
                     result = _apply_quality_degradation(result, quality_score, context)
 
-            logger.info(f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})")
+            logger.info(
+                f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})"
+            )
             return result
 
         @functools.wraps(func)
@@ -280,7 +301,9 @@ def quality_gate_v2(
             # Assess quality
             quality_score, grade = _assess_quality(result, context)
 
-            if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
+            if quality_score < min_quality_score or _grade_to_score(
+                grade
+            ) < _grade_to_score(required_grade):
                 msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
 
                 if action_on_failure == "raise":
@@ -292,7 +315,9 @@ def quality_gate_v2(
                     # Apply degradation logic
                     result = _apply_quality_degradation(result, quality_score, context)
 
-            logger.info(f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})")
+            logger.info(
+                f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})"
+            )
             return result
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
@@ -317,8 +342,7 @@ def step_specific_ml_validation_v2(
     adaptive_thresholds: bool = True,
     context: str = "ml validation",
 ):
-    """
-    Enhanced step-specific ML validation decorator with adaptive thresholds.
+    """Enhanced step-specific ML validation decorator with adaptive thresholds.
 
     Args:
         step_name: Name of the ML pipeline step
@@ -333,10 +357,14 @@ def step_specific_ml_validation_v2(
             logger = system_logger.getChild(f"StepMLValidationV2.{step_name}")
 
             # Determine validation thresholds
-            thresholds = _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
+            thresholds = _get_validation_thresholds(
+                step_name, validation_config, adaptive_thresholds, args, kwargs
+            )
 
             # Pre-validation
-            await _validate_ml_step_prerequisites(args, kwargs, step_name, thresholds, logger)
+            await _validate_ml_step_prerequisites(
+                args, kwargs, step_name, thresholds, logger
+            )
 
             # Execute the function
             result = await func(*args, **kwargs)
@@ -351,10 +379,14 @@ def step_specific_ml_validation_v2(
             logger = system_logger.getChild(f"StepMLValidationV2.{step_name}")
 
             # Determine validation thresholds
-            thresholds = _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
+            thresholds = _get_validation_thresholds(
+                step_name, validation_config, adaptive_thresholds, args, kwargs
+            )
 
             # Pre-validation
-            _validate_ml_step_prerequisites_sync(args, kwargs, step_name, thresholds, logger)
+            _validate_ml_step_prerequisites_sync(
+                args, kwargs, step_name, thresholds, logger
+            )
 
             # Execute the function
             result = func(*args, **kwargs)
@@ -381,10 +413,11 @@ def step_specific_ml_validation_v2(
     tags=["auto-fix", "data-quality", "intelligent"],
 )
 def auto_fix_data_quality_issues_v2(
-    context: str = "auto-fix", fix_strategies: List[str] = None, max_fix_attempts: int = 3
+    context: str = "auto-fix",
+    fix_strategies: List[str] = None,
+    max_fix_attempts: int = 3,
 ):
-    """
-    Enhanced auto-fix decorator with intelligent issue resolution.
+    """Enhanced auto-fix decorator with intelligent issue resolution.
 
     Args:
         context: Context for logging and error messages
@@ -404,8 +437,12 @@ def auto_fix_data_quality_issues_v2(
                     return result
                 except Exception as e:
                     if attempt < max_fix_attempts - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed, applying auto-fix: {e}")
-                        args, kwargs = await _apply_intelligent_fixes(args, kwargs, context, fix_strategies)
+                        logger.warning(
+                            f"Attempt {attempt + 1} failed, applying auto-fix: {e}"
+                        )
+                        args, kwargs = await _apply_intelligent_fixes(
+                            args, kwargs, context, fix_strategies
+                        )
                     else:
                         logger.error(f"All auto-fix attempts failed in {context}: {e}")
                         raise
@@ -423,8 +460,12 @@ def auto_fix_data_quality_issues_v2(
                     return result
                 except Exception as e:
                     if attempt < max_fix_attempts - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed, applying auto-fix: {e}")
-                        args, kwargs = _apply_intelligent_fixes_sync(args, kwargs, context, fix_strategies)
+                        logger.warning(
+                            f"Attempt {attempt + 1} failed, applying auto-fix: {e}"
+                        )
+                        args, kwargs = _apply_intelligent_fixes_sync(
+                            args, kwargs, context, fix_strategies
+                        )
                     else:
                         logger.error(f"All auto-fix attempts failed in {context}: {e}")
                         raise
@@ -455,7 +496,10 @@ def monitor_feature_engineering_v2(
 ):
     """Enhanced feature engineering monitoring decorator."""
     return performance_monitor_v2(
-        level="detailed", track_memory=track_memory_usage, track_cpu=True, track_io=track_feature_stats
+        level="detailed",
+        track_memory=track_memory_usage,
+        track_cpu=True,
+        track_io=track_feature_stats,
     )
 
 
@@ -472,7 +516,9 @@ def monitor_data_collection_v2(
     context: str = "data collection",
 ):
     """Enhanced data collection monitoring decorator."""
-    return performance_monitor_v2(level="detailed", track_memory=True, track_cpu=True, track_io=track_data_volume)
+    return performance_monitor_v2(
+        level="detailed", track_memory=True, track_cpu=True, track_io=track_data_volume
+    )
 
 
 # ============================================================================
@@ -560,7 +606,9 @@ def _apply_quality_degradation(result, quality_score, context):
     return result
 
 
-def _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs):
+def _get_validation_thresholds(
+    step_name, validation_config, adaptive_thresholds, args, kwargs
+):
     """Get validation thresholds for ML step."""
     # Placeholder implementation
     return {}

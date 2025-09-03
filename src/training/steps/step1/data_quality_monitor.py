@@ -10,7 +10,7 @@ import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
@@ -214,9 +214,10 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
+
 import copy
 import os.path
-            
+
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
             # Run quality check

@@ -1,9 +1,8 @@
 # src/training/enhanced_lm_config.py
-
 """Pydantic-based configuration for Enhanced LM Optimizer.
 
-This module provides type-safe configuration with automatic validation,
-clear error messages, and auto-generated documentation.
+This module provides type-safe configuration with automatic validation, clear error
+messages, and auto-generated documentation.
 """
 
 from enum import Enum
@@ -40,11 +39,24 @@ class FeatureSelectionConfig(BaseModel):
         default={"step06": 80, "step6_5": 100, "step09": 90},
         description="Target number of features for each step",
     )
-    vif_threshold: float = Field(default=10.0, ge=1.0, le=100.0, description="VIF threshold for multicollinearity")
-    correlation_threshold: float = Field(default=0.95, ge=0.0, le=1.0, description="Correlation threshold")
-    variance_threshold: float = Field(default=0.01, ge=0.0, le=1.0, description="Variance threshold")
-    mutual_info_threshold: float = Field(default=0.001, ge=0.0, description="Mutual information threshold")
-    shap_threshold: float = Field(default=0.001, ge=0.0, description="SHAP importance threshold")
+    vif_threshold: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=100.0,
+        description="VIF threshold for multicollinearity",
+    )
+    correlation_threshold: float = Field(
+        default=0.95, ge=0.0, le=1.0, description="Correlation threshold"
+    )
+    variance_threshold: float = Field(
+        default=0.01, ge=0.0, le=1.0, description="Variance threshold"
+    )
+    mutual_info_threshold: float = Field(
+        default=0.001, ge=0.0, description="Mutual information threshold"
+    )
+    shap_threshold: float = Field(
+        default=0.001, ge=0.0, description="SHAP importance threshold"
+    )
 
     @validator("methods")
     def validate_methods(self, v):
@@ -60,8 +72,12 @@ class RegularizationConfig(BaseModel):
     """Configuration for regularization optimization."""
 
     enable: bool = Field(default=True, description="Enable regularization optimization")
-    l1_alpha_range: list[float] = Field(default=[0.001, 0.1], description="L1 alpha range")
-    l2_alpha_range: list[float] = Field(default=[0.0001, 0.01], description="L2 alpha range")
+    l1_alpha_range: list[float] = Field(
+        default=[0.001, 0.1], description="L1 alpha range"
+    )
+    l2_alpha_range: list[float] = Field(
+        default=[0.0001, 0.01], description="L2 alpha range"
+    )
     dropout_range: list[float] = Field(default=[0.1, 0.5], description="Dropout range")
 
     model_specific: dict[str, dict[str, Any]] = Field(
@@ -93,9 +109,13 @@ class OptunaConfig(BaseModel):
     """Configuration for Optuna hyperparameter optimization."""
 
     enable: bool = Field(default=True, description="Enable Optuna optimization")
-    n_trials_per_batch: int = Field(default=50, ge=1, le=1000, description="Trials per batch")
+    n_trials_per_batch: int = Field(
+        default=50, ge=1, le=1000, description="Trials per batch"
+    )
     n_batches: int = Field(default=3, ge=1, le=10, description="Number of batches")
-    timeout_per_batch: int = Field(default=300, ge=60, le=3600, description="Timeout per batch in seconds")
+    timeout_per_batch: int = Field(
+        default=300, ge=60, le=3600, description="Timeout per batch in seconds"
+    )
     sampler: SamplerType = Field(default=SamplerType.TPE, description="Optuna sampler")
     pruner: PrunerType = Field(default=PrunerType.MEDIAN, description="Optuna pruner")
     storage: str | None = Field(default=None, description="Optuna storage URL")
@@ -112,9 +132,13 @@ class VectorizationConfig(BaseModel):
     """Configuration for vectorized operations."""
 
     enable: bool = Field(default=True, description="Enable vectorized operations")
-    batch_size: int = Field(default=1024, ge=32, le=10000, description="Batch size for operations")
+    batch_size: int = Field(
+        default=1024, ge=32, le=10000, description="Batch size for operations"
+    )
     use_gpu: bool = Field(default=True, description="Use GPU if available")
-    memory_efficient: bool = Field(default=True, description="Use memory-efficient operations")
+    memory_efficient: bool = Field(
+        default=True, description="Use memory-efficient operations"
+    )
 
 
 class ExperimentTrackingConfig(BaseModel):
@@ -152,13 +176,21 @@ class EnhancedLMOptimizerConfig(BaseModel):
     )
 
     # Performance settings
-    enable_parallel_processing: bool = Field(default=True, description="Enable parallel processing")
-    max_workers: int = Field(default=4, ge=1, le=16, description="Maximum number of workers")
+    enable_parallel_processing: bool = Field(
+        default=True, description="Enable parallel processing"
+    )
+    max_workers: int = Field(
+        default=4, ge=1, le=16, description="Maximum number of workers"
+    )
     cache_results: bool = Field(default=True, description="Cache optimization results")
 
     # Validation settings
-    validate_data_quality: bool = Field(default=True, description="Validate data quality before optimization")
-    check_memory_usage: bool = Field(default=True, description="Check memory usage during optimization")
+    validate_data_quality: bool = Field(
+        default=True, description="Validate data quality before optimization"
+    )
+    check_memory_usage: bool = Field(
+        default=True, description="Check memory usage during optimization"
+    )
 
     class Config:
         """Pydantic configuration."""
@@ -227,6 +259,7 @@ class EnhancedLMOptimizerConfig(BaseModel):
 
 # Default configuration
 DEFAULT_CONFIG = EnhancedLMOptimizerConfig()
+
 
 # Configuration presets
 def get_fast_config() -> EnhancedLMOptimizerConfig:

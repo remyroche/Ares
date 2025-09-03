@@ -1,6 +1,6 @@
 # src/config/enhanced_matrix_config.py
-
 """Configuration for enhanced matrix operations integration in the training pipeline.
+
 Provides comprehensive settings for GPU acceleration and matrix operations.
 """
 
@@ -10,11 +10,11 @@ from src.config.m1_gpu_config import get_m1_gpu_config
 
 
 def get_enhanced_matrix_training_config() -> dict[str, Any]:
-    """Get comprehensive configuration for enhanced matrix operations in training pipeline.
+    """Get comprehensive configuration for enhanced matrix operations in training
+    pipeline.
 
     Returns:
         dict: Complete configuration for enhanced matrix operations
-
     """
     # Get base M1 GPU configuration
     m1_config = get_m1_gpu_config()
@@ -106,7 +106,6 @@ def get_optimized_enhanced_matrix_config(
 
     Returns:
         dict: Optimized configuration
-
     """
     base_config = get_enhanced_matrix_training_config()
 
@@ -186,7 +185,6 @@ def get_production_enhanced_matrix_config() -> dict[str, Any]:
 
     Returns:
         dict: Production configuration
-
     """
     config = get_enhanced_matrix_training_config()
 
@@ -228,7 +226,6 @@ def get_minimal_enhanced_matrix_config() -> dict[str, Any]:
 
     Returns:
         dict: Minimal configuration
-
     """
     config = get_enhanced_matrix_training_config()
 
@@ -305,7 +302,6 @@ def validate_enhanced_matrix_config(config: dict[str, Any]) -> bool:
 
     Returns:
         bool: True if configuration is valid, False otherwise
-
     """
     try:
         if not _validate_required_settings(config):
@@ -325,7 +321,6 @@ def get_default_enhanced_matrix_config() -> dict[str, Any]:
 
     Returns:
         dict: Default configuration
-
     """
     return get_enhanced_matrix_training_config()
 
@@ -338,7 +333,6 @@ def get_enhanced_matrix_config_for_training_type(training_type: str) -> dict[str
 
     Returns:
         dict: Optimized configuration
-
     """
     if training_type == "quick":
         return get_optimized_enhanced_matrix_config("performance")

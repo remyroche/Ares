@@ -1,11 +1,12 @@
-"""
-Comprehensive Trading and Backtesting Decorators
+"""Comprehensive Trading and Backtesting Decorators.
 
 This module provides a suite of decorators for enhancing trading and backtesting
-pipelines with error handling, trade tracking, monitoring, performance analysis,
-and operational management capabilities.
+pipelines with error handling, trade tracking, monitoring, performance analysis, and
+operational management capabilities.
 """
 
+import asyncio
+import copy
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -18,8 +19,6 @@ import psutil
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
-import asyncio
 
 # Type variables
 T = TypeVar("T")
@@ -403,7 +402,9 @@ def get_trade_tracker():
             self.trades = []
             self.current_trade = None
 
-        def start_trade(self, trade_id: str, symbol: str, side: str, quantity: float, price: float):
+        def start_trade(
+            self, trade_id: str, symbol: str, side: str, quantity: float, price: float
+        ):
             """Start tracking a new trade."""
             self.current_trade = {
                 "trade_id": trade_id,
@@ -415,7 +416,9 @@ def get_trade_tracker():
                 "status": "executing",
             }
 
-        def complete_trade(self, trade_id: str, final_price: float, commission: float = 0.0):
+        def complete_trade(
+            self, trade_id: str, final_price: float, commission: float = 0.0
+        ):
             """Complete tracking a trade."""
             if self.current_trade and self.current_trade["trade_id"] == trade_id:
                 self.current_trade["final_price"] = final_price

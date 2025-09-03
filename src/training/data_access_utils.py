@@ -1,6 +1,6 @@
 # src/training/data_access_utils.py
-
-"""Utility functions for accessing the unified training database across different steps."""
+"""Utility functions for accessing the unified training database across different
+steps."""
 
 import os
 from typing import Any
@@ -28,7 +28,6 @@ def get_data_manager(
 
     Returns:
         UnifiedDataManager instance
-
     """
     return UnifiedDataManager(
         data_dir=data_dir,
@@ -56,7 +55,6 @@ def load_training_data(
 
     Returns:
         Tuple of (features_df, labels_series)
-
     """
     logger = system_logger.getChild("DataAccessUtils")
 
@@ -85,7 +83,6 @@ def load_validation_data_for_optimization(
 
     Returns:
         Tuple of (X_val, y_val) as numpy arrays
-
     """
     logger = system_logger.getChild("DataAccessUtils")
 
@@ -130,7 +127,6 @@ def get_dataset_metadata(
 
     Returns:
         Dictionary containing dataset metadata
-
     """
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
@@ -156,7 +152,6 @@ def validate_dataset_integrity(
 
     Returns:
         Dictionary containing validation results
-
     """
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
@@ -189,7 +184,6 @@ def update_dataset_with_new_features(
         split_type: Which split to update ('train', 'validation', 'test', 'full')
         symbol: Trading symbol
         exchange: Exchange name
-
     """
     logger = system_logger.getChild("DataAccessUtils")
 
@@ -219,7 +213,6 @@ def check_unified_database_exists(
 
     Returns:
         True if unified database exists and is accessible
-
     """
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
@@ -257,7 +250,6 @@ def get_time_splits_info(
 
     Returns:
         Dictionary containing split information
-
     """
     try:
         metadata = get_dataset_metadata(data_dir, symbol, exchange)
@@ -283,7 +275,6 @@ def ensure_temporal_consistency(
 
     Returns:
         True if temporal consistency is maintained
-
     """
     logger = system_logger.getChild("DataAccessUtils")
 

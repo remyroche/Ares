@@ -24,13 +24,10 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class AsyncFileManager:
-    """
-    Enhanced async file manager with comprehensive error handling and type safety.
-    """
+    """Enhanced async file manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize async file manager with enhanced type safety.
+        """Initialize async file manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
@@ -47,7 +44,9 @@ class AsyncFileManager:
         self.file_config: dict[str, Any] = self.config.get("async_file_manager", {})
         self.max_cache_size = int(self.file_config.get("max_cache_size", 100))
         self.cache_enabled = bool(self.file_config.get("cache_enabled", True))
-        self.default_encoding: str = str(self.file_config.get("default_encoding", "utf-8"))
+        self.default_encoding: str = str(
+            self.file_config.get("default_encoding", "utf-8")
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -59,8 +58,7 @@ class AsyncFileManager:
         context="async file manager initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize async file manager with enhanced error handling.
+        """Initialize async file manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -105,8 +103,7 @@ class AsyncFileManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate file configuration.
+        """Validate file configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -128,9 +125,10 @@ class AsyncFileManager:
         default_return=None,
         context="file reading",
     )
-    async def read_file(self, file_path: str, encoding: str | None = None) -> str | None:
-        """
-        Read file asynchronously.
+    async def read_file(
+        self, file_path: str, encoding: str | None = None
+    ) -> str | None:
+        """Read file asynchronously.
 
         Args:
             file_path: Path to the file
@@ -160,9 +158,10 @@ class AsyncFileManager:
         default_return=False,
         context="file writing",
     )
-    async def write_file(self, file_path: str, content: str, encoding: str | None = None) -> bool:
-        """
-        Write file asynchronously.
+    async def write_file(
+        self, file_path: str, content: str, encoding: str | None = None
+    ) -> bool:
+        """Write file asynchronously.
 
         Args:
             file_path: Path to the file
@@ -192,8 +191,7 @@ class AsyncFileManager:
         context="JSON file reading",
     )
     async def read_json(self, file_path: str) -> dict[str, Any] | None:
-        """
-        Read JSON file asynchronously.
+        """Read JSON file asynchronously.
 
         Args:
             file_path: Path to the JSON file
@@ -214,9 +212,10 @@ class AsyncFileManager:
         default_return=False,
         context="JSON file writing",
     )
-    async def write_json(self, file_path: str, data: dict[str, Any], indent: int = 2) -> bool:
-        """
-        Write JSON file asynchronously.
+    async def write_json(
+        self, file_path: str, data: dict[str, Any], indent: int = 2
+    ) -> bool:
+        """Write JSON file asynchronously.
 
         Args:
             file_path: Path to the JSON file
@@ -238,8 +237,7 @@ class AsyncFileManager:
         context="cache management",
     )
     def _add_to_cache(self, file_path: str, content: str) -> None:
-        """
-        Add file content to cache.
+        """Add file content to cache.
 
         Args:
             file_path: File path
@@ -267,8 +265,7 @@ class AsyncFileManager:
         self.logger.info(f"Cleared cache ({cache_size} entries)")
 
     def get_cache_status(self) -> dict[str, Any]:
-        """
-        Get cache status information.
+        """Get cache status information.
 
         Returns:
             Dict[str, Any]: Cache status
@@ -293,13 +290,10 @@ class AsyncFileManager:
 
 
 class AsyncTaskManager:
-    """
-    Enhanced async task manager with comprehensive error handling and type safety.
-    """
+    """Enhanced async task manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize async task manager with enhanced type safety.
+        """Initialize async task manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
@@ -314,7 +308,9 @@ class AsyncTaskManager:
 
         # Configuration
         self.task_config: dict[str, Any] = self.config.get("async_task_manager", {})
-        self.max_concurrent_tasks = int(self.task_config.get("max_concurrent_tasks", 10))
+        self.max_concurrent_tasks = int(
+            self.task_config.get("max_concurrent_tasks", 10)
+        )
         self.task_timeout: int = int(self.task_config.get("task_timeout", 300))
 
     @handle_specific_errors(
@@ -327,8 +323,7 @@ class AsyncTaskManager:
         context="async task manager initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize async task manager with enhanced error handling.
+        """Initialize async task manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -371,8 +366,7 @@ class AsyncTaskManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate task configuration.
+        """Validate task configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -401,8 +395,7 @@ class AsyncTaskManager:
         coro: Coroutine[Any, Any, Any],
         timeout: int | None = None,
     ) -> Any | None:
-        """
-        Execute a task with timeout and error handling.
+        """Execute a task with timeout and error handling.
 
         Args:
             task_name: Name of the task
@@ -450,8 +443,7 @@ class AsyncTaskManager:
         context="task cancellation",
     )
     async def cancel_task(self, task_name: str) -> bool:
-        """
-        Cancel a running task.
+        """Cancel a running task.
 
         Args:
             task_name: Name of the task to cancel
@@ -495,8 +487,7 @@ class AsyncTaskManager:
         self.logger.info("All tasks cancelled")
 
     def get_task_status(self) -> dict[str, Any]:
-        """
-        Get task manager status information.
+        """Get task manager status information.
 
         Returns:
             Dict[str, Any]: Task manager status
@@ -535,8 +526,7 @@ async_task_manager: AsyncTaskManager | None = None
 async def setup_async_utils(
     config: dict[str, Any] | None = None,
 ) -> tuple[AsyncFileManager | None, AsyncTaskManager | None]:
-    """
-    Setup global async utilities.
+    """Setup global async utilities.
 
     Args:
         config: Optional configuration dictionary
@@ -578,9 +568,7 @@ async def setup_async_utils(
 
 
 class AsyncProcessesManager:
-    """
-    Manager for async processes with comprehensive error handling.
-    """
+    """Manager for async processes with comprehensive error handling."""
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config: dict[str, Any] = config or {}
@@ -596,7 +584,9 @@ class AsyncProcessesManager:
     ) -> asyncio.subprocess.Process | None:
         """Start an async process."""
         if len(self.processes) >= self.max_processes:
-            self.logger.warning(warning(f"Maximum processes ({self.max_processes}) reached"))
+            self.logger.warning(
+                warning(f"Maximum processes ({self.max_processes}) reached")
+            )
             return None
 
         try:
@@ -646,7 +636,8 @@ class AsyncProcessesManager:
             "total_processes": len(self.processes),
             "max_processes": self.max_processes,
             "processes": {
-                name: {"pid": proc.pid, "returncode": proc.returncode} for name, proc in self.processes.items()
+                name: {"pid": proc.pid, "returncode": proc.returncode}
+                for name, proc in self.processes.items()
             },
         }
 

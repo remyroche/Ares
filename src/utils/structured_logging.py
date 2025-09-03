@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import logging
 import uuid
@@ -7,7 +8,6 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import asyncio
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -69,7 +69,9 @@ def correlation_context(correlation_id: str | None = None):
 class CorrelationIdFilter(logging.Filter):
     """Logging filter that injects correlation_id and session_id into records."""
 
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - filter is required API
+    def filter(
+        self, record: logging.LogRecord
+    ) -> bool:  # noqa: A003 - filter is required API
         try:
             record.correlation_id = get_correlation_id()
             record.session_id = session_id_var.get()
@@ -84,7 +86,10 @@ def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
 
     Falls back to a plain formatter if python-json-logger is unavailable.
     """
-    fmt = "%(asctime)s %(levelname)s %(name)s %(message)s " "%(correlation_id)s %(session_id)s"
+    fmt = (
+        "%(asctime)s %(levelname)s %(name)s %(message)s "
+        "%(correlation_id)s %(session_id)s"
+    )
     if jsonlogger is None:
         # Fallback implementation for jsonlogger
         return logging.Formatter(fmt=fmt, datefmt=datefmt)

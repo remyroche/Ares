@@ -1,5 +1,6 @@
 # src/training/bayesian_optimizer.py
 
+import datetime as datetime
 from collections.abc import Callable
 from typing import Any, Number
 
@@ -9,11 +10,11 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import datetime as datetime
 
 
 class AdvancedHyperparameterOptimizer:
-    """Advanced hyperparameter optimization with decomposed search spaces and proper constraints.
+    """Advanced hyperparameter optimization with decomposed search spaces and proper
+    constraints.
 
     Features:
     - Decomposed optimization (feature engineering → model → trading strategy)
@@ -219,7 +220,9 @@ class AdvancedHyperparameterOptimizer:
             msg = "Feature selection threshold too high"
             raise optuna.TrialPruned(msg)
 
-    def _add_model_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]) -> None:
+    def _add_model_constraints(
+        self, trial: optuna.trial.Trial, params: dict[str, Any]
+    ) -> None:
         """Add constraints for model parameters."""
         # Model-specific constraints
         if params["model_type"] == "random_forest":

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Progress Manager for Training Steps.
 
-This module handles saving and loading progress for each training step,
-allowing the training pipeline to resume from any step.
+This module handles saving and loading progress for each training step, allowing the
+training pipeline to resume from any step.
 """
 
 import json
@@ -13,15 +13,15 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-)
+from src.utils.warning_symbols import failed
 
 
 class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
+    def __init__(
+        self, symbol: str, exchange: str, data_dir: str = "data/training"
+    ) -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -54,7 +54,6 @@ class ProgressManager:
 
         Returns:
             True if saved successfully, False otherwise
-
         """
         try:
             timestamp = datetime.now().isoformat()
@@ -101,7 +100,6 @@ class ProgressManager:
 
         Returns:
             Progress data if found, None otherwise
-
         """
         try:
             # Try pickle file first (for complex objects)
@@ -134,7 +132,6 @@ class ProgressManager:
 
         Returns:
             Name of the latest step, or None if no progress found
-
         """
         try:
             step_files = list(self.progress_dir.glob("*.pkl"))
@@ -159,7 +156,6 @@ class ProgressManager:
 
         Returns:
             Dictionary mapping step names to their progress data
-
         """
         progress_data = {}
 
@@ -187,7 +183,6 @@ class ProgressManager:
 
         Returns:
             True if cleared successfully, False otherwise
-
         """
         try:
             if step_name:
@@ -222,7 +217,6 @@ class ProgressManager:
 
         Returns:
             True if progress exists, False otherwise
-
         """
         pickle_file = self.progress_dir / f"{step_name}.pkl"
         json_file = self.progress_dir / f"{step_name}.json"
@@ -236,7 +230,6 @@ class ProgressManager:
 
         Returns:
             Timestamp string if found, None otherwise
-
         """
         progress = self.load_step_progress(step_name)
         if progress:

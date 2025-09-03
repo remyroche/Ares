@@ -1,5 +1,4 @@
-"""
-Enhanced Error Handling Utilities
+"""Enhanced Error Handling Utilities.
 
 This module provides enhanced error handling capabilities including retry mechanisms,
 circuit breakers, and error categorization for the training pipeline.
@@ -108,7 +107,9 @@ class CircuitBreaker:
 
         if self.failure_count >= self.config.failure_threshold:
             self.state = "OPEN"
-            self.logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+            self.logger.warning(
+                f"Circuit breaker opened after {self.failure_count} failures"
+            )
 
 
 def retry_with_backoff(config: Optional[RetryConfig] = None):
@@ -133,10 +134,14 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                     last_exception = e
                     if attempt < config.max_retries:
                         wait_time = _calculate_backoff_delay(attempt, config)
-                        logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
+                        logging.warning(
+                            f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s..."
+                        )
                         await asyncio.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.error(
+                            f"Max retries ({config.max_retries}) exceeded. Last error: {e}"
+                        )
                         raise
                 except NonRetryableError as e:
                     logging.error(f"Non-retryable error: {e}")
@@ -145,10 +150,14 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                     last_exception = e
                     if attempt < config.max_retries:
                         wait_time = _calculate_backoff_delay(attempt, config)
-                        logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
+                        logging.warning(
+                            f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s..."
+                        )
                         await asyncio.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.error(
+                            f"Max retries ({config.max_retries}) exceeded. Last error: {e}"
+                        )
                         raise
 
             raise last_exception
@@ -164,10 +173,14 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                     last_exception = e
                     if attempt < config.max_retries:
                         wait_time = _calculate_backoff_delay(attempt, config)
-                        logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
+                        logging.warning(
+                            f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s..."
+                        )
                         time.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.error(
+                            f"Max retries ({config.max_retries}) exceeded. Last error: {e}"
+                        )
                         raise
                 except NonRetryableError as e:
                     logging.error(f"Non-retryable error: {e}")
@@ -176,10 +189,14 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                     last_exception = e
                     if attempt < config.max_retries:
                         wait_time = _calculate_backoff_delay(attempt, config)
-                        logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
+                        logging.warning(
+                            f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s..."
+                        )
                         time.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.error(
+                            f"Max retries ({config.max_retries}) exceeded. Last error: {e}"
+                        )
                         raise
 
             raise last_exception
@@ -195,7 +212,9 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
 
 def _calculate_backoff_delay(attempt: int, config: RetryConfig) -> float:
     """Calculate backoff delay with optional jitter."""
-    delay = min(config.initial_delay * (config.backoff_factor**attempt), config.max_delay)
+    delay = min(
+        config.initial_delay * (config.backoff_factor**attempt), config.max_delay
+    )
 
     if config.jitter:
         import random
@@ -217,7 +236,9 @@ def circuit_breaker(config: Optional[CircuitBreakerConfig] = None):
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            return breaker.call(lambda: asyncio.create_task(func(*args, **kwargs)), *args, **kwargs)
+            return breaker.call(
+                lambda: asyncio.create_task(func(*args, **kwargs)), *args, **kwargs
+            )
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
@@ -274,7 +295,9 @@ def categorize_errors(error_mapping: Dict[Type[Exception], ErrorType]):
     return decorator
 
 
-def _get_error_type(exception: Exception, error_mapping: Dict[Type[Exception], ErrorType]) -> ErrorType:
+def _get_error_type(
+    exception: Exception, error_mapping: Dict[Type[Exception], ErrorType]
+) -> ErrorType:
     """Get the error type for an exception based on the mapping."""
     for error_class, error_type in error_mapping.items():
         if isinstance(exception, error_class):
@@ -301,7 +324,11 @@ def retry_data_operation(max_retries: int = 3, backoff_factor: float = 2.0):
     return retry_with_backoff(config)
 
 
-def circuit_breaker_data_operation(failure_threshold: int = 5, recovery_timeout: float = 60.0):
+def circuit_breaker_data_operation(
+    failure_threshold: int = 5, recovery_timeout: float = 60.0
+):
     """Convenience decorator for data operations with circuit breaker."""
-    config = CircuitBreakerConfig(failure_threshold=failure_threshold, recovery_timeout=recovery_timeout)
+    config = CircuitBreakerConfig(
+        failure_threshold=failure_threshold, recovery_timeout=recovery_timeout
+    )
     return circuit_breaker(config)

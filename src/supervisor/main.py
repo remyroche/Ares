@@ -1,6 +1,7 @@
 # src/supervisor/main.py
 
 import asyncio
+import copy
 from datetime import datetime
 from typing import Any
 
@@ -15,14 +16,13 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
-import copy
 
 
 class Supervisor:
-    """
-    The central real-time orchestrator of the Ares Trading Bot.
-    It initializes, manages, and connects all the core components of the
-    trading pipeline, ensuring they run concurrently and communicate efficiently.
+    """The central real-time orchestrator of the Ares Trading Bot.
+
+    It initializes, manages, and connects all the core components of the trading
+    pipeline, ensuring they run concurrently and communicate efficiently.
     """
 
     def __init__(
@@ -37,8 +37,10 @@ class Supervisor:
         self.state_manager = state_manager  # Use the passed state_manager
         self.symbol = symbol
         self.exchange_name = exchange_name
-        self.state = self.state_manager.get_state(  # Use get_state() to load current state
-            "global_trading_status",
+        self.state = (
+            self.state_manager.get_state(  # Use get_state() to load current state
+                "global_trading_status",
+            )
         )  # Use get_state() to load current state
         self.config = CONFIG  # Use the global CONFIG dictionary for general settings
         self.db_manager = db_manager  # Store the database manager
@@ -55,10 +57,14 @@ class Supervisor:
         # Determine the actual trading client (PaperTrader or live exchange_client)
         env_settings = get_environment_settings()
         if env_settings.trading_environment == "PAPER":
-            self.trader = PaperTrader(symbol=self.symbol, exchange_name=self.exchange_name, config=self.config)
+            self.trader = PaperTrader(
+                symbol=self.symbol, exchange_name=self.exchange_name, config=self.config
+            )
             self.logger.info("Paper Trader initialized for simulation.")
         elif env_settings.trading_environment == "LIVE":
-            self.trader = exchange_client  # Use the live exchange client passed from main
+            self.trader = (
+                exchange_client  # Use the live exchange client passed from main
+            )
             self.logger.info(
                 "Live Trader (BinanceExchange) initialized for live operations.",
             )
@@ -86,8 +92,12 @@ class Supervisor:
                 self.trader,
                 self.state_manager,
             )  # Sentinel needs the real trader
-            self.analyst = self.model_manager.get_analyst()  # Get Analyst instance from ModelManager
-            self.strategist = self.model_manager.get_strategist()  # Get Strategist instance from ModelManager
+            self.analyst = (
+                self.model_manager.get_analyst()
+            )  # Get Analyst instance from ModelManager
+            self.strategist = (
+                self.model_manager.get_strategist()
+            )  # Get Strategist instance from ModelManager
             # Tactician instance is already created by ModelManager with performance_reporter
             self.tactician = self.model_manager.get_tactician()
 
@@ -97,17 +107,29 @@ class Supervisor:
             # For the training pipeline, these are mostly placeholders.
             if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
                 self.analyst.exchange = self.trader
-            if hasattr(self.analyst, "state_manager") and self.analyst.state_manager is None:
+            if (
+                hasattr(self.analyst, "state_manager")
+                and self.analyst.state_manager is None
+            ):
                 self.analyst.state_manager = self.state_manager
 
-            if hasattr(self.strategist, "exchange") and self.strategist.exchange is None:
+            if (
+                hasattr(self.strategist, "exchange")
+                and self.strategist.exchange is None
+            ):
                 self.strategist.exchange = self.trader
-            if hasattr(self.strategist, "state_manager") and self.strategist.state_manager is None:
+            if (
+                hasattr(self.strategist, "state_manager")
+                and self.strategist.state_manager is None
+            ):
                 self.strategist.state_manager = self.state_manager
 
             if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
                 self.tactician.exchange = self.trader
-            if hasattr(self.tactician, "state_manager") and self.tactician.state_manager is None:
+            if (
+                hasattr(self.tactician, "state_manager")
+                and self.tactician.state_manager is None
+            ):
                 self.tactician.state_manager = self.state_manager
 
         else:
@@ -131,17 +153,23 @@ class Supervisor:
         context="supervisor start",
     )
     async def start(self):
-        """
-        Starts all bot components and the main processing loop.
-        """
+        """Starts all bot components and the main processing loop."""
         self.logger.info("Supervisor starting all components...")
         self.running = True
 
-        if hasattr(self.db_manager, "initialize") and asyncio.iscoroutinefunction(self.db_manager.initialize):
+        if hasattr(self.db_manager, "initialize") and asyncio.iscoroutinefunction(
+            self.db_manager.initialize
+        ):
             await self.db_manager.initialize()
 
         tasks = []
-        if self.trader and self.sentinel and self.analyst and self.strategist and self.tactician:
+        if (
+            self.trader
+            and self.sentinel
+            and self.analyst
+            and self.strategist
+            and self.tactician
+        ):
             tasks.extend(
                 [
                     asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
@@ -193,9 +221,10 @@ class Supervisor:
         context="exchange state synchronization",
     )
     async def _synchronize_exchange_state(self):
-        """
-        Fetches the current account equity and open positions from the exchange
-        and updates the persistent state. This is key for crash recovery.
+        """Fetches the current account equity and open positions from the exchange and
+        updates the persistent state.
+
+        This is key for crash recovery.
         """
         try:
             # 1. Update account equity and peak equity
@@ -221,14 +250,19 @@ class Supervisor:
             active_position_on_exchange = None
 
             for position in open_positions:
-                if position.get("symbol") == symbol and float(position.get("positionAmt", 0)) != 0:
+                if (
+                    position.get("symbol") == symbol
+                    and float(position.get("positionAmt", 0)) != 0
+                ):
                     # Capture more details for active_position
                     active_position_on_exchange = {
                         "symbol": position["symbol"],
                         "amount": float(position["positionAmt"]),
                         "entry_price": float(position["entryPrice"]),
                         "leverage": int(position.get("leverage", 1)),
-                        "direction": ("LONG" if float(position["positionAmt"]) > 0 else "SHORT"),
+                        "direction": (
+                            "LONG" if float(position["positionAmt"]) > 0 else "SHORT"
+                        ),
                         "trade_id": self.state_manager.get_state(
                             "current_position",
                             {},
@@ -278,13 +312,13 @@ class Supervisor:
                 )  # Update 'current_position'
 
         except Exception as e:
-            self.logger.error(f"Failed to synchronize state with exchange: {e}", exc_info=True)
+            self.logger.error(
+                f"Failed to synchronize state with exchange: {e}", exc_info=True
+            )
 
 
 class MainSupervisor:
-    """
-    Main Supervisor Entrypoint with DI, type hints, and robust error handling.
-    """
+    """Main Supervisor Entrypoint with DI, type hints, and robust error handling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config

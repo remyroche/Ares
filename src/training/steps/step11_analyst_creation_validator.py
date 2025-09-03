@@ -7,13 +7,13 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import (
-    validate_file_operation,
     validate_dataframe_operation,
+    validate_file_operation,
     validate_step2_operation,
 )
-from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
 
@@ -54,13 +54,17 @@ class Step11AnalystCreationValidator:
             # Validate regime-specific analyst model directories
             regime_dirs = [d for d in analyst_models_dir.iterdir() if d.is_dir()]
             if not regime_dirs:
-                self.logger.warning("⚠️ No regime-specific analyst model directories found")
+                self.logger.warning(
+                    "⚠️ No regime-specific analyst model directories found"
+                )
                 return False
 
             # Validate each regime's analyst models
             for regime_dir in regime_dirs:
                 regime_name = regime_dir.name
-                self.logger.info(f"📊 Validating analyst models for regime: {regime_name}")
+                self.logger.info(
+                    f"📊 Validating analyst models for regime: {regime_name}"
+                )
 
                 # Check for model files
                 model_files = list(regime_dir.glob("*.joblib"))
@@ -110,15 +114,20 @@ class Step11AnalystCreationValidator:
             # Try to load the model to ensure it's valid
             try:
                 import joblib
+
                 model = joblib.load(model_file)
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
                     return False
-                
-                self.logger.info(f"✅ Model file validated: {model_file.name} ({file_size} bytes)")
+
+                self.logger.info(
+                    f"✅ Model file validated: {model_file.name} ({file_size} bytes)"
+                )
                 return True
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not load model file {model_file.name}: {e}")
+                self.logger.warning(
+                    f"⚠️ Could not load model file {model_file.name}: {e}"
+                )
                 return False
 
         except Exception as e:
@@ -136,7 +145,9 @@ class Step11AnalystCreationValidator:
 
             # Check required fields
             required_fields = ["accuracy", "model_type", "creation_date"]
-            missing_fields = [field for field in required_fields if field not in metadata]
+            missing_fields = [
+                field for field in required_fields if field not in metadata
+            ]
             if missing_fields:
                 self.logger.warning(
                     f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
@@ -166,13 +177,19 @@ class Step11AnalystCreationValidator:
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
+            self.logger.exception(
+                f"❌ Error validating metadata file {metadata_file}: {e}"
+            )
             return False
 
 
 @validate_step2_operation
 def step11_analyst_creation_validator(
-    symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]
+    symbol: str,
+    exchange: str,
+    data_dir: str,
+    training_input: dict[str, Any],
+    config: dict[str, Any],
 ) -> bool:
     """Step 11: Analyst Creation Validator.
 

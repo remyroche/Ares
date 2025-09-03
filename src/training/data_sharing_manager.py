@@ -13,10 +13,10 @@ from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-import asyncio
-
+    asyncio,
     circuit_breaker_protection,
     debug_training_step,
+    import,
     memory_efficient,
     prevent_data_leakage,
     quality_gate,

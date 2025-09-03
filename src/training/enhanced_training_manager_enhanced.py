@@ -11,14 +11,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
+    PipelineStage,
+    PipelineValidationLevel,
+    monitor_pipeline_performance,
     monitor_pipeline_step,
     validate_pipeline_input,
-    monitor_pipeline_performance,
-    PipelineStage,
-    PipelineValidationLevel
 )
 
 
@@ -870,7 +870,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+            from src.training.steps.step1_5_data_converter import (
+                run_step as step1_5_run_step,
+            )
             
             result = await step1_5_run_step(
                 symbol=symbol,
@@ -2050,8 +2052,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get feature engineering quality metrics."""
         
         try:
-            import pandas as pd
             import numpy as np
+            import pandas as pd
             
             if isinstance(result, pd.DataFrame) and not result.empty:
                 # Calculate multicollinearity
@@ -2072,7 +2074,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 # Calculate VIF for multicollinearity
                 vif_scores = {}
                 try:
-                    from statsmodels.stats.outliers_influence import variance_inflation_factor
+                    from statsmodels.stats.outliers_influence import (
+                        variance_inflation_factor,
+                    )
                     for col in numeric_cols:
                         if len(numeric_cols) > 1:
                             other_cols = [c for c in numeric_cols if c != col]
@@ -2885,7 +2889,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+            from src.training.steps.step1_5_data_converter import (
+                run_step as step1_5_run_step,
+            )
             
             result = await step1_5_run_step(
                 enhanced_training_input=enhanced_training_input,
@@ -3604,8 +3610,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         
         try:
             from src.training.steps import step15_saving
+
 import os.path
-            
+
             result = await step15_saving.run_step(
                 enhanced_training_input=enhanced_training_input,
                 config=self.config,

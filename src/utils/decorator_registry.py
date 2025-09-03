@@ -62,9 +62,13 @@ class DecoratorRegistry:
                 if name not in self._version_history:
                     self._version_history[name] = []
                 self._version_history[name].append(existing.version)
-                logger.info(f"Updated decorator {name} from version {existing.version} to {version}")
+                logger.info(
+                    f"Updated decorator {name} from version {existing.version} to {version}"
+                )
 
-        metadata = DecoratorMetadata(name, decorator, version, description, tags, deprecated)
+        metadata = DecoratorMetadata(
+            name, decorator, version, description, tags, deprecated
+        )
         self._decorators[name] = metadata
 
         # Register aliases
@@ -86,14 +90,18 @@ class DecoratorRegistry:
         metadata = self._decorators[name]
 
         if version and metadata.version != version:
-            raise ValueError(f"Version mismatch for {name}: requested {version}, available {metadata.version}")
+            raise ValueError(
+                f"Version mismatch for {name}: requested {version}, available {metadata.version}"
+            )
 
         # Increment usage count
         metadata.usage_count += 1
 
         return metadata.decorator
 
-    def list_decorators(self, include_deprecated: bool = False, tags: List[str] = None) -> List[DecoratorMetadata]:
+    def list_decorators(
+        self, include_deprecated: bool = False, tags: List[str] = None
+    ) -> List[DecoratorMetadata]:
         """List all registered decorators with optional filtering."""
         decorators = list(self._decorators.values())
 
@@ -107,14 +115,18 @@ class DecoratorRegistry:
 
     def get_usage_stats(self) -> Dict[str, int]:
         """Get usage statistics for all decorators."""
-        return {name: metadata.usage_count for name, metadata in self._decorators.items()}
+        return {
+            name: metadata.usage_count for name, metadata in self._decorators.items()
+        }
 
     def deprecate(self, name: str, replacement: str = None) -> None:
         """Mark a decorator as deprecated."""
         if name in self._decorators:
             self._decorators[name].deprecated = True
             if replacement:
-                logger.warning(f"Decorator '{name}' is deprecated. Use '{replacement}' instead.")
+                logger.warning(
+                    f"Decorator '{name}' is deprecated. Use '{replacement}' instead."
+                )
         else:
             raise KeyError(f"Decorator '{name}' not found in registry")
 
@@ -123,7 +135,9 @@ class DecoratorRegistry:
         if name in self._decorators:
             del self._decorators[name]
             # Remove aliases
-            aliases_to_remove = [alias for alias, target in self._aliases.items() if target == name]
+            aliases_to_remove = [
+                alias for alias, target in self._aliases.items() if target == name
+            ]
             for alias in aliases_to_remove:
                 del self._aliases[alias]
             logger.info(f"Removed decorator: {name}")

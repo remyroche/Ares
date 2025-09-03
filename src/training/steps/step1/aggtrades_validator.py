@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.utils.logger import system_logger
 from src.utils.common_operations import ensure_directory
+from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -87,7 +87,7 @@ class AggtradesValidator:
             "file_size": 0,
             "row_count": 0,
         },
-        context="aggtrades_validator.validate_file_format"
+        context="aggtrades_validator.validate_file_format",
     )
     def validate_file_format(self, file_path: Path) -> dict:
         """Validate a single aggtrades file format.
@@ -97,7 +97,6 @@ class AggtradesValidator:
 
         Returns:
             Dictionary with validation results
-
         """
         validation_start = datetime.now()
         logger.info(f"🔍 VALIDATING FILE: {file_path.name}")
@@ -187,7 +186,7 @@ class AggtradesValidator:
             pd.errors.ParserError,
         ),
         default_return=False,
-        context="aggtrades_validator.fix_file_format"
+        context="aggtrades_validator.fix_file_format",
     )
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format if needed.
@@ -197,7 +196,6 @@ class AggtradesValidator:
 
         Returns:
             True if successfully fixed, False otherwise
-
         """
         try:
             logger.info(f"🔧 Fixing format for {file_path.name}")
@@ -234,7 +232,9 @@ class AggtradesValidator:
             for col, expected_dtype in self.EXPECTED_DTYPES.items():
                 if col in df.columns:
                     if expected_dtype == "int64":
-                        df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+                        df[col] = pd.to_numeric(df[col], errors="coerce").astype(
+                            "Int64"
+                        )
                     elif expected_dtype == "float64":
                         df[col] = pd.to_numeric(df[col], errors="coerce")
                     elif expected_dtype == "datetime64[ns]":
@@ -282,7 +282,7 @@ class AggtradesValidator:
             "fixed_files": 0,
             "errors": [],
         },
-        context="aggtrades_validator.validate_all_aggtrades"
+        context="aggtrades_validator.validate_all_aggtrades",
     )
     def validate_all_aggtrades(
         self, symbol: str, exchange: str, auto_fix: bool = True
@@ -296,7 +296,6 @@ class AggtradesValidator:
 
         Returns:
             Dictionary with validation results
-
         """
         validation_start = datetime.now()
         logger.info(f"🔍 VALIDATING ALL AGGTRADES FOR {exchange}_{symbol}")
@@ -310,7 +309,9 @@ class AggtradesValidator:
         # Log file types found
         csv_files = [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
         parquet_files = [f for f in aggtrades_files if f.suffix.lower() == ".parquet"]
-        logger.info(f"📊 File types: {len(csv_files)} CSV, {len(parquet_files)} Parquet")
+        logger.info(
+            f"📊 File types: {len(csv_files)} CSV, {len(parquet_files)} Parquet"
+        )
 
         validation_result = {
             "total_files": len(aggtrades_files),
@@ -330,7 +331,9 @@ class AggtradesValidator:
                     logger.debug(f"✅ {file_path.name} is valid")
                 else:
                     validation_result["invalid_files"] += 1
-                    logger.warning(f"⚠️ {file_path.name} has issues: {validation['issues']}")
+                    logger.warning(
+                        f"⚠️ {file_path.name} has issues: {validation['issues']}"
+                    )
 
                     # Auto-fix if enabled
                     if auto_fix:
@@ -339,12 +342,14 @@ class AggtradesValidator:
                             logger.info(f"🔧 Fixed {file_path.name}")
 
             except Exception as e:
-                validation_result["errors"].append(f"Error processing {file_path.name}: {e}")
+                validation_result["errors"].append(
+                    f"Error processing {file_path.name}: {e}"
+                )
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
         validation_end = datetime.now()
         validation_time = validation_end - validation_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 AGGTRADES VALIDATION SUMMARY")
         logger.info(f"⏱️  Validation time: {validation_time}")
@@ -352,16 +357,20 @@ class AggtradesValidator:
         logger.info(f"✅ Valid files: {validation_result['valid_files']}")
         logger.info(f"❌ Invalid files: {validation_result['invalid_files']}")
         logger.info(f"🔧 Fixed files: {validation_result['fixed_files']}")
-        logger.info(f"📊 Success rate: {validation_result['valid_files']/validation_result['total_files']*100:.1f}%" if validation_result['total_files'] > 0 else "📊 Success rate: N/A")
-        
-        if validation_result['errors']:
+        logger.info(
+            f"📊 Success rate: {validation_result['valid_files']/validation_result['total_files']*100:.1f}%"
+            if validation_result["total_files"] > 0
+            else "📊 Success rate: N/A"
+        )
+
+        if validation_result["errors"]:
             logger.error("❌ VALIDATION ERRORS:")
-            for i, error in enumerate(validation_result['errors'], 1):
+            for i, error in enumerate(validation_result["errors"], 1):
                 logger.error(f"  {i}. {error}")
-        
-        if validation_result['invalid_files'] > 0 and not auto_fix:
+
+        if validation_result["invalid_files"] > 0 and not auto_fix:
             logger.warning("⚠️  Some files are invalid and auto-fix is disabled!")
-        elif validation_result['invalid_files'] == 0:
+        elif validation_result["invalid_files"] == 0:
             logger.info("✅ All aggtrades files are valid!")
 
         return validation_result
@@ -381,7 +390,7 @@ class AggtradesValidator:
             "failed_files": 0,
             "errors": [],
         },
-        context="aggtrades_validator.convert_to_parquet"
+        context="aggtrades_validator.convert_to_parquet",
     )
     def convert_to_parquet(self, symbol: str, exchange: str) -> dict:
         """Convert CSV aggtrades files to parquet format.
@@ -392,7 +401,6 @@ class AggtradesValidator:
 
         Returns:
             Dictionary with conversion results
-
         """
         logger.info(f"🔄 Converting aggtrades to parquet for {exchange}_{symbol}")
 
@@ -424,7 +432,9 @@ class AggtradesValidator:
 
             except Exception as e:
                 conversion_result["failed_files"] += 1
-                conversion_result["errors"].append(f"Error converting {csv_file.name}: {e}")
+                conversion_result["errors"].append(
+                    f"Error converting {csv_file.name}: {e}"
+                )
                 logger.exception(f"❌ Error converting {csv_file.name}: {e}")
 
         logger.info(
@@ -444,7 +454,6 @@ class AggtradesValidator:
 
         Returns:
             Validation report string
-
         """
         aggtrades_files = self.get_aggtrades_files(symbol, exchange)
 

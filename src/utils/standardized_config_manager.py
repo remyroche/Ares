@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Standardized Configuration Management System.
 
-This module provides centralized configuration management with validation,
-versioning, and standardized access patterns across all pipeline steps.
+This module provides centralized configuration management with validation, versioning,
+and standardized access patterns across all pipeline steps.
 """
 
+import copy
 import json
 import logging
 import os
@@ -14,7 +15,6 @@ from typing import Any, Dict, List, Optional, Union
 
 # Import pipeline standards
 from .pipeline_standards import PipelineStandards, pipeline_standards
-import copy
 
 
 class StandardizedConfigManager:
@@ -31,21 +31,35 @@ class StandardizedConfigManager:
             "pipeline": {
                 "required": ["symbol", "exchange", "timeframe"],
                 "optional": ["data_dir", "force_rerun", "enable_mlflow"],
-                "defaults": {"data_dir": None, "force_rerun": False, "enable_mlflow": True},
+                "defaults": {
+                    "data_dir": None,
+                    "force_rerun": False,
+                    "enable_mlflow": True,
+                },
             },
             "training": {
                 "required": ["model_type", "epochs"],
                 "optional": ["batch_size", "learning_rate", "validation_split"],
-                "defaults": {"batch_size": 32, "learning_rate": 0.001, "validation_split": 0.2},
+                "defaults": {
+                    "batch_size": 32,
+                    "learning_rate": 0.001,
+                    "validation_split": 0.2,
+                },
             },
             "data_quality": {
                 "required": [],
                 "optional": ["min_quality_score", "max_missing_ratio", "min_rows"],
-                "defaults": {"min_quality_score": 0.8, "max_missing_ratio": 0.1, "min_rows": 1000},
+                "defaults": {
+                    "min_quality_score": 0.8,
+                    "max_missing_ratio": 0.1,
+                    "min_rows": 1000,
+                },
             },
         }
 
-    def load_config(self, config_type: str, config_name: str = "default") -> Dict[str, Any]:
+    def load_config(
+        self, config_type: str, config_name: str = "default"
+    ) -> Dict[str, Any]:
         """Load configuration with validation and caching.
 
         Args:
@@ -88,7 +102,9 @@ class StandardizedConfigManager:
             return self.schemas[config_type]["defaults"].copy()
         return {}
 
-    def _validate_config(self, config: Dict[str, Any], config_type: str) -> Dict[str, Any]:
+    def _validate_config(
+        self, config: Dict[str, Any], config_type: str
+    ) -> Dict[str, Any]:
         """Validate configuration against schema and apply defaults."""
         if config_type not in self.schemas:
             self.logger.warning(f"⚠️ Unknown config type: {config_type}")
@@ -116,7 +132,9 @@ class StandardizedConfigManager:
 
         return validated_config
 
-    def create_step_config(self, step_name: str, base_config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_step_config(
+        self, step_name: str, base_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create standardized configuration for a specific step.
 
         Args:
@@ -129,7 +147,11 @@ class StandardizedConfigManager:
         step_config = base_config.copy()
 
         # Add step-specific defaults
-        step_defaults = {"step_name": step_name, "timestamp": datetime.now().isoformat(), "version": "1.0.0"}
+        step_defaults = {
+            "step_name": step_name,
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0",
+        }
 
         step_config.update(step_defaults)
 
@@ -145,7 +167,9 @@ class StandardizedConfigManager:
 
         return step_config
 
-    def save_config(self, config: Dict[str, Any], config_type: str, config_name: str) -> bool:
+    def save_config(
+        self, config: Dict[str, Any], config_type: str, config_name: str
+    ) -> bool:
         """Save configuration to file.
 
         Args:
@@ -164,7 +188,11 @@ class StandardizedConfigManager:
 
             # Add metadata
             config_with_metadata = {
-                "metadata": {"created_at": datetime.now().isoformat(), "version": "1.0.0", "config_type": config_type},
+                "metadata": {
+                    "created_at": datetime.now().isoformat(),
+                    "version": "1.0.0",
+                    "config_type": config_type,
+                },
                 "config": config,
             }
 
@@ -190,9 +218,15 @@ class StandardizedConfigManager:
         """
         return {
             "raw_data": pipeline_standards.build_path("raw_data", exchange, symbol),
-            "processed_data": pipeline_standards.build_path("processed_data", exchange, symbol),
-            "unified_data": pipeline_standards.build_path("unified_data", exchange, symbol),
-            "training_data": pipeline_standards.build_path("training_data", exchange, symbol),
+            "processed_data": pipeline_standards.build_path(
+                "processed_data", exchange, symbol
+            ),
+            "unified_data": pipeline_standards.build_path(
+                "unified_data", exchange, symbol
+            ),
+            "training_data": pipeline_standards.build_path(
+                "training_data", exchange, symbol
+            ),
             "models": pipeline_standards.build_path("models", exchange, symbol),
             "logs": pipeline_standards.build_path("logs", exchange, symbol),
         }
@@ -224,7 +258,9 @@ class StandardizedConfigManager:
 config_manager = StandardizedConfigManager()
 
 
-def get_standardized_config(step_name: str, config_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def get_standardized_config(
+    step_name: str, config_overrides: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Get standardized configuration for a step.
 
     Args:
@@ -261,7 +297,9 @@ def validate_step_config(step_config: Dict[str, Any], step_name: str) -> bool:
 
     for key in required_keys:
         if key not in step_config:
-            config_manager.logger.error(f"❌ Missing required config key for {step_name}: {key}")
+            config_manager.logger.error(
+                f"❌ Missing required config key for {step_name}: {key}"
+            )
             return False
 
     return True

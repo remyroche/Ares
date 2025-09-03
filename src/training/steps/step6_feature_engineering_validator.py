@@ -8,11 +8,11 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.utils.base_validator import BaseValidator
-from src.utils.logger import system_logger
 from src.utils.enhanced_validation_decorators import (
+    smart_validation_cache,
     validate_step6_comprehensive,
-    smart_validation_cache
 )
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 
@@ -319,8 +319,9 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
+
 import datetime as datetime
-    
+
     test_input = {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE", 

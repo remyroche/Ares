@@ -1,18 +1,9 @@
 # src/types/data_types.py
-
 """Data structure type definitions for market data and trading information."""
 
 from typing import Literal, TypedDict
 
-from .base_types import (
-    OrderId,
-    PositionId,
-    Price,
-    Symbol,
-    Timestamp,
-    TradeId,
-    Volume,
-)
+from .base_types import OrderId, PositionId, Price, Symbol, Timestamp, TradeId, Volume
 
 
 class OHLCVData(TypedDict):

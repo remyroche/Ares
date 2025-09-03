@@ -1,22 +1,22 @@
 # src/components/modular_strategist.py
 
-from datetime import datetime, timedelta
-from src.utils.logger import system_logger
-from typing import Any
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import error, initialization_error, invalid, missing
-import numpy as np
-import copy
 import asyncio
+import copy
+from datetime import datetime, timedelta
+from typing import Any
+
+import numpy as np
+
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, initialization_error, invalid, missing
+
 
 class ModularStrategist:
-    """
-    Enhanced modular strategist with comprehensive error handling and type safety.
-    """
+    """Enhanced modular strategist with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize modular strategist with enhanced type safety.
+        """Initialize modular strategist with enhanced type safety.
 
         Args:
             config: Configuration dictionary
@@ -61,8 +61,7 @@ class ModularStrategist:
         context="modular strategist initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize modular strategist with enhanced error handling.
+        """Initialize modular strategist with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -114,8 +113,7 @@ class ModularStrategist:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate strategist configuration.
+        """Validate strategist configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -172,7 +170,9 @@ class ModularStrategist:
             self.logger.info("Strategy modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing strategy modules: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing strategy modules: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -193,7 +193,9 @@ class ModularStrategist:
             self.logger.info("Position sizing module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing position sizing: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing position sizing: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -214,7 +216,9 @@ class ModularStrategist:
             self.logger.info("Risk management module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk management: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing risk management: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -276,8 +280,7 @@ class ModularStrategist:
         market_data: dict[str, Any],
         analysis_data: dict[str, Any],
     ) -> bool:
-        """
-        Execute trading strategy.
+        """Execute trading strategy.
 
         Args:
             market_data: Market data dictionary
@@ -347,8 +350,7 @@ class ModularStrategist:
         market_data: dict[str, Any],
         analysis_data: dict[str, Any],
     ) -> bool:
-        """
-        Validate strategy inputs.
+        """Validate strategy inputs.
 
         Args:
             market_data: Market data dictionary
@@ -362,14 +364,18 @@ class ModularStrategist:
             required_market_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_market_fields:
                 if field not in market_data:
-                    self.logger.error(missing(f"Missing required market data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required market data field: {field}")
+                    )
                     return False
 
             # Check required analysis data fields
             required_analysis_fields = ["signal", "confidence"]
             for field in required_analysis_fields:
                 if field not in analysis_data:
-                    self.logger.error(missing(f"Missing required analysis data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required analysis data field: {field}")
+                    )
                     return False
 
             # Validate data types
@@ -397,8 +403,7 @@ class ModularStrategist:
         market_data: dict[str, Any],
         analysis_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform position sizing.
+        """Perform position sizing.
 
         Args:
             market_data: Market data dictionary
@@ -455,8 +460,7 @@ class ModularStrategist:
         market_data: dict[str, Any],
         analysis_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform risk management.
+        """Perform risk management.
 
         Args:
             market_data: Market data dictionary
@@ -513,8 +517,7 @@ class ModularStrategist:
         market_data: dict[str, Any],
         analysis_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform portfolio optimization.
+        """Perform portfolio optimization.
 
         Args:
             market_data: Market data dictionary
@@ -571,8 +574,7 @@ class ModularStrategist:
         market_data: dict[str, Any],
         analysis_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform dynamic rebalancing.
+        """Perform dynamic rebalancing.
 
         Args:
             market_data: Market data dictionary
@@ -942,8 +944,7 @@ class ModularStrategist:
         self,
         strategy_type: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Get strategy results.
+        """Get strategy results.
 
         Args:
             strategy_type: Optional strategy type filter
@@ -966,8 +967,7 @@ class ModularStrategist:
         context="strategy history getting",
     )
     def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get strategy history.
+        """Get strategy history.
 
         Args:
             limit: Optional limit on number of records
@@ -988,8 +988,7 @@ class ModularStrategist:
             return []
 
     def get_strategist_status(self) -> dict[str, Any]:
-        """
-        Get strategist status information.
+        """Get strategist status information.
 
         Returns:
             Dict[str, Any]: Strategist status
@@ -1035,8 +1034,10 @@ class ModularStrategist:
         except Exception as e:
             self.logger.error(error(f"Error stopping modular strategist: {e}"))
 
+
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),
@@ -1046,8 +1047,7 @@ modular_strategist: ModularStrategist | None = None
 async def setup_modular_strategist(
     config: dict[str, Any] | None = None,
 ) -> ModularStrategist | None:
-    """
-    Setup global modular strategist.
+    """Setup global modular strategist.
 
     Args:
         config: Optional configuration dictionary

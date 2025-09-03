@@ -13,18 +13,18 @@ from typing import Any, Dict, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
+    quality_gate,
     resource_monitor,
     secure_data_processing,
     validate_data_structure,
     with_tracing_span,
-    quality_gate,
 )
 from src.utils.common_operations import safe_json_load
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step2DataReadingValidator")
 
@@ -91,8 +91,9 @@ async def run_validator(
         try:
             import pandas as pd
             import json
+
 import numpy as np
-            
+
             # Read the most recent data file
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
             data = pd.read_parquet(latest_file)

@@ -3,12 +3,13 @@
 import csv
 import glob
 import os
-import shutil
 import os.path
+import shutil
 
 
 def check_file_format(file_path) -> bool | None:
     """Check if a CSV file follows the correct format.
+
     Returns True if the file is correctly formatted, False otherwise.
     """
     try:
@@ -53,6 +54,7 @@ def check_file_format(file_path) -> bool | None:
 
 def detect_file_format(file_path) -> str | None:
     """Detect the format of a CSV file and return the format type.
+
     Returns: 'correct', 'format1', 'format2', 'format3', or 'unknown'.
     """
     try:
@@ -103,12 +105,7 @@ class DataFileReformatter:
         try:
             with (
                 open(self.input_path, encoding="utf-8") as infile,
-                open(
-                    self.output_path,
-                    "w",
-                    newline="",
-                    encoding="utf-8"
-                ) as outfile,
+                open(self.output_path, "w", newline="", encoding="utf-8") as outfile,
             ):
                 writer = csv.writer(outfile)
                 return processor(infile, writer)
@@ -174,10 +171,15 @@ class DataFileReformatter:
                 price = other_cols[0] if len(other_cols) > 0 else ""
                 quantity = other_cols[1] if len(other_cols) > 1 else ""
                 is_buyer_maker = other_cols[2] if len(other_cols) > 2 else ""
-                agg_trade_id = other_cols[3] if len(other_cols) > 3 else f"agg_{timestamp}_{price}_{quantity}"
+                agg_trade_id = (
+                    other_cols[3]
+                    if len(other_cols) > 3
+                    else f"agg_{timestamp}_{price}_{quantity}"
+                )
 
-                writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
-
+                writer.writerow(
+                    [timestamp, price, quantity, is_buyer_maker, agg_trade_id]
+                )
 
             return True
         except Exception:
@@ -216,7 +218,8 @@ class DataFileReformatter:
 
 
 def auto_reformat_aggtrades_files() -> None:
-    """Automatically detect and reformat all aggtrades CSV files that don't follow the correct format."""
+    """Automatically detect and reformat all aggtrades CSV files that don't follow the
+    correct format."""
     # Define paths
     data_cache_dir = "data_cache"
     backup_dir = "data_cache/backup_before_reformat"
@@ -267,10 +270,12 @@ def auto_reformat_aggtrades_files() -> None:
             shutil.copy2(backup_path, file_path)
 
 
-
 def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> None:
-    """Automatically detect and reformat aggtrades CSV files for a specific exchange and symbol.
-    This is a targeted version that only processes files for the specified exchange/symbol.
+    """Automatically detect and reformat aggtrades CSV files for a specific exchange and
+    symbol.
+
+    This is a targeted version that only processes files for the specified
+    exchange/symbol.
     """
     # Define paths
     data_cache_dir = "data_cache"
@@ -317,9 +322,9 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
             shutil.copy2(backup_path, file_path)
 
 
-
 def create_dummy_files(input_dir) -> None:
     """Creates a set of dummy CSV files for demonstration purposes.
+
     This function simulates the two different formats you provided.
     """
     if os.path.exists(input_dir):

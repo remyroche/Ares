@@ -8,15 +8,15 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.tracing import with_tracing_span
 from src.utils.warning_symbols import (
-import pandas as pd
     error,
     failed,
+    import,
     initialization_error,
     invalid,
 )
-from src.utils.tracing import with_tracing_span
-from src.utils.warning_symbols import error, failed, initialization_error, invalid
+from src.utils.warning_symbols import pandas as pd
 
 DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
@@ -361,7 +361,9 @@ class Supervisor:
     async def _initialize_enhanced_prediction_service(self) -> bool:
         """Initialize the enhanced prediction service."""
         try:
-            from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
+            from src.supervisor.enhanced_prediction_service import (
+                EnhancedPredictionService,
+            )
 
             self.enhanced_prediction_service = EnhancedPredictionService(self.config)
             success = await self.enhanced_prediction_service.initialize()
@@ -617,8 +619,11 @@ class Supervisor:
         try:
             # Import enhanced execution manager
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
+
 import copy
+
 import numpy as np
+
             # Initialize enhanced execution manager
             enhanced_manager = EnhancedExecutionManager(self.config)
 

@@ -47,9 +47,8 @@ def _clamp01(value: float) -> float:
 def direction_to_sign(direction: str) -> int:
     """Map a textual direction to a signed integer.
 
-    LONG/BUY/UP/BULL(ISH) -> +1
-    SHORT/SELL/DOWN/BEAR(ISH) -> -1
-    others (e.g., HOLD/UNKNOWN) -> 0
+    LONG/BUY/UP/BULL(ISH) -> +1 SHORT/SELL/DOWN/BEAR(ISH) -> -1 others (e.g.,
+    HOLD/UNKNOWN) -> 0
     """
     if not isinstance(direction, str):
         return 0
@@ -77,7 +76,6 @@ def aggregate_directional_confidences(
 
     Returns:
         dict with {"direction": "LONG"|"SHORT"|"HOLD", "confidence": float, "signed_value": float, "count": int}
-
     """
     signed_sum: float = 0.0
     total_weight: float = 0.0
@@ -103,7 +101,9 @@ def aggregate_directional_confidences(
 
     # Weighted average by total weight (per review suggestion)
     signed_avg = signed_sum / total_weight
-    final_direction = "LONG" if signed_avg > 0 else ("SHORT" if signed_avg < 0 else "HOLD")
+    final_direction = (
+        "LONG" if signed_avg > 0 else ("SHORT" if signed_avg < 0 else "HOLD")
+    )
     final_confidence = _clamp01(abs(signed_avg))
 
     return {
@@ -145,7 +145,9 @@ def calculate_multi_output_confidence(
         Dictionary containing confidence scores and predictions
     """
     # 1. Direction confidence
-    base_direction_confidence = abs(direction_probability - 0.5) * 2  # Convert to 0-1 scale
+    base_direction_confidence = (
+        abs(direction_probability - 0.5) * 2
+    )  # Convert to 0-1 scale
     threshold_mask = base_direction_confidence >= direction_threshold
     direction_confidence = base_direction_confidence * threshold_mask
 
@@ -166,10 +168,14 @@ def calculate_multi_output_confidence(
     price_confidence = base_price_confidence * price_threshold_mask
 
     # 4. Simple average (no weighting since all from same model)
-    simple_confidence = (direction_confidence + profit_confidence + price_confidence) / 3.0
+    simple_confidence = (
+        direction_confidence + profit_confidence + price_confidence
+    ) / 3.0
 
     # 5. Apply minimum ensemble confidence threshold
-    final_confidence = simple_confidence if simple_confidence >= min_ensemble_confidence else 0.0
+    final_confidence = (
+        simple_confidence if simple_confidence >= min_ensemble_confidence else 0.0
+    )
     final_confidence = _clamp01(final_confidence)
 
     return {
@@ -235,10 +241,14 @@ def calculate_multi_output_confidence_batch(
     price_confidence = base_price_confidence * price_threshold_mask
 
     # 4. Simple average
-    simple_confidence = (direction_confidence + profit_confidence + price_confidence) / 3.0
+    simple_confidence = (
+        direction_confidence + profit_confidence + price_confidence
+    ) / 3.0
 
     # 5. Apply minimum ensemble confidence threshold
-    final_confidence = np.where(simple_confidence >= min_ensemble_confidence, simple_confidence, 0.0)
+    final_confidence = np.where(
+        simple_confidence >= min_ensemble_confidence, simple_confidence, 0.0
+    )
     final_confidence = np.clip(final_confidence, 0, 1)
 
     return {
@@ -253,7 +263,9 @@ def calculate_multi_output_confidence_batch(
     }
 
 
-def get_confidence_threshold_signals(confidence_scores: dict[str, np.ndarray], threshold: float = 0.7) -> np.ndarray:
+def get_confidence_threshold_signals(
+    confidence_scores: dict[str, np.ndarray], threshold: float = 0.7
+) -> np.ndarray:
     """Get trading signals based on confidence threshold.
 
     Args:
@@ -270,7 +282,9 @@ def get_confidence_threshold_signals(confidence_scores: dict[str, np.ndarray], t
     signals = np.where(
         (final_confidence >= threshold) & (direction_prediction == 1),
         1,  # Long signal
-        np.where((final_confidence >= threshold) & (direction_prediction == 0), -1, 0),  # Short signal  # No signal
+        np.where(
+            (final_confidence >= threshold) & (direction_prediction == 0), -1, 0
+        ),  # Short signal  # No signal
     )
 
     return signals

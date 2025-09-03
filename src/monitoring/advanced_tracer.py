@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""
-Advanced Tracing System with Correlation IDs
+"""Advanced Tracing System with Correlation IDs.
 
-This module provides comprehensive request/response tracing across all components
-of the Ares trading bot with correlation IDs for debugging and performance analysis.
+This module provides comprehensive request/response tracing across all components of the
+Ares trading bot with correlation IDs for debugging and performance analysis.
 """
 
 from __future__ import annotations
@@ -17,11 +16,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.utils.centralized_decorators import PerformanceLevel, performance_monitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.centralized_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-)
 from src.utils.logger import system_logger
 
 
@@ -95,10 +91,8 @@ class PerformanceMetrics:
 
 
 class AdvancedTracer:
-    """
-    Advanced tracing system with correlation IDs for comprehensive
-    request/response tracking across all components.
-    """
+    """Advanced tracing system with correlation IDs for comprehensive request/response
+    tracking across all components."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -110,12 +104,18 @@ class AdvancedTracer:
             "correlation_id_header",
             "X-Correlation-ID",
         )
-        self.trace_sampling_rate: float = float(self.tracer_config.get("trace_sampling_rate", 1.0))
-        self.max_trace_history: int = int(self.tracer_config.get("max_trace_history", 10000))
+        self.trace_sampling_rate: float = float(
+            self.tracer_config.get("trace_sampling_rate", 1.0)
+        )
+        self.max_trace_history: int = int(
+            self.tracer_config.get("max_trace_history", 10000)
+        )
         self.enable_performance_tracing: bool = bool(
             self.tracer_config.get("enable_performance_tracing", True)
         )
-        self.enable_error_tracing: bool = bool(self.tracer_config.get("enable_error_tracing", True))
+        self.enable_error_tracing: bool = bool(
+            self.tracer_config.get("enable_error_tracing", True)
+        )
 
         # Storage
         self._traces: Dict[str, TraceRequest] = {}
@@ -164,10 +164,17 @@ class AdvancedTracer:
         return span
 
     @handle_errors(default_return=None, context="advanced_tracer.finish_span")
-    def finish_span(self, span: TraceSpan, status: str = "completed", error_message: Optional[str] = None) -> TraceSpan | None:
+    def finish_span(
+        self,
+        span: TraceSpan,
+        status: str = "completed",
+        error_message: Optional[str] = None,
+    ) -> TraceSpan | None:
         span.end_time = datetime.now()
         if span.end_time and span.start_time:
-            span.duration_ms = (span.end_time - span.start_time).total_seconds() * 1000.0
+            span.duration_ms = (
+                span.end_time - span.start_time
+            ).total_seconds() * 1000.0
         span.status = status
         span.error_message = error_message
         return span

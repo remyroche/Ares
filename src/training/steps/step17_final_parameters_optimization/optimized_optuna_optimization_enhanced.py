@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Enhanced Optuna Optimizer with Advanced Performance Optimizations
+"""Enhanced Optuna Optimizer with Advanced Performance Optimizations.
 
 This module provides an enhanced version of the Optuna optimizer with:
 - Vectorized operations using NumPy and Pandas
@@ -130,8 +129,7 @@ class VectorizedOptimizationResult:
 
 
 class VectorizedOptunaOptimizer:
-    """
-    Enhanced Optuna optimizer with advanced performance optimizations.
+    """Enhanced Optuna optimizer with advanced performance optimizations.
 
     Key Features:
     - Vectorized operations for faster computation
@@ -152,8 +150,7 @@ class VectorizedOptunaOptimizer:
         enable_jit: bool = True,
         cache_size: int = 1000,
     ):
-        """
-        Initialize the vectorized optimizer.
+        """Initialize the vectorized optimizer.
 
         Args:
             storage_url: Database URL for study persistence
@@ -571,10 +568,14 @@ class VectorizedOptunaOptimizer:
         signals = np.where(strength_scores > high_confidence, 1.0, signals)
         signals = np.where(strength_scores < -high_confidence, -1.0, signals)
         signals = np.where(
-            (strength_scores > min_confidence) & (signals == 0), 0.5, signals,
+            (strength_scores > min_confidence) & (signals == 0),
+            0.5,
+            signals,
         )
         signals = np.where(
-            (strength_scores < -min_confidence) & (signals == 0), -0.5, signals,
+            (strength_scores < -min_confidence) & (signals == 0),
+            -0.5,
+            signals,
         )
         return signals
 
@@ -636,13 +637,13 @@ class VectorizedOptunaOptimizer:
         cv_folds: int = 5,
         early_stopping_patience: int = 15,
         subsample_fraction: float = 0.7,
-        custom_objective: Callable[[optuna.Trial, np.ndarray, np.ndarray], float]
-        | None = None,
+        custom_objective: (
+            Callable[[optuna.Trial, np.ndarray, np.ndarray], float] | None
+        ) = None,
         custom_space: Callable[[optuna.Trial], dict[str, Any]] | None = None,
         batch_size: int = 10,
     ) -> VectorizedOptimizationResult | None:
-        """
-        Optimized optimization with vectorized operations and caching.
+        """Optimized optimization with vectorized operations and caching.
 
         Args:
             model_type: Type of optimization
@@ -718,21 +719,25 @@ class VectorizedOptunaOptimizer:
 
         # ML and specialized branches
         if model_type == "sr_parameters":
+
             def _obj_sr(trial: optuna.Trial) -> float:
                 return self._evaluate_sr_parameters_vectorized(trial, X_np, y_np)
 
             study.optimize(_obj_sr, n_trials=n_trials, n_jobs=n_jobs)
         elif model_type == "autoencoder":
+
             def _obj_ae(trial: optuna.Trial) -> float:
                 return self._evaluate_autoencoder_vectorized(trial, X_np, y_np)
 
             study.optimize(_obj_ae, n_trials=n_trials, n_jobs=n_jobs)
         elif model_type == "order_execution":
+
             def _obj_exec(trial: optuna.Trial) -> float:
                 return self._evaluate_order_execution_vectorized(trial, X_np, y_np)
 
             study.optimize(_obj_exec, n_trials=n_trials, n_jobs=n_jobs)
         elif model_type in self._model_configs:
+
             def _obj_ml(trial: optuna.Trial) -> float:
                 return self._evaluate_ml_model_vectorized(
                     trial=trial,
@@ -903,7 +908,9 @@ class VectorizedOptunaOptimizer:
                 splits = cv.split(X)
             else:
                 cv = StratifiedKFold(
-                    n_splits=max(2, cv_folds), shuffle=True, random_state=42,
+                    n_splits=max(2, cv_folds),
+                    shuffle=True,
+                    random_state=42,
                 )
                 splits = cv.split(X, y)
 
@@ -980,6 +987,7 @@ class VectorizedOptunaOptimizer:
 
 # Convenience function for easy usage
 
+
 def create_vectorized_optimizer(
     storage_url: str = "sqlite:///vectorized_optuna_studies.db",
     enable_gpu: bool = True,
@@ -1029,4 +1037,4 @@ if __name__ == "__main__":
             print(f"   GPU operations: {metrics['gpu_operations']}")
             print(f"   JIT compilations: {metrics['jit_compilations']}")
 
-    asyncio.run( main())
+    asyncio.run(main())

@@ -9,11 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    missing,
-)
+from src.utils.warning_symbols import error, failed, missing
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -146,7 +142,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                     missing_files.append(file_path)
 
             if missing_files:
-                self.print(missing(f"❌ Missing tactician model files: {missing_files}"))
+                self.print(
+                    missing(f"❌ Missing tactician model files: {missing_files}")
+                )
                 return False
 
             self.logger.info("✅ All tactician model files exist")
@@ -460,9 +458,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     def _unwrap_estimator(self, artifact: Any) -> Any:
         """Unwrap a potentially wrapped model artifact to get the estimator.
 
-        Supports dict wrappers ('model', 'estimator', 'clf', 'pipeline'),
-        objects with 'best_estimator_', and tuple/list first element.
-        Returns the input if it already exposes a callable predict.
+        Supports dict wrappers ('model', 'estimator', 'clf', 'pipeline'), objects with
+        'best_estimator_', and tuple/list first element. Returns the input if it already
+        exposes a callable predict.
         """
         try:
             if callable(getattr(artifact, "predict", None)):
@@ -533,4 +531,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( test_validator())
+    _asyncio.run(test_validator())

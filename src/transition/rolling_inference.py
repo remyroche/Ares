@@ -1,13 +1,16 @@
 # src/transition/rolling_inference.py
 
 from __future__ import annotations
-from src.transition.multitask_rf import MultiTaskRandomForest
-from src.utils.logger import system_logger
-from typing import Any
+
 import contextlib
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
+from src.transition.multitask_rf import MultiTaskRandomForest
+from src.utils.logger import system_logger
 
 
 @dataclass
@@ -18,8 +21,8 @@ class RollingInferenceConfig:
 
 
 class RollingMTInference:
-    """
-    Runtime helper for the rolling MultiTask RF.
+    """Runtime helper for the rolling MultiTask RF.
+
     - Loads per-head models, thresholds, and reliability
     - Builds a single-row feature vector for the latest pre-window
     - Produces entry/exit decisions and supporting probabilities
@@ -55,7 +58,8 @@ class RollingMTInference:
     def load(self) -> bool:
         try:
             models, meta, feat = MultiTaskRandomForest.load(
-                self.models_dir, prefix=self.prefix,
+                self.models_dir,
+                prefix=self.prefix,
             )
             self.models = models
             self.thresholds = meta.get("thresholds", {})

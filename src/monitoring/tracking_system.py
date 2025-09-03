@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""
-Tracking System (minimal scaffold)
+"""Tracking System (minimal scaffold)
 
 Provides scaffolding for comprehensive tracking.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-import asyncio
 
 
 class TrackingType(Enum):

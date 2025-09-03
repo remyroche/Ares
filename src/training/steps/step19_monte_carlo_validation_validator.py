@@ -6,13 +6,9 @@ import sys
 from pathlib import Path
 from typing import Any, Tuple
 
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    validation_error,
-)
-from src.utils.error_handler import handle_errors
 from src.utils.common_operations import safe_json_load
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import error, failed, validation_error
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -29,7 +25,9 @@ class Step14MonteCarloValidationValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="Step14.validate")
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="Step14.validate"
+    )
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> bool:
@@ -41,7 +39,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
-
         """
         self.logger.info("🔍 Validating Monte Carlo validation step...")
 
@@ -73,10 +70,12 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             return False
 
         # 3. Validate Monte Carlo statistical significance
-        significance_passed, significance_metrics = self._validate_statistical_significance(
-            symbol,
-            exchange,
-            data_dir,
+        significance_passed, significance_metrics = (
+            self._validate_statistical_significance(
+                symbol,
+                exchange,
+                data_dir,
+            )
         )
         self.validation_results["statistical_significance"] = significance_metrics
         if not significance_passed:
@@ -84,10 +83,12 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             return False
 
         # 4. Validate Monte Carlo performance distribution
-        distribution_passed, distribution_metrics = self._validate_performance_distribution(
-            symbol,
-            exchange,
-            data_dir,
+        distribution_passed, distribution_metrics = (
+            self._validate_performance_distribution(
+                symbol,
+                exchange,
+                data_dir,
+            )
         )
         self.validation_results["performance_distribution"] = distribution_metrics
         if not distribution_passed:
@@ -106,7 +107,9 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             return False
 
         # 6. Validate outcome favorability
-        outcome_passed, outcome_metrics = self.validate_outcome_favorability(step_result)
+        outcome_passed, outcome_metrics = self.validate_outcome_favorability(
+            step_result
+        )
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
@@ -118,7 +121,11 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.info("✅ Monte Carlo validation validation passed")
         return True
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step14._validate_monte_carlo_files")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=(False, {}),
+        context="Step14._validate_monte_carlo_files",
+    )
     def _validate_monte_carlo_files(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -131,7 +138,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             Tuple[bool, dict]: (passed, metrics)
-
         """
         # Expected Monte Carlo validation file patterns
         expected_files = [
@@ -160,7 +166,11 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.info("✅ All Monte Carlo validation files exist")
         return True, {"missing_files": [], "files": file_details}
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step14._validate_statistical_significance")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=(False, {}),
+        context="Step14._validate_statistical_significance",
+    )
     def _validate_statistical_significance(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -173,7 +183,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             Tuple[bool, dict]: (passed, metrics)
-
         """
         import json
 
@@ -248,7 +257,11 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.error(f"Results file not found: {results_file}")
         return False, {"missing_file": results_file}
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step14._validate_performance_distribution")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=(False, {}),
+        context="Step14._validate_performance_distribution",
+    )
     def _validate_performance_distribution(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -261,7 +274,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             Tuple[bool, dict]: (passed, metrics)
-
         """
         import json
 
@@ -369,7 +381,11 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.error(f"Performance file not found: {performance_file}")
         return False, {"missing_file": performance_file}
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step14._validate_monte_carlo_robustness")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=(False, {}),
+        context="Step14._validate_monte_carlo_robustness",
+    )
     def _validate_monte_carlo_robustness(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -382,7 +398,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             Tuple[bool, dict]: (passed, metrics)
-
         """
         import json
 
@@ -478,7 +493,6 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-
     """
     validator = Step14MonteCarloValidationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -509,4 +523,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( test_validator())
+    _asyncio.run(test_validator())

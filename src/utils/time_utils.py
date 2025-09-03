@@ -1,6 +1,4 @@
-"""
-Time utilities for Ares Trading System
-"""
+"""Time utilities for Ares Trading System."""
 
 import os
 from datetime import datetime, timezone
@@ -77,8 +75,16 @@ def resolve_time_window_ms(
         except Exception:
             return None
 
-    t0 = as_int(cfg.get("t0_ms")) or as_int(cfg.get("start_timestamp_ms")) or as_int(os.environ.get("ARES_T0_MS"))
-    t1 = as_int(cfg.get("t1_ms")) or as_int(cfg.get("end_timestamp_ms")) or as_int(os.environ.get("ARES_T1_MS"))
+    t0 = (
+        as_int(cfg.get("t0_ms"))
+        or as_int(cfg.get("start_timestamp_ms"))
+        or as_int(os.environ.get("ARES_T0_MS"))
+    )
+    t1 = (
+        as_int(cfg.get("t1_ms"))
+        or as_int(cfg.get("end_timestamp_ms"))
+        or as_int(os.environ.get("ARES_T1_MS"))
+    )
 
     if t0 is None:
         # Fallback implementation for t0

@@ -8,24 +8,21 @@ PositionDivisionStrategy for consistency.
 """
 
 import asyncio
-import yaml
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    invalid,
-    missing,
-    warning,
-)
+from src.utils.warning_symbols import failed, invalid, missing, warning
+
 
 class PositionAction(Enum):
     """Enum for position actions."""
@@ -585,6 +582,7 @@ class PositionMonitor:
                     try:
                         with open(path, 'r') as f:
                             import yaml
+
 import copy
 
                             updated_config = yaml.safe_load(f)

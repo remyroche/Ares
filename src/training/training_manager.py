@@ -1,18 +1,15 @@
 # src/training/training_manager.py
 
+import asyncio
 import warnings
 from datetime import datetime
 from typing import Any, Number
-import asyncio
 
 warnings.filterwarnings("ignore")
 
 
 # Import the new RegularizationManager
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -213,6 +210,7 @@ class TrainingManager:
         """Initialize feature integration manager."""
         try:
             from src.training.feature_integration import FeatureIntegrationManager
+
 import copy
 
             self.feature_integration_manager = FeatureIntegrationManager(self.config)

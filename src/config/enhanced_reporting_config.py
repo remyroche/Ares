@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""
-Enhanced Reporting Configuration
+"""Enhanced Reporting Configuration.
 
-This module provides configuration for the enhanced reporting system
-that integrates paper trading, live trading, and backtesting with
-consistent detailed metrics across all trading modes.
+This module provides configuration for the enhanced reporting system that integrates
+paper trading, live trading, and backtesting with consistent detailed metrics across all
+trading modes.
 """
 
 from typing import Any
 
 
 def get_enhanced_reporting_config() -> dict[str, Any]:
-    """
-    Get comprehensive configuration for enhanced reporting system.
+    """Get comprehensive configuration for enhanced reporting system.
 
     Returns:
         Dict[str, Any]: Configuration dictionary
@@ -298,8 +296,7 @@ def get_enhanced_reporting_config() -> dict[str, Any]:
 
 
 def get_paper_trading_config() -> dict[str, Any]:
-    """
-    Get configuration specifically for paper trading with enhanced reporting.
+    """Get configuration specifically for paper trading with enhanced reporting.
 
     Returns:
         Dict[str, Any]: Paper trading configuration
@@ -324,8 +321,7 @@ def get_paper_trading_config() -> dict[str, Any]:
 
 
 def get_backtesting_config() -> dict[str, Any]:
-    """
-    Get configuration specifically for backtesting with enhanced reporting.
+    """Get configuration specifically for backtesting with enhanced reporting.
 
     Returns:
         Dict[str, Any]: Backtesting configuration
@@ -350,8 +346,7 @@ def get_backtesting_config() -> dict[str, Any]:
 
 
 def get_live_trading_config() -> dict[str, Any]:
-    """
-    Get configuration specifically for live trading with enhanced reporting.
+    """Get configuration specifically for live trading with enhanced reporting.
 
     Returns:
         Dict[str, Any]: Live trading configuration
@@ -376,8 +371,7 @@ def get_live_trading_config() -> dict[str, Any]:
 
 
 def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
-    """
-    Validate enhanced reporting configuration.
+    """Validate enhanced reporting configuration.
 
     Args:
         config: Configuration dictionary to validate
@@ -420,8 +414,7 @@ def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
 
 
 def get_minimal_config() -> dict[str, Any]:
-    """
-    Get minimal configuration for basic enhanced reporting.
+    """Get minimal configuration for basic enhanced reporting.
 
     Returns:
         Dict[str, Any]: Minimal configuration

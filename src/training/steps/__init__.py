@@ -1,7 +1,7 @@
 """Training steps module with explicit imports.
 
-This module provides access to all training step classes and functions
-with explicit imports to avoid namespace pollution.
+This module provides access to all training step classes and functions with explicit
+imports to avoid namespace pollution.
 """
 
 # Import specific classes from each step module

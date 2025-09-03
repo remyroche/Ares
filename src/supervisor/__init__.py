@@ -1,8 +1,8 @@
 """Supervisor Package.
 
-The supervisor package provides high-level orchestration and management
-for the trading system, including portfolio management, performance monitoring,
-model behavior tracking, and dynamic weighting of ensemble predictions.
+The supervisor package provides high-level orchestration and management for the trading
+system, including portfolio management, performance monitoring, model behavior tracking,
+and dynamic weighting of ensemble predictions.
 """
 
 # src/supervisor/__init__.py

@@ -2,6 +2,7 @@
 Base validator class for training step validators.
 """
 
+import asyncio
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -11,7 +12,6 @@ import pandas as pd
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import failed, missing, validation_error
-import asyncio
 
 
 class BaseValidator(ABC):
@@ -298,6 +298,7 @@ class BaseValidator(ABC):
             if check_model_integrity and metrics["is_file"]:
                 try:
                     import pickle
+
 import os.path
 
                     with open(model_path, "rb") as f:

@@ -7,13 +7,18 @@ from typing import Any, Optional
 import mlflow
 
 from src.config import ARES_VERSION
+from src.utils.common_operations import (
+    ensure_directory,
+    format_datetime,
+    get_current_datetime,
+    safe_json_dump,
+    safe_log_artifact,
+    safe_log_metric,
+    safe_log_params,
+)
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_log_metric, safe_log_params, safe_log_artifact
-)
 
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
@@ -26,7 +31,11 @@ def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
         Dictionary containing asset, exchange, lookback_period, and project_version
     """
     # Extract asset/symbol
-    asset = config.get("trading_symbol") or config.get("symbol") or config.get("trade_symbol", "ETHUSDT")
+    asset = (
+        config.get("trading_symbol")
+        or config.get("symbol")
+        or config.get("trade_symbol", "ETHUSDT")
+    )
 
     # Extract exchange
     exchange = config.get("exchange_name") or config.get("exchange", "BINANCE")
@@ -69,7 +78,9 @@ def with_enhanced_metadata(func):
         metadata = extract_training_metadata(config)
 
         # Add training date
-        metadata["training_date"] = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
+        metadata["training_date"] = format_datetime(
+            get_current_datetime(), "%Y-%m-%dT%H:%M:%S"
+        )
 
         # Add metadata to kwargs
         kwargs["enhanced_metadata"] = metadata
@@ -85,24 +96,31 @@ def log_bot_version_to_mlflow(run_id: str | None = None) -> None:
 
     Args:
         run_id: Optional MLFlow run ID. If None, uses the active run.
-
     """
     if run_id:
         with mlflow.start_run(run_id=run_id):
             mlflow.set_tag("bot_version", ARES_VERSION)
-            mlflow.set_tag("training_date", format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"))
+            mlflow.set_tag(
+                "training_date",
+                format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
+            )
             system_logger.info(
                 f"✅ Logged bot version {ARES_VERSION} to MLFlow run {run_id}",
             )
     else:
         mlflow.set_tag("bot_version", ARES_VERSION)
-        mlflow.set_tag("training_date", format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"))
+        mlflow.set_tag(
+            "training_date",
+            format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
+        )
         system_logger.info(
             f"✅ Logged bot version {ARES_VERSION} to active MLFlow run",
         )
 
 
-@handle_errors(default_return=None, context="mlflow_utils.log_training_metadata_to_mlflow")
+@handle_errors(
+    default_return=None, context="mlflow_utils.log_training_metadata_to_mlflow"
+)
 def log_training_metadata_to_mlflow(
     symbol: str,
     timeframe: str,
@@ -116,7 +134,6 @@ def log_training_metadata_to_mlflow(
         timeframe: Timeframe used for training
         model_type: Type of model being trained
         run_id: Optional MLFlow run ID. If None, uses the active run.
-
     """
     metadata: dict[str, Any] = {
         "bot_version": ARES_VERSION,
@@ -139,7 +156,9 @@ def log_training_metadata_to_mlflow(
         system_logger.info("✅ Logged training metadata to active MLFlow run")
 
 
-@handle_errors(default_return=None, context="mlflow_utils.log_enhanced_training_metadata")
+@handle_errors(
+    default_return=None, context="mlflow_utils.log_enhanced_training_metadata"
+)
 def log_enhanced_training_metadata(
     asset: str,
     exchange: str,
@@ -271,7 +290,9 @@ def log_model_with_metadata(
         for key, value in metadata.items():
             mlflow.set_tag(key, value)
 
-        system_logger.info(f"✅ Logged model '{model_name}' with metadata to active MLFlow run")
+        system_logger.info(
+            f"✅ Logged model '{model_name}' with metadata to active MLFlow run"
+        )
 
 
 @handle_errors(default_return=None, context="mlflow_utils.log_artifacts_with_metadata")
@@ -342,7 +363,9 @@ def log_artifacts_with_metadata(
         for key, value in metadata.items():
             mlflow.set_tag(key, value)
 
-        system_logger.info(f"✅ Logged artifact '{artifact_path}' with metadata to active MLFlow run")
+        system_logger.info(
+            f"✅ Logged artifact '{artifact_path}' with metadata to active MLFlow run"
+        )
 
 
 @handle_errors(default_return=None, context="mlflow_utils.log_metrics_with_metadata")
@@ -420,7 +443,9 @@ def log_metrics_with_metadata(
         for key, value in metadata.items():
             mlflow.set_tag(key, value)
 
-        system_logger.info(f"✅ Logged {len(metrics)} metrics with metadata to active MLFlow run")
+        system_logger.info(
+            f"✅ Logged {len(metrics)} metrics with metadata to active MLFlow run"
+        )
 
 
 @handle_errors(default_return=None, context="mlflow_utils.log_params_with_metadata")
@@ -490,7 +515,9 @@ def log_params_with_metadata(
         for key, value in metadata.items():
             mlflow.set_tag(key, value)
 
-        system_logger.info(f"✅ Logged {len(params)} parameters with metadata to active MLFlow run")
+        system_logger.info(
+            f"✅ Logged {len(params)} parameters with metadata to active MLFlow run"
+        )
 
 
 @handle_errors(default_return=dict, context="mlflow_utils.get_run_with_bot_version")
@@ -502,7 +529,6 @@ def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
 
     Returns:
         Dict containing run information with bot version, or None if not found
-
     """
     client = mlflow.tracking.MlflowClient()
     run = client.get_run(run_id)
@@ -575,11 +601,19 @@ def validate_run_metadata(run_id: str) -> bool:
         if not metadata:
             return False
 
-        required_fields = ["asset", "exchange", "lookback_period", "project_version", "training_date"]
+        required_fields = [
+            "asset",
+            "exchange",
+            "lookback_period",
+            "project_version",
+            "training_date",
+        ]
 
         for field in required_fields:
             if metadata.get(field) in [None, "Unknown", ""]:
-                system_logger.warning(f"Missing required metadata field: {field} in run {run_id}")
+                system_logger.warning(
+                    f"Missing required metadata field: {field} in run {run_id}"
+                )
                 return False
 
         system_logger.info(f"✅ Run {run_id} has all required metadata")
@@ -615,7 +649,11 @@ def ensure_enhanced_mlflow_run(
 
         # Set up MLflow
         tracking_uri = config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
-        exp_name = experiment_name or config.get("mlflow", {}).get("experiment_name") or "ares_trading"
+        exp_name = (
+            experiment_name
+            or config.get("mlflow", {}).get("experiment_name")
+            or "ares_trading"
+        )
 
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(exp_name)
@@ -642,7 +680,9 @@ def ensure_enhanced_mlflow_run(
                 },
             )
 
-            system_logger.info(f"✅ Created enhanced MLflow run {run_id} with all required metadata")
+            system_logger.info(
+                f"✅ Created enhanced MLflow run {run_id} with all required metadata"
+            )
             return run_id
 
     except Exception as e:

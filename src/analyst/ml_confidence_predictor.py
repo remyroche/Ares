@@ -8,11 +8,7 @@ import numpy as np
 import pandas as pd
 
 # Import enhanced order manager for tactician order management
-from src.tactician.enhanced_order_manager import (
-import logging
-import asyncio
-    OrderSide,
-)
+from src.tactician.enhanced_order_manager import OrderSide, asyncio, import, logging
 from src.utils.error_handler import (
     handle_errors,
     handle_file_operations,
@@ -21,12 +17,12 @@ from src.utils.error_handler import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    warning,
+    execution_error,
     failed,
+    initialization_error,
     missing,
     validation_error,
-    initialization_error,
-    execution_error,
+    warning,
 )
 
 
@@ -2370,13 +2366,11 @@ class MLConfidencePredictor:
 
             # Import required components
             from src.tactician.async_order_executor import (
-import copy
-import os.path
-
                 ExecutionRequest,
                 ExecutionStrategy,
                 OrderSide,
                 OrderType,
+                th,
             )
 
             # Convert side string to OrderSide enum

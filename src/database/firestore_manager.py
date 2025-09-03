@@ -1,13 +1,13 @@
-import logging
-from collections.abc import Callable
-from firebase_admin import auth, credentials, firestore
-from functools import partial
-from src.utils.logger import system_logger
-from typing import TYPE_CHECKING, Any
 import asyncio
-import firebase_admin
+import logging
 import os
 import uuid
+from collections.abc import Callable
+from functools import partial
+from typing import TYPE_CHECKING, Any
+
+import firebase_admin
+from firebase_admin import auth, credentials, firestore
 
 from src.config import CONFIG, get_environment_settings  # Import CONFIG
 from src.utils.error_handler import (
@@ -15,20 +15,19 @@ from src.utils.error_handler import (
     error_context,
     handle_errors,
 )
-from src.utils.warning_symbols import (
-    error,
-    missing,
-    warning,
-)
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, missing, warning
 
 if TYPE_CHECKING:
     pass  # TODO: Add proper implementation
+
+
 class FirestoreManager:
-    """
-    Manages all interactions with Google Cloud Firestore.
-    This version uses the firebase-admin SDK (which is synchronous) and adapts it
-    for an asyncio application by running blocking calls in a thread pool.
-    Its functionality can be conditionally disabled based on CONFIG['DATABASE_TYPE'].
+    """Manages all interactions with Google Cloud Firestore.
+
+    This version uses the firebase-admin SDK (which is synchronous) and adapts it for an
+    asyncio application by running blocking calls in a thread pool. Its functionality
+    can be conditionally disabled based on CONFIG['DATABASE_TYPE'].
     """
 
     def __init__(self):
@@ -99,7 +98,10 @@ class FirestoreManager:
         context="firebase_blocking_initialization",
     )
     def _blocking_initialize(self):
-        """Synchronous part of the initialization. Runs in a thread pool."""
+        """Synchronous part of the initialization.
+
+        Runs in a thread pool.
+        """
         if not firebase_admin._apps:
             cred = credentials.ApplicationDefault()
             env_settings = get_environment_settings()
@@ -144,7 +146,9 @@ class FirestoreManager:
     ) -> str | None:
         """Constructs the full Firestore collection path."""
         if self._app_id is None:
-            self.logger.error(error("App ID not set. Cannot construct collection path."))
+            self.logger.error(
+                error("App ID not set. Cannot construct collection path.")
+            )
             return None
 
         base_path = f"artifacts/{self._app_id}"
@@ -165,7 +169,9 @@ class FirestoreManager:
     async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Helper to run any blocking function in a thread pool."""
         if not self._firestore_enabled or not self._initialized or not self._db:
-            self.logger.warning(warning("Firestore not available. Cannot perform operation."))
+            self.logger.warning(
+                warning("Firestore not available. Cannot perform operation.")
+            )
             return None
 
         loop = asyncio.get_running_loop()
@@ -178,7 +184,11 @@ class FirestoreManager:
         context="firestore_set_document",
     )
     async def set_document(
-        self, collection_name: str, doc_id: str, data: dict[str, Any], is_public: bool = False
+        self,
+        collection_name: str,
+        doc_id: str,
+        data: dict[str, Any],
+        is_public: bool = False,
     ) -> bool:
         """Sets a document with a specified ID (creates or overwrites)."""
         if not self._firestore_enabled:
@@ -236,7 +246,9 @@ class FirestoreManager:
         if result is not None:
             self.logger.debug(f"Document {doc_id} retrieved from {collection_name}.")
         else:
-            self.logger.warning(missing(f"Document {doc_id} not found in {collection_name}."))
+            self.logger.warning(
+                missing(f"Document {doc_id} not found in {collection_name}.")
+            )
         return result
 
     @handle_errors(
@@ -276,7 +288,10 @@ class FirestoreManager:
         context="firestore_get_collection",
     )
     async def get_collection(
-        self, collection_name: str, is_public: bool = False, query_filters: list[tuple[str, str, Any]] | None = None
+        self,
+        collection_name: str,
+        is_public: bool = False,
+        query_filters: list[tuple[str, str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieves all documents from a collection, optionally with filters."""
         if not self._firestore_enabled:
@@ -338,6 +353,7 @@ class FirestoreManager:
             self.logger.info(f"Document {doc_id} deleted from {collection_name}.")
             return True
         return False
+
 
 # Global database instance.
 # It should be initialized asynchronously in the main application entry point.

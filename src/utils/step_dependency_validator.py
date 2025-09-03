@@ -1,5 +1,5 @@
-"""
-Step dependency validator for the training pipeline.
+"""Step dependency validator for the training pipeline.
+
 Ensures that steps don't proceed if their prerequisites have failed.
 """
 
@@ -14,8 +14,8 @@ from src.utils.warning_symbols import critical, error, warning
 
 
 class StepDependencyValidator:
-    """
-    Validates step dependencies to ensure pipeline integrity.
+    """Validates step dependencies to ensure pipeline integrity.
+
     Prevents steps from running if their prerequisites have failed.
     """
 
@@ -36,8 +36,12 @@ class StepDependencyValidator:
             "step08_regime_data_splitting": ["step07_enhanced_matrix_operations"],
             "step09_hmm_based_training": ["step08_regime_data_splitting"],
             "step09_5_multi_timeframe_hmm_ensemble": ["step09_hmm_based_training"],
-            "step09_5_hmm_lm_generalist_training": ["step09_5_multi_timeframe_hmm_ensemble"],
-            "step10_unified_regime_intelligence": ["step09_5_hmm_lm_generalist_training"],
+            "step09_5_hmm_lm_generalist_training": [
+                "step09_5_multi_timeframe_hmm_ensemble"
+            ],
+            "step10_unified_regime_intelligence": [
+                "step09_5_hmm_lm_generalist_training"
+            ],
             "step11_analyst_creation": ["step10_unified_regime_intelligence"],
             "step12_analyst_enhancement": ["step11_analyst_creation"],
             "step13_analyst_ensemble_creation": ["step12_analyst_enhancement"],
@@ -163,12 +167,16 @@ class StepDependencyValidator:
                 "min_rows": 0,
             },
             "step17_final_parameters_optimization": {
-                "required_files": ["data/training/*_extended_optimization_results.json"],
+                "required_files": [
+                    "data/training/*_extended_optimization_results.json"
+                ],
                 "required_columns": [],
                 "min_rows": 0,
             },
             "step18_walk_forward_validation": {
-                "required_files": ["data/training/*_extended_walk_forward_results.json"],
+                "required_files": [
+                    "data/training/*_extended_walk_forward_results.json"
+                ],
                 "required_columns": [],
                 "min_rows": 0,
             },
@@ -196,8 +204,7 @@ class StepDependencyValidator:
         checkpoint_dir: str = "checkpoints",
         force_rerun: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Validate that all dependencies for a step have been completed successfully.
+        """Validate that all dependencies for a step have been completed successfully.
 
         Args:
             step_name: Name of the step to validate
@@ -225,9 +232,10 @@ class StepDependencyValidator:
             }
         return {"valid": True, "reason": "All dependencies satisfied"}
 
-    async def _validate_single_dependency(self, step_name: str, pipeline_state: Dict[str, Any]) -> bool:
-        """
-        Validate a single step dependency.
+    async def _validate_single_dependency(
+        self, step_name: str, pipeline_state: Dict[str, Any]
+    ) -> bool:
+        """Validate a single step dependency.
 
         Args:
             step_name: Name of the required step
@@ -262,8 +270,7 @@ class StepDependencyValidator:
         return True
 
     async def _validate_step_data(self, step_name: str) -> bool:
-        """
-        Validate that a step has the required data files and structure.
+        """Validate that a step has the required data files and structure.
 
         Args:
             step_name: Name of the step to validate
@@ -301,8 +308,7 @@ class StepDependencyValidator:
         return True
 
     async def _check_file_pattern(self, file_pattern: str) -> bool:
-        """
-        Check if files matching a pattern exist.
+        """Check if files matching a pattern exist.
 
         Args:
             file_pattern: Glob pattern to check
@@ -324,7 +330,9 @@ class StepDependencyValidator:
                 self.logger.warning(f"No files found matching pattern: {file_pattern}")
                 return False
 
-            self.logger.debug(f"Found {len(matching_files)} files matching: {file_pattern}")
+            self.logger.debug(
+                f"Found {len(matching_files)} files matching: {file_pattern}"
+            )
             return True
 
         except Exception as e:
@@ -332,8 +340,7 @@ class StepDependencyValidator:
             return False
 
     async def _check_columns(self, step_name: str, required_columns: List[str]) -> bool:
-        """
-        Check if required columns exist in step data.
+        """Check if required columns exist in step data.
 
         Args:
             step_name: Name of the step
@@ -353,8 +360,7 @@ class StepDependencyValidator:
             return False
 
     async def _check_min_rows(self, step_name: str, min_rows: int) -> bool:
-        """
-        Check if step data has minimum required rows.
+        """Check if step data has minimum required rows.
 
         Args:
             step_name: Name of the step
@@ -366,7 +372,9 @@ class StepDependencyValidator:
         try:
             # This is a simplified check - in practice, you'd load the actual data
             # For now, we'll assume sufficient rows exist if the step completed successfully
-            self.logger.debug(f"Row count validation for {step_name}: {min_rows} required")
+            self.logger.debug(
+                f"Row count validation for {step_name}: {min_rows} required"
+            )
             return True
 
         except Exception as e:
@@ -374,8 +382,7 @@ class StepDependencyValidator:
             return False
 
     def get_step_dependencies(self, step_name: str) -> List[str]:
-        """
-        Get the list of dependencies for a step.
+        """Get the list of dependencies for a step.
 
         Args:
             step_name: Name of the step
@@ -386,8 +393,7 @@ class StepDependencyValidator:
         return self.step_dependencies.get(step_name, [])
 
     def get_critical_requirements(self, step_name: str) -> Dict[str, Any]:
-        """
-        Get the critical data requirements for a step.
+        """Get the critical data requirements for a step.
 
         Args:
             step_name: Name of the step
@@ -404,8 +410,7 @@ class StepDependencyValidator:
         self.logger.info("Validation cache cleared")
 
     def get_validation_stats(self) -> Dict[str, Any]:
-        """
-        Get validation statistics.
+        """Get validation statistics.
 
         Returns:
             Dict[str, Any]: Validation statistics
@@ -422,9 +427,10 @@ class StepDependencyValidator:
 step_dependency_validator = StepDependencyValidator()
 
 
-async def validate_step_dependencies(step_name: str, pipeline_state: Dict[str, Any]) -> bool:
-    """
-    Convenience function to validate step dependencies.
+async def validate_step_dependencies(
+    step_name: str, pipeline_state: Dict[str, Any]
+) -> bool:
+    """Convenience function to validate step dependencies.
 
     Args:
         step_name: Name of the step to validate
@@ -443,8 +449,7 @@ async def validate_step_dependencies(step_name: str, pipeline_state: Dict[str, A
 
 
 def get_step_dependencies(step_name: str) -> List[str]:
-    """
-    Convenience function to get step dependencies.
+    """Convenience function to get step dependencies.
 
     Args:
         step_name: Name of the step
@@ -456,8 +461,7 @@ def get_step_dependencies(step_name: str) -> List[str]:
 
 
 def get_critical_requirements(step_name: str) -> Dict[str, Any]:
-    """
-    Convenience function to get critical requirements.
+    """Convenience function to get critical requirements.
 
     Args:
         step_name: Name of the step

@@ -1,6 +1,5 @@
 # src/training/steps/step17_final_parameters_optimization/
 # hyperparameter_optimization_config.py
-
 """Hyperparameter Optimization Configuration.
 
 This module defines comprehensive search spaces, optimization strategies, and evaluation

@@ -1,22 +1,25 @@
 # src/analyst/dynamic_regime_mapper.py
 
 from __future__ import annotations
-from src.utils.logger import system_logger
-from typing import Any
+
+import asyncio
+import datetime as datetime
 import json
+import logging
 import os
+import os.path
+from typing import Any
+
+import pandas as pd
 
 from src.utils.error_handler import handle_errors
-import pandas as pd
-import logging
-import datetime as datetime
-import os.path
-import asyncio
+from src.utils.logger import system_logger
 
 
 class DynamicRegimeMapper:
-    """
-    Dynamically maps HMM composite cluster IDs to regime names based on Step 1.7 results.
+    """Dynamically maps HMM composite cluster IDs to regime names based on Step 1.7
+    results.
+
     Reads actual archetype descriptions and creates regime mappings automatically.
     """
 
@@ -27,13 +30,16 @@ class DynamicRegimeMapper:
 
         # Cache for regime mappings
         self.regime_mappings: dict[
-            str, dict[int, str],
+            str,
+            dict[int, str],
         ] = {}  # timeframe -> cluster_id -> regime_name
         self.archetype_descriptions: dict[
-            str, dict[int, str],
+            str,
+            dict[int, str],
         ] = {}  # timeframe -> cluster_id -> description
         self.cluster_centroids: dict[
-            str, dict[int, list[float]],
+            str,
+            dict[int, list[float]],
         ] = {}  # timeframe -> cluster_id -> centroid
 
         # Configuration
@@ -142,7 +148,8 @@ class DynamicRegimeMapper:
 
             # Generate regime names based on archetype descriptions
             regime_mapping = self._generate_regime_mapping_from_archetypes(
-                archetype_descriptions_int, cluster_centroids_int,
+                archetype_descriptions_int,
+                cluster_centroids_int,
             )
 
             # Store the mappings
@@ -157,7 +164,8 @@ class DynamicRegimeMapper:
             # Log the discovered regimes
             for cluster_id, regime_name in regime_mapping.items():
                 description = archetype_descriptions_int.get(
-                    cluster_id, "No description",
+                    cluster_id,
+                    "No description",
                 )
                 self.logger.info(
                     f"  Cluster {cluster_id} -> {regime_name}: {description}",
@@ -170,7 +178,8 @@ class DynamicRegimeMapper:
             return False
 
     def _generate_regime_mapping_from_archetypes(
-        self, archetype_descriptions: dict[int, str],
+        self,
+        archetype_descriptions: dict[int, str],
         cluster_centroids: dict[int, list[float]],
     ) -> dict[int, str]:
         """Generate regime names from archetype descriptions."""
@@ -178,7 +187,8 @@ class DynamicRegimeMapper:
 
         for cluster_id, description in archetype_descriptions.items():
             regime_name = self._classify_archetype_to_regime(
-                cluster_id, description,
+                cluster_id,
+                description,
                 cluster_centroids.get(cluster_id, []),
             )
             regime_mapping[cluster_id] = regime_name
@@ -186,8 +196,10 @@ class DynamicRegimeMapper:
         return regime_mapping
 
     def _classify_archetype_to_regime(
-        self, cluster_id: int,
-        description: str, centroid: list[float],
+        self,
+        cluster_id: int,
+        description: str,
+        centroid: list[float],
     ) -> str:
         """Classify an archetype description into a regime name."""
 
@@ -261,15 +273,16 @@ class DynamicRegimeMapper:
 
     def get_regime_mapping(self, timeframe: str = "1m") -> dict[int, str]:
         """Get the regime mapping for a specific timeframe."""
-        return self.regime_mappings.get(timeframe = {})
+        return self.regime_mappings.get(timeframe={})
 
     def get_archetype_description(self, cluster_id: int, timeframe: str = "1m") -> str:
         """Get the archetype description for a specific cluster."""
-        descriptions = self.archetype_descriptions.get(timeframe = {})
-        return descriptions.get(cluster_id = f"Unknown archetype {cluster_id}")
+        descriptions = self.archetype_descriptions.get(timeframe={})
+        return descriptions.get(cluster_id=f"Unknown archetype {cluster_id}")
 
     def get_cluster_centroid(
-        self, cluster_id: int,
+        self,
+        cluster_id: int,
         timeframe: str = "1m",
     ) -> list[float]:
         """Get the cluster centroid for a specific cluster."""
@@ -319,9 +332,11 @@ class DynamicRegimeMapper:
         """Save the regime mapping to a file."""
         try:
             mapping_data = {
-                "timeframe": timeframe, "regime_mapping": self.get_regime_mapping(timeframe),
+                "timeframe": timeframe,
+                "regime_mapping": self.get_regime_mapping(timeframe),
                 "archetype_descriptions": self.archetype_descriptions.get(
-                    timeframe, {},
+                    timeframe,
+                    {},
                 ),
                 "regime_summary": self.get_regime_summary(timeframe),
                 "discovery_timestamp": pd.Timestamp.now().isoformat(),

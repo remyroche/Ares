@@ -1,7 +1,7 @@
-"""
-Enhanced Data Quality Validation Utilities
+"""Enhanced Data Quality Validation Utilities.
 
-This module provides comprehensive data quality validation capabilities for the training pipeline.
+This module provides comprehensive data quality validation capabilities for the training
+pipeline.
 """
 
 import logging
@@ -82,7 +82,9 @@ class EnhancedDataQualityValidator:
         self.thresholds = thresholds or QualityThresholds()
         self.logger = system_logger.getChild("DataQualityValidator")
 
-    def validate_dataframe_quality(self, df: pd.DataFrame, context: str = "") -> QualityResult:
+    def validate_dataframe_quality(
+        self, df: pd.DataFrame, context: str = ""
+    ) -> QualityResult:
         """Validate DataFrame quality with comprehensive checks."""
         if not PANDAS_AVAILABLE:
             raise ImportError("pandas is required for data quality validation")
@@ -128,7 +130,11 @@ class EnhancedDataQualityValidator:
         """Validate NaN values in DataFrame."""
         nan_counts = df.isnull().sum()
         total_nans = nan_counts.sum()
-        nan_ratio = total_nans / (len(df) * len(df.columns)) if len(df) > 0 and len(df.columns) > 0 else 0
+        nan_ratio = (
+            total_nans / (len(df) * len(df.columns))
+            if len(df) > 0 and len(df.columns) > 0
+            else 0
+        )
 
         result.add_metric("nan_count", total_nans)
         result.add_metric("nan_ratio", nan_ratio)
@@ -136,13 +142,17 @@ class EnhancedDataQualityValidator:
 
         if nan_ratio > self.thresholds.max_nan_ratio:
             result.add_issue(
-                "nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.thresholds.max_nan_ratio}"
+                "nan_values",
+                f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.thresholds.max_nan_ratio}",
             )
 
         # Check for columns with high NaN ratios
         high_nan_columns = nan_counts[nan_counts > len(df) * 0.1]  # More than 10% NaN
         if not high_nan_columns.empty:
-            result.add_warning("high_nan_columns", f"Columns with >10% NaN: {list(high_nan_columns.index)}")
+            result.add_warning(
+                "high_nan_columns",
+                f"Columns with >10% NaN: {list(high_nan_columns.index)}",
+            )
 
     def _validate_infinite_values(self, df: pd.DataFrame, result: QualityResult):
         """Validate infinite values in DataFrame."""
@@ -160,7 +170,8 @@ class EnhancedDataQualityValidator:
 
         if total_infinites > self.thresholds.max_infinite_count:
             result.add_issue(
-                "infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}"
+                "infinite_values",
+                f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}",
             )
 
     def _validate_constant_features(self, df: pd.DataFrame, result: QualityResult):
@@ -180,7 +191,8 @@ class EnhancedDataQualityValidator:
 
         if constant_features:
             result.add_issue(
-                "constant_features", f"Found {len(constant_features)} constant features: {constant_features}"
+                "constant_features",
+                f"Found {len(constant_features)} constant features: {constant_features}",
             )
 
         if low_variance_features:
@@ -191,7 +203,9 @@ class EnhancedDataQualityValidator:
 
     def _validate_price_anomalies(self, df: pd.DataFrame, result: QualityResult):
         """Validate price anomalies in OHLC data."""
-        price_columns = [col for col in ["open", "high", "low", "close"] if col in df.columns]
+        price_columns = [
+            col for col in ["open", "high", "low", "close"] if col in df.columns
+        ]
 
         if not price_columns:
             return
@@ -204,12 +218,26 @@ class EnhancedDataQualityValidator:
             # Check for negative prices
             for col in price_columns:
                 if row[col] < -self.thresholds.price_tolerance:
-                    anomalies.append({"row": i, "column": col, "value": row[col], "type": "negative_price"})
+                    anomalies.append(
+                        {
+                            "row": i,
+                            "column": col,
+                            "value": row[col],
+                            "type": "negative_price",
+                        }
+                    )
 
             # Check for OHLC consistency
             if all(col in price_columns for col in ["open", "high", "low", "close"]):
                 if row["high"] < row["low"]:
-                    anomalies.append({"row": i, "type": "high_low_inversion", "high": row["high"], "low": row["low"]})
+                    anomalies.append(
+                        {
+                            "row": i,
+                            "type": "high_low_inversion",
+                            "high": row["high"],
+                            "low": row["low"],
+                        }
+                    )
 
                 if row["close"] > row["high"] or row["close"] < row["low"]:
                     anomalies.append(
@@ -225,7 +253,9 @@ class EnhancedDataQualityValidator:
         result.add_metric("price_anomalies", anomalies)
 
         if anomalies:
-            result.add_issue("price_anomalies", f"Found {len(anomalies)} price anomalies")
+            result.add_issue(
+                "price_anomalies", f"Found {len(anomalies)} price anomalies"
+            )
 
     def _validate_timestamp_consistency(self, df: pd.DataFrame, result: QualityResult):
         """Validate timestamp consistency."""
@@ -236,12 +266,16 @@ class EnhancedDataQualityValidator:
 
         try:
             # Convert timestamp to datetime if needed
-            timestamps = pd.to_datetime(df["timestamp"], unit="ms", utc=True, errors="coerce")
+            timestamps = pd.to_datetime(
+                df["timestamp"], unit="ms", utc=True, errors="coerce"
+            )
 
             # Check for invalid timestamps
             invalid_timestamps = timestamps.isna().sum()
             if invalid_timestamps > 0:
-                issues.append({"type": "invalid_timestamps", "count": invalid_timestamps})
+                issues.append(
+                    {"type": "invalid_timestamps", "count": invalid_timestamps}
+                )
 
             # Check for gaps
             valid_timestamps = timestamps.dropna()
@@ -262,12 +296,18 @@ class EnhancedDataQualityValidator:
             # Check for duplicates
             duplicates = valid_timestamps.duplicated()
             if duplicates.any():
-                issues.append({"type": "duplicate_timestamps", "count": duplicates.sum()})
+                issues.append(
+                    {"type": "duplicate_timestamps", "count": duplicates.sum()}
+                )
 
             # Check for future timestamps
-            future_timestamps = valid_timestamps[valid_timestamps > pd.Timestamp.now(tz="UTC")]
+            future_timestamps = valid_timestamps[
+                valid_timestamps > pd.Timestamp.now(tz="UTC")
+            ]
             if not future_timestamps.empty:
-                issues.append({"type": "future_timestamps", "count": len(future_timestamps)})
+                issues.append(
+                    {"type": "future_timestamps", "count": len(future_timestamps)}
+                )
 
         except Exception as e:
             issues.append({"type": "timestamp_parsing_error", "error": str(e)})
@@ -275,7 +315,9 @@ class EnhancedDataQualityValidator:
         result.add_metric("timestamp_issues", issues)
 
         if issues:
-            result.add_issue("timestamp_issues", f"Found {len(issues)} timestamp issues")
+            result.add_issue(
+                "timestamp_issues", f"Found {len(issues)} timestamp issues"
+            )
 
     def _validate_data_types(self, df: pd.DataFrame, result: QualityResult):
         """Validate data types in DataFrame."""
@@ -287,17 +329,31 @@ class EnhancedDataQualityValidator:
                 # Try to infer the intended type
                 if col in ["timestamp"]:
                     if not pd.api.types.is_integer_dtype(df[col]):
-                        issues.append({"column": col, "expected": "int64", "actual": str(df[col].dtype)})
+                        issues.append(
+                            {
+                                "column": col,
+                                "expected": "int64",
+                                "actual": str(df[col].dtype),
+                            }
+                        )
                 elif col in ["open", "high", "low", "close", "volume"]:
                     if not pd.api.types.is_numeric_dtype(df[col]):
-                        issues.append({"column": col, "expected": "numeric", "actual": str(df[col].dtype)})
+                        issues.append(
+                            {
+                                "column": col,
+                                "expected": "numeric",
+                                "actual": str(df[col].dtype),
+                            }
+                        )
             except Exception as e:
                 issues.append({"column": col, "error": f"Type validation error: {e}"})
 
         result.add_metric("data_type_issues", issues)
 
         if issues:
-            result.add_issue("data_type_issues", f"Found {len(issues)} data type issues")
+            result.add_issue(
+                "data_type_issues", f"Found {len(issues)} data type issues"
+            )
 
     def _validate_correlations(self, df: pd.DataFrame, result: QualityResult):
         """Validate correlations between numeric columns."""
@@ -317,16 +373,26 @@ class EnhancedDataQualityValidator:
                     corr_value = corr_matrix.iloc[i, j]
                     if abs(corr_value) > self.thresholds.max_correlation_threshold:
                         high_corr_pairs.append(
-                            {"col1": corr_matrix.columns[i], "col2": corr_matrix.columns[j], "correlation": corr_value}
+                            {
+                                "col1": corr_matrix.columns[i],
+                                "col2": corr_matrix.columns[j],
+                                "correlation": corr_value,
+                            }
                         )
 
             result.add_metric("high_correlations", high_corr_pairs)
 
             if high_corr_pairs:
-                result.add_warning("high_correlations", f"Found {len(high_corr_pairs)} highly correlated column pairs")
+                result.add_warning(
+                    "high_correlations",
+                    f"Found {len(high_corr_pairs)} highly correlated column pairs",
+                )
 
         except Exception as e:
-            result.add_warning("correlation_calculation_error", f"Could not calculate correlations: {e}")
+            result.add_warning(
+                "correlation_calculation_error",
+                f"Could not calculate correlations: {e}",
+            )
 
     def _log_validation_results(self, result: QualityResult, context: str):
         """Log validation results."""
@@ -351,7 +417,9 @@ class EnhancedDataQualityValidator:
 class UnifiedDataQualityValidator(EnhancedDataQualityValidator):
     """Specialized validator for unified data format."""
 
-    def validate_unified_data_quality(self, df: pd.DataFrame, context: str = "") -> QualityResult:
+    def validate_unified_data_quality(
+        self, df: pd.DataFrame, context: str = ""
+    ) -> QualityResult:
         """Validate unified DataFrame quality with additional checks."""
         # Run base validation
         result = super().validate_dataframe_quality(df, context)
@@ -367,26 +435,48 @@ class UnifiedDataQualityValidator(EnhancedDataQualityValidator):
         issues = []
 
         # Check required columns
-        required_columns = ["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"]
+        required_columns = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "exchange",
+            "symbol",
+            "timeframe",
+        ]
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
             issues.append({"type": "missing_columns", "columns": missing_columns})
 
         # Check data types for required columns
-        if "timestamp" in df.columns and not pd.api.types.is_integer_dtype(df["timestamp"]):
-            issues.append({"type": "timestamp_dtype", "expected": "int64", "actual": str(df["timestamp"].dtype)})
+        if "timestamp" in df.columns and not pd.api.types.is_integer_dtype(
+            df["timestamp"]
+        ):
+            issues.append(
+                {
+                    "type": "timestamp_dtype",
+                    "expected": "int64",
+                    "actual": str(df["timestamp"].dtype),
+                }
+            )
 
         # Check for date columns
         date_columns = ["year", "month", "day"]
         missing_date_columns = [col for col in date_columns if col not in df.columns]
         if missing_date_columns:
-            issues.append({"type": "missing_date_columns", "columns": missing_date_columns})
+            issues.append(
+                {"type": "missing_date_columns", "columns": missing_date_columns}
+            )
 
         result.add_metric("unified_structure_issues", issues)
 
         if issues:
-            result.add_issue("unified_structure", f"Found {len(issues)} unified structure issues")
+            result.add_issue(
+                "unified_structure", f"Found {len(issues)} unified structure issues"
+            )
 
     def _validate_data_consistency(self, df: pd.DataFrame, result: QualityResult):
         """Validate data consistency across exchanges/symbols."""
@@ -430,7 +520,9 @@ class UnifiedDataQualityValidator(EnhancedDataQualityValidator):
         result.add_metric("consistency_issues", issues)
 
         if issues:
-            result.add_issue("data_consistency", f"Found {len(issues)} consistency issues")
+            result.add_issue(
+                "data_consistency", f"Found {len(issues)} consistency issues"
+            )
 
 
 # Convenience functions
@@ -452,8 +544,14 @@ def check_dataframe_health(df: pd.DataFrame) -> Dict[str, Any]:
         return {"healthy": False, "reason": "DataFrame is None or empty"}
 
     # Basic health checks
-    nan_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns)) if len(df) > 0 and len(df.columns) > 0 else 0
-    infinite_count = sum(np.isinf(df[col]).sum() for col in df.select_dtypes(include=[np.number]).columns)
+    nan_ratio = (
+        df.isnull().sum().sum() / (len(df) * len(df.columns))
+        if len(df) > 0 and len(df.columns) > 0
+        else 0
+    )
+    infinite_count = sum(
+        np.isinf(df[col]).sum() for col in df.select_dtypes(include=[np.number]).columns
+    )
 
     health_status = {
         "healthy": True,

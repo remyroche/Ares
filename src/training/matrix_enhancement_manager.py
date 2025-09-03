@@ -1,10 +1,11 @@
 # src/training/matrix_enhancement_manager.py
-
 """Matrix Enhancement Manager for advanced ML training processes.
-Implements sophisticated matrix operations, factorizations, and vector optimizations
-to enhance model performance and training efficiency.
+
+Implements sophisticated matrix operations, factorizations, and vector optimizations to
+enhance model performance and training efficiency.
 """
 
+import copy
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -20,7 +21,6 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import copy
 
 
 @dataclass
@@ -84,7 +84,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Enhanced features DataFrame and metadata
-
         """
         try:
             start_time = time.time()
@@ -113,7 +112,9 @@ class MatrixEnhancementManager:
 
             # Create DataFrame
             svd_df = pd.DataFrame(
-                svd_features, columns=svd_feature_names, index=features_df.index,
+                svd_features,
+                columns=svd_feature_names,
+                index=features_df.index,
             )
 
             # Combine with original features
@@ -149,7 +150,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Enhanced features DataFrame and metadata
-
         """
         try:
             start_time = time.time()
@@ -175,7 +175,9 @@ class MatrixEnhancementManager:
 
             # Create DataFrame
             nmf_df = pd.DataFrame(
-                nmf_features, columns=nmf_feature_names, index=features_df.index,
+                nmf_features,
+                columns=nmf_feature_names,
+                index=features_df.index,
             )
 
             # Combine with original features
@@ -210,7 +212,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Enhanced features DataFrame and metadata
-
         """
         try:
             start_time = time.time()
@@ -257,7 +258,9 @@ class MatrixEnhancementManager:
                 for i in range(self.config.spectral_n_clusters)
             ]
             distance_df = pd.DataFrame(
-                distances, columns=distance_feature_names, index=features_df.index,
+                distances,
+                columns=distance_feature_names,
+                index=features_df.index,
             )
 
             # Combine all features
@@ -297,7 +300,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Enhanced features DataFrame and metadata
-
         """
         try:
             start_time = time.time()
@@ -377,7 +379,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Analysis results dictionary
-
         """
         try:
             self.logger.info("🔍 Analyzing matrix condition...")
@@ -435,7 +436,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Optimized features DataFrame and metadata
-
         """
         try:
             start_time = time.time()
@@ -500,7 +500,6 @@ class MatrixEnhancementManager:
 
         Returns:
             Enhanced features DataFrame and comprehensive metadata
-
         """
         try:
             self.logger.info("🚀 Starting comprehensive matrix enhancement...")

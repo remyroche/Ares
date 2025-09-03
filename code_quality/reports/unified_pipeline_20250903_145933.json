@@ -1,0 +1,3711 @@
+{
+  "syntax_imports": {
+    "syntax_fixer": {
+      "tool": "syntax_fixer",
+      "description": "Advanced Syntax Fixes",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 0.029848337173461914,
+      "stdout": "Checking 0 Python files for syntax errors...\nFound 0 files with syntax errors\n\nError types found:\n\nSample files with errors:\n\nReport saved to: /workspace/code_quality/reports/syntax_fixes_report_20250903_145933.json\n",
+      "stderr": "",
+      "report_data": {
+        "dry_run": true,
+        "files_with_errors": 0,
+        "error_types": {}
+      }
+    },
+    "import_fixer": {
+      "tool": "import_fixer",
+      "description": "Import Fixes",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 0.02265167236328125,
+      "stdout": "Found 0 Python files to analyze\n\nDRY RUN MODE - No files will be modified\n\nFiles that would be fixed: 0\n\nReport saved to: /workspace/code_quality/reports/safe_import_fixes_report_20250903_145933.json\n",
+      "stderr": "",
+      "report_data": {
+        "total_files": 347,
+        "imports_by_file": {
+          "/workspace/src/ares_pipeline.py": [
+            "import datetime as datetime",
+            "import argparse",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/config.py": [
+            "import copy"
+          ],
+          "/workspace/src/paper_trader.py": [
+            "import copy",
+            "import numpy as np"
+          ],
+          "/workspace/src/monitoring/correlation_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/monitoring/fractional_system_monitor.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/monitoring/surrogate_optimization_monitor.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/monitoring/metrics_dashboard.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/monitoring/fractional_performance_tracker.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/monitoring/csv_exporter.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/monitoring/advanced_tracer.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/launcher/enhanced_trading_launcher.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/components/modular_analyst.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/components/modular_tactician.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/components/modular_supervisor.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/components/modular_strategist.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/interfaces/event_bus.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/interfaces/enhanced_event_bus.py": [
+            "import json",
+            "import datetime as datetime",
+            "import copy",
+            "import asyncio"
+          ],
+          "/workspace/src/trading/live_wavelet_analyzer.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/trading/live_wavelet_demo.py": [
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/trading/live_wavelet_integration.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/trading/sr_trading_intelligence.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/performance_monitor.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/global_portfolio_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/performance_reporter.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/dynamic_weighter.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/exchange_volume_adapter.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/monitoring.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/main.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/risk_allocator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/pnl_loss_functions.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/supervisor.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/model_behavior_tracker.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/pipelines/improved_pipeline_executor.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/pipelines/base_pipeline.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/sentinel/sentinel.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/transition/seq2seq_trainer.py": [
+            "import os.path",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/transition/combined_features_builder.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/baseline_rf.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/inference_combiner.py": [
+            "import os.path"
+          ],
+          "/workspace/src/transition/rolling_inference.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/event_trigger_indexer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/multitask_rf.py": [
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/rolling_window_dataset.py": [
+            "import copy"
+          ],
+          "/workspace/src/transition/state_sequence_builder.py": [
+            "import os.path",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/event_window_dataset.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/custom_types/validation.py": [
+            "import logging"
+          ],
+          "/workspace/src/integration/paper_trading_integration.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/tactician/position_sizer.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/sr_weight_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/position_closing.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/ml_target_updater.py": [
+            "import datetime as datetime",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/position_division_strategy.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/enhanced_prediction_integrator.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/tactician.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/comprehensive_enhanced_scenario_predictor.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/tactician/enhanced_execution_manager.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/tactics_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/position_monitor.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/enhanced_order_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/sr_data_integration.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/tactician/scenario_based_predictor.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/tactician/leverage_sizer.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/sr_levels_manager.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/step17_optimized_tactician.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/tactician/enhanced_scenario_based_predictor.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/tactician/sr_detection_optimization.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/ml_target_validator.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/async_order_executor.py": [
+            "import copy",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/ml_tactics_manager.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/fully_migrated_tactician.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/tracking/trade_tracker.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_trainer.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/enhanced_training_manager.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/data_cleaning.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/enhanced_training_manager_enhanced.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/training/enhanced_dynamic_feature_selection.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/multi_output_probability_trainer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/regularization.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/training/feature_engineering_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/feature_integration.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/feature_engineering.py": [
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/wavelet_integration_demo.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_feature_engineering_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_matrix_operations.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_saving_utils.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/probabilistic_model_integration.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_lm_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/step_orchestrator.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/enhanced_training_manager_optimized.py": [
+            "import json",
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/early_stage_optimization.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/multi_objective_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/bayesian_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/memory_profiler.py": [
+            "import asyncio",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import os.path"
+          ],
+          "/workspace/src/training/integration_guide.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/matrix_diverse_lookback_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/unified_data_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/timeframe_relevance_analyzer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/comprehensive_sr_training_pipeline.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/dual_model_system.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/performance_comparison.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps_1_7_comprehensive_executor.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_training_manager_backup.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/adaptive_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/demo_pipeline_execution.py": [
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/training/launcher_integration_patch.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimized_feature_selection_manager.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/feature_selection_manager.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/progress_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/comprehensive_pipeline_executor.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/wavelet_feature_selection_demo.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/multi_output_model_trainer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/calibration_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/model_probability_generator.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/training_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/advanced_neural_models.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/comprehensive_feature_optimizer.py": [
+            "import numpy as np",
+            "import logging",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_specific_pruning.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/matrix_enhancement_manager.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/factory.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/training_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/enhanced_matrix_gpu_integration.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_coarse_optimizer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/hmm_regime_barrier_optimizer.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/ensemble_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/data_quality_monitor.py": [
+            "import json",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_training_integrator.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/di_training_manager.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/probability_calculators.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/wavelet_feature_selection_workflow.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/data_efficiency_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/optimization_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/validator.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/tpsl_optimizer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/vectorized_training_pipeline.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_optimization_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_multi_timeframe_optimizer.py": [
+            "import numpy as np",
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/data_manager.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/probabilistic_bayesian_optimizer.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/diverse_lookback_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/wavelet_caching_workflow.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/optimization/cached_optimizer.py": [
+            "import json",
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimization/transfer_learning_system.py": [
+            "import json",
+            "import os.path",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/optimization/progressive_optimizer.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimization/problem_specific_strategies.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/training/optimization/parallel_optimizer.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/optimization/rollback_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimization/computational_optimization_manager.py": [
+            "import json",
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/optimization/advanced_surrogate_models.py": [
+            "import copy",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/optimization/adaptive_trial_allocator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/multi_timeframe_hmm_ensemble.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/fractional_feature_selector.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step13_analyst_ensemble_creation_validator.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step20_ab_testing_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step2_5_sr_optimization.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step14_tactician_labeling_validator.py": [
+            "import os.path",
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step5_hmm_based_training_validator.py": [
+            "import os.path",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step10_unified_regime_intelligence.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step18_walk_forward_validation_validator.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step14_tactician_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_triple_barrier_method.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step5_labeling.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/hmm_feature_enhancer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1_5_data_converter.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import argparse",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step4_regime_data_splitting_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step2_data_reading.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step20_ab_testing.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization_new.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/enhanced_step1_data_collection.py": [
+            "import json",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step9_hmm_based_training.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step3_parameter_optimization.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step16_confidence_calibration.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step21_saving.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step3_parameter_optimization_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step1_5_data_converter_validator.py": [
+            "import os.path",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step3_5_final_regime_clustering.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/combined_fractional_system.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step6_feature_interaction_engineering.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step5_labeling_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step3_hmm_regime_discovery.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step10_unified_regime_intelligence_validator.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/precompute_wavelet_features.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step6_feature_engineering.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step1_data_collection_validator.py": [
+            "import os.path",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step21_saving_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step6_feature_engineering_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step2_data_reading_validator.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step2_feature_engineering_validator.py": [
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step19_monte_carlo_validation.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/unified_data_loader.py": [
+            "import os.path",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step11_analyst_creation.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step12_analyst_enhancement_validator.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/vectorized_labelling_orchestrator.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/integrated_data_quality_pipeline.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step9_hmm_based_training_enhanced.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/enhanced_step1_5_data_converter.py": [
+            "import json",
+            "import os.path",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/sr_outcome_model_trainer.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step1_data_collection.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step12_analyst_enhancement.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/raw_data_quality_checker.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step18_walk_forward_validation.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step15_tactician_specialist_training.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step15_tactician_specialist_training_validator.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step5_regime_data_splitting_validator.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/fractional_differentiation.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_regime_data_splitting.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step13_analyst_ensemble_creation.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step8_regime_data_splitting.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step7_enhanced_matrix_operations.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/evaluation_engine.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py": [
+            "import numpy as np",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": [
+            "import os.path",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": [
+            "import copy",
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/missing_data_downloader_and_gap_filler.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/data_quality_dashboard.py": [
+            "import json",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step1/validate_and_fix_aggtrades_format.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/comprehensive_gap_filler.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/aggtrades_validator.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/step1_orchestrator.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step1/data_resampler.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/run_step1.py": [
+            "import datetime as datetime",
+            "import argparse"
+          ],
+          "/workspace/src/training/steps/step1/gap_filler_pipeline.py": [
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/data_gap_detector.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/data_quality_monitor.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/data_preparation_components/aggtrades_data_formatting.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/data_preparation_components/training_validation_config.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/core/checkpoint_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/core/stage_context.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/core/pipeline_base.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/core/pipeline_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/core/generic_base.py": [
+            "import copy"
+          ],
+          "/workspace/src/core/config_service.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/config/training_modes.py": [
+            "import copy"
+          ],
+          "/workspace/src/config/computational_optimization_config.py": [
+            "import copy"
+          ],
+          "/workspace/src/config/environment.py": [
+            "import os.path"
+          ],
+          "/workspace/src/config/config_manager.py": [
+            "import copy"
+          ],
+          "/workspace/src/config/typed_config.py": [
+            "import logging"
+          ],
+          "/workspace/src/config/enhanced_prediction_service_config.py": [
+            "import copy"
+          ],
+          "/workspace/src/utils/observability.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/data_quality_framework.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/vif_calculator.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/model_performance_monitor.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/state_manager.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/utils/statistical_distribution_validation.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/async_utils.py": [
+            "import json",
+            "import asyncio"
+          ],
+          "/workspace/src/utils/vif_validation_decorators.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/enhanced_config_management.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/time_utils.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/data_preprocessing.py": [
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/utils/feature_output_validator.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/intelligent_feature_cache.py": [
+            "import json",
+            "import logging"
+          ],
+          "/workspace/src/utils/parallel_processing_optimizer.py": [
+            "import copy",
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/decorators.py": [
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/data_loader.py": [
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/enhanced_memory_management.py": [
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/standardized_model_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/advanced_decorators.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/training_pipeline_decorators.py": [
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/enhanced_decorators.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import logging",
+            "import asyncio"
+          ],
+          "/workspace/src/utils/standardized_config_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/enhanced_mlflow_integration.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/purged_kfold.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/centralized_decorators.py": [
+            "import numpy as np",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/utils/config_loader.py": [
+            "import os.path"
+          ],
+          "/workspace/src/utils/centralized_decorators_v2.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/enhanced_pipeline_decorators.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/utils/error_handler.py": [
+            "import logging",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/data_validation.py": [
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/standardized_error_handler.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/validator_orchestrator.py": [
+            "import os.path"
+          ],
+          "/workspace/src/utils/hmm_composite_manager.py": [
+            "import os.path"
+          ],
+          "/workspace/src/utils/data_optimizer.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/configuration_security.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/security_framework.py": [
+            "import json",
+            "import datetime as datetime",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/utils/enhanced_missing_value_handler.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/trading_decorators.py": [
+            "import copy"
+          ],
+          "/workspace/src/utils/data_formatting_framework.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/enhanced_data_quality_validator.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/quality_alert_system.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import os.path"
+          ],
+          "/workspace/src/utils/mlflow_utils.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/base_validator.py": [
+            "import os.path",
+            "import logging"
+          ],
+          "/workspace/src/utils/feature_engineering_validation.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/pipeline_standards.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/enhanced_error_handling.py": [
+            "import logging",
+            "import asyncio"
+          ],
+          "/workspace/src/utils/prometheus_metrics.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/decorator_registry.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/utils/steps_1_7_compatibility_framework.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/model_manager.py": [
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/database_security.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/enhanced_outlier_handler.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/enhanced_error_handler.py": [
+            "import copy",
+            "import os.path",
+            "import logging"
+          ],
+          "/workspace/src/utils/logger.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/utils/lookahead_bias_detector.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/cross_step_validation.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/data_type_optimizer.py": [
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/strategist/strategist_backup.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/strategist/strategist.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/strategist/utils.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/validation/critical_path_validators.py": [
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/analyst/order_book_analyzer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/advanced_feature_engineering.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/feature_engineering_orchestrator.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/meta_labeling_system.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/autoencoder_feature_generator.py": [
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/enhanced_prediction_integrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/predictive_ensembles.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/analyst/regime_runtime.py": [
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/liquidation_risk_model.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/analyst/multi_timeframe_feature_engineering.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/dynamic_regime_mapper.py": [
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/analyst/enhanced_regime_predictor.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/decision_aggregator.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/data_utils.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/regime_expert_orchestrator.py": [
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/meta_label_relevance.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/ml_confidence_predictor.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/unified_regime_classifier.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/analyst/analyst.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/ensemble_orchestrator.py": [
+            "import copy",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/database/efficient_features_database.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/database/influxdb_manager.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/database/precomputed_features_manager.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/database/migration_utils.py": [
+            "import json",
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/database/sqlite_manager.py": [
+            "import json",
+            "import datetime as datetime",
+            "import asyncio"
+          ]
+        },
+        "summary": {
+          "datetime": 208,
+          "argparse": 3,
+          "asyncio": 61,
+          "pandas": 146,
+          "copy": 161,
+          "numpy": 162,
+          "os.path": 90,
+          "json": 25,
+          "logging": 72
+        }
+      }
+    },
+    "circular_imports": {
+      "tool": "circular_imports",
+      "description": "Circular Import Detection",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 0.027224302291870117,
+      "stdout": "Analyzing circular imports...\n============================================================\nBuilding import graph...\n\nTotal modules analyzed: 0\nTotal import relationships: 0\nCircular imports found: 0\n\nFull report saved to: /workspace/code_quality/reports/circular_imports_report_20250903_145933.json\n",
+      "stderr": "",
+      "report_data": {
+        "total_modules": 0,
+        "total_imports": 0,
+        "circular_imports": {
+          "count": 0,
+          "cycles": []
+        },
+        "import_depths": {
+          "max_depth": 0,
+          "average_depth": 0,
+          "deep_modules": []
+        },
+        "highly_imported": [],
+        "highly_importing": []
+      }
+    }
+  },
+  "async_types": {
+    "async_fixer": {
+      "tool": "async_fixer",
+      "description": "Async/Await Fixes",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 0.02698802947998047,
+      "stdout": "Checking 0 files for async/await issues...\n\nFound potential async/await issues in 0 files\n\nSample files:\n\nReport saved to: /workspace/code_quality/reports/robust_async_fixes_report_20250903_145934.json\n",
+      "stderr": "",
+      "report_data": {
+        "total_files": 100,
+        "total_issues": 197,
+        "issues_by_file": {
+          "/workspace/src/tasks.py": [
+            "Line 65: run_training() needs await"
+          ],
+          "/workspace/src/ares_pipeline.py": [
+            "Line 1158: main() needs await"
+          ],
+          "/workspace/src/trading/live_wavelet_demo.py": [
+            "Line 304: main() needs await"
+          ],
+          "/workspace/src/integration/paper_trading_integration.py": [
+            "Line 90: setup_paper_trader() needs await"
+          ],
+          "/workspace/src/tactician/async_order_executor.py": [
+            "Line 151: setup_performance_reporter() needs await"
+          ],
+          "/workspace/src/training/wavelet_integration_demo.py": [
+            "Line 521: main() needs await"
+          ],
+          "/workspace/src/training/probabilistic_model_integration.py": [
+            "Line 560: main() needs await"
+          ],
+          "/workspace/src/training/step_orchestrator.py": [
+            "Line 84: setup_enhanced_training_manager() needs await"
+          ],
+          "/workspace/src/training/integration_guide.py": [
+            "Line 269: run_integration_example() needs await"
+          ],
+          "/workspace/src/training/steps_1_7_comprehensive_executor.py": [
+            "Line 645: main() needs await"
+          ],
+          "/workspace/src/training/demo_pipeline_execution.py": [
+            "Line 423: main() needs await"
+          ],
+          "/workspace/src/training/comprehensive_pipeline_executor.py": [
+            "Line 494: main() needs await"
+          ],
+          "/workspace/src/training/wavelet_feature_selection_demo.py": [
+            "Line 430: main() needs await"
+          ],
+          "/workspace/src/training/enhanced_matrix_gpu_integration.py": [
+            "Line 548: demonstrate_gpu_integration() needs await"
+          ],
+          "/workspace/src/training/data_quality_monitor.py": [
+            "Line 1083: main() needs await"
+          ],
+          "/workspace/src/training/wavelet_caching_workflow.py": [
+            "Line 96: create_sample_data() needs await",
+            "Line 291: load_config() needs await",
+            "Line 294: step1_precompute_features() needs await",
+            "Line 300: step2_run_backtests() needs await",
+            "Line 306: step3_performance_comparison() needs await",
+            "Line 312: step4_cache_management() needs await",
+            "Line 325: main() needs await"
+          ],
+          "/workspace/src/training/steps/update_steps_for_unified_data.py": [
+            "Line 249: main() needs await"
+          ],
+          "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py": [
+            "Line 1365: run_step() needs await",
+            "Line 1367: test() needs await"
+          ],
+          "/workspace/src/training/steps/step2_5_sr_optimization.py": [
+            "Line 90: create_sr_levels_manager() needs await",
+            "Line 1542: run_step() needs await"
+          ],
+          "/workspace/src/training/steps/step14_tactician_labeling_validator.py": [
+            "Line 692: run_validator() needs await",
+            "Line 694: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step5_hmm_based_training_validator.py": [
+            "Line 723: run_validator() needs await",
+            "Line 725: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step18_walk_forward_validation_validator.py": [
+            "Line 443: run_validator() needs await",
+            "Line 445: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step14_tactician_labeling.py": [
+            "Line 1060: run_step() needs await",
+            "Line 1062: test() needs await"
+          ],
+          "/workspace/src/training/steps/step4_triple_barrier_method.py": [
+            "Line 554: run_step() needs await",
+            "Line 562: test() needs await"
+          ],
+          "/workspace/src/training/steps/step5_labeling.py": [
+            "Line 704: run_step() needs await",
+            "Line 712: test() needs await"
+          ],
+          "/workspace/src/training/steps/step1_5_data_converter.py": [
+            "Line 1888: run_step() needs await",
+            "Line 1900: _main() needs await"
+          ],
+          "/workspace/src/training/steps/step4_regime_data_splitting_validator.py": [
+            "Line 377: run_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step2_5_sr_optimization_validator.py": [
+            "Line 399: run_validation() needs await"
+          ],
+          "/workspace/src/training/steps/step2_data_reading.py": [
+            "Line 550: run_step_enhanced() needs await",
+            "Line 563: run_step_enhanced() needs await",
+            "Line 571: test() needs await"
+          ],
+          "/workspace/src/training/steps/step9_hmm_based_training_validator.py": [
+            "Line 243: run_validator() needs await",
+            "Line 246: test() needs await"
+          ],
+          "/workspace/src/training/steps/step20_ab_testing.py": [
+            "Line 77: run_step() needs await",
+            "Line 79: _test() needs await"
+          ],
+          "/workspace/src/training/steps/enhanced_step1_data_collection.py": [
+            "Line 453: main() needs await"
+          ],
+          "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py": [
+            "Line 512: run_validator() needs await",
+            "Line 514: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step3_parameter_optimization.py": [
+            "Line 692: run_step() needs await"
+          ],
+          "/workspace/src/training/steps/step16_confidence_calibration.py": [
+            "Line 1147: run_step() needs await",
+            "Line 1149: test() needs await"
+          ],
+          "/workspace/src/training/steps/step21_saving.py": [
+            "Line 553: run_step() needs await",
+            "Line 555: test() needs await"
+          ],
+          "/workspace/src/training/steps/step3_parameter_optimization_validator.py": [
+            "Line 549: run_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step1_5_data_converter_validator.py": [
+            "Line 429: run_validator() needs await",
+            "Line 431: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step3_5_final_regime_clustering.py": [
+            "Line 892: run_step() needs await"
+          ],
+          "/workspace/src/training/steps/step4_triple_barrier_method_validator.py": [
+            "Line 162: run_validator() needs await",
+            "Line 165: test() needs await"
+          ],
+          "/workspace/src/training/steps/step5_labeling_validator.py": [
+            "Line 381: run_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step3_hmm_regime_discovery.py": [
+            "Line 3352: run_step() needs await",
+            "Line 3374: main() needs await"
+          ],
+          "/workspace/src/training/steps/precompute_wavelet_features.py": [
+            "Line 502: main() needs await"
+          ],
+          "/workspace/src/training/steps/step6_feature_engineering.py": [
+            "Line 538: _create_basic_features() needs await",
+            "Line 1051: setup_sr_detection_optimizer() needs await"
+          ],
+          "/workspace/src/training/steps/step1_data_collection_validator.py": [
+            "Line 432: run_validator() needs await",
+            "Line 434: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step21_saving_validator.py": [
+            "Line 528: run_validator() needs await",
+            "Line 530: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step6_feature_engineering_validator.py": [
+            "Line 333: run_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step8_regime_data_splitting_validator.py": [
+            "Line 235: run_validator() needs await",
+            "Line 238: test() needs await"
+          ],
+          "/workspace/src/training/steps/step2_data_reading_validator.py": [
+            "Line 253: run_validator() needs await",
+            "Line 256: test() needs await"
+          ],
+          "/workspace/src/training/steps/step2_feature_engineering_validator.py": [
+            "Line 679: run_validator() needs await",
+            "Line 681: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step19_monte_carlo_validation.py": [
+            "Line 329: run_step() needs await",
+            "Line 331: test() needs await"
+          ],
+          "/workspace/src/training/steps/unified_data_loader.py": [
+            "Line 484: load_unified_data() needs await"
+          ],
+          "/workspace/src/training/steps/step12_analyst_enhancement_validator.py": [
+            "Line 539: run_validator() needs await",
+            "Line 541: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/integrated_data_quality_pipeline.py": [
+            "Line 464: run_integrated_pipeline() needs await",
+            "Line 484: main() needs await"
+          ],
+          "/workspace/src/training/steps/enhanced_step1_5_data_converter.py": [
+            "Line 546: main() needs await"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization.py": [
+            "Line 181: _save_optimization_results() needs await",
+            "Line 196: _generate_optimization_report() needs await",
+            "Line 1810: run_step() needs await",
+            "Line 1812: test() needs await"
+          ],
+          "/workspace/src/training/steps/step1_data_collection.py": [
+            "Line 381: download_all_data_with_consolidation() needs await",
+            "Line 996: run_step() needs await",
+            "Line 1015: main() needs await"
+          ],
+          "/workspace/src/training/steps/step3_hmm_regime_discovery_validator.py": [
+            "Line 190: run_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step12_analyst_enhancement.py": [
+            "Line 389: _load_regime_data() needs await",
+            "Line 628: load_unified_data() needs await"
+          ],
+          "/workspace/src/training/steps/raw_data_quality_checker.py": [
+            "Line 632: download_all_data_with_consolidation() needs await",
+            "Line 1741: download_all_data_with_consolidation() needs await"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization_validator.py": [
+            "Line 416: run_validator() needs await",
+            "Line 418: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py": [
+            "Line 457: run_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step18_walk_forward_validation.py": [
+            "Line 281: run_step() needs await",
+            "Line 283: test() needs await"
+          ],
+          "/workspace/src/training/steps/step15_tactician_specialist_training.py": [
+            "Line 1454: run_step() needs await",
+            "Line 1456: test() needs await"
+          ],
+          "/workspace/src/training/steps/step15_tactician_specialist_training_validator.py": [
+            "Line 542: run_validator() needs await",
+            "Line 544: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step5_regime_data_splitting_validator.py": [
+            "Line 84: run_validator() needs await",
+            "Line 86: test_validator() needs await"
+          ],
+          "/workspace/src/training/steps/step4_regime_data_splitting.py": [
+            "Line 157: _load_regime_data() needs await",
+            "Line 488: run_step() needs await",
+            "Line 499: test() needs await"
+          ],
+          "/workspace/src/training/steps/step8_regime_data_splitting.py": [
+            "Line 156: load_unified_data() needs await",
+            "Line 576: run_step() needs await",
+            "Line 578: _test() needs await"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+            "Line 1032: main() needs await"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py": [
+            "Line 783: setup_sr_optuna_optimizer() needs await",
+            "Line 814: main() needs await"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": [
+            "Line 785: test() needs await"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": [
+            "Line 715: _generate_optimization_report() needs await",
+            "Line 1003: setup_regime_specific_optimizer() needs await"
+          ],
+          "/workspace/src/training/steps/step1/data_quality_dashboard.py": [
+            "Line 844: start_data_quality_dashboard() needs await",
+            "Line 852: main() needs await"
+          ],
+          "/workspace/src/training/steps/step1/comprehensive_gap_filler.py": [
+            "Line 1107: run_comprehensive_gap_filling_pipeline() needs await"
+          ],
+          "/workspace/src/training/steps/step1/run_step1.py": [
+            "Line 201: main() needs await"
+          ],
+          "/workspace/src/training/steps/step1/gap_filler_pipeline.py": [
+            "Line 369: run_gap_filling_pipeline() needs await"
+          ],
+          "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": [
+            "Line 439: _save_optimization_results() needs await"
+          ],
+          "/workspace/src/core/di_launcher.py": [
+            "Line 202: stop() needs await"
+          ],
+          "/workspace/src/core/generic_base.py": [
+            "Line 153: stop() needs await"
+          ],
+          "/workspace/src/core/config_service.py": [
+            "Line 579: stop() needs await"
+          ],
+          "/workspace/src/config/typed_config.py": [
+            "Line 260: load_config() needs await"
+          ],
+          "/workspace/src/utils/enhanced_config_management.py": [
+            "Line 324: load_config() needs await"
+          ],
+          "/workspace/src/utils/training_pipeline_decorators.py": [
+            "Line 1173: _execute_pipeline_function() needs await",
+            "Line 1296: _execute_pipeline_function() needs await"
+          ],
+          "/workspace/src/utils/standardized_config_manager.py": [
+            "Line 237: load_config() needs await"
+          ],
+          "/workspace/src/utils/enhanced_pipeline_decorators.py": [
+            "Line 561: get_step_reports() needs await"
+          ],
+          "/workspace/src/utils/data_optimizer.py": [
+            "Line 307: _optimize_data_types() needs await",
+            "Line 310: _remove_unnecessary_columns() needs await",
+            "Line 313: _optimize_index() needs await",
+            "Line 372: _optimize_memory_usage() needs await",
+            "Line 390: optimize_dataframe() needs await",
+            "Line 467: initialize() needs await"
+          ],
+          "/workspace/src/utils/model_manager.py": [
+            "Line 625: initialize() needs await"
+          ],
+          "/workspace/src/utils/logger.py": [
+            "Line 561: initialize() needs await",
+            "Line 568: initialize() needs await"
+          ],
+          "/workspace/src/analyst/advanced_feature_engineering.py": [
+            "Line 1254: initialize() needs await",
+            "Line 1259: initialize() needs await",
+            "Line 1264: initialize() needs await",
+            "Line 1269: initialize() needs await",
+            "Line 1274: initialize() needs await",
+            "Line 1277: initialize() needs await",
+            "Line 1284: initialize() needs await"
+          ],
+          "/workspace/src/analyst/feature_engineering_orchestrator.py": [
+            "Line 266: initialize() needs await",
+            "Line 301: initialize() needs await"
+          ],
+          "/workspace/src/analyst/predictive_ensembles.py": [
+            "Line 1204: initialize() needs await"
+          ],
+          "/workspace/src/analyst/dynamic_regime_mapper.py": [
+            "Line 360: initialize() needs await"
+          ],
+          "/workspace/src/analyst/data_utils.py": [
+            "Line 1064: initialize() needs await"
+          ],
+          "/workspace/src/analyst/regime_expert_orchestrator.py": [
+            "Line 561: initialize() needs await"
+          ],
+          "/workspace/src/analyst/ml_confidence_predictor.py": [
+            "Line 775: initialize() needs await",
+            "Line 867: initialize() needs await",
+            "Line 920: initialize() needs await",
+            "Line 2946: initialize() needs await"
+          ],
+          "/workspace/src/analyst/di_analyst.py": [
+            "Line 76: initialize() needs await",
+            "Line 100: initialize() needs await",
+            "Line 107: initialize() needs await",
+            "Line 114: initialize() needs await",
+            "Line 121: initialize() needs await"
+          ],
+          "/workspace/src/analyst/unified_regime_classifier.py": [
+            "Line 240: initialize() needs await"
+          ],
+          "/workspace/src/analyst/analyst.py": [
+            "Line 260: setup_dual_model_system() needs await",
+            "Line 976: stop() needs await",
+            "Line 979: stop() needs await",
+            "Line 982: stop() needs await",
+            "Line 1013: initialize() needs await"
+          ],
+          "/workspace/src/database/migration_utils.py": [
+            "Line 58: initialize() needs await",
+            "Line 373: initialize() needs await",
+            "Line 388: initialize() needs await",
+            "Line 400: initialize() needs await",
+            "Line 403: validate_migration_file() needs await",
+            "Line 424: export_database_for_trading() needs await",
+            "Line 436: import_database_for_trading() needs await",
+            "Line 447: validate_migration_file() needs await",
+            "Line 454: main() needs await"
+          ],
+          "/workspace/src/database/sqlite_manager.py": [
+            "Line 341: initialize() needs await",
+            "Line 571: _attempt_recovery() needs await",
+            "Line 648: _attempt_recovery() needs await",
+            "Line 708: _attempt_recovery() needs await",
+            "Line 751: _attempt_recovery() needs await",
+            "Line 804: _attempt_recovery() needs await",
+            "Line 872: _attempt_recovery() needs await",
+            "Line 919: _attempt_recovery() needs await",
+            "Line 972: _attempt_recovery() needs await",
+            "Line 1031: _attempt_recovery() needs await",
+            "Line 1055: initialize() needs await",
+            "Line 1232: initialize() needs await"
+          ]
+        },
+        "functions_needing_await": [
+          "_attempt_recovery",
+          "setup_dual_model_system",
+          "test_validator",
+          "_execute_pipeline_function",
+          "setup_paper_trader",
+          "download_all_data_with_consolidation",
+          "step3_performance_comparison",
+          "import_database_for_trading",
+          "create_sr_levels_manager",
+          "run_integrated_pipeline",
+          "_test",
+          "optimize_dataframe",
+          "setup_regime_specific_optimizer",
+          "run_validator",
+          "setup_enhanced_training_manager",
+          "setup_sr_optuna_optimizer",
+          "run_comprehensive_gap_filling_pipeline",
+          "create_sample_data",
+          "run_step",
+          "step2_run_backtests",
+          "_main",
+          "run_training",
+          "_create_basic_features",
+          "step4_cache_management",
+          "_save_optimization_results",
+          "stop",
+          "run_gap_filling_pipeline",
+          "initialize",
+          "load_config",
+          "_remove_unnecessary_columns",
+          "_generate_optimization_report",
+          "test",
+          "run_step_enhanced",
+          "get_step_reports",
+          "_optimize_data_types",
+          "step1_precompute_features",
+          "load_unified_data",
+          "run_integration_example",
+          "setup_sr_detection_optimizer",
+          "start_data_quality_dashboard",
+          "setup_performance_reporter",
+          "run_validation",
+          "validate_migration_file",
+          "main",
+          "_load_regime_data",
+          "export_database_for_trading",
+          "_optimize_index",
+          "_optimize_memory_usage",
+          "demonstrate_gpu_integration"
+        ]
+      }
+    },
+    "type_hints": {
+      "tool": "type_hints",
+      "description": "Type Hint Enhancements",
+      "success": false,
+      "return_code": 1,
+      "execution_time": 0.0289309024810791,
+      "stdout": "Analyzing 0 Python files for type hint coverage...\n\nCurrent type hint coverage: 0.0%\nTarget coverage: 90.0%\nFiles needing type hints: 0\n\nProcessing 0 files to reach target coverage...\n\nProcessed 0 files\n",
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/code_quality/scripts/enhanced_type_hints.py\", line 482, in <module>\n    main()\n    ~~~~^^\n  File \"/workspace/code_quality/scripts/enhanced_type_hints.py\", line 467, in main\n    result = enhancer.analyze_and_improve_coverage(target_coverage=args.target)\n  File \"/workspace/code_quality/scripts/enhanced_type_hints.py\", line 444, in analyze_and_improve_coverage\n    print(f\"Estimated new coverage: {(functions_with_hints + len(self.processed_files) * 5) / total_functions:.1%}\")\n                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~\nZeroDivisionError: division by zero\n",
+      "report_data": {
+        "total_files": 481,
+        "files_analyzed": 44,
+        "total_functions": 672,
+        "functions_with_hints": 505,
+        "files_needing_hints": [
+          {
+            "file": "/workspace/src/tasks.py",
+            "total_functions": 3,
+            "functions_without_hints": [
+              {
+                "name": "run_monthly_training_pipeline",
+                "line": 34,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run_training",
+                "line": 40,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.33333333333333337
+          },
+          {
+            "file": "/workspace/src/ares_pipeline.py",
+            "total_functions": 18,
+            "functions_without_hints": [
+              {
+                "name": "main",
+                "line": 1102,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "initialize",
+                "line": 114,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run",
+                "line": 449,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_pipeline_status",
+                "line": 903,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 955,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.7222222222222222
+          },
+          {
+            "file": "/workspace/src/config.py",
+            "total_functions": 29,
+            "functions_without_hints": [
+              {
+                "name": "get_config",
+                "line": 55,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_environment_settings",
+                "line": 64,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__post_init__",
+                "line": 113,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "initialize",
+                "line": 210,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run",
+                "line": 347,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 452,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_status",
+                "line": 462,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_config_sections",
+                "line": 476,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_config_service",
+                "line": 480,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_dual_model_config",
+                "line": 485,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_ml_confidence_predictor_config",
+                "line": 489,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_position_sizing_config",
+                "line": 493,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_leverage_sizing_config",
+                "line": 497,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_position_closing_config",
+                "line": 501,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_position_division_config",
+                "line": 505,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_position_monitoring_config",
+                "line": 509,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_enhanced_training_config",
+                "line": 513,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_complete_config",
+                "line": 517,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.3793103448275862
+          },
+          {
+            "file": "/workspace/src/config_optuna.py",
+            "total_functions": 18,
+            "functions_without_hints": [
+              {
+                "name": "get_sr_optimization_config",
+                "line": 493,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_hyperparameter_optimization_config",
+                "line": 498,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_optuna_config",
+                "line": 511,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_optimizable_parameters",
+                "line": 530,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__post_init__",
+                "line": 138,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__post_init__",
+                "line": 204,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__post_init__",
+                "line": 295,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_strength_score_weights",
+                "line": 306,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_level_detection_params",
+                "line": 316,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_breakout_thresholds",
+                "line": 326,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_zone_multipliers",
+                "line": 334,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_confidence_thresholds",
+                "line": 342,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__post_init__",
+                "line": 382,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.2777777777777778
+          },
+          {
+            "file": "/workspace/src/monitoring/error_detection_system.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 64,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/tracking_system.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 42,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/correlation_manager.py",
+            "total_functions": 6,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 77,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "list_requests",
+                "line": 127,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6666666666666667
+          },
+          {
+            "file": "/workspace/src/monitoring/report_scheduler.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 79,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/fractional_system_monitor.py",
+            "total_functions": 17,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 23,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config"
+                ]
+              },
+              {
+                "name": "start_monitoring",
+                "line": 70,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop_monitoring",
+                "line": 76,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "track_performance",
+                "line": 83,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "features",
+                  "labels",
+                  "hmm_regime",
+                  "processing_time",
+                  "error_occurred"
+                ]
+              },
+              {
+                "name": "get_performance_summary",
+                "line": 523,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_current_status",
+                "line": 578,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6470588235294117
+          },
+          {
+            "file": "/workspace/src/monitoring/enhanced_ml_tracker.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 53,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/performance_dashboard.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 77,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/integration_manager.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 52,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/performance_monitor.py",
+            "total_functions": 4,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 75,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "latest_metrics",
+                "line": 84,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/surrogate_optimization_monitor.py",
+            "total_functions": 19,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 62,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config"
+                ]
+              },
+              {
+                "name": "get_performance_summary",
+                "line": 223,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop_monitoring",
+                "line": 495,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__del__",
+                "line": 502,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.7894736842105263
+          },
+          {
+            "file": "/workspace/src/monitoring/metrics_dashboard.py",
+            "total_functions": 3,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 65,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6666666666666667
+          },
+          {
+            "file": "/workspace/src/monitoring/fractional_performance_tracker.py",
+            "total_functions": 12,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 23,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config",
+                  "output_dir"
+                ]
+              },
+              {
+                "name": "set_baseline_metrics",
+                "line": 81,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "metrics"
+                ]
+              },
+              {
+                "name": "update_current_metrics",
+                "line": 91,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "metrics"
+                ]
+              },
+              {
+                "name": "get_performance_summary",
+                "line": 310,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_alert_summary",
+                "line": 351,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5833333333333333
+          },
+          {
+            "file": "/workspace/src/monitoring/csv_exporter.py",
+            "total_functions": 5,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 55,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.8
+          },
+          {
+            "file": "/workspace/src/monitoring/regime_sr_tracker.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 40,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/advanced_tracer.py",
+            "total_functions": 8,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 132,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "create_correlation_id",
+                "line": 142,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_traces_count",
+                "line": 188,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.625
+          },
+          {
+            "file": "/workspace/src/monitoring/trade_conditions_monitor.py",
+            "total_functions": 2,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 41,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5
+          },
+          {
+            "file": "/workspace/src/monitoring/ml_monitor.py",
+            "total_functions": 5,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 103,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "list_alerts",
+                "line": 120,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6
+          },
+          {
+            "file": "/workspace/src/components/modular_analyst.py",
+            "total_functions": 41,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 55,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_analyst_status",
+                "line": 841,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 870,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.926829268292683
+          },
+          {
+            "file": "/workspace/src/components/modular_tactician.py",
+            "total_functions": 37,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 58,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_tactician_status",
+                "line": 980,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 1009,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.9189189189189189
+          },
+          {
+            "file": "/workspace/src/components/modular_supervisor.py",
+            "total_functions": 43,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 61,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_supervisor_status",
+                "line": 1033,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 1062,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.9302325581395349
+          },
+          {
+            "file": "/workspace/src/components/modular_strategist.py",
+            "total_functions": 37,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 62,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_strategist_status",
+                "line": 989,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 1018,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.9189189189189189
+          },
+          {
+            "file": "/workspace/src/interfaces/event_bus.py",
+            "total_functions": 17,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 79,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run",
+                "line": 150,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 236,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_status",
+                "line": 305,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_subscribers",
+                "line": 320,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.7058823529411764
+          },
+          {
+            "file": "/workspace/src/interfaces/base_interfaces.py",
+            "total_functions": 39,
+            "functions_without_hints": [
+              {
+                "name": "get_account_info",
+                "line": 79,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_performance_summary",
+                "line": 121,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "generate_report",
+                "line": 125,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "start",
+                "line": 149,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 153,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "start",
+                "line": 180,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 184,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_strategy_performance",
+                "line": 198,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "start",
+                "line": 206,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 210,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "start",
+                "line": 236,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 240,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "monitor_performance",
+                "line": 244,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "manage_risk",
+                "line": 248,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "coordinate_components",
+                "line": 252,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_analyst",
+                "line": 260,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_strategist",
+                "line": 264,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_tactician",
+                "line": 268,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "promote_challenger_to_champion",
+                "line": 276,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5128205128205128
+          },
+          {
+            "file": "/workspace/src/trading/live_wavelet_analyzer.py",
+            "total_functions": 13,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 85,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_performance_stats",
+                "line": 389,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_latest_signal",
+                "line": 419,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "clear_history",
+                "line": 423,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6923076923076923
+          },
+          {
+            "file": "/workspace/src/trading/live_wavelet_demo.py",
+            "total_functions": 12,
+            "functions_without_hints": [
+              {
+                "name": "main",
+                "line": 284,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "__init__",
+                "line": 29,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config_path"
+                ]
+              },
+              {
+                "name": "initialize",
+                "line": 50,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop_demo",
+                "line": 279,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6666666666666667
+          },
+          {
+            "file": "/workspace/src/trading/live_wavelet_integration.py",
+            "total_functions": 15,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 51,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_performance_stats",
+                "line": 332,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_latest_signal",
+                "line": 369,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "is_healthy",
+                "line": 375,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "disable",
+                "line": 405,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "enable",
+                "line": 410,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "clear_history",
+                "line": 415,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5333333333333333
+          },
+          {
+            "file": "/workspace/src/trading/sr_trading_intelligence.py",
+            "total_functions": 18,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 39,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config"
+                ]
+              },
+              {
+                "name": "initialize",
+                "line": 63,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "update_position",
+                "line": 407,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "position_type",
+                  "entry_price",
+                  "size",
+                  "timestamp"
+                ]
+              },
+              {
+                "name": "close_position",
+                "line": 438,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "exit_price",
+                  "timestamp"
+                ]
+              },
+              {
+                "name": "save_trading_history",
+                "line": 541,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "shutdown",
+                "line": 559,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6666666666666667
+          },
+          {
+            "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+            "total_functions": 16,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 34,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config"
+                ]
+              },
+              {
+                "name": "initialize",
+                "line": 63,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "verify_all_models_probability_outputs",
+                "line": 608,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "check_service_health",
+                "line": 678,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_service_info",
+                "line": 708,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6875
+          },
+          {
+            "file": "/workspace/src/supervisor/performance_reporter.py",
+            "total_functions": 51,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 430,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run",
+                "line": 597,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 822,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_status",
+                "line": 831,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_latest_report",
+                "line": 857,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_real_time_metrics",
+                "line": 861,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.8823529411764706
+          },
+          {
+            "file": "/workspace/src/supervisor/dynamic_weighter.py",
+            "total_functions": 59,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 81,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_weighting_status",
+                "line": 1231,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 1507,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.9491525423728814
+          },
+          {
+            "file": "/workspace/src/supervisor/enhanced_model_monitor.py",
+            "total_functions": 6,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 105,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "config",
+                  "performance_monitor"
+                ]
+              },
+              {
+                "name": "initialize",
+                "line": 174,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.6666666666666667
+          },
+          {
+            "file": "/workspace/src/supervisor/exchange_volume_adapter.py",
+            "total_functions": 16,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 95,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_adaptation_summary",
+                "line": 416,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "cleanup",
+                "line": 466,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.8125
+          },
+          {
+            "file": "/workspace/src/supervisor/main.py",
+            "total_functions": 13,
+            "functions_without_hints": [
+              {
+                "name": "__init__",
+                "line": 27,
+                "has_return_type": false,
+                "has_param_types": true,
+                "params": [
+                  "symbol",
+                  "exchange_name",
+                  "exchange_client",
+                  "state_manager",
+                  "db_manager"
+                ]
+              },
+              {
+                "name": "start",
+                "line": 150,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "initialize",
+                "line": 337,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run",
+                "line": 391,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 425,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_status",
+                "line": 434,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.5384615384615384
+          },
+          {
+            "file": "/workspace/src/supervisor/risk_allocator.py",
+            "total_functions": 19,
+            "functions_without_hints": [
+              {
+                "name": "initialize",
+                "line": 55,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "run",
+                "line": 109,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 183,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_status",
+                "line": 192,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_risk_allocations",
+                "line": 201,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.736842105263158
+          },
+          {
+            "file": "/workspace/src/supervisor/pnl_loss_functions.py",
+            "total_functions": 57,
+            "functions_without_hints": [
+              {
+                "name": "create_pnl_aware_loss",
+                "line": 8,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": [
+                  "pnl_multiplier",
+                  "liquidation_penalty",
+                  "reward_boost"
+                ]
+              },
+              {
+                "name": "pnl_aware_loss",
+                "line": 20,
+                "has_return_type": false,
+                "has_param_types": false,
+                "params": [
+                  "y_true",
+                  "y_pred"
+                ]
+              },
+              {
+                "name": "initialize",
+                "line": 134,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "get_calculation_status",
+                "line": 1098,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              },
+              {
+                "name": "stop",
+                "line": 1122,
+                "has_return_type": true,
+                "has_param_types": false,
+                "params": []
+              }
+            ],
+            "coverage": 0.9122807017543859
+          }
+        ],
+        "overall_coverage": 0.7514880952380952
+      }
+    }
+  },
+  "analysis": {
+    "function_validator": {
+      "tool": "function_validator",
+      "description": "Function Validation",
+      "success": false,
+      "return_code": 2,
+      "execution_time": 0.04263877868652344,
+      "stdout": "",
+      "stderr": "usage: function_validator.py [-h] [--project-root PROJECT_ROOT]\n                             [--output OUTPUT] [--exclude [EXCLUDE ...]]\n                             [--verbose]\nfunction_validator.py: error: unrecognized arguments: src/training\n",
+      "report_data": null
+    },
+    "comprehensive_review": {
+      "tool": "comprehensive_review",
+      "description": "Comprehensive Code Review",
+      "success": false,
+      "return_code": 1,
+      "execution_time": 0.03583884239196777,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/code_quality/scripts/../comprehensive_code_review.py\", line 27, in <module>\n    import astroid\nModuleNotFoundError: No module named 'astroid'\n",
+      "report_data": null
+    }
+  },
+  "summary": {
+    "timestamp": "20250903_145933",
+    "project_root": "src/training",
+    "categories_run": [
+      "syntax_imports",
+      "async_types",
+      "analysis"
+    ],
+    "tools_summary": {
+      "syntax_fixer": {
+        "success": true,
+        "execution_time": 0.029848337173461914,
+        "error": null
+      },
+      "import_fixer": {
+        "success": true,
+        "execution_time": 0.02265167236328125,
+        "error": null
+      },
+      "circular_imports": {
+        "success": true,
+        "execution_time": 0.027224302291870117,
+        "error": null
+      },
+      "async_fixer": {
+        "success": true,
+        "execution_time": 0.02698802947998047,
+        "error": null
+      },
+      "type_hints": {
+        "success": false,
+        "execution_time": 0.0289309024810791,
+        "error": null
+      },
+      "function_validator": {
+        "success": false,
+        "execution_time": 0.04263877868652344,
+        "error": null
+      },
+      "comprehensive_review": {
+        "success": false,
+        "execution_time": 0.03583884239196777,
+        "error": null
+      }
+    },
+    "total_execution_time": 0.21412086486816406,
+    "successful_tools": 4,
+    "failed_tools": 3
+  }
+}

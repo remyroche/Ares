@@ -1,5 +1,10 @@
 # src/training/optimization/computational_optimization_manager.py
 
+"""Computational Optimization Manager for Enhanced Training Pipeline.
+
+Implements all optimization strategies from computational_optimization_strategies.md.
+"""
+
 from src.core.decorators import (
     handles_errors,
     traced,
@@ -7,10 +12,6 @@ from src.core.decorators import (
 )
 
 from src.core.domain import enforce_ndarray
-
-"""Computational Optimization Manager for Enhanced Training Pipeline."
-Implements all optimization strategies from computational_optimization_strategies.md.
-"""
 import contextlib
 import gc
 import hashlib
@@ -420,8 +421,8 @@ class ParallelBacktester:
             try:
                 result = future.result(timeout=300)  # 5 minute timeout
                 results.append(result)
-            except Exception:
-                self.print(error("Error in parallel evaluation: {e}"))
+            except Exception as e:
+                self.logger.error(f"Error in parallel evaluation: {e}")
                 results.append(-1.0)  # Default to poor performance
 
         return results
@@ -1672,8 +1673,8 @@ class ComputationalOptimizationManager:
                 n_trials,
             )
 
-        except Exception:
-            self.print(failed("Parameter optimization failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"{failed('Parameter optimization failed')}: {e}")
             return {}
 
     async def _run_standard_optimization(
@@ -1727,8 +1728,8 @@ class ComputationalOptimizationManager:
 
             self.logger.info("Computational optimization manager cleanup completed")
 
-        except Exception:
-            self.print(failed("Cleanup failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"{failed('Cleanup failed')}: {e}")
 
 # Factory function for easy integration
 async def create_computational_optimization_manager(
@@ -1742,7 +1743,7 @@ async def create_computational_optimization_manager(
 
     # Get the valid field names for ComputationalOptimizationConfig
     from dataclasses import fields
-import copy
+    import copy
 
     valid_fields = {field.name for field in fields(ComputationalOptimizationConfig)}
 
@@ -1791,6 +1792,9 @@ import copy
 
     # Create the configuration object
     optimization_config = ComputationalOptimizationConfig(**flattened_config)
-    return ComputationalOptimizationManager(optimization_config)
-
-    # Defer initialization until real market data is available
+    
+    # Create and initialize the manager
+    manager = ComputationalOptimizationManager(optimization_config)
+    await manager.initialize(market_data, model_config)
+    
+    return manager

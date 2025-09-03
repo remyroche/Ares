@@ -2,11 +2,10 @@
 
 import logging
 from datetime import datetime
-from typing import (
 from copy import copy
 import asyncio
 import numpy as np
-
+from typing import (
     TYPE_CHECKING,
     Any,
 )

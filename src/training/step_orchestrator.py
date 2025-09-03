@@ -84,7 +84,8 @@ class StepOrchestrator:
 
         """
         try:
-            from src.training.core.training_manager import create_training_manager
+            from src.training.core.training_manager import (
+                create_training_manager,
                 setup_enhanced_training_manager,
             )
 

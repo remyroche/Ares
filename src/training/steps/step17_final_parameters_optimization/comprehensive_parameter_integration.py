@@ -64,7 +64,7 @@ class ComprehensiveParameterIntegration:
         implemented separately.
         """
         return {
-            "step4_triple_barrier_method": {
+            "step04_5_triple_barrier_method": {
                 "barrier_settings": {
                     "upper_barrier_multiplier": (0.1, 5.0),
                     "lower_barrier_multiplier": (0.1, 5.0),
@@ -79,7 +79,7 @@ class ComprehensiveParameterIntegration:
                     "class_balance_threshold": (0.1, 0.9)
                 }
             },
-            "step5_labeling": {
+            "step05_labeling": {
                 "labeling_strategy": {
                     "labeling_method": ["triple_barrier", "regime_specific", "dynamic"],
                     "confidence_threshold": (0.3, 0.99),
@@ -93,7 +93,7 @@ class ComprehensiveParameterIntegration:
                     "risk_per_trade": (0.001, 0.1)
                 }
             },
-            "step9_hmm_based_training": {
+            "step09_hmm_based_training": {
                 "model_architecture": {
                     "model_type": ["random_forest", "xgboost", "lightgbm", "catboost", "neural_network"],
                     "ensemble_size": (1, 20),

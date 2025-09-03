@@ -18,7 +18,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the validator."""
-        super().__init__("step7_enhanced_matrix_operations", config)
+        super().__init__("step07_enhanced_matrix_operations", config)
         self.logger = system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
 
     def validate_step_prerequisites(
@@ -452,7 +452,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         output = self.validate_step_output(symbol, exchange, timeframe)
 
         return {
-            "step_name": "step7_enhanced_matrix_operations",
+            "step_name": "step07_enhanced_matrix_operations",
             "symbol": symbol,
             "exchange": exchange,
             "timeframe": timeframe,

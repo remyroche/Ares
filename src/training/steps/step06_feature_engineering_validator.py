@@ -24,7 +24,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
     """Validator for Step 6: Feature Engineering."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step6_feature_engineering", config)
+        super().__init__("step06_feature_engineering", config)
         self.logger = system_logger.getChild("Validator.Step6")
 
     @validates()
@@ -82,7 +82,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
 
         except Exception as e:
             error_context = {
-                "step": "step6_feature_engineering",
+                "step": "step06_feature_engineering",
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
@@ -292,7 +292,7 @@ async def run_validator(
         )
         
         return {
-            "step_name": "step6_feature_engineering",
+            "step_name": "step06_feature_engineering",
             "validation_passed": validation_passed,
             "prerequisites": prereq_result,
             "step_execution": step_result,
@@ -303,7 +303,7 @@ async def run_validator(
         
     except Exception as e:
         error_context = {
-            "step": "step6_feature_engineering",
+            "step": "step06_feature_engineering",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
             "error_type": type(e).__name__,
@@ -312,7 +312,7 @@ async def run_validator(
         }
         logger.exception(f"❌ Step 6 validation failed: {error_context}")
         return {
-            "step_name": "step6_feature_engineering",
+            "step_name": "step06_feature_engineering",
             "validation_passed": False,
             "error": str(e),
             "error_context": error_context

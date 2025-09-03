@@ -126,10 +126,10 @@ self.training_pipeline = TrainingPipeline(self.training_config)
     async def _initialize_training_steps(self) -> None:
         """Initialize training steps with dependency injection."""
         step_classes = [
-            "step1_data_collection",
+            "step01_data_collection",
             "step2_data_validation",
-            "step2_5_sr_optimization",
-            "step3_hmm_regime_discovery",
+            "step02_5_sr_optimization",
+            "step03_hmm_regime_discovery",
             "step4_data_preprocessing",
             "step5_model_training",
             "step6_model_validation",
@@ -272,9 +272,9 @@ self.training_pipeline = TrainingPipeline(self.training_config)
 
             # Execute all training steps
             pipeline_steps = [
-                "step1_data_collection",
+                "step01_data_collection",
                 "step2_data_validation",
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 "step4_data_preprocessing",
                 "step5_model_training",
                 "step6_model_validation",
@@ -318,8 +318,8 @@ self.training_pipeline = TrainingPipeline(self.training_config)
         try:
             # Execute subset of steps for incremental training
             incremental_steps = [
-                "step1_data_collection",
-                "step3_hmm_regime_discovery",
+                "step01_data_collection",
+                "step03_hmm_regime_discovery",
                 "step5_model_training",
                 "step6_model_validation",
                 "step9_model_evaluation",

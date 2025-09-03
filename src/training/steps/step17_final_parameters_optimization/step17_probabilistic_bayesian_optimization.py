@@ -874,7 +874,7 @@ n_estimators=params.get('n_estimators', 200),
             "step_name": self.step_name,
             "step_type": "optimization",
             "dependencies": [
-                "step1_data_collection",
+                "step01_data_collection",
                 "step2_feature_engineering",
                 "step8_tactician_labeling",
                 "step9_tactician_specialist_training",

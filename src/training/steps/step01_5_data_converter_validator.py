@@ -27,7 +27,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     """Validator for Step 1.5: Data Converter."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step1_5_data_converter", config)
+        super().__init__("step01_5_data_converter", config)
         self.logger = system_logger.getChild("Validator.Step1_5")
         # Fine-tuned parameters for ML training
         self.min_records: int = 500  # Minimum records per file
@@ -404,7 +404,7 @@ async def run_validator(
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step1_5_data_converter",
+        "step_name": "step01_5_data_converter",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration

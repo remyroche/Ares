@@ -54,7 +54,7 @@ class FeatureInteractionEngine:
         self.logger = logger
 
         # Load interaction configuration
-        step6_config = config.get("step6_feature_interaction_engineering", {})
+        step6_config = config.get("step06_feature_engineering", {})
 
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:

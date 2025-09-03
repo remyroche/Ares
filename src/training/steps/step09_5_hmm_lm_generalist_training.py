@@ -119,7 +119,7 @@ class HMMLMGeneralistTrainingStep:
 
     @traced(span_name="step9_5.execute")
     @validates(validation_level="WARNING")
-    # @with_enhanced_mlflow_logging - removed, use traced"step9_5_hmm_lm_generalist_training")
+    # @with_enhanced_mlflow_logging - removed, use traced"step09_5_hmm_lm_generalist_training")
     @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-LM generalist training step execution",
@@ -238,7 +238,7 @@ class HMMLMGeneralistTrainingStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step9_5_hmm_lm_generalist_training",
+                step_name="step09_5_hmm_lm_generalist_training",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -250,7 +250,7 @@ class HMMLMGeneralistTrainingStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step9_5_hmm_lm_generalist_training",
+                step_name="step09_5_hmm_lm_generalist_training",
                 report_data=report_data,
                 report_type="hmm_lm_generalist_training_report",
                 additional_metadata={
@@ -268,7 +268,7 @@ class HMMLMGeneralistTrainingStep:
             if model_result:
                 model_report_name = log_step_report(
                     config=self.config,
-                    step_name="step9_5_hmm_lm_generalist_training",
+                    step_name="step09_5_hmm_lm_generalist_training",
                     report_data=model_result,
                     report_type="hmm_lm_model_result",
                     additional_metadata={
@@ -284,7 +284,7 @@ class HMMLMGeneralistTrainingStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step9_5_hmm_lm_generalist_training",
+                step_name="step09_5_hmm_lm_generalist_training",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "hmm_lm_generalist_training_performance",
@@ -1250,7 +1250,7 @@ class EfficientRegimeTrainer:
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step9_5_hmm_lm_generalist_training")
+@idempotent_step(step_key="step09_5_hmm_lm_generalist_training")
 # @artifact_write_lock() - removed, handled by file system
 @validates()
 # @artifact_versioning("1.0") - removed, handled by pipeline

@@ -12,13 +12,12 @@ import asyncio
     performance_monitor,
     PerformanceLevel,
     handle_errors,
-    handle_specific_errors,
     validate_data_quality,
     secure_data_processing,
     memory_efficient,
 )
 from src.utils.logger import system_logger
-
+from src.core.decorators import handles_errors
 
 class DataManager:
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -28,7 +27,7 @@ class DataManager:
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @secure_data_processing()
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid data manager configuration"),
             AttributeError: (False, "Missing data manager parameters"),
@@ -43,6 +42,6 @@ class DataManager:
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @memory_efficient()
     @validate_data_quality(required_columns=None, context="data_manager.process")
-    @handle_errors(exceptions=(Exception,), default_return=None, context="data_manager.process")
+    @handles_errors(fallback=None)
     async def process(self, data):
         return data

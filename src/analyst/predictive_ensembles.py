@@ -1,12 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-import logging
-import asyncio
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -24,7 +19,6 @@ from src.utils.warning_symbols import (
 # Uncomment the following lines when the respective libraries are installed:
 # from tensorflow.keras.models import load_model
 # from lightgbm import LGBMClassifier
-
 
 class PredictiveEnsembles:
     """"
@@ -73,7 +67,7 @@ class PredictiveEnsembles:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid predictive ensembles configuration"),
             AttributeError: (False, "Missing required predictive ensembles parameters"),
@@ -115,11 +109,7 @@ class PredictiveEnsembles:
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="ensemble configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_ensemble_configuration(self) -> None:
         """Load predictive ensembles configuration."""
         try:
@@ -147,12 +137,7 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error loading ensemble configuration: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """"
         Validate predictive ensembles configuration.
@@ -196,11 +181,7 @@ class PredictiveEnsembles:
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="ensemble modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_ensemble_modules(self) -> None:
         """Initialize predictive ensembles modules."""
         try:
@@ -230,12 +211,7 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(initialization_f"Error initializing ensemble modules: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="model ensemble initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_model_ensemble(self) -> None:
         """Initialize model ensemble module."""
         try:
@@ -253,12 +229,7 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(initialization_f"Error initializing model ensemble: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="voting ensemble initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_voting_ensemble(self) -> None:
         """Initialize voting ensemble module."""
         try:
@@ -276,12 +247,7 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(initialization_f"Error initializing voting ensemble: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="stacking ensemble initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_stacking_ensemble(self) -> None:
         """Initialize stacking ensemble module."""
         try:
@@ -301,11 +267,7 @@ class PredictiveEnsembles:
                 initialization_error(f"Error initializing stacking ensemble: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="bagging ensemble initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_bagging_ensemble(self) -> None:
         """Initialize bagging ensemble module."""
         try:
@@ -323,12 +285,7 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(initialization_f"Error initializing bagging ensemble: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="boosting ensemble initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_boosting_ensemble(self) -> None:
         """Initialize boosting ensemble module."""
         try:
@@ -348,7 +305,7 @@ class PredictiveEnsembles:
                 initialization_error(f"Error initializing boosting ensemble: {e}"),
             )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid ensemble parameters"),
             AttributeError: (False, "Missing ensemble components"),
@@ -413,11 +370,7 @@ class PredictiveEnsembles:
             self.is_ensembling = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=False,
-        context="ensemble inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_ensemble_inputs(self, ensemble_input: dict[str, Any]) -> bool:
         """"
         Validate ensemble inputs.
@@ -457,11 +410,7 @@ class PredictiveEnsembles:
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="model ensemble",
-    )
+    @handles_errors(fallback=None)
     async def _perform_model_ensemble(
         self,
         ensemble_input: dict[str, Any],
@@ -507,11 +456,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="voting ensemble",
-    )
+    @handles_errors(fallback=None)
     async def _perform_voting_ensemble(
         self,
         ensemble_input: dict[str, Any],
@@ -557,11 +502,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="stacking ensemble",
-    )
+    @handles_errors(fallback=None)
     async def _perform_stacking_ensemble(
         self,
         ensemble_input: dict[str, Any],
@@ -609,11 +550,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="bagging ensemble",
-    )
+    @handles_errors(fallback=None)
     async def _perform_bagging_ensemble(
         self,
         ensemble_input: dict[str, Any],
@@ -663,11 +600,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="boosting ensemble",
-    )
+    @handles_errors(fallback=None)
     async def _perform_boosting_ensemble(
         self,
         ensemble_input: dict[str, Any],
@@ -1119,11 +1052,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="ensemble results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_ensemble_results(self) -> None:
         """Store ensemble results."""
         try:
@@ -1143,12 +1072,7 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error storing ensemble results: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="ensemble results getting",
-    )
+    @handles_errors(fallback=None)
     def get_ensemble_results(self, ensemble_type: str | None = None) -> dict[str, Any]:
         """"
         Get ensemble results.
@@ -1170,11 +1094,7 @@ class PredictiveEnsembles:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="ensemble history getting",
-    )
+    @handles_errors(fallback=None)
     def get_ensemble_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """"
         Get ensemble history.
@@ -1224,11 +1144,7 @@ class PredictiveEnsembles:
             "ensemble_history_count": len(self.ensemble_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=None,
-        context="predictive ensembles cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the predictive ensembles."""
         self.logger.info("🛑 Stopping Predictive Ensembles...")
@@ -1249,17 +1165,10 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error stopping predictive ensembles: {e}")
 
-
-
 # Global predictive ensembles instance
 predictive_ensembles: PredictiveEnsembles | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-        default_return=None,
-    context="predictive ensembles setup",
-)
+@handles_errors(fallback=None)
 async def setup_predictive_ensembles(
     config: dict[str, Any] | None = None,
 ) -> PredictiveEnsembles | None:

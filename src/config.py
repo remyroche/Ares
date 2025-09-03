@@ -163,7 +163,7 @@ class RiskConfig:
     max_leverage: int = 10
 
 # Legacy ConfigurationManager class for backward compatibility
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import invalid, warning, failed
 import copy
 
@@ -198,7 +198,7 @@ class ConfigurationManager:
             100,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid configuration manager configuration"),
             AttributeError: (
@@ -252,8 +252,7 @@ class ConfigurationManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="config manager configuration loading",
     )
     async def _load_config_manager_configuration(self) -> None:
@@ -273,8 +272,7 @@ class ConfigurationManager:
             )
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=False, context="configuration validation",
     )
 
@@ -302,8 +300,7 @@ class ConfigurationManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="config sections initialization",
     )
     async def _initialize_config_sections(self) -> None:
@@ -325,8 +322,7 @@ class ConfigurationManager:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="config service initialization",
     )
     async def _initialize_config_service(self) -> None:
@@ -339,7 +335,7 @@ class ConfigurationManager:
             self.print(failed("❌ Failed to initialize configuration service: {e}"))
             raise
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Configuration manager run failed"),
         },
@@ -371,8 +367,7 @@ class ConfigurationManager:
             self.print(failed("❌ Configuration Manager run failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="configuration update",
     )
     async def _update_configuration(self) -> None:
@@ -397,8 +392,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to update configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="configuration reload",
     )
     async def _reload_configuration(self) -> None:
@@ -412,8 +406,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to reload configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="configuration sections validation",
     )
     async def _validate_configuration_sections(self) -> None:
@@ -433,8 +426,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to validate configuration sections: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="config service update",
     )
     async def _update_config_service(self) -> None:
@@ -446,8 +438,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to update configuration service: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="configuration manager stop",
     )
     async def stop(self) -> None:
@@ -520,8 +511,7 @@ class ConfigurationManager:
         return get_complete_config()
 
 # Legacy setup function
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return=None, context="configuration manager setup",
 )
 async def setup_configuration_manager(

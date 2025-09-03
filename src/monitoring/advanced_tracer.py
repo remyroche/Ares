@@ -17,13 +17,12 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
 )
 from src.utils.logger import system_logger
-
 
 class TraceLevel(Enum):
     """Trace levels for different types of tracing."""
@@ -33,7 +32,6 @@ class TraceLevel(Enum):
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
-
 
 class ComponentType(Enum):
     """Component types for tracing."""
@@ -46,7 +44,6 @@ class ComponentType(Enum):
     DATABASE = "database"
     GUI = "gui"
     MONITORING = "monitoring"
-
 
 @dataclass
 class TraceSpan:
@@ -65,7 +62,6 @@ class TraceSpan:
     parent_span_id: Optional[str] = None
     child_span_ids: List[str] = field(default_factory=list)
 
-
 @dataclass
 class TraceRequest:
     """Complete trace request with all spans."""
@@ -81,7 +77,6 @@ class TraceRequest:
     performance_metrics: Dict[str, float] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for tracing."""
@@ -92,7 +87,6 @@ class PerformanceMetrics:
     throughput_ops_per_sec: float
     error_rate: float
     success_rate: float
-
 
 class AdvancedTracer:
     """
@@ -121,7 +115,7 @@ class AdvancedTracer:
         self._traces: Dict[str, TraceRequest] = {}
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tracer configuration"),
             AttributeError: (False, "Missing required tracer parameters"),
@@ -143,7 +137,7 @@ class AdvancedTracer:
         """Create a new correlation ID."""
         return str(uuid.uuid4())
 
-    @handle_errors(default_return=None, context="advanced_tracer.start_span")
+    @handles_errors(fallback=None)
     def start_span(
         self,
         correlation_id: str,
@@ -163,7 +157,7 @@ class AdvancedTracer:
         )
         return span
 
-    @handle_errors(default_return=None, context="advanced_tracer.finish_span")
+    @handles_errors(fallback=None)
     def finish_span(self, span: TraceSpan, status: str = "completed", error_message: Optional[str] = None) -> TraceSpan | None:
         span.end_time = datetime.now()
         if span.end_time and span.start_time:
@@ -172,7 +166,7 @@ class AdvancedTracer:
         span.error_message = error_message
         return span
 
-    @handle_errors(default_return=None, context="advanced_tracer.record_trace")
+    @handles_errors(fallback=None)
     def record_trace(self, trace: TraceRequest) -> None:
         """Record a completed trace request."""
         self._traces[trace.correlation_id] = trace

@@ -13,11 +13,7 @@ import asyncio
 from src.tactician.enhanced_order_manager import (
     OrderSide,
 )
-from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -28,7 +24,6 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
-
 
 class MLConfidencePredictor:
     """"
@@ -220,7 +215,7 @@ class MLConfidencePredictor:
             )
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for prediction"),
             AttributeError: (None, "Model not properly trained"),
@@ -295,11 +290,7 @@ class MLConfidencePredictor:
             )
             return self._generate_fallback_predictions(current_price)
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="prediction preparation",
-    )
+    @handles_errors(fallback=False)
     async def _prepare_for_prediction(self) -> bool:
         """"
         Prepare the predictor for making predictions.
@@ -345,11 +336,7 @@ class MLConfidencePredictor:
             or self.multi_timeframe_models
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="price target predictions generation",
-    )
+    @handles_errors
     async def _generate_price_target_predictions(
         self,
         features: pd.DataFrame,
@@ -377,11 +364,7 @@ class MLConfidencePredictor:
 
         return price_target_confidences
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="adversarial predictions generation",
-    )
+    @handles_errors
     async def _generate_adversarial_predictions(
         self,
         features: pd.DataFrame,
@@ -439,11 +422,7 @@ class MLConfidencePredictor:
             return self._predict_single_target(features, model_key, model_type)
         return fallback_func(target_level)
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="ensemble predictions generation",
-    )
+    @handles_errors
     async def _generate_ensemble_predictions_if_available(
         self,
         features: pd.DataFrame,
@@ -771,11 +750,7 @@ class MLConfidencePredictor:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="enhanced training integration initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_enhanced_training_integration(self) -> None:
         """Initialize integration with enhanced training manager."""
         try:
@@ -835,11 +810,7 @@ class MLConfidencePredictor:
                 f"Error initializing model training capabilities: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="feature engineering integration initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_feature_engineering_integration(self) -> None:
         """Initialize feature engineering integration."""
         try:
@@ -898,11 +869,7 @@ class MLConfidencePredictor:
             self.multi_timeframe_feature_engineering = None
             self.feature_engineering_orchestrator = None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="meta labeling system initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_meta_labeling_system(self) -> None:
         """Initialize meta-labeling system integration."""
         try:
@@ -940,8 +907,6 @@ class MLConfidencePredictor:
             )
             # Continue without meta-labeling system if not available
             self.meta_labeling_system = None
-
-
 
     async def _generate_analyst_meta_labels(
         self,
@@ -1026,11 +991,7 @@ class MLConfidencePredictor:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="trained models loading from enhanced training",
-    )
+    @handles_errors(fallback=None)
     async def _load_trained_models_from_enhanced_training(self) -> None:
         """Load trained models from enhanced training manager."""
         try:
@@ -1131,7 +1092,6 @@ class MLConfidencePredictor:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.warning(f"Could not load ensemble models: {e}")
 
-
     def _load_calibrated_models(self) -> None:
         """Load calibrated models from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "calibration_systems"):
@@ -1163,7 +1123,6 @@ class MLConfidencePredictor:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.warning(f"Could not load regime models: {e}")
 
-
     def _load_multi_timeframe_models(self) -> None:
         """Load multi-timeframe models from enhanced training manager."""
         if not (
@@ -1184,7 +1143,6 @@ class MLConfidencePredictor:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.warning(f"Could not load multi-timeframe models: {e}")
-
 
     def _load_label_expert_models(self) -> None:
         """Load label-level expert ensembles, calibrators, and reliability scores if provided by the training manager."""
@@ -1283,11 +1241,7 @@ class MLConfidencePredictor:
             f"  - Multi-timeframe models: {len(self.multi_timeframe_models)}",
         )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="predictor configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_predictor_configuration(self) -> None:
         """Load predictor configuration."""
         # Set default predictor parameters
@@ -1303,11 +1257,7 @@ class MLConfidencePredictor:
         self.predictor_config.setdefault("max_prediction_horizon", 1)  # hours
         self.predictor_config.setdefault("enhanced_training_integration", True)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=None,
-        context="model parameters initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_model_parameters(self) -> None:
         """Initialize model parameters."""
         # Ensure model directory exists
@@ -1323,7 +1273,7 @@ class MLConfidencePredictor:
             "f1_score": 0.0,
         }
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="model loading",
     )
@@ -1341,11 +1291,7 @@ class MLConfidencePredictor:
                 self.model = None
                 self.is_trained = False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """"
         Validate predictor configuration.
@@ -1379,8 +1325,6 @@ class MLConfidencePredictor:
             self.logger.error(validation_f"Configuration validation error: {e}")
 
             return False
-
-
 
     async def predict_ensemble_confidence(
         self,
@@ -2097,14 +2041,12 @@ class MLConfidencePredictor:
             else:
                 self.logger.error(failed("Failed to initialize enhanced order manager"))
 
-
             # Initialize async order executor
             self.async_order_executor = await setup_async_order_executor(order_config)
             if self.async_order_executor:
                 self.logger.info("✅ Async order executor initialized successfully")
             else:
                 self.logger.error(failed("Failed to initialize async order executor"))
-
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
@@ -2651,7 +2593,6 @@ from src.tactician.async_order_executor import  (
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error updating model performance: {e}")
 
-
     def get_training_status(self) -> dict[str, Any]:
         """Get current training status and history."""
         try:
@@ -2675,11 +2616,7 @@ from src.tactician.async_order_executor import  (
 
             return {"error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=None,
-        context="ML confidence predictor cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Clean up resources."""
         try:
@@ -2689,7 +2626,6 @@ from src.tactician.async_order_executor import  (
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error stopping ML Confidence Predictor: {e}")
-
 
     def update_ensemble_weights(
         self,
@@ -2760,11 +2696,7 @@ from src.tactician.async_order_executor import  (
         self.logger.info(f"Ablation study results: {results}")
         return results
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="label-level MoE confidence prediction",
-    )
+    @handles_errors
     async def predict_label_confidences(
         self,
         market_data: pd.DataFrame,
@@ -2895,11 +2827,7 @@ from src.tactician.async_order_executor import  (
                 weights = {k: float(v / total) for k, v in weights.items()}
         return weights
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="multi-timeframe label-level confidence prediction",
-    )
+    @handles_errors
     async def predict_label_confidences_mtf(
         self,
         market_data: pd.DataFrame,
@@ -2918,11 +2846,7 @@ from src.tactician.async_order_executor import  (
                 all_conf[f"{tf}_{label}"] = float(val)
         return all_conf
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="tactician label-level confidence prediction",
-    )
+    @handles_errors
     async def predict_tactician_label_confidences(
         self,
         market_data: pd.DataFrame,
@@ -2999,11 +2923,7 @@ from src.tactician.async_order_executor import  (
                 confidences[label] = 0.5
         return confidences
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="multi-timeframe tactician label-level confidence prediction",
-    )
+    @handles_errors
     async def predict_tactician_label_confidences_mtf(
         self,
         market_data: pd.DataFrame,
@@ -3020,12 +2940,7 @@ from src.tactician.async_order_executor import  (
                 all_conf[f"{tf}_{label}"] = float(val)
         return all_conf
 
-
-@handle_errors(
-    exceptions=(Exception,),
-        default_return=None,
-    context="ML confidence predictor setup",
-)
+@handles_errors(fallback=None)
 async def setup_ml_confidence_predictor(
     config: dict[str, Any] | None = None,
 ) -> MLConfidencePredictor | None:

@@ -7,7 +7,7 @@ ML Target Validator for validating machine learning targets and predictions.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import asyncio
@@ -50,11 +50,7 @@ class MLTargetValidator:
         self.min_target_value = self.validator_config.get("min_target_value", -1.0)
         self.max_target_value = self.validator_config.get("max_target_value", 1.0)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="ML target validator initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """"
         Initialize the ML Target Validator.
@@ -127,11 +123,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML target validation"
     )
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="target validation"
-    )
+    @handles_errors(fallback=False)
     async def validate_target(self, target_data: Dict[str, Any]) -> bool:
         """"
         Validate a target value and its associated metadata.
@@ -230,11 +222,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML prediction validation"
     )
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="prediction validation"
-    )
+    @handles_errors(fallback=False)
     async def validate_prediction(self, prediction_data: Dict[str, Any]) -> bool:
         """"
         Validate a prediction and its associated metadata.

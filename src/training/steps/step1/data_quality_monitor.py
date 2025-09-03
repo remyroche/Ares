@@ -27,7 +27,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("DataQualityMonitor")
 
-
 class DataQualityAlert:
     """Represents a data quality alert."""
     
@@ -71,7 +70,6 @@ class DataQualityAlert:
     def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
 
-
 class DataQualityMonitor:
     """Real-time data quality monitor with alerting capabilities."""
 
@@ -103,11 +101,7 @@ class DataQualityMonitor:
         }
 
     @with_tracing_span("start_monitoring")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="data_quality_monitor.start_monitoring"
-    )
+    @handles_errors(fallback=False)
     async def start_monitoring(
         self,
         symbols: List[str],
@@ -218,6 +212,7 @@ class DataQualityMonitor:
             pass  # TODO: Handle exception properly
 import copy
 import os.path
+from src.core.decorators import handles_errors
             
 manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
@@ -577,7 +572,6 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         report.append("=" * 80)
         return "\n".join(report)
 
-
 # Convenience functions for easy integration
 async def start_data_quality_monitoring(
     symbols: List[str],
@@ -597,7 +591,6 @@ async def start_data_quality_monitoring(
     
     return monitor
 
-
 def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAlert], None]:
     """Create an email alert callback function."""
     def email_callback(alert: DataQualityAlert) -> None:
@@ -605,7 +598,6 @@ def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAler
         logger.info(f"📧 Would send email to {email_address}: {alert}")
     
     return email_callback
-
 
 def create_slack_alert_callback(webhook_url: str) -> Callable[[DataQualityAlert], None]:
     """Create a Slack alert callback function."""

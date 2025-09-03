@@ -45,7 +45,7 @@ import contextlib
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
@@ -75,14 +75,12 @@ REQUIRED_MODULES = [
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
-
-""""
+"""
 Compatibility shim for NumPy RNG unpickling across versions.
 We avoid nested functions to keep the shim picklable.
-""""
+"""
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
-
 
 def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwargs):  # type: ignore[override]
     """Module-level normalized ctor to avoid creating a closure (picklable)."""
@@ -119,7 +117,6 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwarg
             except Exception:
                 pass
             raise
-
 
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
@@ -269,18 +266,13 @@ class RegimeAwareAnalystEnhancementStep:
             self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
             return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="analyst enhancement step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the analyst enhancement step."""
         self.logger.info("Initializing Analyst Enhancement Step...")
         self.logger.info("Analyst Enhancement Step initialized successfully.")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="regime-aware analyst enhancement step execution",
     )
@@ -2088,7 +2080,6 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
         )
 
-
     async def _select_stable_tier_2_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_2_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select normalized features with stability selection."""
@@ -2112,7 +2103,6 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
             selection_criteria="stability",  # Prefer stable features for normalized tier,
         )
-
 
     async def _select_stable_tier_3_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_3_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
@@ -2138,7 +2128,6 @@ class RegimeAwareAnalystEnhancementStep:
             selection_criteria="significance",  # Prefer significant interactions,
         )
 
-
     async def _select_stable_tier_4_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_4_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select lagged features with stability selection."""
@@ -2163,7 +2152,6 @@ class RegimeAwareAnalystEnhancementStep:
             selection_criteria="temporal",  # Prefer temporally stable features,
         )
 
-
     async def _select_stable_tier_5_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_5_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select causality features with stability selection."""
@@ -2187,7 +2175,6 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
             selection_criteria="market_logic",  # Prefer market-logic consistent features,
         )
-
 
     async def _perform_stability_selection(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, available_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, selection_criteria: str = "importance"
@@ -2333,7 +2320,6 @@ class RegimeAwareAnalystEnhancementStep:
             stability_threshold,
             5,
         )
-
 
     async def _try_stable_shap_feature_selection(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, min_features: int, max_features: int, n_bootstrap_samples: int, stability_threshold: float, ) -> tuple[list[str], dict]:
@@ -2498,7 +2484,6 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Ensure we meet minimum requirements
         return max(min_size, sample_size)
-
 
     async def _calculate_shap_importance_single_bootstrap(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> dict[str, float] | None:
@@ -3578,7 +3563,6 @@ class RegimeAwareAnalystEnhancementStep:
         # Placeholder - implement CNN evaluation
         return 0.0
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -3597,7 +3581,6 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step7_analyst_enhancement")

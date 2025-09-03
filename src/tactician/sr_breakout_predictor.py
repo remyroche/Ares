@@ -8,7 +8,7 @@ import pandas as pd
 import os
 import json
 from pathlib import Path
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import validate_data_quality
 from copy import copy
 import asyncio
@@ -257,7 +257,7 @@ class SRBreakoutPredictor:
             "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.25, "4h": 0.25, "1d": 0.2
         })
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid SR breakout predictor configuration"),
             AttributeError: (False, "Missing required SR parameters"),
@@ -997,7 +997,7 @@ with open(file_path, 'w') as f:
         check_timestamps=True,
         context="SR breakout prediction input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for SR breakout prediction"),
             AttributeError: (None, "Predictor not properly initialized"),
@@ -1082,7 +1082,7 @@ with open(file_path, 'w') as f:
         check_timestamps=True,
         context="SR context calculation input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for SR context calculation"),
             AttributeError: (None, "Predictor not properly initialized"),
@@ -3637,7 +3637,7 @@ if support_levels:
         except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid input data for S/R proximity check"),
             KeyError: (False, "Missing required S/R context data"),
@@ -3728,7 +3728,7 @@ if support_levels:
         check_timestamps=True,
         context="S/R outcome prediction input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ({}, "Invalid input data for S/R outcome prediction"),
             KeyError: ({}, "Missing required S/R context data"),
@@ -3791,7 +3791,7 @@ if support_levels:
         check_timestamps=True,
         context="S/R features calculation input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ({}, "Invalid input data for S/R features calculation"),
             AttributeError: ({}, "Predictor not properly initialized"),
@@ -3849,7 +3849,7 @@ if support_levels:
         check_timestamps=True,
         context="Comprehensive S/R features calculation input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ({}, "Invalid input data for comprehensive S/R features calculation"),
             AttributeError: ({}, "Predictor not properly initialized"),
@@ -4219,7 +4219,7 @@ if support_levels:
         check_timestamps=True,
         context="Breakout prediction input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for breakout prediction"),
             AttributeError: (None, "Predictor not properly initialized"),
@@ -4279,11 +4279,7 @@ if support_levels:
         except Exception as e:
             self.logger.error(f"❌ Failed to stop SR breakout predictor: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR breakout predictor cleanup",
-    )
+    @handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup SR breakout predictor resources."""
         try:
@@ -4568,7 +4564,6 @@ if support_levels:
             self.logger.error(f"Error generating detection summary: {e}")
             return f"Error generating {method_name} {level_type} summary"
 
-
 async def setup_sr_breakout_predictor(
     config: dict[str, Any] | None = None,
 ) -> SRBreakoutPredictor | None:
@@ -4594,7 +4589,6 @@ async def setup_sr_breakout_predictor(
     except Exception as e:
         system_logger.exception(f"Failed to setup SR Breakout Predictor: {e}")
         return None
-
 
 def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
     """"

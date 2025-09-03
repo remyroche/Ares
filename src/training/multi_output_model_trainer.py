@@ -71,7 +71,6 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
-
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
     
@@ -146,7 +145,6 @@ class MultiOutputModelConfig:
         else:
             self.supported_model_types = supported_model_types
 
-
 class MultiOutputNeuralNetwork(nn.Module):
     """Neural network for multi-output prediction (direction + profit)."""
     
@@ -202,7 +200,6 @@ class MultiOutputNeuralNetwork(nn.Module):
         profit_pred = self.profit_head(shared_features)
         return direction_pred, profit_pred
 
-
 class MultiOutputModelTrainer:
     """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
     
@@ -247,11 +244,7 @@ class MultiOutputModelTrainer:
         
         self.logger.info("🔧 Multi-output model trainer initialized with comprehensive SR feature integration")
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
-        default_return=False,
-        context="step7_features_loading"
-    )
+    @handles_errors(fallback=False)
     async def load_step7_features(self, step7_output_path: str) -> bool:
         """"
         Load comprehensive SR features from step07 enhanced matrix operations.
@@ -308,11 +301,7 @@ class MultiOutputModelTrainer:
             self.logger.error(f"❌ Error loading step07 features: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
-        default_return=False,
-        context="step2_5_sr_levels_loading"
-    )
+    @handles_errors(fallback=False)
     async def load_step2_5_sr_levels(self, step2_5_output_path: str) -> bool:
         """"
         Load SR levels from step2_5 SR optimization.
@@ -657,11 +646,7 @@ class MultiOutputModelTrainer:
             self.logger.error(f"❌ Error analyzing SR features: {e}")
             return {"sr_feature_count": 0, "error": str(e)}
     
-    @handle_errors(
-        exceptions=(ValueError, TypeError, MemoryError),
-        default_return=None,
-        context="multi_output_data_preparation"
-    )
+    @handles_errors(fallback=None)
     async def prepare_multi_output_data(
         self,
         data: pd.DataFrame,
@@ -958,11 +943,7 @@ class MultiOutputModelTrainer:
             }
         }
     
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="multi_output_model_training"
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     @memory_efficient
     async def train_multi_output_model(
@@ -1623,7 +1604,7 @@ class MultiOutputModelTrainer:
             raise FileNotFoundError(f"Model files not found in {load_path}")
     
     # NEW: Probability target generation methods
-    @handle_errors(default_return={}, context="generate_probability_targets")
+    @handles_errors(fallback={})
     def generate_probability_targets(
         self, 
         X: np.ndarray, 
@@ -1648,7 +1629,7 @@ class MultiOutputModelTrainer:
         self.logger.info("🔧 Generating probability targets for multi-output training")
         return self.probability_target_generator.generate_all_targets(X, y, market_data)
     
-    @handle_errors(default_return={}, context="train_with_probability_targets")
+    @handles_errors(fallback={})
     def train_with_probability_targets(
         self,
         X_train: np.ndarray,
@@ -1760,6 +1741,7 @@ class MultiOutputModelTrainer:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
+from src.core.decorators import handles_errors
 
 class_weights = compute_class_weight(
                 'balanced', 
@@ -2050,7 +2032,6 @@ class_weights = compute_class_weight(
             "model_type": "standard_multi_output",
             "note": "Standard training used (probability outputs disabled)"
         }
-
 
 def create_multi_output_trainer(
     model_type: str = "LightGBM",

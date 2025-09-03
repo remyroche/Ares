@@ -6,13 +6,12 @@ from typing import Any
 import json
 import os
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 import pandas as pd
 import logging
 import datetime as datetime
 import os.path
 import asyncio
-
 
 class DynamicRegimeMapper:
     """
@@ -44,11 +43,7 @@ class DynamicRegimeMapper:
             "archetype_based",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="dynamic regime mapper initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the dynamic regime mapper."""
         try:
@@ -64,11 +59,7 @@ class DynamicRegimeMapper:
             self.logger.exception(f"Failed to initialize Dynamic Regime Mapper: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="regime discovery from step1_7",
-    )
+    @handles_errors(fallback=False)
     async def _discover_regimes_from_step1_7(self) -> bool:
         """Discover regimes by reading Step 1.7 HMM clustering results."""
         try:
@@ -97,11 +88,7 @@ class DynamicRegimeMapper:
             self.logger.exception(f"Error discovering regimes from Step 1.7: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="meta file processing",
-    )
+    @handles_errors(fallback=False)
     async def _process_meta_file(self, meta_file: str) -> bool:
         """Process a Step 1.7 meta file to extract regime information."""
         try:
@@ -356,7 +343,6 @@ class DynamicRegimeMapper:
         except Exception as e:
             self.logger.exception(f"Error loading regime mapping: {e}")
             return False
-
 
 # Convenience function for easy integration
 async def create_dynamic_regime_mapper(config: dict[str, Any]) -> DynamicRegimeMapper:

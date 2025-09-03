@@ -8,11 +8,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import CONFIG
-import logging
-import asyncio
-from src.utils.error_handler import (
-    handle_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -23,7 +19,6 @@ from src.utils.centralized_decorators_simple import (
     validate_data_quality,
     with_tracing_span,
 )
-
 
 class MetaLabelingSystem:
     """"
@@ -69,11 +64,7 @@ class MetaLabelingSystem:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="meta labeling system initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize meta-labeling system."""
         try:
@@ -88,11 +79,7 @@ class MetaLabelingSystem:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError, KeyError, IndexError),
-            default_return={},
-        context="pattern features calculation",
-    )
+    @handles_errors
     async def _calculate_pattern_features(
         self,
         price_data: pd.DataFrame,
@@ -142,14 +129,12 @@ class MetaLabelingSystem:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error(f"Error calculating technical indicators: {e}")
 
-
             # Volume analysis with error handling
             try:
                 features.update(self._calculate_volume_features(volume_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error(f"Error calculating volume features: {e}")
-
 
             # Price action patterns with error handling
             try:
@@ -158,7 +143,6 @@ class MetaLabelingSystem:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error(f"Error calculating price action patterns: {e}")
 
-
             # Volatility patterns with error handling
             try:
                 features.update(self._calculate_volatility_patterns(price_data))
@@ -166,14 +150,12 @@ class MetaLabelingSystem:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error(f"Error calculating volatility patterns: {e}")
 
-
             # Momentum patterns with error handling
             try:
                 features.update(self._calculate_momentum_patterns(price_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error(f"Error calculating momentum patterns: {e}")
-
 
             return features
 
@@ -961,11 +943,7 @@ class MetaLabelingSystem:
 
             return {"ABORT_ENTRY_SIGNAL": 0, "abort_confidence": 0}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return={},
-        context="analyst labels generation",
-    )
+    @handles_errors
     async def generate_analyst_labels(
         self,
         price_data: pd.DataFrame,
@@ -1058,11 +1036,7 @@ class MetaLabelingSystem:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return={},
-        context="tactician labels generation",
-    )
+    @handles_errors
     async def generate_tactician_labels(
         self,
         price_data: pd.DataFrame,
@@ -1152,11 +1126,7 @@ class MetaLabelingSystem:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return={},
-        context="combined labels generation",
-    )
+    @handles_errors
     async def generate_combined_labels(
         self,
         price_data: pd.DataFrame,
@@ -1230,11 +1200,7 @@ class MetaLabelingSystem:
             "description": "Meta-labeling system for path-dependent trading signals",
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=None,
-        context="meta labeling system cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the meta-labeling system."""
         self.logger.info("🛑 Stopping Meta-Labeling System...")

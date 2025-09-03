@@ -17,9 +17,8 @@ from typing import Any
 
 import numpy as np
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class EfficiencyConfig:
@@ -57,7 +56,6 @@ class EfficiencyConfig:
     batch_size: int = 50  # Process trials in smaller batches
     clear_cache_interval: int = 25  # Clear cache more frequently
 
-
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
 
@@ -83,11 +81,7 @@ class EfficiencyOptimizer:
             f"Efficiency optimizer initialized with {self.max_workers} workers",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="efficiency optimizer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
@@ -101,8 +95,7 @@ class EfficiencyOptimizer:
 
         self.logger.info("✅ Efficiency optimizer initialized successfully")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Optimization failed"},
         context="efficiency optimizer trial optimization",
     )
@@ -736,11 +729,9 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f"Error during cleanup: {e}")
 
-
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:
     """Create an efficiency optimizer instance."""
     return EfficiencyOptimizer(config)
-
 
 if __name__ == "__main__":
     # Test the efficiency optimizer

@@ -22,8 +22,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import shap
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-
+from src.core.decorators import handles_errors
 
 class TimeframeRelevanceAnalyzer:
     """
@@ -64,7 +63,7 @@ class TimeframeRelevanceAnalyzer:
         
         self.logger.info("🚀 Timeframe Relevance Analyzer initialized")
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def analyze_timeframe_relevance(
         self,
         data_dict: dict[str, pd.DataFrame],

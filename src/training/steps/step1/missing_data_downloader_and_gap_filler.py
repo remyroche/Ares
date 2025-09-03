@@ -91,11 +91,11 @@ except ImportError as e:
 
     # Fallback logger
     import logging
+from src.core.decorators import handles_errors
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
 
 logger = system_logger.getChild("MissingDataDownloader")
-
 
 class MissingDataDownloaderAndGapFiller:
     """Downloads missing data and fills gaps automatically."""
@@ -125,11 +125,7 @@ class MissingDataDownloaderAndGapFiller:
         # Exchange initialization flag
         self._exchange_initialized = False
 
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError),
-        default_return=False,
-        context="missing_data_downloader.ensure_exchange_initialized"
-    )
+    @handles_errors(fallback=False)
     async def _ensure_exchange_initialized(self) -> bool:
         """Ensure the exchange is properly initialized."""
         if not self._exchange_initialized:
@@ -153,8 +149,7 @@ class MissingDataDownloaderAndGapFiller:
         return True
 
     @with_tracing_span("download_aggtrades_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError),
+    @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_aggtrades_data"
     )
@@ -307,8 +302,7 @@ class MissingDataDownloaderAndGapFiller:
             return 0
 
     @with_tracing_span("download_klines_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError),
+    @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_klines_data"
     )
@@ -455,8 +449,7 @@ class MissingDataDownloaderAndGapFiller:
             return 0
 
     @with_tracing_span("download_futures_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError),
+    @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_futures_data"
     )
@@ -606,8 +599,7 @@ class MissingDataDownloaderAndGapFiller:
             return 0
 
     @with_tracing_span("download_all_missing_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError),
+    @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_all_missing_data"
     )

@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 from src.utils.logger import system_logger
 from typing import Any
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import error, initialization_error, invalid, missing
 import numpy as np
 import copy
@@ -51,7 +51,7 @@ class ModularStrategist:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid modular strategist configuration"),
             AttributeError: (False, "Missing required strategist parameters"),
@@ -85,11 +85,7 @@ class ModularStrategist:
         )
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="strategist configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_strategist_configuration(self) -> None:
         """Load strategist configuration."""
         # Set default strategist parameters
@@ -108,11 +104,7 @@ class ModularStrategist:
 
         self.logger.info("Strategist configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate strategist configuration.
@@ -145,11 +137,7 @@ class ModularStrategist:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="strategy modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_strategy_modules(self) -> None:
         """Initialize strategy modules."""
         try:
@@ -174,11 +162,7 @@ class ModularStrategist:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing strategy modules: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position sizing initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_position_sizing(self) -> None:
         """Initialize position sizing module."""
         try:
@@ -195,11 +179,7 @@ class ModularStrategist:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing position sizing: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk management initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_risk_management(self) -> None:
         """Initialize risk management module."""
         try:
@@ -216,11 +196,7 @@ class ModularStrategist:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing risk management: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="portfolio optimization initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_portfolio_optimization(self) -> None:
         """Initialize portfolio optimization module."""
         try:
@@ -239,11 +215,7 @@ class ModularStrategist:
                 initialization_error(f"Error initializing portfolio optimization: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="dynamic rebalancing initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_dynamic_rebalancing(self) -> None:
         """Initialize dynamic rebalancing module."""
         try:
@@ -262,7 +234,7 @@ class ModularStrategist:
                 initialization_error(f"Error initializing dynamic rebalancing: {e}"),
             )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid strategy parameters"),
             AttributeError: (False, "Missing strategy components"),
@@ -337,11 +309,7 @@ class ModularStrategist:
             self.is_strategizing = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="strategy inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_strategy_inputs(
         self,
         market_data: dict[str, Any],
@@ -387,11 +355,7 @@ class ModularStrategist:
             self.logger.error(error(f"Error validating strategy inputs: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position sizing",
-    )
+    @handles_errors(fallback=None)
     async def _perform_position_sizing(
         self,
         market_data: dict[str, Any],
@@ -445,11 +409,7 @@ class ModularStrategist:
             self.logger.error(error(f"Error performing position sizing: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk management",
-    )
+    @handles_errors(fallback=None)
     async def _perform_risk_management(
         self,
         market_data: dict[str, Any],
@@ -503,11 +463,7 @@ class ModularStrategist:
             self.logger.error(error(f"Error performing risk management: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="portfolio optimization",
-    )
+    @handles_errors(fallback=None)
     async def _perform_portfolio_optimization(
         self,
         market_data: dict[str, Any],
@@ -561,11 +517,7 @@ class ModularStrategist:
             self.logger.error(error(f"Error performing portfolio optimization: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="dynamic rebalancing",
-    )
+    @handles_errors(fallback=None)
     async def _perform_dynamic_rebalancing(
         self,
         market_data: dict[str, Any],
@@ -910,11 +862,7 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Volatility Rebalancing: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="strategy results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_strategy_results(self) -> None:
         """Store strategy results."""
         try:
@@ -933,11 +881,7 @@ class ModularStrategist:
         except Exception as e:
             self.logger.error(error(f"Error storing strategy results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="strategy results getting",
-    )
+    @handles_errors(fallback=None)
     def get_strategy_results(
         self,
         strategy_type: str | None = None,
@@ -960,11 +904,7 @@ class ModularStrategist:
             self.logger.error(error(f"Error getting strategy results: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="strategy history getting",
-    )
+    @handles_errors(fallback=None)
     def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get strategy history.
@@ -1011,11 +951,7 @@ class ModularStrategist:
             "strategy_history_count": len(self.strategy_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="modular strategist cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the modular strategist."""
         self.logger.info("🛑 Stopping Modular Strategist...")
@@ -1038,11 +974,7 @@ class ModularStrategist:
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="modular strategist setup",
-)
+@handles_errors(fallback=None)
 async def setup_modular_strategist(
     config: dict[str, Any] | None = None,
 ) -> ModularStrategist | None:

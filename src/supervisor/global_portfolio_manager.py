@@ -10,7 +10,7 @@ portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, invalid
 from src.utils.warning_symbols import (
@@ -67,7 +67,7 @@ class GlobalPortfolioManager:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid global portfolio manager configuration"),
             AttributeError: (
@@ -113,11 +113,7 @@ class GlobalPortfolioManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="portfolio configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_portfolio_configuration(self) -> None:
         """Load global portfolio manager configuration."""
         try:
@@ -144,11 +140,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error loading portfolio configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """"
         Validate global portfolio manager configuration.
@@ -187,11 +179,7 @@ class GlobalPortfolioManager:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="portfolio modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_portfolio_modules(self) -> None:
         """Initialize global portfolio manager modules."""
         try:
@@ -224,11 +212,7 @@ class GlobalPortfolioManager:
                 initialization_error("Error initializing portfolio modules: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="portfolio allocation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_portfolio_allocation(self) -> None:
         """Initialize portfolio allocation module."""
         try:
@@ -247,11 +231,7 @@ class GlobalPortfolioManager:
                 initialization_error("Error initializing portfolio allocation: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk management initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_risk_management(self) -> None:
         """Initialize risk management module."""
         try:
@@ -267,11 +247,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(initialization_error("Error initializing risk management: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="rebalancing initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_rebalancing(self) -> None:
         """Initialize rebalancing module."""
         try:
@@ -288,11 +264,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(initialization_error("Error initializing rebalancing: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring module."""
         try:
@@ -311,11 +283,7 @@ class GlobalPortfolioManager:
                 initialization_error("Error initializing performance monitoring: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="optimization initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_optimization(self) -> None:
         """Initialize optimization module."""
         try:
@@ -332,7 +300,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(initialization_error("Error initializing optimization: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid management parameters"),
             AttributeError: (False, "Missing management components"),
@@ -400,11 +368,7 @@ class GlobalPortfolioManager:
             self.is_managing = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="management inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_management_inputs(self, management_input: dict[str, Any]) -> bool:
         """"
         Validate management inputs.
@@ -440,11 +404,7 @@ class GlobalPortfolioManager:
             self.print(error("Error validating management inputs: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="portfolio allocation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_portfolio_allocation(
         self,
         management_input: dict[str, Any],
@@ -484,11 +444,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing portfolio allocation: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk management",
-    )
+    @handles_errors(fallback=None)
     async def _perform_risk_management(
         self,
         management_input: dict[str, Any],
@@ -527,11 +483,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing risk management: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="rebalancing",
-    )
+    @handles_errors(fallback=None)
     async def _perform_rebalancing(
         self,
         management_input: dict[str, Any],
@@ -571,11 +523,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing rebalancing: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_performance_monitoring(
         self,
         management_input: dict[str, Any],
@@ -615,11 +563,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing performance monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="optimization",
-    )
+    @handles_errors(fallback=None)
     async def _perform_optimization(
         self,
         management_input: dict[str, Any],
@@ -1044,11 +988,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing factor optimization: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="management results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_management_results(self) -> None:
         """Store management results."""
         try:
@@ -1067,11 +1007,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error storing management results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="management results getting",
-    )
+    @handles_errors(fallback=None)
     def get_management_results(
         self,
         management_type: str | None = None,
@@ -1094,11 +1030,7 @@ class GlobalPortfolioManager:
             self.print(error("Error getting management results: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="management history getting",
-    )
+    @handles_errors(fallback=None)
     def get_management_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """"
         Get management history.
@@ -1146,11 +1078,7 @@ class GlobalPortfolioManager:
             "management_history_count": len(self.management_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="global portfolio manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the global portfolio manager."""
         self.logger.info("🛑 Stopping Global Portfolio Manager...")
@@ -1170,16 +1098,10 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error stopping global portfolio manager: {e}"))
 
-
 # Global portfolio manager instance
 global_portfolio_manager: GlobalPortfolioManager | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="global portfolio manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_global_portfolio_manager(
     config: dict[str, Any] | None = None,
 ) -> GlobalPortfolioManager | None:

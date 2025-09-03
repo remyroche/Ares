@@ -34,7 +34,7 @@ from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import copy
@@ -70,11 +70,7 @@ class DecisionPolicy:
         self.sr_predictor: Optional[SRBreakoutPredictor] = None
         self.ml_tactics: Optional[MLTacticsManager] = None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="decision policy initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """"
         Initialize the decision policy.
@@ -177,11 +173,7 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trade decision generation"
-    )
+    @handles_errors(fallback=None)
     async def generate_decision(
         self,
         market_data: pd.DataFrame,
@@ -542,11 +534,7 @@ class TacticsOrchestrator:
         self.orchestrator_task: Optional[asyncio.Task] = None
         self.is_running = False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="tactics orchestrator initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """"
         Initialize the tactics orchestrator.
@@ -644,11 +632,7 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactics orchestration start"
-    )
+    @handles_errors(fallback=None)
     async def start_orchestration(self) -> bool:
         """"
         Start tactics orchestration.
@@ -671,11 +655,7 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Failed to start tactics orchestration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactics orchestration stop"
-    )
+    @handles_errors(fallback=None)
     async def stop_orchestration(self) -> bool:
         """"
         Stop tactics orchestration.

@@ -36,7 +36,7 @@ import asyncio
     guard_dataframe_nulls,
     with_tracing_span,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -45,7 +45,6 @@ from src.utils.warning_symbols import (
 
 import time
 from scipy.stats import norm
-
 
 @dataclass
 class ComputationalOptimizationConfig:
@@ -131,7 +130,6 @@ class ComputationalOptimizationConfig:
                 "medium": {"n_estimators": 100, "max_depth": 6},
                 "heavy": {"n_estimators": 200, "max_depth": 10},
             }
-
 
 class CachedBacktester:
     """Cached backtesting to avoid redundant calculations."""
@@ -286,7 +284,6 @@ class CachedBacktester:
             for key in oldest_keys:
                 del self.cache[key]
 
-
 class ProgressiveEvaluator:
     """Progressive evaluation to stop unpromising trials early."""
 
@@ -367,7 +364,6 @@ class ProgressiveEvaluator:
 
         # Calculate Sharpe ratio
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
-
 
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
@@ -471,7 +467,6 @@ class ParallelBacktester:
 
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
 
-
 class IncrementalTrainer:
     """Incremental training to reuse model states."""
 
@@ -538,7 +533,6 @@ class IncrementalTrainer:
             random_state=42,
         )
 
-
 class AdaptiveModelComplexity:
     """Adaptive model complexity based on data size and performance."""
 
@@ -569,7 +563,6 @@ class AdaptiveModelComplexity:
             return self.complexity_levels["medium"]
         self.logger.debug("Using heavy complexity model")
         return self.complexity_levels["heavy"]
-
 
 class PrecomputedFeatureEngine:
     """Precompute all possible features once."""
@@ -655,7 +648,6 @@ class PrecomputedFeatureEngine:
 
         return np.column_stack(selected_features)
 
-
 class FeatureSelectionCache:
     """Cache feature selection results."""
 
@@ -687,7 +679,6 @@ class FeatureSelectionCache:
         # Simplified feature selection - in practice this would use
         # correlation analysis, mutual information, etc.
         return np.array(feature_list[: int(len(feature_list) * threshold)])
-
 
 class SurrogateOptimizer:
     """Advanced surrogate model optimization for expensive evaluations."""
@@ -1475,7 +1466,6 @@ class SurrogateOptimizer:
             'uncertainty_threshold': self.uncertainty_threshold
         }
 
-
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
@@ -1526,7 +1516,6 @@ class AdaptiveSampler:
 
         return perturbed
 
-
 class MemoryEfficientData:
     """Memory-efficient data structures for large datasets."""
 
@@ -1558,7 +1547,6 @@ class MemoryEfficientData:
         """Get numpy array subset for efficient computation."""
         return self.data.iloc[start_idx:end_idx].values
 
-
 class MemoryManager:
     """Manage memory usage during optimization."""
 
@@ -1587,7 +1575,6 @@ class MemoryManager:
         gc.collect()
         self.logger.info("Memory cleanup completed")
 
-
 class ComputationalOptimizationManager:
     """Main computational optimization manager that integrates all strategies."""
 
@@ -1610,11 +1597,7 @@ class ComputationalOptimizationManager:
 
         self.logger.info("Computational Optimization Manager initialized")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="computational optimization manager initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(
         self,
         market_data: pd.DataFrame,
@@ -1659,11 +1642,7 @@ class ComputationalOptimizationManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="optimized parameter optimization",
-    )
+    @handles_errors
     async def optimize_parameters(
         self,
         objective_function: callable,
@@ -1743,7 +1722,6 @@ class ComputationalOptimizationManager:
 
         except Exception:
             self.print(failed("Cleanup failed: {e}"))
-
 
 # Factory function for easy integration
 async def create_computational_optimization_manager(

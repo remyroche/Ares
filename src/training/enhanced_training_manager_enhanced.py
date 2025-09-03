@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.training_pipeline_decorators import (
     monitor_pipeline_step,
     validate_pipeline_input,
@@ -20,7 +20,6 @@ from src.utils.training_pipeline_decorators import (
     PipelineStage,
     PipelineValidationLevel
 )
-
 
 class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     """"
@@ -52,11 +51,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         self.logger.info(f"   📁 Reports Directory: {self.pipeline_reports_dir}")
         self.logger.info(f"   🧹 Auto Cleanup: {self.auto_cleanup_reports}")
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced_training_execution"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -771,11 +766,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         return "\n".join(summary)
     
     # Enhanced step execution methods with report generation
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_data_collection"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_COLLECTION,
         validation_level=PipelineValidationLevel.WARNING,
@@ -839,11 +830,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_5_data_converter"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -907,11 +894,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step2_feature_engineering"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.FEATURE_ENGINEERING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -977,11 +960,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step3_hmm_regime_discovery"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
         validation_level=PipelineValidationLevel.STRICT,
@@ -1047,11 +1026,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step4_regime_data_splitting"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1110,11 +1085,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step5_triple_barrier_method"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1173,11 +1144,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step6_feature_generation"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
         validation_level=PipelineValidationLevel.STRICT,
@@ -1242,11 +1209,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step7_matrix_feature_selection"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1305,11 +1268,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step8_tactician_labeling"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1368,11 +1327,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step9_tactician_specialist_training"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
         validation_level=PipelineValidationLevel.STRICT,
@@ -1437,11 +1392,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step10_confidence_calibration"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.VALIDATION,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1500,11 +1451,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step11_final_parameters_optimization"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.OPTIMIZATION,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1563,11 +1510,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step12_walk_forward_validation"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.VALIDATION,
         validation_level=PipelineValidationLevel.STRICT,
@@ -1632,11 +1575,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step13_monte_carlo_validation"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.VALIDATION,
         validation_level=PipelineValidationLevel.STRICT,
@@ -1701,11 +1640,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step14_ab_testing"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.VALIDATION,
         validation_level=PipelineValidationLevel.WARNING,
@@ -1764,11 +1699,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step15_saving"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DEPLOYMENT,
         validation_level=PipelineValidationLevel.WARNING,
@@ -2817,11 +2748,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         return warnings
     
     # Enhanced step execution methods with comprehensive reporting
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_data_collection"
-    )
+    @handles_errors(fallback=False)
     async def execute_step1_data_collection(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -2868,11 +2795,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_5_data_converter"
-    )
+    @handles_errors(fallback=False)
     async def execute_step1_5_data_converter(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -2919,11 +2842,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step2_feature_engineering"
-    )
+    @handles_errors(fallback=False)
     async def execute_step2_feature_engineering(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -2970,11 +2889,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step3_hmm_regime_discovery"
-    )
+    @handles_errors(fallback=False)
     async def execute_step3_hmm_regime_discovery(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3021,11 +2936,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step4_regime_data_splitting"
-    )
+    @handles_errors(fallback=False)
     async def execute_step4_regime_data_splitting(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3071,11 +2982,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step5_triple_barrier_method"
-    )
+    @handles_errors(fallback=False)
     async def execute_step5_triple_barrier_method(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3121,11 +3028,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step6_feature_generation"
-    )
+    @handles_errors(fallback=False)
     async def execute_step6_feature_generation(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3174,11 +3077,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step7_matrix_feature_selection"
-    )
+    @handles_errors(fallback=False)
     async def execute_step7_matrix_feature_selection(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3224,11 +3123,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step8_tactician_labeling"
-    )
+    @handles_errors(fallback=False)
     async def execute_step8_tactician_labeling(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3274,11 +3169,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step9_tactician_specialist_training"
-    )
+    @handles_errors(fallback=False)
     async def execute_step9_tactician_specialist_training(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3327,11 +3218,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step10_confidence_calibration"
-    )
+    @handles_errors(fallback=False)
     async def execute_step10_confidence_calibration(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3377,11 +3264,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step11_final_parameters_optimization"
-    )
+    @handles_errors(fallback=False)
     async def execute_step11_final_parameters_optimization(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3430,11 +3313,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step12_walk_forward_validation"
-    )
+    @handles_errors(fallback=False)
     async def execute_step12_walk_forward_validation(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3483,11 +3362,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step13_monte_carlo_validation"
-    )
+    @handles_errors(fallback=False)
     async def execute_step13_monte_carlo_validation(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3537,11 +3412,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step14_ab_testing"
-    )
+    @handles_errors(fallback=False)
     async def execute_step14_ab_testing(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3587,11 +3458,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step15_saving"
-    )
+    @handles_errors(fallback=False)
     async def execute_step15_saving(
         self,
         enhanced_training_input: Dict[str, Any],
@@ -3675,7 +3542,6 @@ result = await step15_saving.run_step(
     def _calculate_regime_duration(self, result: Any) -> Dict[str, Any]:
         return {"status": "Not implemented yet"}
 
-
 # Convenience function to create enhanced training manager
 async def create_enhanced_training_manager_with_reporting(config: Dict[str, Any]) -> EnhancedTrainingManagerWithReporting:
     """Create an enhanced training manager with comprehensive reporting."""
@@ -3683,7 +3549,6 @@ async def create_enhanced_training_manager_with_reporting(config: Dict[str, Any]
     manager = EnhancedTrainingManagerWithReporting(config)
     await manager.initialize()
     return manager
-
 
 # Export the main class and convenience function
 __all__ = [

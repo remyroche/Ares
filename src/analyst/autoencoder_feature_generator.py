@@ -44,9 +44,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 
 from src.config import CONFIG
-from src.utils.error_handler import (
-    handle_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
     error,
     warning,
@@ -56,7 +54,6 @@ from src.utils.centralized_decorators_simple import (
     validate_data_quality,
     with_tracing_span,
 )
-
 
 class AutoencoderConfig:
     """Configuration manager for autoencoder feature generator."""
@@ -154,7 +151,6 @@ class AutoencoderConfig:
             self.logger.info(f"📋 Configuration saved successfully to {output_path}")
         except Exception:
             self.logger.exception("⚠️ Error saving config file")
-
 
 class PriceReturnConverter:
     """Convert price features to returns (price differences) for better autoencoder training."""
@@ -572,7 +568,6 @@ class PriceReturnConverter:
             self.logger.info("✅ Final validation passed: no infinite values detected")
 
         return converted_df
-
 
 class FeatureFilter:
     """Random Forest + SHAP feature filtering."""
@@ -1247,7 +1242,6 @@ class FeatureFilter:
             self.logger.exception("Error in feature filtering")
             return features_df
 
-
 class ImprovedAutoencoderPreprocessor:
     """Enhanced preprocessor with separate fit/transform and no data leakage."""
 
@@ -1386,7 +1380,6 @@ class ImprovedAutoencoderPreprocessor:
         upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
         return X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
 
-
 def create_sequences_with_index(
     X: np.ndarray,
     timesteps: int,
@@ -1432,7 +1425,6 @@ def create_sequences_with_index(
     logger.info(f"📊 Target indices: {len(target_indices_array)} samples")
 
     return sequences_array, targets_array, target_indices_array
-
 
 class SequenceAwareAutoencoder:
     """1D-CNN based autoencoder that learns to reconstruct the last timestep of a sequence."""
@@ -1659,7 +1651,6 @@ class SequenceAwareAutoencoder:
             )
 
         return history
-
 
 class AutoencoderFeatureAnalyzer:
     """Comprehensive feature importance analysis for autoencoder-generated features."""
@@ -2392,7 +2383,6 @@ perm_model = LogisticRegression(random_state=42, max_iter=1000)
                 high_corr_features.append(feature)
 
         return high_corr_features
-
 
 class AutoencoderFeatureGenerator:
     """Main class for the complete autoencoder feature generation workflow."""

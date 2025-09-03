@@ -12,19 +12,12 @@ import pywt
 from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from src.config import CONFIG
-import logging
-import asyncio
-from src.utils.error_handler import (
-    handle_data_processing_errors,
-    handle_errors,
-    handle_file_operations,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     warning,
 )
-
 
 class FeatureEngineeringOrchestrator:
     """"
@@ -83,11 +76,7 @@ class FeatureEngineeringOrchestrator:
 
         self.logger.info("🚀 FeatureEngineeringOrchestrator initialized successfully")
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=pd.DataFrame(),
-        context="orchestrated feature generation",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def generate_all_features(
         self,
         klines_df: pd.DataFrame,
@@ -204,7 +193,7 @@ class FeatureEngineeringOrchestrator:
 
             return klines_df.copy()
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="legacy feature generation",
     )
@@ -251,11 +240,7 @@ class FeatureEngineeringOrchestrator:
 
             return features_df
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=pd.DataFrame(),
-        context="multi-timeframe feature calculation",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def _calculate_multi_timeframe_features(
         self,
         price_data: pd.DataFrame,
@@ -289,11 +274,7 @@ class FeatureEngineeringOrchestrator:
 
             return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=pd.DataFrame(),
-        context="meta-labeling feature calculation",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def _calculate_meta_labeling_features(
         self,
         price_data: pd.DataFrame,
@@ -331,7 +312,7 @@ class FeatureEngineeringOrchestrator:
 
             return pd.DataFrame()
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="standard indicators calculation",
     )
@@ -394,7 +375,7 @@ import os.path
 
             return df
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="time features calculation",
     )
@@ -430,7 +411,7 @@ import os.path
 
             return df
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="volatility regime indicators calculation",
     )
@@ -469,7 +450,7 @@ import os.path
             )
             return df
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="volatility targeting features calculation",
     )
@@ -509,7 +490,7 @@ import os.path
             )
             return df
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="ML enhanced features calculation",
     )
@@ -547,7 +528,7 @@ import os.path
 
             return df
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.DataFrame(),
         context="feature cleanup",
     )
@@ -575,16 +556,8 @@ import os.path
 
             return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="orchestrator info retrieval",
-    )
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="orchestrator info retrieval",
-    )
+    @handles_errors
+    @handles_errors
     def get_orchestrator_info(self) -> dict[str, Any]:
         """Get information about the orchestrator."""
         try:
@@ -602,11 +575,7 @@ import os.path
 
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="feature summary retrieval",
-    )
+    @handles_errors
     def get_feature_summary(self) -> dict[str, Any]:
         """Get a summary of all available features."""
         try:
@@ -626,7 +595,6 @@ import os.path
             self.logger.error(f"Error getting feature summary: {e}")
 
             return {}
-
 
 # Legacy FeatureEngineeringEngine class for backward compatibility
 class FeatureEngineeringEngine:
@@ -659,11 +627,7 @@ class FeatureEngineeringEngine:
             "der_scaler.joblib",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=pd.DataFrame(),
-        context="generate_all_features",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def generate_all_features(
         self,
         klines_df: pd.DataFrame,
@@ -681,11 +645,7 @@ class FeatureEngineeringEngine:
             sr_levels,
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=None,
-        context="wavelet transforms",
-    )
+    @handles_errors(fallback=None)
     def apply_wavelet_transforms(self, data: pd.Series, wavelet="db1", level=3):
         """Apply wavelet transforms to data."""
         try:
@@ -695,7 +655,7 @@ class FeatureEngineeringEngine:
 
             return None
 
-    @handle_file_operations(default_return=False, context="train_autoencoder")
+    @handles_errors(default_return=False, context="train_autoencoder")
     def train_autoencoder(self, data: pd.DataFrame):
         """Train autoencoder model."""
         try:
@@ -708,7 +668,7 @@ class FeatureEngineeringEngine:
 
             return False
 
-    @handle_data_processing_errors(
+    @handles_errors(
         default_return=pd.Series(),
         context="apply_autoencoders",
     )
@@ -721,7 +681,7 @@ class FeatureEngineeringEngine:
 
             return data
 
-    @handle_file_operations(default_return=False, context="load_autoencoder")
+    @handles_errors(default_return=False, context="load_autoencoder")
     def load_autoencoder(self):
         """Load autoencoder model."""
         try:

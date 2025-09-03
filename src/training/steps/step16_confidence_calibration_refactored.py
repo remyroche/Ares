@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Refactored Step16ConfidenceCalibration with reduced complexity and type hints.
 This version breaks down the massive execute method into smaller, focused methods.

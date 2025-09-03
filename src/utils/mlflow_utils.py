@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/utils/mlflow_utils.py
 
 from functools import wraps

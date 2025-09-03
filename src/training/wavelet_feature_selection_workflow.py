@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Wavelet Feature Selection Workflow."
 
 This module implements a comprehensive workflow using the two-model strategy:

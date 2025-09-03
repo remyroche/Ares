@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Data Type Optimization Utilities
 

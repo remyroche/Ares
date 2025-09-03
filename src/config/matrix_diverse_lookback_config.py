@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/matrix_diverse_lookback_config.py
 
 """

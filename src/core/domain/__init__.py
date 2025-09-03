@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Domain-specific decorators for the trading system.
 

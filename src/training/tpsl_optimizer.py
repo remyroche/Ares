@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/tpsl_optimizer.py
 
 import numba

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/steps/step7_enhanced_matrix_operations_validator.py
 
 """Validator for Step 7: Enhanced Matrix Operations."""

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/validation/critical_path_validators.py
 
 """

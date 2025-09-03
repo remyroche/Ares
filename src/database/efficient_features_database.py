@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/database/efficient_features_database.py
 
 from src.core.decorators import handles_errors

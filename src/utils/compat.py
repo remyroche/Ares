@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Compatibility shims to forward legacy decorators to core equivalents.
 
 This module allows gradual migration by re-exporting adapter functions
@@ -72,4 +73,3 @@ def handle_specific_errors(
 		return sync_wrapper
 
 	return decorator
-

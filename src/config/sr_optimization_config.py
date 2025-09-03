@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/sr_optimization_config.py
 
 """

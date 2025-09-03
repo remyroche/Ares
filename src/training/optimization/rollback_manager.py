@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/optimization/rollback_manager.py
 
 import json

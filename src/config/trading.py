@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/trading.py
 
 from typing import Any

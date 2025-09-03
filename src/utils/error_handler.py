@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Enhanced Error Handling and Recovery Strategies for Ares Trading Bot.
 

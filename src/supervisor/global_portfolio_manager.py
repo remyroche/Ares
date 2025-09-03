@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Global Portfolio Manager Module."
 
 This module manages portfolio allocation, position sizing, and risk management

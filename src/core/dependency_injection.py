@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/core/dependency_injection.py
 
 from collections.abc import Callable

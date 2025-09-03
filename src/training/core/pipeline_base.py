@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Abstract base classes for the modular training pipeline."
 
 This module defines the core interfaces and base classes that all pipeline

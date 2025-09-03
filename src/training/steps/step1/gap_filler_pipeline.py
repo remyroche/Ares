@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Gap Filler Pipeline for Step1.
 
 Handles gap detection and filling for aggtrades data.

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/vectorized_training_pipeline.py
 
 from src.core.decorators import handles_errors

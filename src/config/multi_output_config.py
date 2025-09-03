@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Multi-Output Prediction Configuration.
 
 This module provides configuration settings for enabling intelligent multi-output

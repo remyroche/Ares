@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Steps 1-7 Compatibility Framework
 

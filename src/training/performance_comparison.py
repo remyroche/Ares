@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/performance_comparison.py
 
 """Performance Comparison Module."

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/computational_optimization.py
 
 """Computational Optimization Configuration for Enhanced Training Pipeline."""

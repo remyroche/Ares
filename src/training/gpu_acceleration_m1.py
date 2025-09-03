@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/gpu_acceleration_m1.py
 
 from src.core.decorators import (

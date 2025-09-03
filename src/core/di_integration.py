@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/core/di_integration.py
 
 """

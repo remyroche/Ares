@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Core training pipeline framework for Ares trading bot.
 
 This module provides the foundational classes and interfaces for the modular

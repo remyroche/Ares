@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/data_access_utils.py
 
 """Utility functions for accessing the unified training database across different steps."""

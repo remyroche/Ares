@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/timeframe_relevance_analyzer.py
 
 """

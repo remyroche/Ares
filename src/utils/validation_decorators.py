@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Validation Decorators for Continuous File Validation
 

@@ -96,6 +96,15 @@ class LabelingStep(BaseStep):
             errors.append("Invalid profit_taking threshold (must be > 0)")
         if barrier_config.get("stop_loss", 0) <= 0:
             errors.append("Invalid stop_loss threshold (must be > 0)")
+
+        # Basic schema checks on input data
+        df = pipeline_state.get("unified_data") or pipeline_state.get("train_data") or pipeline_state.get("dataframe")
+        if isinstance(df, pd.DataFrame):
+            for col in ["open", "high", "low", "close"]:
+                if col not in df.columns:
+                    self.logger.warning(f"Missing expected price column: {col}")
+            if not isinstance(df.index, pd.DatetimeIndex):
+                self.logger.warning("Input index is not DatetimeIndex")
         
         return len(errors) == 0, errors
     
@@ -184,6 +193,14 @@ class LabelingStep(BaseStep):
         label_columns = [col for col in labeled_data.columns if "label" in col.lower()]
         if len(label_columns) == 0:
             errors.append("No label columns found in labeled data")
+        else:
+            # Sanity checks on labels
+            try:
+                for col in label_columns:
+                    if labeled_data[col].isna().any():
+                        errors.append(f"NaN values found in {col}")
+            except Exception:
+                pass
         
         # Check label statistics
         if "label_statistics" in pipeline_state:

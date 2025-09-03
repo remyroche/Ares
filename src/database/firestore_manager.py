@@ -3,15 +3,14 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, A, Callableny
 
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
 
 from src.config import CONFIG, get_environment_settings  # Import CONFIG
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,

@@ -14,16 +14,15 @@ to different problem characteristics:
 """
 
 from abc import ABC
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict
+from typing import A, Callableny, Dict
 
 from scipy.stats import pearsonr
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 
 

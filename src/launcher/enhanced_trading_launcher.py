@@ -10,6 +10,7 @@ from src.core.decorators import handles_errors
 from src.core.domain import (
     PerformanceLevel,
     performance_monitor
+)
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -26,15 +27,17 @@ except Exception:  # Fallback for environments without pandas
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    warning,
+       error,
+   execution_error,
+   failed,
+   initialization_error,
+   invalid,
+   warning,
+)
 from src.integration.paper_trading_integration import (
     PaperTradingIntegration,
     setup_paper_trading_integration,
+)
 if TYPE_CHECKING:
     from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
 
@@ -65,6 +68,7 @@ class EnhancedTradingLauncher:
         self.enable_paper_trading = self.launcher_config.get(
             "enable_paper_trading",
             True,
+        )
         self.enable_live_trading = self.launcher_config.get(
             "enable_live_trading",
             False,

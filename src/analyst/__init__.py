@@ -3,8 +3,16 @@ from __future__ import annotations
 # src/analyst/__init__.py
 # This file makes the 'analyst' directory a Python package.
 
-# Note: LiveRegimeCalculator and RegimeSummary have been removed
-# as they were part of the deprecated bull/bear/sideways market classification
-# The system now uses advanced HMM market categorization
+from .analyst import Analyst
+from .market_health_analyzer import MarketHealthAnalyzer
+from .liquidation_risk_model import LiquidationRiskModel
+from .feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+from .unified_regime_classifier import UnifiedRegimeClassifier
 
-__all__ = []
+__all__ = [
+    "Analyst",
+    "MarketHealthAnalyzer", 
+    "LiquidationRiskModel",
+    "FeatureEngineeringOrchestrator",
+    "UnifiedRegimeClassifier",
+]

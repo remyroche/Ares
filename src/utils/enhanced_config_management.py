@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Union
 
 try:
     from src.utils.logger import system_logger
-    from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+    from src.utils.pipeline_standards import PipelineStandards as PipelineStandards_src_utils_pipeline_standards, pipeline_standards
 except ImportError:
     system_logger = logging.getLogger("EnhancedConfigManagement")
 

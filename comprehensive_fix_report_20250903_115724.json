@@ -1,0 +1,122 @@
+{
+  "total_files": 487,
+  "fixed": 1,
+  "failed": 148,
+  "fixed_files": [
+    "/workspace/src/training/steps/step1/missing_data_downloader_and_gap_filler.py"
+  ],
+  "failed_files": [
+    {
+      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+      "error": "invalid syntax",
+      "line": 14
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "error": "invalid syntax",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "error": "expected 'except' or 'finally' block",
+      "line": 257
+    },
+    {
+      "file": "/workspace/src/supervisor/supervisor.py",
+      "error": "unexpected indent",
+      "line": 630
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "error": "unexpected indent",
+      "line": 18
+    },
+    {
+      "file": "/workspace/src/pipelines/improved_pipeline_executor.py",
+      "error": "unexpected indent",
+      "line": 159
+    },
+    {
+      "file": "/workspace/src/integration/paper_trading_integration.py",
+      "error": "invalid syntax",
+      "line": 15
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "error": "unexpected indent",
+      "line": 13
+    },
+    {
+      "file": "/workspace/src/tactician/tactician.py",
+      "error": "unterminated triple-quoted string literal (detected at line 1146)",
+      "line": 1138
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+      "error": "unexpected indent",
+      "line": 47
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "error": "expected 'except' or 'finally' block",
+      "line": 590
+    },
+    {
+      "file": "/workspace/src/tactician/sr_data_integration.py",
+      "error": "expected 'except' or 'finally' block",
+      "line": 32
+    },
+    {
+      "file": "/workspace/src/tactician/sr_breakout_predictor.py",
+      "error": "expected 'except' or 'finally' block",
+      "line": 917
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "error": "expected an indented block after 'try' statement on line 321",
+      "line": 322
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager.py",
+      "error": "expected an indented block after 'try' statement on line 2541",
+      "line": 2542
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_enhanced.py",
+      "error": "unexpected indent",
+      "line": 3616
+    },
+    {
+      "file": "/workspace/src/training/multi_output_probability_trainer.py",
+      "error": "unexpected indent",
+      "line": 38
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "error": "expected 'except' or 'finally' block",
+      "line": 329
+    },
+    {
+      "file": "/workspace/src/training/feature_integration.py",
+      "error": "expected an indented block after 'if' statement on line 65",
+      "line": 66
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "error": "invalid syntax",
+      "line": 8
+    }
+  ],
+  "error_stats": {
+    "unexpected indent": 66,
+    "invalid syntax": 26,
+    "expected 'except' or 'finally' block": 16,
+    "unmatched ')'": 12,
+    "unindent does not match any outer indentation level": 11,
+    "unterminated triple-quoted string literal (detected at line 1146)": 1,
+    "expected an indented block after 'try' statement on line 321": 1,
+    "expected an indented block after 'try' statement on line 2541": 1,
+    "expected an indented block after 'if' statement on line 65": 1,
+    "expected an indented block after 'try' statement on line 2353": 1
+  }
+}

@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -234,7 +234,7 @@ class StateManager:
 
     def print(self, message: str) -> None:
         """Print message to console."""
-        print(message)
+        self.print(message)
 
 
 # Global state manager instance

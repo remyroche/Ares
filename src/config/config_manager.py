@@ -52,7 +52,7 @@ class ConfigManager:
     def _load_configurations(self):
         """Load all configurations."""
         # Load static (non-optimizable) configuration
-        self._static_config = get_static_config()
+        self._static_config = self.get_static_config()
 
         # Load optimizable configurations
         self._optimizable_configs = {

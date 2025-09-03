@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards

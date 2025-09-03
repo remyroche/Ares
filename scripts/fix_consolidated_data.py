@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.utils.warning_symbols import failed, warning
+from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols, warning
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent

@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 # Import minimal modules
-from minimal_config import get_default_config
+from minimal_config import get_default_config as get_default_config_minimal_config
 
 # Import standalone analyzers
 from standalone_analyzers import (

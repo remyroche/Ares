@@ -25,7 +25,7 @@ from src.training.steps.step1_data_collection import (
     run_step as run_data_collection_step,
 )
 from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import error, failed
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols, failed
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent

@@ -1,0 +1,869 @@
+{
+  "total_files": 487,
+  "fixed": 0,
+  "failed": 160,
+  "fixed_files": [],
+  "failed_files": [
+    {
+      "file": "/workspace/src/ares_pipeline.py",
+      "error": "unterminated string literal (detected at line 66)",
+      "line": 66
+    },
+    {
+      "file": "/workspace/src/config.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "error": "unterminated string literal (detected at line 419)",
+      "line": 419
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/supervisor/supervisor.py",
+      "error": "unterminated string literal (detected at line 155)",
+      "line": 155
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "error": "unterminated string literal (detected at line 3)",
+      "line": 3
+    },
+    {
+      "file": "/workspace/src/pipelines/improved_pipeline_executor.py",
+      "error": "unterminated string literal (detected at line 22)",
+      "line": 22
+    },
+    {
+      "file": "/workspace/src/sentinel/sentinel.py",
+      "error": "unterminated string literal (detected at line 267)",
+      "line": 267
+    },
+    {
+      "file": "/workspace/src/integration/paper_trading_integration.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/tactician/tactician.py",
+      "error": "unterminated string literal (detected at line 20)",
+      "line": 20
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+      "error": "unterminated string literal (detected at line 27)",
+      "line": 27
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "error": "unterminated string literal (detected at line 10)",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/tactician/sr_data_integration.py",
+      "error": "unterminated string literal (detected at line 12)",
+      "line": 12
+    },
+    {
+      "file": "/workspace/src/tactician/dynamic_barrier_calculator.py",
+      "error": "unterminated string literal (detected at line 22)",
+      "line": 22
+    },
+    {
+      "file": "/workspace/src/tactician/sr_breakout_predictor.py",
+      "error": "unterminated string literal (detected at line 37)",
+      "line": 37
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "error": "unterminated string literal (detected at line 91)",
+      "line": 91
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager.py",
+      "error": "unterminated string literal (detected at line 110)",
+      "line": 110
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_enhanced.py",
+      "error": "unterminated string literal (detected at line 4)",
+      "line": 4
+    },
+    {
+      "file": "/workspace/src/training/multi_output_probability_trainer.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "error": "unterminated string literal (detected at line 28)",
+      "line": 28
+    },
+    {
+      "file": "/workspace/src/training/feature_integration.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "error": "invalid syntax",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_operations.py",
+      "error": "unterminated string literal (detected at line 21)",
+      "line": 21
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+      "error": "unterminated string literal (detected at line 12)",
+      "line": 12
+    },
+    {
+      "file": "/workspace/src/training/step_orchestrator.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_optimized.py",
+      "error": "unterminated string literal (detected at line 38)",
+      "line": 38
+    },
+    {
+      "file": "/workspace/src/training/multi_objective_optimizer.py",
+      "error": "unterminated string literal (detected at line 37)",
+      "line": 37
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_backup.py",
+      "error": "unterminated string literal (detected at line 99)",
+      "line": 99
+    },
+    {
+      "file": "/workspace/src/training/optimized_feature_selection_manager.py",
+      "error": "unterminated string literal (detected at line 36)",
+      "line": 36
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/calibration_manager.py",
+      "error": "unterminated string literal (detected at line 19)",
+      "line": 19
+    },
+    {
+      "file": "/workspace/src/training/training_orchestrator.py",
+      "error": "unterminated string literal (detected at line 19)",
+      "line": 19
+    },
+    {
+      "file": "/workspace/src/training/factory.py",
+      "error": "unterminated string literal (detected at line 157)",
+      "line": 157
+    },
+    {
+      "file": "/workspace/src/training/training_manager.py",
+      "error": "unterminated string literal (detected at line 31)",
+      "line": 31
+    },
+    {
+      "file": "/workspace/src/training/enhanced_coarse_optimizer.py",
+      "error": "unterminated string literal (detected at line 57)",
+      "line": 57
+    },
+    {
+      "file": "/workspace/src/training/di_training_manager.py",
+      "error": "unterminated string literal (detected at line 9)",
+      "line": 9
+    },
+    {
+      "file": "/workspace/src/training/data_efficiency_optimizer.py",
+      "error": "unterminated string literal (detected at line 40)",
+      "line": 40
+    },
+    {
+      "file": "/workspace/src/training/data_manager.py",
+      "error": "unterminated string literal (detected at line 20)",
+      "line": 20
+    },
+    {
+      "file": "/workspace/src/training/wavelet_caching_workflow.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "error": "unexpected indent",
+      "line": 14
+    },
+    {
+      "file": "/workspace/src/utils/vif_calculator.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/utils/model_performance_monitor.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/utils/data_loader.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_memory_management.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/utils/data_optimizer.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/utils/configuration_security.py",
+      "error": "unterminated string literal (detected at line 11)",
+      "line": 11
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_missing_value_handler.py",
+      "error": "unterminated string literal (detected at line 11)",
+      "line": 11
+    },
+    {
+      "file": "/workspace/src/utils/data_formatting_framework.py",
+      "error": "unterminated string literal (detected at line 12)",
+      "line": 12
+    },
+    {
+      "file": "/workspace/src/utils/quality_alert_system.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/utils/base_validator.py",
+      "error": "unterminated string literal (detected at line 3)",
+      "line": 3
+    },
+    {
+      "file": "/workspace/src/utils/model_manager.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/utils/database_security.py",
+      "error": "unterminated string literal (detected at line 12)",
+      "line": 12
+    },
+    {
+      "file": "/workspace/src/strategist/strategist_backup.py",
+      "error": "unterminated string literal (detected at line 9)",
+      "line": 9
+    },
+    {
+      "file": "/workspace/src/analyst/advanced_feature_engineering.py",
+      "error": "unterminated string literal (detected at line 9)",
+      "line": 9
+    },
+    {
+      "file": "/workspace/src/analyst/feature_engineering_orchestrator.py",
+      "error": "unterminated string literal (detected at line 34)",
+      "line": 34
+    },
+    {
+      "file": "/workspace/src/analyst/autoencoder_feature_generator.py",
+      "error": "unterminated string literal (detected at line 189)",
+      "line": 189
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_prediction_integrator.py",
+      "error": "unexpected indent",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/analyst/liquidation_risk_model.py",
+      "error": "unterminated string literal (detected at line 25)",
+      "line": 25
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_regime_predictor.py",
+      "error": "unterminated string literal (detected at line 12)",
+      "line": 12
+    },
+    {
+      "file": "/workspace/src/analyst/regime_expert_orchestrator.py",
+      "error": "unexpected indent",
+      "line": 17
+    },
+    {
+      "file": "/workspace/src/analyst/meta_label_relevance.py",
+      "error": "unterminated string literal (detected at line 36)",
+      "line": 36
+    },
+    {
+      "file": "/workspace/src/analyst/ml_confidence_predictor.py",
+      "error": "unterminated string literal (detected at line 41)",
+      "line": 41
+    },
+    {
+      "file": "/workspace/src/analyst/di_analyst.py",
+      "error": "unterminated string literal (detected at line 10)",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/analyst/unified_regime_classifier.py",
+      "error": "unterminated string literal (detected at line 38)",
+      "line": 38
+    },
+    {
+      "file": "/workspace/src/analyst/analyst.py",
+      "error": "unterminated string literal (detected at line 44)",
+      "line": 44
+    },
+    {
+      "file": "/workspace/src/database/precomputed_features_manager.py",
+      "error": "unterminated string literal (detected at line 45)",
+      "line": 45
+    },
+    {
+      "file": "/workspace/src/database/migration_utils.py",
+      "error": "unterminated string literal (detected at line 33)",
+      "line": 33
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py",
+      "error": "unterminated string literal (detected at line 43)",
+      "line": 43
+    },
+    {
+      "file": "/workspace/src/training/optimization/computational_optimization_manager.py",
+      "error": "unterminated string literal (detected at line 13)",
+      "line": 13
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_feature_selector.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py",
+      "error": "unterminated string literal (detected at line 137)",
+      "line": 137
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_5_sr_optimization.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step14_tactician_labeling_validator.py",
+      "error": "unterminated string literal (detected at line 47)",
+      "line": 47
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_hmm_based_training_validator.py",
+      "error": "unterminated string literal (detected at line 52)",
+      "line": 52
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+      "error": "unterminated string literal (detected at line 42)",
+      "line": 42
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "error": "unterminated string literal (detected at line 46)",
+      "line": 46
+    },
+    {
+      "file": "/workspace/src/training/steps/step14_tactician_labeling.py",
+      "error": "unterminated string literal (detected at line 17)",
+      "line": 17
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_triple_barrier_method.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_labeling.py",
+      "error": "unterminated string literal (detected at line 13)",
+      "line": 13
+    },
+    {
+      "file": "/workspace/src/training/steps/hmm_feature_enhancer.py",
+      "error": "unterminated string literal (detected at line 33)",
+      "line": 33
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_regime_data_splitting_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_5_sr_optimization_validator.py",
+      "error": "unterminated string literal (detected at line 10)",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_data_reading.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_hmm_based_training_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation_validator.py",
+      "error": "unterminated string literal (detected at line 39)",
+      "line": 39
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization_new.py",
+      "error": "invalid syntax",
+      "line": 59
+    },
+    {
+      "file": "/workspace/src/training/steps/enhanced_step1_data_collection.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "error": "unterminated string literal (detected at line 44)",
+      "line": 44
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_hmm_based_training.py",
+      "error": "unterminated string literal (detected at line 16)",
+      "line": 16
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_parameter_optimization.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble_validator.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step16_confidence_calibration.py",
+      "error": "unterminated string literal (detected at line 107)",
+      "line": 107
+    },
+    {
+      "file": "/workspace/src/training/steps/step21_saving.py",
+      "error": "unterminated string literal (detected at line 19)",
+      "line": 19
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_parameter_optimization_validator.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step1_5_data_converter_validator.py",
+      "error": "unterminated string literal (detected at line 57)",
+      "line": 57
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_5_final_regime_clustering.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_triple_barrier_method_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/combined_fractional_system.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_labeling_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_hmm_regime_discovery.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence_validator.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py",
+      "error": "unterminated string literal (detected at line 20)",
+      "line": 20
+    },
+    {
+      "file": "/workspace/src/training/steps/precompute_wavelet_features.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step6_feature_engineering.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step1_data_collection_validator.py",
+      "error": "unexpected indent",
+      "line": 26
+    },
+    {
+      "file": "/workspace/src/training/steps/step6_feature_engineering_validator.py",
+      "error": "unterminated string literal (detected at line 44)",
+      "line": 44
+    },
+    {
+      "file": "/workspace/src/training/steps/step8_regime_data_splitting_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_data_reading_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation.py",
+      "error": "unterminated string literal (detected at line 53)",
+      "line": 53
+    },
+    {
+      "file": "/workspace/src/training/steps/unified_data_loader.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation.py",
+      "error": "unterminated string literal (detected at line 98)",
+      "line": 98
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py",
+      "error": "unterminated string literal (detected at line 27)",
+      "line": 27
+    },
+    {
+      "file": "/workspace/src/training/steps/vectorized_labelling_orchestrator.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training_validator.py",
+      "error": "unterminated string literal (detected at line 39)",
+      "line": 39
+    },
+    {
+      "file": "/workspace/src/training/steps/integrated_data_quality_pipeline.py",
+      "error": "unterminated string literal (detected at line 11)",
+      "line": 11
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_hmm_based_training_enhanced.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/enhanced_step1_5_data_converter.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization.py",
+      "error": "invalid syntax",
+      "line": 68
+    },
+    {
+      "file": "/workspace/src/training/steps/step12_analyst_enhancement.py",
+      "error": "unterminated string literal (detected at line 88)",
+      "line": 88
+    },
+    {
+      "file": "/workspace/src/training/steps/raw_data_quality_checker.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation.py",
+      "error": "unterminated string literal (detected at line 56)",
+      "line": 56
+    },
+    {
+      "file": "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+      "error": "unterminated string literal (detected at line 27)",
+      "line": 27
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_regime_data_splitting_validator.py",
+      "error": "invalid syntax",
+      "line": 25
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_differentiation.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_regime_data_splitting.py",
+      "error": "unterminated string literal (detected at line 7)",
+      "line": 7
+    },
+    {
+      "file": "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+      "error": "unterminated string literal (detected at line 71)",
+      "line": 71
+    },
+    {
+      "file": "/workspace/src/training/steps/step8_regime_data_splitting.py",
+      "error": "expected 'except' or 'finally' block",
+      "line": 154
+    },
+    {
+      "file": "/workspace/src/training/steps/step7_enhanced_matrix_operations.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/core/checkpoint_manager.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/core/stage_context.py",
+      "error": "unterminated string literal (detected at line 16)",
+      "line": 16
+    },
+    {
+      "file": "/workspace/src/training/core/pipeline_orchestrator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "error": "unterminated string literal (detected at line 13)",
+      "line": 13
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "error": "unterminated string literal (detected at line 13)",
+      "line": 13
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "error": "unterminated string literal (detected at line 13)",
+      "line": 13
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "error": "unterminated string literal (detected at line 9)",
+      "line": 9
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "error": "unterminated string literal (detected at line 14)",
+      "line": 14
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "error": "unterminated string literal (detected at line 17)",
+      "line": 17
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/missing_data_downloader_and_gap_filler.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_quality_dashboard.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/validate_and_fix_aggtrades_format.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/comprehensive_gap_filler.py",
+      "error": "unterminated string literal (detected at line 4)",
+      "line": 4
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/aggtrades_validator.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/step1_orchestrator.py",
+      "error": "unterminated string literal (detected at line 10)",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_resampler.py",
+      "error": "unterminated string literal (detected at line 10)",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_gap_detector.py",
+      "error": "unterminated string literal (detected at line 5)",
+      "line": 5
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_quality_monitor.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py",
+      "error": "unterminated string literal (detected at line 10)",
+      "line": 10
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+      "error": "unterminated string literal (detected at line 39)",
+      "line": 39
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+      "error": "unterminated string literal (detected at line 17)",
+      "line": 17
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+      "error": "unterminated string literal (detected at line 6)",
+      "line": 6
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+      "error": "unterminated string literal (detected at line 8)",
+      "line": 8
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "error": "unterminated string literal (detected at line 15)",
+      "line": 15
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation_components/training_validation_config.py",
+      "error": "unterminated string literal (detected at line 3)",
+      "line": 3
+    },
+    {
+      "file": "/workspace/src/pipelines/components/monitoring_manager.py",
+      "error": "unterminated string literal (detected at line 3)",
+      "line": 3
+    },
+    {
+      "file": "/workspace/src/pipelines/components/lifecycle_manager.py",
+      "error": "unterminated string literal (detected at line 3)",
+      "line": 3
+    },
+    {
+      "file": "/workspace/src/pipelines/components/data_manager.py",
+      "error": "unterminated string literal (detected at line 3)",
+      "line": 3
+    }
+  ],
+  "error_stats": {
+    "unterminated string literal (detected at line 66)": 1,
+    "unterminated string literal (detected at line 6)": 16,
+    "unterminated string literal (detected at line 7)": 15,
+    "unterminated string literal (detected at line 419)": 1,
+    "unterminated string literal (detected at line 155)": 1,
+    "unterminated string literal (detected at line 3)": 6,
+    "unterminated string literal (detected at line 22)": 2,
+    "unterminated string literal (detected at line 267)": 1,
+    "unterminated string literal (detected at line 8)": 10,
+    "unterminated string literal (detected at line 20)": 3,
+    "unterminated string literal (detected at line 27)": 3,
+    "unterminated string literal (detected at line 10)": 6,
+    "unterminated string literal (detected at line 12)": 5,
+    "unterminated string literal (detected at line 37)": 2,
+    "unterminated string literal (detected at line 91)": 1,
+    "unterminated string literal (detected at line 110)": 1,
+    "unterminated string literal (detected at line 4)": 2,
+    "unterminated string literal (detected at line 28)": 1,
+    "invalid syntax": 4,
+    "unterminated string literal (detected at line 21)": 1,
+    "unterminated string literal (detected at line 38)": 2,
+    "unterminated string literal (detected at line 99)": 1,
+    "unterminated string literal (detected at line 36)": 2,
+    "unterminated string literal (detected at line 19)": 3,
+    "unterminated string literal (detected at line 157)": 1,
+    "unterminated string literal (detected at line 31)": 1,
+    "unterminated string literal (detected at line 57)": 2,
+    "unterminated string literal (detected at line 9)": 4,
+    "unterminated string literal (detected at line 40)": 1,
+    "unexpected indent": 4,
+    "unterminated string literal (detected at line 5)": 16,
+    "unterminated string literal (detected at line 11)": 3,
+    "unterminated string literal (detected at line 34)": 1,
+    "unterminated string literal (detected at line 189)": 1,
+    "unterminated string literal (detected at line 25)": 1,
+    "unterminated string literal (detected at line 41)": 1,
+    "unterminated string literal (detected at line 44)": 3,
+    "unterminated string literal (detected at line 45)": 1,
+    "unterminated string literal (detected at line 33)": 2,
+    "unterminated string literal (detected at line 43)": 1,
+    "unterminated string literal (detected at line 13)": 5,
+    "unterminated string literal (detected at line 137)": 1,
+    "unterminated string literal (detected at line 47)": 1,
+    "unterminated string literal (detected at line 52)": 1,
+    "unterminated string literal (detected at line 42)": 1,
+    "unterminated string literal (detected at line 46)": 1,
+    "unterminated string literal (detected at line 17)": 3,
+    "unterminated string literal (detected at line 39)": 3,
+    "unterminated string literal (detected at line 16)": 2,
+    "unterminated string literal (detected at line 107)": 1,
+    "unterminated string literal (detected at line 53)": 1,
+    "unterminated string literal (detected at line 98)": 1,
+    "unterminated string literal (detected at line 88)": 1,
+    "unterminated string literal (detected at line 56)": 1,
+    "unterminated string literal (detected at line 71)": 1,
+    "expected 'except' or 'finally' block": 1,
+    "unterminated string literal (detected at line 14)": 1,
+    "unterminated string literal (detected at line 15)": 1
+  },
+  "dry_run": false
+}

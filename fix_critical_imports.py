@@ -21,7 +21,7 @@ def fix_centralized_decorators():
     # Add missing imports at the top
     import_section = """import functools
 import logging
-from typing import Any, Callable, Dict, Optional, List, Union, TypeVar, cast
+from typing import A, Callableny, Callable, Dict, Optional, List, Union, TypeVar, cast
 import time
 import warnings
 from datetime import datetime
@@ -123,7 +123,7 @@ def add_missing_imports_to_file(file_path, undefined_names):
         "List": "from typing import List",
         "Dict": "from typing import Dict",
         "Optional": "from typing import Optional",
-        "Any": "from typing import Any",
+        "Any": "from typing import A, Callableny",
         "Union": "from typing import Union",
         "Tuple": "from typing import Tuple",
         "Set": "from typing import Set",

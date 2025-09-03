@@ -8,7 +8,7 @@ import glob
 import shutil
 from pathlib import Path
 
-from src.utils.warning_symbols import failed, missing, warning
+from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols, missing, warning
 
 
 def _find_files(base_dir: Path, pattern: str) -> list[Path]:

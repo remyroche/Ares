@@ -8,10 +8,9 @@ validation strategies (pydantic, dataclasses, custom validators).
 """
 
 import inspect
-from collections.abc import Callable
-from typing import Any, get_type_hints
+from typing import A, Callableny, get_type_hints
 
-from src.core.errors.base import ValidationError
+from src.core.errors.base import ValidationError as ValidationError_src_core_errors_base
 
 from .compose import P, R, uniform_wrapper
 

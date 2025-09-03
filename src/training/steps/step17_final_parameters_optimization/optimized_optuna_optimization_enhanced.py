@@ -30,7 +30,7 @@ import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, A, Callableny
 
 import numpy as np
 import optuna
@@ -81,10 +81,7 @@ from src.config_optuna import SROptimizationParameters, validate_sr_optimization
 from src.utils.logger import setup_logging
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
-@dataclass
+    @dataclass
 class OptimizationCache:
     """Simple caches for prepared data and generated features."""
 

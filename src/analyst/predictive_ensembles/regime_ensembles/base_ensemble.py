@@ -42,9 +42,7 @@ class BaseEnsemble:
     Enhanced with L1-L2 regularization support and comprehensive feature normalization.
     """
 
-    @handles_errors
-        default_return=None, context="ensemble initialization",
-    )
+    @handles_errors(default_return=None, context="ensemble initialization", )
     def __init__(self, config: dict, ensemble_name: str):
         self.config = config.get("analyst", {}).get(ensemble_name, {})
         self.ensemble_name = ensemble_name
@@ -358,9 +356,7 @@ class BaseEnsemble:
             "trade_to_order_ratio",
         ]
 
-    @handles_errors
-        default_return=None, context="ensemble training",
-    )
+    @handles_errors(default_return=None, context="ensemble training", )
     def train_ensemble(
         self, historical_features: pd.DataFrame,
         historical_targets: pd.Series | None = None) -> None:
@@ -465,9 +461,7 @@ class BaseEnsemble:
         # Validate ensemble state after training
         self._validate_ensemble_state()
 
-    @handles_errors
-        default_return=False, context="ensemble state validation",
-    )
+    @handles_errors(default_return=False, context="ensemble state validation", )
     def _validate_ensemble_state(self) -> bool:
         """Validate that the ensemble is properly trained and ready for prediction."""
         try:
@@ -504,10 +498,7 @@ class BaseEnsemble:
             )
             return False
 
-    @handles_errors
-        default_return={"prediction": "HOLD", "confidence": 0.0},
-        context="ensemble prediction",
-    )
+    @handles_errors(default_return={"prediction": "HOLD", "confidence": 0.0}, context="ensemble prediction", )
     def get_prediction(self, current_features: pd.DataFrame, **kwargs: Any) -> dict:
         if not self.trained:
             self.logger.warning(
@@ -561,9 +552,7 @@ class BaseEnsemble:
         meta_input_pca = self.pca.transform(meta_input_scaled) if self.pca else meta_input_scaled
         return self._get_meta_prediction(meta_input_pca)
 
-    @handles_errors
-        default_return=None, context="SMOTE training",
-    )
+    @handles_errors(default_return=None, context="SMOTE training", )
     def _train_with_smote(self, model: Any, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> Any:
         """Applies SMOTE to balance the dataset before training."""
         if self.use_smote and len(np.unique(y)) > 1:
@@ -699,17 +688,12 @@ class BaseEnsemble:
             "probability": True,
         }
 
-    @handles_errors
-        default_return=None, context="meta learner training",
-    )
+    @handles_errors(default_return=None, context="meta learner training", )
     def _train_meta_learner(self, X: pd.DataFrame, y: np.ndarray, params: dict[str, Any]) -> None:
         self.meta_learner = LGBMClassifier(**params, random_state=42, verbose=-1)
         self.meta_learner.fit(X, y)
 
-    @handles_errors
-        default_return={"prediction": "HOLD", "confidence": 0.0},
-        context="meta prediction",
-    )
+    @handles_errors(default_return={"prediction": "HOLD", "confidence": 0.0}, context="meta prediction", )
     def _get_meta_prediction(self, meta_input_pca: np.ndarray) -> dict[str, Any]:
         if not self.meta_learner:
             return {"prediction": "HOLD", "confidence": 0.0}
@@ -812,10 +796,7 @@ class BaseEnsemble:
             )
             return pd.DataFrame()
 
-    @handles_errors
-        default_return={"status": "unhealthy", "issues": ["Unknown error"]},
-        context="ensemble health check",
-    )
+    @handles_errors(default_return={"status": "unhealthy", "issues": ["Unknown error"]}, context="ensemble health check", )
     def check_ensemble_health(self) -> dict[str, Any]:
         """Check the health status of the ensemble and return detailed diagnostics."""
         try:
@@ -894,9 +875,7 @@ class BaseEnsemble:
                 "timestamp": pd.Timestamp.now().isoformat(),
             }
 
-    @handles_errors
-        default_return=None, context="model saving",
-    )
+    @handles_errors(default_return=None, context="model saving", )
     def save_model(self, path: str) -> None:
         """Saves the entire ensemble instance to a file."""
         try:
@@ -915,9 +894,7 @@ class BaseEnsemble:
                 exc_info=True,
             )
 
-    @handles_errors
-        default_return=False, context="model loading",
-    )
+    @handles_errors(default_return=False, context="model loading", )
     def load_model(self, path: str) -> bool:
         """Loads the entire ensemble instance from a file."""
         if not os.path.exists(path):
@@ -967,10 +944,7 @@ class BaseEnsemble:
 
     # SR context features were moved to step04 unified S/R system.
 
-    @handles_errors
-        default_return={"support": [], "resistance": []},
-        context="pivot levels extraction",
-    )
+    @handles_errors(default_return={"support": [], "resistance": []}, context="pivot levels extraction", )
     def _extract_pivot_levels(
         self, sr_analyzer: Any,
         features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
@@ -1020,10 +994,7 @@ class BaseEnsemble:
             self.logger.error(f"Error extracting pivot levels: {e}")
             return {"supports": [], "resistances": []}
 
-    @handles_errors
-        default_return={"support": [], "resistance": []},
-        context="HVN levels extraction",
-    )
+    @handles_errors(default_return={"support": [], "resistance": []}, context="HVN levels extraction", )
     def _extract_hvn_levels(
         self, sr_analyzer: Any,
         features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
@@ -1246,10 +1217,7 @@ class BaseEnsemble:
                 f"Error calculating S/R distances for row {row_idx}: {e}",
             )
 
-    @handles_errors
-        default_return={"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0.0},
-        context="level strength data extraction",
-    )
+    @handles_errors(default_return={"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0.0}, context="level strength data extraction", )
     def _get_nearest_level_strength_data(
         self, nearest_level: float,
         levels: list[float],
@@ -1335,9 +1303,7 @@ class BaseEnsemble:
             f"{self.__class__.__name__} must implement _get_meta_features method"
         )
 
-    @handles_errors
-        default_return=None, context="feature normalization",
-    )
+    @handles_errors(default_return=None, context="feature normalization", )
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Normalize non-price series using relative/normalized changes and rolling z-scores.
@@ -1596,9 +1562,7 @@ class BaseEnsemble:
             self.logger.warning(f"Error calculating rolling z-score: {e}")
             return pd.Series(0, index=series.index)
 
-    @handles_errors
-        default_return=None, context="feature winsorization",
-    )
+    @handles_errors(default_return=None, context="feature winsorization", )
     def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
         """
         Winsorize outliers in the DataFrame to improve numerical stability.

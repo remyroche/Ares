@@ -9,7 +9,7 @@ from src.core.decorators import (
     log_execution_time
 )
 
-from src.core.domain import PerformanceLevel
+from src.core.domain import PerformanceLevel as PerformanceLevel_src_core_domain
 
 from dataclasses import dataclass, field
 from datetime import datetime

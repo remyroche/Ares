@@ -70,15 +70,7 @@ class AggtradesValidator:
 
     @validates()
     @traced(span_name="validate_file_format")
-    @handles_errors
-        default_return={
-            "valid": False,
-            "issues": ["Validation failed"],
-            "file_size": 0,
-            "row_count": 0,
-        },
-        context="aggtrades_validator.validate_file_format"
-    )
+    @handles_errors(default_return={ "valid": False, "issues": ["Validation failed"], "file_size": 0, "row_count": 0, }, context="aggtrades_validator.validate_file_format" )
     def validate_file_format(self, file_path: Path) -> dict:
         """Validate a single aggtrades file format.
 
@@ -243,16 +235,7 @@ class AggtradesValidator:
             return False
 
     @traced(span_name="validate_all_aggtrades")
-    @handles_errors
-        default_return={
-            "total_files": 0,
-            "valid_files": 0,
-            "invalid_files": 0,
-            "fixed_files": 0,
-            "errors": [],
-        },
-        context="aggtrades_validator.validate_all_aggtrades"
-    )
+    @handles_errors(default_return={ "total_files": 0, "valid_files": 0, "invalid_files": 0, "fixed_files": 0, "errors": [], }, context="aggtrades_validator.validate_all_aggtrades" )
     def validate_all_aggtrades(
         self, symbol: str, exchange: str, auto_fix: bool = True
     ) -> dict:
@@ -336,14 +319,7 @@ class AggtradesValidator:
         return validation_result
 
     @traced(span_name="convert_to_parquet")
-    @handles_errors
-        default_return={
-            "converted_files": 0,
-            "failed_files": 0,
-            "errors": [],
-        },
-        context="aggtrades_validator.convert_to_parquet"
-    )
+    @handles_errors(default_return={ "converted_files": 0, "failed_files": 0, "errors": [], }, context="aggtrades_validator.convert_to_parquet" )
     def convert_to_parquet(self, symbol: str, exchange: str) -> dict:
         """Convert CSV aggtrades files to parquet format.
 

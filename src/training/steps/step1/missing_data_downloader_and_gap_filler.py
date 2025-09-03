@@ -92,8 +92,8 @@ except ImportError as e:
     # Fallback logger
     import logging
 from src.core.decorators import handles_errors, traced
-    logging.basicConfig(level=logging.INFO)
-    system_logger = logging.getLogger("MissingDataDownloaderFallback")
+logging.basicConfig(level=logging.INFO)
+system_logger = logging.getLogger("MissingDataDownloaderFallback")
 
 logger = system_logger.getChild("MissingDataDownloader")
 
@@ -149,8 +149,7 @@ class MissingDataDownloaderAndGapFiller:
         return True
 
     @traced(span_name="download_aggtrades_data")
-    @handles_errors
-        default_return={"success": False, "error": "Download failed"},
+    @handles_errors(default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_aggtrades_data"
     )
     async def download_aggtrades_data(
@@ -302,8 +301,7 @@ class MissingDataDownloaderAndGapFiller:
             return 0
 
     @traced(span_name="download_klines_data")
-    @handles_errors
-        default_return={"success": False, "error": "Download failed"},
+    @handles_errors(default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_klines_data"
     )
     async def download_klines_data(
@@ -449,8 +447,7 @@ class MissingDataDownloaderAndGapFiller:
             return 0
 
     @traced(span_name="download_futures_data")
-    @handles_errors
-        default_return={"success": False, "error": "Download failed"},
+    @handles_errors(default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_futures_data"
     )
     async def download_futures_data(
@@ -599,8 +596,7 @@ class MissingDataDownloaderAndGapFiller:
             return 0
 
     @traced(span_name="download_all_missing_data")
-    @handles_errors
-        default_return={"success": False, "error": "Download failed"},
+    @handles_errors(default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_all_missing_data"
     )
     async def download_all_missing_data(

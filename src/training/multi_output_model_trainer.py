@@ -39,8 +39,8 @@ except ImportError:
 
 # Import existing model architectures from step06
 try:
+from .steps.step9_hmm_based_training import (
 from sklearn.metrics import (
-    from .steps.step9_hmm_based_training import (
         CNNModel, CNNTrainer,
         TCNModel, TCNTrainer,
         TransformerModel, TransformerTrainer

@@ -25,8 +25,9 @@ from copy import copy
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
-from src.config.multi_timeframe_hmm_ensemble_config import (
 from src.training.steps.multi_timeframe_hmm_ensemble import (
+from src.config.multi_timeframe_hmm_ensemble_config import (
+
 )
     get_multi_timeframe_hmm_ensemble_config,
 )

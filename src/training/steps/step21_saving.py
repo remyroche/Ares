@@ -227,12 +227,12 @@ class SavingStep:
         try:
             # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
-from src.utils.enhanced_mlflow_integration import (
 import mlflow  # type: ignore
 import tempfile
 from src.utils.training_pipeline_decorators import (
 import pandas as pd
-            from src.utils.mlflow_utils import (
+from src.utils.mlflow_utils import (
+from src.utils.enhanced_mlflow_integration import (
                 log_enhanced_training_metadata,
                 log_metrics_with_metadata,
                 log_artifacts_with_metadata,

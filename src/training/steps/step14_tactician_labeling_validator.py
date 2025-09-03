@@ -186,7 +186,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 if os.path.exists(signals_parquet):
                     # Prefer dataset scan if labeled partition exists
                     try:
-from src.utils.logger import (
 from src.utils.logger import log_io_operation
 from src.training.enhanced_training_manager_optimized import (
 from src.utils.logger import (
@@ -194,7 +193,8 @@ from src.utils.logger import log_io_operation
 from src.utils.logger import log_io_operation
 from src.utils.logger import log_io_operation
 import json
-                        from src.training.enhanced_training_manager_optimized import (
+from src.training.enhanced_training_manager_optimized import (
+from src.utils.logger import (
                             ParquetDatasetManager,
                         )
 

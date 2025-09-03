@@ -1410,8 +1410,8 @@ class FinalParametersOptimizationStep:
         try:
             # Use configurable weights for composite score
 from sklearn.metrics import accuracy_score
+from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
 from src.utils.training_pipeline_decorators import (
-            from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
                 get_hyperparameter_config,
             )
 

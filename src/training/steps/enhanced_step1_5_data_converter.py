@@ -24,14 +24,14 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
-from src.utils.enhanced_memory_management import (
 from src.utils.enhanced_data_quality_validator import (
 from src.utils.enhanced_config_management import Step1_5Config
 from src.utils.logger import system_logger
 import shutil
 import pyarrow as pa
 import pyarrow.parquet as pq
-    from src.utils.enhanced_error_handling import (
+from src.utils.enhanced_error_handling import (
+from src.utils.enhanced_memory_management import (
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )

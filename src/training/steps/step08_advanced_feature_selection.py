@@ -1,0 +1,931 @@
+# src/training/steps/step08_advanced_feature_selection.py
+
+"""Step 8: Advanced Feature Selection with Two-Phase Approach.
+
+This step performs sophisticated feature selection using:
+- Phase 1: mRMR and Random Forest to select top 150 features
+- Phase 2: Boruta to generate multiple feature sets (100, 80, 60)
+with regime-aware selection, time-series validation, and interpretability analysis.
+"""
+
+import asyncio
+import json
+import os
+import pickle
+import warnings
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+from scipy.stats import rankdata
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+import lightgbm as lgb
+
+# Import if available
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    warnings.warn("SHAP not available - interpretability features will be limited")
+
+try:
+    from boruta import BorutaPy
+    BORUTA_AVAILABLE = True
+except ImportError:
+    BORUTA_AVAILABLE = False
+    warnings.warn("Boruta not available - will use alternative feature selection")
+
+try:
+    import lime
+    import lime.lime_tabular
+    LIME_AVAILABLE = True
+except ImportError:
+    LIME_AVAILABLE = False
+    warnings.warn("LIME not available - interpretability features will be limited")
+
+from src.core.decorators import handles_errors
+from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
+from src.utils.pipeline_standards import pipeline_standards
+
+
+class Step08AdvancedFeatureSelection:
+    """Advanced two-phase feature selection with regime awareness and interpretability."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize Step 8 Advanced Feature Selection."""
+        self.config = config
+        self.logger = system_logger.getChild("Step08AdvancedFeatureSelection")
+        self.standards = pipeline_standards
+        
+        # Step-specific configuration
+        self.step_config = config.get("step08_advanced_feature_selection", {})
+        self.output_dir = ensure_directory(self.step_config.get("output_dir", "data/selected_features"))
+        
+        # Phase 1 configuration (mRMR/RF)
+        self.phase1_target_features = self.step_config.get("phase1_target_features", 150)
+        self.enable_mrmr = self.step_config.get("enable_mrmr", True)
+        self.enable_rf_importance = self.step_config.get("enable_rf_importance", True)
+        
+        # Phase 2 configuration (Boruta)
+        self.phase2_targets = self.step_config.get("phase2_targets", [100, 80, 60])
+        self.boruta_max_iter = self.step_config.get("boruta_max_iter", 100)
+        self.boruta_alpha = self.step_config.get("boruta_alpha", 0.05)
+        
+        # Validation configuration
+        self.n_splits_ts = self.step_config.get("n_splits_ts", 5)
+        self.min_regime_samples = self.step_config.get("min_regime_samples", 100)
+        
+        # Interpretability configuration
+        self.enable_shap = self.step_config.get("enable_shap", True) and SHAP_AVAILABLE
+        self.enable_lime = self.step_config.get("enable_lime", True) and LIME_AVAILABLE
+        self.n_lime_samples = self.step_config.get("n_lime_samples", 10)
+        
+        self.logger.info("🚀 Step 8 Advanced Feature Selection initialized")
+        self.logger.info(f"   Phase 1 target: {self.phase1_target_features} features")
+        self.logger.info(f"   Phase 2 targets: {self.phase2_targets}")
+        self.logger.info(f"   Boruta available: {BORUTA_AVAILABLE}")
+        self.logger.info(f"   SHAP available: {SHAP_AVAILABLE}")
+        self.logger.info(f"   LIME available: {LIME_AVAILABLE}")
+    
+    @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
+    async def execute(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Execute Step 8: Advanced Feature Selection.
+        
+        Args:
+            training_input: Input data from previous steps
+            pipeline_state: Current pipeline state
+            
+        Returns:
+            Updated pipeline state with selected features
+        """
+        try:
+            start_time = datetime.now()
+            self.logger.info("🚀 Starting Step 8: Advanced Feature Selection...")
+            
+            # Extract parameters
+            symbol = training_input.get("symbol", "UNKNOWN")
+            exchange = training_input.get("exchange", "UNKNOWN")
+            timeframe = training_input.get("timeframe", "1m")
+            
+            # Load filtered features from step07
+            filtered_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet"
+            filtered_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet"
+            
+            if not os.path.exists(filtered_train_path):
+                # Fallback to original features if filtered not available
+                self.logger.warning("⚠️ Filtered features not found, using original features")
+                filtered_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_train.parquet"
+                filtered_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_val.parquet"
+            
+            self.logger.info(f"📊 Loading features from: {filtered_train_path}")
+            
+            # Load data
+            df_train = pd.read_parquet(filtered_train_path)
+            df_val = pd.read_parquet(filtered_val_path)
+            df = pd.concat([df_train, df_val], ignore_index=True)
+            
+            self.logger.info(f"📈 Loaded {len(df)} rows with {len(df.columns)} columns")
+            
+            # Separate features and labels
+            label_columns = ['target', 'direction', 'profit', 'outcome', 'returns', 'timestamp',
+                           'open', 'high', 'low', 'close', 'volume']
+            feature_columns = [col for col in df.columns if col not in label_columns]
+            
+            features_df = df[feature_columns]
+            labels_df = df[[col for col in label_columns if col in df.columns]]
+            
+            # Extract target
+            if 'target' in labels_df.columns:
+                y = labels_df['target']
+            elif 'direction' in labels_df.columns:
+                y = labels_df['direction']
+            else:
+                raise ValueError("No target or direction column found")
+            
+            # Ensure binary target
+            if y.dtype != int:
+                y = (y > 0).astype(int)
+            
+            # Load regime labels if available
+            regime_labels = None
+            hmm_path = f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
+            if os.path.exists(hmm_path):
+                self.logger.info(f"🎭 Loading regime labels from: {hmm_path}")
+                hmm_data = pd.read_parquet(hmm_path)
+                if "composite_cluster_id" in hmm_data.columns:
+                    regime_labels = hmm_data["composite_cluster_id"].iloc[:len(df)]
+            
+            # Phase 1: mRMR and Random Forest Selection
+            self.logger.info("📊 Starting Phase 1: mRMR/RF Selection...")
+            phase1_features, phase1_metadata = await self.phase1_mrmr_rf_selection(
+                features_df, y, regime_labels
+            )
+            
+            # Phase 2: Boruta Multi-Target Selection
+            self.logger.info("🎯 Starting Phase 2: Boruta Multi-Target Selection...")
+            phase2_results, interpretability_results = await self.phase2_boruta_multi_target(
+                phase1_features, y, regime_labels
+            )
+            
+            # Save results
+            output_files = await self._save_selection_results(
+                phase1_features, phase1_metadata, phase2_results, 
+                interpretability_results, symbol, exchange, timeframe,
+                df_train, df_val, labels_df
+            )
+            
+            # Update pipeline state
+            pipeline_state["step08_advanced_feature_selection"] = {
+                "status": "completed",
+                "start_time": start_time.isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "output_files": output_files,
+                "phase1_metadata": phase1_metadata,
+                "phase2_results": {k: v for k, v in phase2_results.items() if k != 'features'},
+                "interpretability_results": interpretability_results,
+                "original_features": len(feature_columns),
+                "phase1_features": len(phase1_features.columns),
+                "phase2_feature_sets": {f"top_{k}": len(v['features']) for k, v in phase2_results.items()},
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe
+            }
+            
+            self.logger.info("✅ Step 8: Advanced Feature Selection completed successfully")
+            
+            return pipeline_state
+            
+        except Exception as e:
+            self.logger.error(f"❌ Step 8 failed: {str(e)}")
+            pipeline_state["step08_advanced_feature_selection"] = {
+                "status": "failed",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+            return pipeline_state
+    
+    async def phase1_mrmr_rf_selection(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        regime_labels: Optional[pd.Series] = None
+    ) -> Tuple[pd.DataFrame, dict[str, Any]]:
+        """
+        Phase 1: Select top 150 features using mRMR and Random Forest.
+        
+        Args:
+            X: Feature dataframe
+            y: Target series
+            regime_labels: Optional regime labels
+            
+        Returns:
+            Selected features and metadata
+        """
+        metadata = {}
+        
+        # 1. mRMR Selection
+        mrmr_features = []
+        if self.enable_mrmr:
+            self.logger.info("🔍 Running mRMR selection...")
+            mrmr_features = self._mrmr_selection(X, y, self.phase1_target_features)
+            metadata['mrmr_features'] = mrmr_features
+            self.logger.info(f"   mRMR selected {len(mrmr_features)} features")
+        
+        # 2. Random Forest importance with time-series validation
+        rf_features = []
+        if self.enable_rf_importance:
+            self.logger.info("🌳 Running Random Forest selection with TS validation...")
+            rf_features = self._time_series_rf_selection(X, y, self.phase1_target_features)
+            metadata['rf_features'] = rf_features
+            self.logger.info(f"   RF selected {len(rf_features)} features")
+        
+        # 3. Per-regime validation
+        regime_validated_features = []
+        if regime_labels is not None:
+            self.logger.info("🎭 Validating features per regime...")
+            candidate_features = list(set(mrmr_features) | set(rf_features))
+            regime_validated_features = self._validate_features_per_regime(
+                X, y, regime_labels, candidate_features
+            )
+            metadata['regime_validated_features'] = regime_validated_features
+        
+        # 4. Ensemble the results
+        consensus_features = list(set(mrmr_features) & set(rf_features))
+        metadata['consensus_features'] = consensus_features
+        
+        # Build final feature set
+        final_features = list(consensus_features)
+        remaining_slots = self.phase1_target_features - len(final_features)
+        
+        # Add regime-validated features
+        for feature in regime_validated_features:
+            if feature not in final_features and remaining_slots > 0:
+                final_features.append(feature)
+                remaining_slots -= 1
+        
+        # Add remaining mRMR features
+        for feature in mrmr_features:
+            if feature not in final_features and remaining_slots > 0:
+                final_features.append(feature)
+                remaining_slots -= 1
+        
+        # Add remaining RF features
+        for feature in rf_features:
+            if feature not in final_features and remaining_slots > 0:
+                final_features.append(feature)
+                remaining_slots -= 1
+        
+        # Ensure we have enough features
+        if len(final_features) < self.phase1_target_features:
+            # Add remaining features by mutual information
+            mi_scores = mutual_info_classif(X, y, random_state=42)
+            mi_ranking = pd.Series(mi_scores, index=X.columns).sort_values(ascending=False)
+            
+            for feature in mi_ranking.index:
+                if feature not in final_features and len(final_features) < self.phase1_target_features:
+                    final_features.append(feature)
+        
+        metadata['final_features_count'] = len(final_features)
+        metadata['consensus_ratio'] = len(consensus_features) / len(final_features) if final_features else 0
+        metadata['regime_specific_additions'] = len([f for f in final_features if f in regime_validated_features])
+        
+        self.logger.info(f"✅ Phase 1 complete: {len(X.columns)} → {len(final_features)} features")
+        self.logger.info(f"   Consensus features: {len(consensus_features)}")
+        self.logger.info(f"   Regime-specific additions: {metadata['regime_specific_additions']}")
+        
+        return X[final_features], metadata
+    
+    def _mrmr_selection(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> List[str]:
+        """
+        Minimum Redundancy Maximum Relevance feature selection.
+        
+        Args:
+            X: Feature dataframe
+            y: Target series
+            n_features: Number of features to select
+            
+        Returns:
+            List of selected feature names
+        """
+        selected_features = []
+        remaining_features = list(X.columns)
+        
+        # First feature: highest MI with target
+        mi_scores = mutual_info_classif(X, y, random_state=42)
+        first_feature_idx = np.argmax(mi_scores)
+        selected_features.append(X.columns[first_feature_idx])
+        remaining_features.remove(X.columns[first_feature_idx])
+        
+        # Iteratively add features
+        while len(selected_features) < n_features and remaining_features:
+            scores = {}
+            
+            for feature in remaining_features:
+                # Relevance: MI with target
+                relevance = mutual_info_classif(
+                    X[[feature]], y, random_state=42
+                )[0]
+                
+                # Redundancy: average MI with selected features
+                redundancy = 0
+                for selected in selected_features:
+                    # Use correlation as proxy for MI between features (faster)
+                    redundancy += abs(X[feature].corr(X[selected]))
+                redundancy /= len(selected_features)
+                
+                # mRMR score
+                scores[feature] = relevance - redundancy
+            
+            # Select feature with highest score
+            best_feature = max(scores, key=scores.get)
+            selected_features.append(best_feature)
+            remaining_features.remove(best_feature)
+        
+        return selected_features
+    
+    def _time_series_rf_selection(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> List[str]:
+        """
+        Random Forest feature selection with time-series cross-validation.
+        
+        Args:
+            X: Feature dataframe
+            y: Target series
+            n_features: Number of features to select
+            
+        Returns:
+            List of selected feature names
+        """
+        # Train RF with time-series splits
+        tscv = TimeSeriesSplit(n_splits=min(self.n_splits_ts, 3))  # Limit splits for speed
+        feature_importances = np.zeros(X.shape[1])
+        
+        for train_idx, val_idx in tscv.split(X):
+            X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
+            
+            # Train RF
+            rf = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            rf.fit(X_train, y_train)
+            
+            # Accumulate importances
+            feature_importances += rf.feature_importances_
+        
+        # Average importances
+        feature_importances /= tscv.get_n_splits()
+        
+        # Select top features
+        top_indices = np.argsort(feature_importances)[-n_features:]
+        return X.columns[top_indices].tolist()
+    
+    def _validate_features_per_regime(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        regime_labels: pd.Series,
+        candidate_features: List[str]
+    ) -> List[str]:
+        """
+        Validate features perform well in each regime.
+        
+        Args:
+            X: Feature dataframe
+            y: Target series
+            regime_labels: Regime labels
+            candidate_features: Features to validate
+            
+        Returns:
+            List of regime-validated features
+        """
+        regime_scores = {feature: [] for feature in candidate_features}
+        
+        for regime in np.unique(regime_labels):
+            regime_mask = regime_labels == regime
+            if regime_mask.sum() < self.min_regime_samples:
+                continue
+            
+            X_regime = X[regime_mask]
+            y_regime = y[regime_mask]
+            
+            # Evaluate each feature in this regime
+            for feature in candidate_features:
+                if feature in X_regime.columns:
+                    # Simple univariate test
+                    mi_score = mutual_info_classif(
+                        X_regime[[feature]], y_regime, random_state=42
+                    )[0]
+                    regime_scores[feature].append(mi_score)
+        
+        # Select features that perform well across regimes
+        validated_features = []
+        for feature, scores in regime_scores.items():
+            if scores and np.mean(scores) > 0.01:  # Threshold for relevance
+                validated_features.append(feature)
+        
+        return validated_features
+    
+    async def phase2_boruta_multi_target(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series,
+        regime_labels: Optional[pd.Series] = None
+    ) -> Tuple[dict[str, Any], dict[str, Any]]:
+        """
+        Phase 2: Boruta selection for multiple target sizes with interpretability.
+        
+        Args:
+            X: Feature dataframe (already filtered to ~150 features)
+            y: Target series
+            regime_labels: Optional regime labels
+            
+        Returns:
+            Feature sets and interpretability results
+        """
+        feature_sets = {}
+        
+        if BORUTA_AVAILABLE:
+            # Run Boruta
+            self.logger.info("🔍 Running Boruta for all-relevant features...")
+            
+            # Configure Boruta
+            rf = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            
+            boruta_selector = BorutaPy(
+                rf,
+                n_estimators='auto',
+                alpha=self.boruta_alpha,
+                max_iter=self.boruta_max_iter,
+                random_state=42
+            )
+            
+            # Fit Boruta
+            boruta_selector.fit(X.values, y.values)
+            
+            # Get feature rankings
+            feature_ranks = boruta_selector.ranking_
+            feature_importance = pd.Series(
+                1 / feature_ranks,  # Convert rank to importance
+                index=X.columns
+            ).sort_values(ascending=False)
+            
+            # Get confirmed features
+            confirmed_features = X.columns[boruta_selector.support_].tolist()
+            self.logger.info(f"   Boruta confirmed {len(confirmed_features)} features")
+            
+        else:
+            # Fallback: Use LightGBM importance
+            self.logger.warning("⚠️ Boruta not available, using LightGBM importance")
+            
+            lgb_model = lgb.LGBMClassifier(
+                n_estimators=200,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1,
+                verbose=-1
+            )
+            lgb_model.fit(X, y)
+            
+            feature_importance = pd.Series(
+                lgb_model.feature_importances_,
+                index=X.columns
+            ).sort_values(ascending=False)
+            
+            # Consider top 80% as "confirmed"
+            threshold = feature_importance.quantile(0.2)
+            confirmed_features = feature_importance[feature_importance > threshold].index.tolist()
+        
+        # Create feature sets for each target size
+        for target_size in self.phase2_targets:
+            self.logger.info(f"📊 Creating feature set with {target_size} features...")
+            
+            # Select top features
+            top_features = feature_importance.head(target_size).index.tolist()
+            
+            # Validate with time-series CV
+            ts_validation = self._time_series_validate_features(
+                X[top_features], y, n_splits=self.n_splits_ts
+            )
+            
+            # Validate per regime if available
+            regime_validation = {}
+            if regime_labels is not None:
+                regime_validation = self._per_regime_validate_features(
+                    X[top_features], y, regime_labels
+                )
+            
+            feature_sets[target_size] = {
+                'features': top_features,
+                'importance_scores': feature_importance[top_features].to_dict(),
+                'ts_validation': ts_validation,
+                'regime_validation': regime_validation,
+                'boruta_confirmed': len([f for f in top_features if f in confirmed_features]),
+                'boruta_confirmed_ratio': len([f for f in top_features if f in confirmed_features]) / len(top_features)
+            }
+            
+            self.logger.info(f"   TS validation score: {ts_validation['mean_score']:.4f} ± {ts_validation['std_score']:.4f}")
+            self.logger.info(f"   Boruta confirmed: {feature_sets[target_size]['boruta_confirmed']} features")
+        
+        # Generate interpretability analysis
+        self.logger.info("🔮 Generating interpretability analysis...")
+        interpretability_results = await self._generate_interpretability_report(
+            X, y, feature_sets
+        )
+        
+        return feature_sets, interpretability_results
+    
+    def _time_series_validate_features(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        n_splits: int = 5
+    ) -> dict[str, Any]:
+        """Time-series aware feature validation."""
+        tscv = TimeSeriesSplit(n_splits=min(n_splits, 3))  # Limit for speed
+        scores = []
+        
+        for train_idx, val_idx in tscv.split(X):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+            
+            # Train simple model
+            model = lgb.LGBMClassifier(
+                n_estimators=50,
+                max_depth=5,
+                random_state=42,
+                n_jobs=-1,
+                verbose=-1
+            )
+            model.fit(X_train, y_train)
+            
+            # Evaluate
+            y_pred = model.predict_proba(X_val)[:, 1]
+            score = roc_auc_score(y_val, y_pred)
+            scores.append(score)
+        
+        return {
+            'mean_score': np.mean(scores),
+            'std_score': np.std(scores),
+            'scores': scores,
+            'n_splits': len(scores)
+        }
+    
+    def _per_regime_validate_features(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        regime_labels: pd.Series
+    ) -> dict[str, float]:
+        """Validate features perform well in each regime."""
+        regime_scores = {}
+        
+        for regime in np.unique(regime_labels):
+            regime_mask = regime_labels == regime
+            if regime_mask.sum() < self.min_regime_samples:
+                continue
+            
+            X_regime = X[regime_mask]
+            y_regime = y[regime_mask]
+            
+            # Cross-validate within regime
+            try:
+                scores = cross_val_score(
+                    lgb.LGBMClassifier(n_estimators=50, max_depth=5, verbose=-1),
+                    X_regime, y_regime,
+                    cv=min(3, len(np.unique(y_regime))),  # Handle small regimes
+                    scoring='roc_auc'
+                )
+                regime_scores[f'regime_{regime}'] = scores.mean()
+            except:
+                # Skip if validation fails (e.g., single class in regime)
+                continue
+        
+        return regime_scores
+    
+    async def _generate_interpretability_report(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series,
+        feature_sets: dict[int, dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Generate SHAP/LIME interpretability analysis."""
+        report = {}
+        
+        for size, feature_data in feature_sets.items():
+            self.logger.info(f"🔍 Analyzing interpretability for {size}-feature set...")
+            
+            features = feature_data['features']
+            X_subset = X[features]
+            
+            # Train model for interpretability
+            model = lgb.LGBMClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1,
+                verbose=-1
+            )
+            model.fit(X_subset, y)
+            
+            feature_report = {}
+            
+            # SHAP analysis
+            if self.enable_shap and SHAP_AVAILABLE:
+                try:
+                    explainer = shap.TreeExplainer(model)
+                    
+                    # Sample for efficiency
+                    sample_size = min(1000, len(X_subset))
+                    sample_idx = np.random.choice(len(X_subset), sample_size, replace=False)
+                    X_sample = X_subset.iloc[sample_idx]
+                    
+                    shap_values = explainer.shap_values(X_sample)
+                    
+                    # Handle binary classification output
+                    if isinstance(shap_values, list):
+                        shap_values = shap_values[1]  # Use positive class
+                    
+                    # Calculate importance
+                    shap_importance = pd.Series(
+                        np.abs(shap_values).mean(axis=0),
+                        index=features
+                    ).sort_values(ascending=False)
+                    
+                    feature_report['shap_importance'] = shap_importance.head(20).to_dict()
+                    
+                    # Detect interactions
+                    feature_report['feature_interactions'] = self._detect_feature_interactions(
+                        shap_values, features
+                    )
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ SHAP analysis failed: {e}")
+                    feature_report['shap_error'] = str(e)
+            
+            # LIME analysis
+            if self.enable_lime and LIME_AVAILABLE:
+                try:
+                    lime_explainer = lime.lime_tabular.LimeTabularExplainer(
+                        X_subset.values,
+                        feature_names=features,
+                        class_names=['0', '1'],
+                        mode='classification'
+                    )
+                    
+                    # Sample explanations
+                    sample_explanations = []
+                    for i in range(min(self.n_lime_samples, len(X_subset))):
+                        exp = lime_explainer.explain_instance(
+                            X_subset.iloc[i].values,
+                            model.predict_proba,
+                            num_features=min(10, len(features))
+                        )
+                        sample_explanations.append(exp.as_list())
+                    
+                    feature_report['lime_explanations'] = sample_explanations[:3]  # Store first 3
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ LIME analysis failed: {e}")
+                    feature_report['lime_error'] = str(e)
+            
+            # Model performance
+            y_pred = model.predict_proba(X_subset)[:, 1]
+            feature_report['model_performance'] = {
+                'roc_auc': roc_auc_score(y, y_pred),
+                'accuracy': accuracy_score(y, model.predict(X_subset)),
+                'f1_score': f1_score(y, model.predict(X_subset))
+            }
+            
+            report[f'feature_set_{size}'] = feature_report
+        
+        return report
+    
+    def _detect_feature_interactions(
+        self, 
+        shap_values: np.ndarray, 
+        feature_names: List[str],
+        top_k: int = 10
+    ) -> List[Tuple[str, str, float]]:
+        """Detect top feature interactions from SHAP values."""
+        interactions = []
+        
+        # Calculate correlation of SHAP values between features
+        shap_df = pd.DataFrame(shap_values, columns=feature_names)
+        corr_matrix = shap_df.corr().abs()
+        
+        # Get top interactions (excluding diagonal)
+        for i in range(len(feature_names)):
+            for j in range(i + 1, len(feature_names)):
+                interactions.append((
+                    feature_names[i],
+                    feature_names[j],
+                    corr_matrix.iloc[i, j]
+                ))
+        
+        # Sort and return top interactions
+        interactions.sort(key=lambda x: x[2], reverse=True)
+        return [(f1, f2, round(score, 3)) for f1, f2, score in interactions[:top_k]]
+    
+    async def _save_selection_results(
+        self,
+        phase1_features: pd.DataFrame,
+        phase1_metadata: dict[str, Any],
+        phase2_results: dict[int, dict[str, Any]],
+        interpretability_results: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        df_train: pd.DataFrame,
+        df_val: pd.DataFrame,
+        labels_df: pd.DataFrame
+    ) -> dict[str, str]:
+        """Save all selection results and create output datasets."""
+        output_files = {}
+        
+        # Save phase 1 results
+        phase1_path = os.path.join(
+            self.output_dir,
+            f"{exchange}_{symbol}_{timeframe}_phase1_features.json"
+        )
+        safe_json_dump({
+            'features': phase1_features.columns.tolist(),
+            'metadata': phase1_metadata,
+            'timestamp': datetime.now().isoformat()
+        }, phase1_path)
+        output_files['phase1_results'] = phase1_path
+        
+        # Save phase 2 results for each target size
+        for target_size, results in phase2_results.items():
+            # Save feature list and metadata
+            phase2_path = os.path.join(
+                self.output_dir,
+                f"{exchange}_{symbol}_{timeframe}_top{target_size}_features.json"
+            )
+            safe_json_dump({
+                'features': results['features'],
+                'importance_scores': results['importance_scores'],
+                'validation': {
+                    'ts_validation': results['ts_validation'],
+                    'regime_validation': results['regime_validation']
+                },
+                'boruta_stats': {
+                    'confirmed': results['boruta_confirmed'],
+                    'confirmed_ratio': results['boruta_confirmed_ratio']
+                },
+                'timestamp': datetime.now().isoformat()
+            }, phase2_path)
+            output_files[f'top{target_size}_features'] = phase2_path
+            
+            # Create and save filtered datasets
+            selected_features = results['features']
+            
+            # Split back to train/val
+            train_size = len(df_train)
+            
+            # Create filtered train dataset
+            train_features = phase1_features[selected_features].iloc[:train_size]
+            train_data = pd.concat([train_features, labels_df.iloc[:train_size]], axis=1)
+            train_path = os.path.join(
+                self.output_dir,
+                f"{exchange}_{symbol}_{timeframe}_top{target_size}_train.parquet"
+            )
+            train_data.to_parquet(train_path)
+            output_files[f'top{target_size}_train'] = train_path
+            
+            # Create filtered val dataset
+            val_features = phase1_features[selected_features].iloc[train_size:]
+            val_data = pd.concat([val_features, labels_df.iloc[train_size:]], axis=1)
+            val_path = os.path.join(
+                self.output_dir,
+                f"{exchange}_{symbol}_{timeframe}_top{target_size}_val.parquet"
+            )
+            val_data.to_parquet(val_path)
+            output_files[f'top{target_size}_val'] = val_path
+        
+        # Save interpretability results
+        interp_path = os.path.join(
+            self.output_dir,
+            f"{exchange}_{symbol}_{timeframe}_interpretability_report.json"
+        )
+        safe_json_dump(interpretability_results, interp_path)
+        output_files['interpretability_report'] = interp_path
+        
+        # Save comprehensive selection report
+        report_path = os.path.join(
+            self.output_dir,
+            f"{exchange}_{symbol}_{timeframe}_selection_report.json"
+        )
+        safe_json_dump({
+            'phase1_summary': {
+                'input_features': len(df_train.columns) - len(labels_df.columns),
+                'output_features': len(phase1_features.columns),
+                'consensus_features': len(phase1_metadata.get('consensus_features', [])),
+                'regime_validated': phase1_metadata.get('regime_specific_additions', 0)
+            },
+            'phase2_summary': {
+                f'top_{size}': {
+                    'features': len(results['features']),
+                    'ts_score': results['ts_validation']['mean_score'],
+                    'boruta_confirmed': results['boruta_confirmed']
+                }
+                for size, results in phase2_results.items()
+            },
+            'timestamp': datetime.now().isoformat()
+        }, report_path)
+        output_files['selection_report'] = report_path
+        
+        self.logger.info(f"💾 Saved all selection results to {self.output_dir}")
+        
+        return output_files
+
+
+# Step execution function
+async def run_step(
+    symbol: str,
+    exchange: str,
+    timeframe: str = "1m",
+    data_dir: str = None,
+    force_rerun: bool = False,
+    **kwargs: Any,
+) -> bool:
+    """
+    Run Step 8: Advanced Feature Selection.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe
+        data_dir: Data directory
+        force_rerun: Force rerun the step
+        **kwargs: Additional arguments
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Load configuration
+        config_path = "config/training_config.json"
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        else:
+            config = {}
+        
+        # Override with kwargs
+        config.update(kwargs)
+        
+        # Create training input
+        training_input = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": timeframe,
+            "data_dir": data_dir or f"data/{exchange}/{symbol}",
+        }
+        
+        # Initialize pipeline state
+        pipeline_state = {}
+        
+        # Create and execute step
+        step = Step08AdvancedFeatureSelection(config)
+        result = await step.execute(training_input, pipeline_state)
+        
+        # Check if successful
+        if result.get("step08_advanced_feature_selection", {}).get("status") == "completed":
+            system_logger.info("✅ Step 8: Advanced Feature Selection completed successfully")
+            return True
+        else:
+            system_logger.error("❌ Step 8: Advanced Feature Selection failed")
+            return False
+            
+    except Exception as e:
+        system_logger.error(f"❌ Error running Step 8: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    # Example usage
+    asyncio.run(run_step(
+        symbol="BTCUSDT",
+        exchange="binance",
+        timeframe="1m",
+        force_rerun=True
+    ))

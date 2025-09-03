@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from src.utils.logger import system_logger
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 
 class ABTestingStep:
@@ -30,7 +31,7 @@ class ABTestingStep:
 		exchange = training_input.get("exchange", "BINANCE")
 		data_dir = training_input.get("data_dir", "data/training")
 
-		os.makedirs(data_dir, exist_ok=True)
+		ensure_directory(data_dir)
 
 		ab_results: Dict[str, Any] = {
 			"symbol": symbol,
@@ -44,8 +45,7 @@ class ABTestingStep:
 		}
 
 		results_file = f"{data_dir}/{exchange}_{symbol}_ab_test_results.json"
-		with open(results_file, "w") as f:
-			json.dump(ab_results, f, indent=2)
+		safe_json_dump(ab_results, results_file, indent=2)
 
 		return {"status": "SUCCESS", "results_file": results_file}
 

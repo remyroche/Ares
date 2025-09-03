@@ -13,10 +13,12 @@ from src.core.decorators import (
     validates
 )
 
-from src.core.domain import PerformanceLevel
+from src.core.domain import (
+    PerformanceLevel,
+    performance_monitor
+)
 
 from typing import Any
-performance_monitor,
 from src.utils.logger import system_logger
 
 class LiveTradingPipeline:
@@ -32,6 +34,7 @@ class LiveTradingPipeline:
         },
         default_return=False,
         context="live_trading_pipeline.initialize",
+    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing LiveTradingPipeline ...")
         return True

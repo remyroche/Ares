@@ -152,11 +152,11 @@ class ImprovedPipelineExecutor:
     def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
         """Generate mock market data for testing."""
         import numpy as np
-import copy
+        import copy
         
-# Generate realistic mock data
-base_price = 100.0
-prices = []
+        # Generate realistic mock data
+        base_price = 100.0
+        prices = []
         for i in range(limit):
             # Add some realistic price movement
             change = np.random.normal(0, 0.5)  # 0.5% standard deviation

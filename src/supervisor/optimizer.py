@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/supervisor/optimizer.py
 import asyncio
 from datetime import datetime

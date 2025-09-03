@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/core/config_service.py
 
 import asyncio

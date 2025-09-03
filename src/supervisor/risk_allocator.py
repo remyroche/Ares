@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/supervisor/risk_allocator.py
 
 import asyncio

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Live Trading Wavelet Integration
 

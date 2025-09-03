@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Intelligent Feature Caching System
 

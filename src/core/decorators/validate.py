@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Request and DTO validation decorators.
 

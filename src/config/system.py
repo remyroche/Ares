@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/system.py
 
 import os

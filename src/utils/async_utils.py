@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/utils/async_utils.py
 
 import asyncio

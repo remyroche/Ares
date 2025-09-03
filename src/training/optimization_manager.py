@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/optimization_manager.py
 
 from src.core.decorators import handles_errors

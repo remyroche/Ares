@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Utility functions and common patterns for the Strategist module.
 """

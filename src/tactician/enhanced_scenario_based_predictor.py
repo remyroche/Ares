@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Enhanced Scenario-Based Predictor for Tactician
 

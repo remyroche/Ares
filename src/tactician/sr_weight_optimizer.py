@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/sr_weight_optimizer.py
 
 from src.core.decorators import handles_errors

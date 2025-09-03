@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/async_order_executor.py
 
 from src.core.decorators import handles_errors

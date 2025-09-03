@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/interfaces/enhanced_event_bus.py
 
 from src.core.decorators import handles_errors

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/components/modular_supervisor.py
 
 from datetime import datetime

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/computational_optimization_config.py
 
 """Computational optimization configuration for the enhanced training manager.

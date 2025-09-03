@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/components/__init__.py
 
 from src.utils.warning_symbols import (

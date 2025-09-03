@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Standardized Configuration Management System.
 
 This module provides centralized configuration management with validation,

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/bayesian_optimizer.py
 
 import datetime as datetime

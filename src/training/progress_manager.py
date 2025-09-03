@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Progress Manager for Training Steps.
 
 This module handles saving and loading progress for each training step,

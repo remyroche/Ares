@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Type definitions and type safety utilities for the Ares trading system.
 This module provides comprehensive type coverage to eliminate Any types

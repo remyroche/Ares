@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Centralized Decorators Module v2
 This module provides a unified interface to all decorators with enhanced functionality.

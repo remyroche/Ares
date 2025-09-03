@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Decorator composition utilities with a uniform wrapper.
 

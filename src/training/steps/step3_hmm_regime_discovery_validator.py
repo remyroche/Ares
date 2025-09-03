@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/steps/step3_hmm_regime_discovery_validator.py
 
 """Validator for Step 3: HMM Regime Discovery.

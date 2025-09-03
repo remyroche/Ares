@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Step17 Optimized Tactician
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/ensemble_manager.py
 
 from src.core.decorators import (

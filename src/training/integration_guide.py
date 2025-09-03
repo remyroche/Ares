@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/integration_guide.py
 
 """Integration guide showing how to integrate the optimized enhanced training manager"

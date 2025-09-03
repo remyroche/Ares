@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/enhanced_feature_selection_config.py
 
 from dataclasses import dataclass, field

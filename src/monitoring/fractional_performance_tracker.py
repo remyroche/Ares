@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/monitoring/fractional_performance_tracker.py
 
 """Performance tracking and monitoring for fractional implementations."""

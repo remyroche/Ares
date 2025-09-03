@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Refactored DataCollectionStep with reduced complexity and type hints.
 This version breaks down the massive _log_detailed_data_extract method into smaller,

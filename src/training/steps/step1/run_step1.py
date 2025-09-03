@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Step 1 Runner Script."
 
 This script demonstrates how to use the step01 module to:

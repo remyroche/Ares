@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Step 1: Data Collection Module.
 
 This module handles:

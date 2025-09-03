@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/fractional_implementations_config.py
 
 """Configuration for fractional labeling and fractional differentiation implementations."""

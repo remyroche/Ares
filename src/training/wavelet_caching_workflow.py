@@ -1,11 +1,13 @@
 # examples/wavelet_caching_workflow.py
 
 
-"""Complete workflow example for wavelet feature caching and backtesting."
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
+"""Complete workflow example for wavelet feature caching and backtesting.
+
 Demonstrates the full pipeline from pre-computation to fast backtesting.
 """
+
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 import asyncio
 import time
 from pathlib import Path
@@ -192,8 +194,6 @@ async def step3_performance_comparison(config: dict) -> bool | None:
                 "data/price_data/sample_data.parquet",
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
-        except Exception as e:
-            pass  # TODO: Handle exception
         except Exception:
             price_data = pd.read_parquet("data/price_data/sample_data.parquet")
 
@@ -237,13 +237,9 @@ async def step4_cache_management(config: dict) -> bool | None:
     try:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
-import copy
         from src.training.steps.vectorized_advanced_feature_engineering import (
-    except Exception as e:
-        pass  # TODO: Handle exception properly
-
-WaveletFeatureCache,
-)
+            WaveletFeatureCache,
+        )
 
         cache = WaveletFeatureCache(config)
 

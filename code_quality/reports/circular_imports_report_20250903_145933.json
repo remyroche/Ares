@@ -1,0 +1,15 @@
+{
+  "total_modules": 0,
+  "total_imports": 0,
+  "circular_imports": {
+    "count": 0,
+    "cycles": []
+  },
+  "import_depths": {
+    "max_depth": 0,
+    "average_depth": 0,
+    "deep_modules": []
+  },
+  "highly_imported": [],
+  "highly_importing": []
+}

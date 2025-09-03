@@ -14,7 +14,8 @@ from src.utils.warning_symbols import (
 )
 
 class TrainingOrchestrator:
-    """Training orchestrator responsible for coordinating the overall training pipeline."
+    """Training orchestrator responsible for coordinating the overall training pipeline.
+    
     This module handles the high-level coordination between different training components.
     """
     def __init__(self, config: dict[str, Any]) -> None:
@@ -62,7 +63,7 @@ class TrainingOrchestrator:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for training orchestrator"))
+                self.logger.error(invalid("Invalid configuration for training orchestrator"))
                 return False
 
             # Initialize validation framework
@@ -291,7 +292,7 @@ class TrainingOrchestrator:
                 "health_issues": [],
             }
             
-            # Check each component's health'
+            # Check each component's health
             components = [
                 "model_trainer",
                 "optimization_manager",
@@ -409,19 +410,16 @@ class TrainingOrchestrator:
 
             # Initialize calibration manager
             from src.training.calibration_manager import CalibrationManager
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-self.calibration_manager = CalibrationManager(self.config)
-await self.calibration_manager.initialize()
+            
+            self.calibration_manager = CalibrationManager(self.config)
+            await self.calibration_manager.initialize()
 
             self.logger.info("✅ All component managers initialized")
 
         except Exception as e:
             error_msg = f"Failed to initialize component managers: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(failed(error_msg))
             raise
 
     @handles_errors(
@@ -455,7 +453,7 @@ await self.calibration_manager.initialize()
             orchestrator_config = self.config.get("training_orchestrator", {})
 
             if orchestrator_config.get("max_training_duration", 0) <= 0:
-                self.print(invalid("Invalid max_training_duration configuration"))
+                self.logger.error(invalid("Invalid max_training_duration configuration"))
                 return False
 
             return True
@@ -463,7 +461,7 @@ await self.calibration_manager.initialize()
         except Exception as e:
             error_msg = f"Configuration validation failed: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(failed(error_msg))
             return False
 
     @handles_errors(
@@ -504,7 +502,7 @@ await self.calibration_manager.initialize()
                 self.logger.info("✅ Training pipeline completed successfully")
                 await self._store_training_results(training_input)
             else:
-                self.print(failed("❌ Training pipeline failed"))
+                self.logger.error(failed("❌ Training pipeline failed"))
 
             self.is_training = False
             return success
@@ -512,7 +510,7 @@ await self.calibration_manager.initialize()
         except Exception as e:
             error_msg = f"Training execution failed: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(failed(error_msg))
             self.is_training = False
             return False
 
@@ -536,20 +534,20 @@ await self.calibration_manager.initialize()
 
             for field in required_fields:
                 if field not in training_input:
-                    self.print(
-                        missing("Missing required training input field: {field}"),
+                    self.logger.error(
+                        missing(f"Missing required training input field: {field}"),
                     )
                     return False
 
             # Validate specific field values
             if training_input.get("lookback_days", 0) <= 0:
-                self.print(invalid("Invalid lookback_days value"))
+                self.logger.error(invalid("Invalid lookback_days value"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("Training input validation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Training input validation failed: {e}"))
             return False
 
     @handles_errors(
@@ -577,7 +575,7 @@ await self.calibration_manager.initialize()
             self.logger.info("🔧 Step 1: Model Training")
             model_results = await self.model_trainer.train_models(training_input)
             if not model_results:
-                self.print(failed("❌ Model training failed"))
+                self.logger.error(failed("❌ Model training failed"))
                 return False
 
             # Step 2: Optimization
@@ -587,7 +585,7 @@ await self.calibration_manager.initialize()
                 training_input,
             )
             if not optimization_results:
-                self.print(failed("❌ Model optimization failed"))
+                self.logger.error(failed("❌ Model optimization failed"))
                 return False
 
             # Step 3: Ensemble Creation
@@ -597,7 +595,7 @@ await self.calibration_manager.initialize()
                 training_input,
             )
             if not ensemble_results:
-                self.print(failed("❌ Ensemble creation failed"))
+                self.logger.error(failed("❌ Ensemble creation failed"))
                 return False
 
             # Step 4: Calibration
@@ -607,7 +605,7 @@ await self.calibration_manager.initialize()
                 training_input,
             )
             if not calibration_results:
-                self.print(failed("❌ Model calibration failed"))
+                self.logger.error(failed("❌ Model calibration failed"))
                 return False
 
             # Store final results
@@ -623,8 +621,8 @@ await self.calibration_manager.initialize()
             self.logger.info("✅ Training pipeline completed successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ Training pipeline execution failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Training pipeline execution failed: {e}"))
             return False
 
     @handles_errors(
@@ -646,8 +644,8 @@ await self.calibration_manager.initialize()
             # This would typically store to database or file system
             self.logger.info(f"📁 Storing training results with key: {results_key}")
 
-        except Exception:
-            self.print(failed("❌ Failed to store training results: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to store training results: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
         """Get current training status."
@@ -697,8 +695,8 @@ await self.calibration_manager.initialize()
             self.is_training = False
             self.logger.info("✅ Training Orchestrator stopped successfully")
 
-        except Exception:
-            self.print(failed("❌ Failed to stop Training Orchestrator: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to stop Training Orchestrator: {e}"))
 
 @handles_errors(
     exceptions=(Exception,),

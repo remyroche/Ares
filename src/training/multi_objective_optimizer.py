@@ -53,6 +53,7 @@ class MultiObjectiveOptimizer:
                 "max_drawdown_threshold": 0.20,
                 "min_win_rate": 0.40,
                 "min_profit_factor": 1.2,
+                "var_95_threshold": 0.05,
             },
         )
 
@@ -60,10 +61,9 @@ class MultiObjectiveOptimizer:
         self.optimized_backtester = None
         if "market_data" in config:
             from src.training.optimized_backtester import OptimizedBacktester
-import datetime as datetime
 
-self.optimized_backtester = OptimizedBacktester(
-config["market_data"],
+            self.optimized_backtester = OptimizedBacktester(
+                config["market_data"],
                 config.get("computational_optimization", {}),
             )
 

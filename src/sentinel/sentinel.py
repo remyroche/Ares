@@ -40,14 +40,7 @@ class Sentinel:
         )
         self.max_alerts: int = int(self.sentinel_config.get("max_alerts", 100))
 
-    @handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid sentinel configuration"),
-            AttributeError: (False, "Missing required sentinel parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False, context="sentinel initialization",
-    )
+    @handles_errors(error_handlers={ ValueError: (False, "Invalid sentinel configuration"), AttributeError: (False, "Missing required sentinel parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="sentinel initialization", )
     async def initialize(self) -> bool:
         """Load config, validate, and build monitoring rules."""
         self.logger.info("Initializing Sentinel...")
@@ -63,9 +56,7 @@ class Sentinel:
         self.logger.info("✅ Sentinel initialization completed successfully")
         return True
 
-    @handles_errors
-        default_return=None, context="sentinel configuration loading",
-    )
+    @handles_errors(default_return=None, context="sentinel configuration loading", )
     async def _load_sentinel_configuration(self) -> None:
         """Load and normalize sentinel configuration values."""
         self.sentinel_config.setdefault("monitoring_interval", 60)
@@ -81,9 +72,7 @@ class Sentinel:
 
         self.logger.info("Sentinel configuration loaded successfully")
 
-    @handles_errors
-        default_return=False, context="configuration validation",
-    )
+    @handles_errors(default_return=False, context="configuration validation", )
 
     def _validate_configuration(self) -> bool:
         """Validate sentinel configuration values."""
@@ -102,9 +91,7 @@ class Sentinel:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handles_errors
-        default_return=None, context="monitoring rules initialization",
-    )
+    @handles_errors(default_return=None, context="monitoring rules initialization", )
     async def _initialize_monitoring_rules(self) -> None:
         """Initialize monitoring rules based on configuration flags."""
         self.monitoring_rules.clear()
@@ -135,14 +122,7 @@ class Sentinel:
             f"Initialized {len(self.monitoring_rules)} monitoring rule sets",
         )
 
-    @handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid monitoring parameters"),
-            AttributeError: (False, "Missing monitoring components"),
-            KeyError: (False, "Missing required monitoring data"),
-        },
-        default_return=False, context="monitoring start",
-    )
+    @handles_errors(error_handlers={ ValueError: (False, "Invalid monitoring parameters"), AttributeError: (False, "Missing monitoring components"), KeyError: (False, "Missing required monitoring data"), }, default_return=False, context="monitoring start", )
     async def start_monitoring(self) -> bool:
         """Start the monitoring loop in the background."""
         if self.is_monitoring:
@@ -253,15 +233,7 @@ class Sentinel:
         if data_quality < rules["data_quality_threshold"]:
             await self._create_alert("SYSTEM", "Low data quality", 1.0 - data_quality)
 
-    @handles_errors(
-        error_handlers={
-            ValueError: (None, "Invalid alert parameters"),
-            AttributeError: (None, "Missing alert components"),
-            KeyError: (None, "Missing required alert data"),
-        },
-        default_return=None,
-        context="alert creation",
-    )
+    @handles_errors(error_handlers={ ValueError: (None, "Invalid alert parameters"), AttributeError: (None, "Missing alert components"), KeyError: (None, "Missing required alert data"), }, default_return=None, context="alert creation", )
     async def _create_alert(self, alert_type: str, message: str, value: float) -> None:
         """
         Create an alert.

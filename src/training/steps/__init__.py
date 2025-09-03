@@ -36,9 +36,9 @@ FeatureEngineeringStep = None
 #     MarketRegimeClassificationStep, None
 
 # try:
-#     from .step5_regime_data_splitting import RegimeDataSplittingStep
+#     from .step5_labeling import LabelingStep
 # except ImportError:
-#     RegimeDataSplittingStep, None
+#     LabelingStep, None
 
 # try:
 #     from .step5_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep

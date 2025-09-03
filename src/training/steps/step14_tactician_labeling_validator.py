@@ -679,7 +679,7 @@ if __name__ == "__main__":
 import os.path
 
     # Example usage
-    async def test_validator() -> None:
+async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",

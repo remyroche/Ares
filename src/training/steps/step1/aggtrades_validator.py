@@ -18,6 +18,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+from src.core.decorators import handles_errors
     handle_errors,
     optimize_memory_usage,
     validate_data_structure,
@@ -25,7 +26,6 @@ from src.utils.centralized_decorators import (
 )
 
 logger = system_logger.getChild("AggtradesValidator")
-
 
 class AggtradesValidator:
     """Validates and fixes aggtrades data format."""
@@ -70,17 +70,7 @@ class AggtradesValidator:
 
     @validate_data_structure
     @with_tracing_span("validate_file_format")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            pd.errors.EmptyDataError,
-            FileNotFoundError,
-            PermissionError,
-            pd.errors.ParserError,
-        ),
+    @handles_errors
         default_return={
             "valid": False,
             "issues": ["Validation failed"],
@@ -175,20 +165,7 @@ class AggtradesValidator:
     @validate_data_structure
     @optimize_memory_usage
     @with_tracing_span("fix_file_format")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            pd.errors.EmptyDataError,
-            FileNotFoundError,
-            PermissionError,
-            pd.errors.ParserError,
-        ),
-        default_return=False,
-        context="aggtrades_validator.fix_file_format"
-    )
+    @handles_errors(fallback=False)
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format if needed.
 
@@ -266,15 +243,7 @@ class AggtradesValidator:
             return False
 
     @with_tracing_span("validate_all_aggtrades")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            FileNotFoundError,
-            PermissionError,
-        ),
+    @handles_errors
         default_return={
             "total_files": 0,
             "valid_files": 0,
@@ -367,15 +336,7 @@ class AggtradesValidator:
         return validation_result
 
     @with_tracing_span("convert_to_parquet")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            FileNotFoundError,
-            PermissionError,
-        ),
+    @handles_errors
         default_return={
             "converted_files": 0,
             "failed_files": 0,

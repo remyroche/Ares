@@ -19,11 +19,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 from .standardized_error_handler import ErrorCategory, ErrorSeverity, standardized_error_handler
-
 
 class StepContract:
     """Defines the input/output contract for each step."""
@@ -33,7 +32,6 @@ class StepContract:
         self.inputs = inputs
         self.outputs = outputs
         self.timestamp = datetime.now().isoformat()
-
 
 class Steps1_7CompatibilityFramework:
     """Comprehensive compatibility framework for steps 1-7."""
@@ -184,7 +182,7 @@ class Steps1_7CompatibilityFramework:
         self.error_handler = standardized_error_handler
         self.compatibility_history: List[Dict[str, Any]] = []
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="step contract validation")
+    @handles_errors(fallback=False)
     def validate_step_contract(self, step_name: str, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> bool:
         """Validate that a step's inputs and outputs match its contract.
 
@@ -289,7 +287,7 @@ class Steps1_7CompatibilityFramework:
 
         return True
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="cross-step data consistency validation")
+    @handles_errors(fallback=False)
     def validate_cross_step_consistency(self, step_data: Dict[str, pd.DataFrame], step_sequence: List[str]) -> bool:
         """Validate data consistency across multiple steps.
 
@@ -351,7 +349,7 @@ class Steps1_7CompatibilityFramework:
         self.logger.info("Cross-step data consistency validation passed")
         return True
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="configuration compatibility validation")
+    @handles_errors(fallback=False)
     def validate_configuration_compatibility(self, configs: Dict[str, Dict[str, Any]]) -> bool:
         """Validate that configurations are compatible across steps.
 
@@ -394,7 +392,7 @@ class Steps1_7CompatibilityFramework:
         self.logger.info("Configuration compatibility validation passed")
         return True
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="step dependency validation")
+    @handles_errors(fallback=False)
     def validate_step_dependencies(
         self, step_name: str, dependencies: List[str], available_data: Dict[str, Any]
     ) -> bool:
@@ -494,7 +492,6 @@ class Steps1_7CompatibilityFramework:
         except Exception as e:
             self.logger.error(f"Failed to export compatibility report: {e}")
             return False
-
 
 # Global instance
 steps_1_7_compatibility = Steps1_7CompatibilityFramework()

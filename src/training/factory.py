@@ -183,7 +183,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     import psutil
 import copy
 
-    memory_gb = psutil.virtual_memory().total / (1024**3)
+memory_gb = psutil.virtual_memory().total / (1024**3)
 
     # Memory recommendations
     if memory_gb < 8:

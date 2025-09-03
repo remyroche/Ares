@@ -28,7 +28,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("IntegratedDataQualityPipeline")
 
-
 class IntegratedDataQualityPipeline:
     """Comprehensive data quality pipeline that integrates all components."""
 
@@ -51,8 +50,7 @@ class IntegratedDataQualityPipeline:
 
     @with_tracing_span("run_comprehensive_quality_pipeline")
     @quality_gate(validation_level="comprehensive")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Pipeline failed"},
         context="integrated_data_quality_pipeline.run_comprehensive_quality_pipeline"
     )
@@ -390,12 +388,7 @@ class IntegratedDataQualityPipeline:
         report.append("=" * 80)
         return "\n".join(report)
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="integrated_data_quality_pipeline",
-)
+@handles_errors(fallback=False)
 async def run_integrated_pipeline(
     symbol: str,
     exchange: str,
@@ -443,7 +436,6 @@ async def run_integrated_pipeline(
         logger.exception(f"❌ Integrated pipeline failed: {e}")
         return False
 
-
 if __name__ == "__main__":
     # Parse command line arguments
     import asyncio
@@ -490,5 +482,6 @@ if __name__ == "__main__":
         # Final cleanup
         import gc
 import os.path
+from src.core.decorators import handles_errors
 
 gc.collect()

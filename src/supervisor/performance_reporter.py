@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import copy
 import os.path
@@ -21,10 +21,7 @@ class AdvancedReportingEngine:
         self.real_time_metrics: dict[str, Any] = {}
         self.performance_trends: dict[str, list[float]] = {}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def generate_real_time_report(
         self,
         performance_data: dict[str, Any],
@@ -57,10 +54,7 @@ class AdvancedReportingEngine:
             self.logger.error(f"Error generating real-time report: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def _calculate_real_time_metrics(
         self,
         performance_data: dict[str, Any],
@@ -86,10 +80,7 @@ class AdvancedReportingEngine:
             self.logger.error(f"Error calculating real-time metrics: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def _analyze_performance_trends(
         self,
         performance_data: dict[str, Any],
@@ -116,10 +107,7 @@ class AdvancedReportingEngine:
             self.logger.error(f"Error analyzing performance trends: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def _perform_risk_analysis(self, performance_data: dict[str, Any]) -> dict[str, Any]:
         """Perform comprehensive risk analysis."""
         try:
@@ -141,10 +129,7 @@ class AdvancedReportingEngine:
             self.logger.error(f"Error performing risk analysis: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def _perform_attribution_analysis(self, performance_data: dict[str, Any]) -> dict[str, Any]:
         """Perform performance attribution analysis."""
         try:
@@ -165,10 +150,7 @@ class AdvancedReportingEngine:
             self.logger.error(f"Error performing attribution analysis: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def _generate_performance_forecast(self, performance_data: dict[str, Any]) -> dict[str, Any]:
         """Generate performance forecast."""
         try:
@@ -344,7 +326,6 @@ class AdvancedReportingEngine:
         except Exception as e:
             self.logger.error(f"Error caching report: {e}")
 
-
 class PerformanceReporter:
     """
     Enhanced Performance Reporter component with DI, type hints, robust error handling, and advanced reporting capabilities.
@@ -384,7 +365,7 @@ class PerformanceReporter:
         self.export_formats: list[str] = self.reporter_config.get("export_formats", ["json", "csv", "html"])
         self.export_directory: str = self.reporter_config.get("export_directory", "reports")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid performance reporter configuration"),
             AttributeError: (False, "Missing required performance reporter parameters"),
@@ -430,11 +411,7 @@ class PerformanceReporter:
             self.logger.error(f"❌ Performance Reporter initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="reporter configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_reporter_configuration(self) -> None:
         """Load performance reporter configuration."""
         try:
@@ -459,11 +436,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error loading reporter configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate performance reporter configuration.
@@ -499,11 +472,7 @@ class PerformanceReporter:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="advanced reporting setup",
-    )
+    @handles_errors(fallback=None)
     async def _setup_advanced_reporting(self) -> None:
         """Setup advanced reporting engine."""
         try:
@@ -515,11 +484,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error setting up advanced reporting: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="real-time reporting setup",
-    )
+    @handles_errors(fallback=None)
     async def _setup_real_time_reporting(self) -> None:
         """Setup real-time reporting."""
         try:
@@ -532,11 +497,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error setting up real-time reporting: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="export directory setup",
-    )
+    @handles_errors(fallback=None)
     async def _setup_export_directory(self) -> None:
         """Setup export directory."""
         try:
@@ -549,7 +510,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error setting up export directory: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Performance reporter run failed"),
         },
@@ -574,11 +535,7 @@ class PerformanceReporter:
             self.logger.error(f"Error in performance reporter run: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="performance report generation",
-    )
+    @handles_errors(fallback=None)
     async def _generate_performance_report(self) -> None:
         """Generate a comprehensive performance report."""
         try:
@@ -603,11 +560,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error generating performance report: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="real-time report generation",
-    )
+    @handles_errors(fallback=None)
     async def _generate_real_time_report(self) -> None:
         """Generate a real-time performance report."""
         try:
@@ -627,11 +580,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error generating real-time report: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="performance data collection",
-    )
+    @handles_errors(fallback=None)
     async def _collect_performance_data(self) -> dict[str, Any]:
         """
         Collect performance data for reporting.
@@ -658,11 +607,7 @@ class PerformanceReporter:
             self.logger.error(f"Error collecting performance data: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="advanced report creation",
-    )
+    @handles_errors(fallback=None)
     async def _create_advanced_report(
         self,
         performance_data: dict[str, Any],
@@ -694,11 +639,7 @@ class PerformanceReporter:
             self.logger.error(f"Error creating advanced report: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="report export",
-    )
+    @handles_errors(fallback=None)
     async def _export_report(self, report: dict[str, Any]) -> None:
         """Export the generated report to various formats."""
         try:
@@ -713,11 +654,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error exporting report: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="JSON report export",
-    )
+    @handles_errors(fallback=None)
     async def _export_json_report(self, report: dict[str, Any], timestamp: str) -> None:
         """Export report to JSON format."""
         try:
@@ -732,11 +669,7 @@ class PerformanceReporter:
         except Exception as e:
             self.logger.error(f"Error exporting JSON report: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="CSV report export",
-    )
+    @handles_errors(fallback=None)
     async def _export_csv_report(self, report: dict[str, Any], timestamp: str) -> None:
         """Export report to CSV format."""
         try:
@@ -776,11 +709,7 @@ class PerformanceReporter:
             self.logger.error(f"Error converting report to CSV: {e}")
             return "Metric,Value\nError,Conversion failed"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="performance reporter stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the performance reporter."""
         self.logger.info("🛑 Stopping Performance Reporter...")
@@ -1015,15 +944,9 @@ class PerformanceReporter:
             self.logger.error(f"Error calculating tail risk: {e}")
             return 0.0
 
-
 performance_reporter: PerformanceReporter | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="performance reporter setup",
-)
+@handles_errors(fallback=None)
 async def setup_performance_reporter(
     config: dict[str, Any] | None = None,
 ) -> PerformanceReporter | None:

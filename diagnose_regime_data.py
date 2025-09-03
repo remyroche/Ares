@@ -18,7 +18,7 @@ import pandas as pd
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
-def load_test_data(exchange, "BINANCE", symbol="ETHUSDT", days=180):
+def load_test_data(BINANCE, symbol="ETHUSDT", days=180):
     """Load test data for diagnosis."""
     print(f"🔍 Loading test data for {exchange}_{symbol} ({days} days)...")
 
@@ -87,6 +87,8 @@ def load_test_data(exchange, "BINANCE", symbol="ETHUSDT", days=180):
                     print(f"✅ Loaded data from: {source}")
                     break
                 if source.endswith(".pkl"):
+                    pass
+                    pass
     pass  # TODO: Add proper implementation
                     with open(source, "rb") as f:
                         payload=pickle.load(f)

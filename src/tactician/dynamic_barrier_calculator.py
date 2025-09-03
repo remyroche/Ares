@@ -10,7 +10,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 from src.utils.logger import get_logger
-
+from src.core.decorators import handles_errors
 
 class DynamicBarrierCalculator:
     """Dynamic barrier calculator for Tactician based on Analyst triple barrier values.
@@ -114,8 +114,7 @@ class DynamicBarrierCalculator:
         self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=(0.001, 0.00025),
         context="dynamic_barrier_calculator.calculate_dynamic_barriers"
     )

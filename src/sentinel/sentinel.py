@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.trading_decorators import performance_monitor
 import copy
 from src.utils.warning_symbols import (
@@ -16,7 +16,6 @@ from src.utils.warning_symbols import (
     missing,
     warning,
 )
-
 
 class Sentinel:
     """Enhanced sentinel with monitoring and alerting helpers."""
@@ -42,7 +41,7 @@ class Sentinel:
         )
         self.max_alerts: int = int(self.sentinel_config.get("max_alerts", 100))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid sentinel configuration"),
             AttributeError: (False, "Missing required sentinel parameters"),
@@ -65,8 +64,7 @@ class Sentinel:
         self.logger.info("✅ Sentinel initialization completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="sentinel configuration loading",
     )
     async def _load_sentinel_configuration(self) -> None:
@@ -84,8 +82,7 @@ class Sentinel:
 
         self.logger.info("Sentinel configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=False, context="configuration validation",
     )
 
@@ -106,8 +103,7 @@ class Sentinel:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="monitoring rules initialization",
     )
     async def _initialize_monitoring_rules(self) -> None:
@@ -140,7 +136,7 @@ class Sentinel:
             f"Initialized {len(self.monitoring_rules)} monitoring rule sets",
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid monitoring parameters"),
             AttributeError: (False, "Missing monitoring components"),
@@ -160,11 +156,7 @@ class Sentinel:
         self.logger.info("✅ Sentinel monitoring started successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="monitoring loop",
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop."""
@@ -172,11 +164,7 @@ class Sentinel:
             await self._perform_monitoring_checks()
             await asyncio.sleep(self.monitoring_interval)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="monitoring checks",
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def _perform_monitoring_checks(self) -> None:
         """Perform all monitoring checks configured."""
@@ -189,11 +177,7 @@ class Sentinel:
         if "system" in self.monitoring_rules:
             await self._check_system_metrics()
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance monitoring",
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def _check_performance_metrics(self) -> None:
         """Check performance metrics (simulated)."""
@@ -220,11 +204,7 @@ class Sentinel:
                 float(response_time) / float(rules["response_time_threshold"]),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="error monitoring",
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def _check_error_metrics(self) -> None:
         """Check error metrics (simulated)."""
@@ -251,11 +231,7 @@ class Sentinel:
                 float(critical_errors),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="system monitoring",
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def _check_system_metrics(self) -> None:
         """Check system metrics (simulated)."""
@@ -278,7 +254,7 @@ class Sentinel:
         if data_quality < rules["data_quality_threshold"]:
             await self._create_alert("SYSTEM", "Low data quality", 1.0 - data_quality)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid alert parameters"),
             AttributeError: (None, "Missing alert components"),
@@ -322,11 +298,7 @@ class Sentinel:
 
         await self._execute_alert_callbacks(alert)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="alert callbacks execution",
-    )
+    @handles_errors(fallback=None)
     async def _execute_alert_callbacks(self, alert: dict[str, Any]) -> None:
         """
         Execute alert callbacks.
@@ -351,11 +323,7 @@ class Sentinel:
             except Exception as e:
                 self.logger.warning(failed(f"Alert callback {i} failed: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="alert callback registration",
-    )
+    @handles_errors(fallback=None)
     def register_alert_callback(self, callback: Callable) -> None:
         """
         Register an alert callback.
@@ -369,11 +337,7 @@ class Sentinel:
         else:
             self.logger.warning(warning("Alert callback already registered"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="alert callback removal",
-    )
+    @handles_errors(fallback=None)
     def unregister_alert_callback(self, callback: Callable) -> None:
         """
         Unregister an alert callback.
@@ -387,11 +351,7 @@ class Sentinel:
         else:
             self.logger.warning(missing("Alert callback not found"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=[],
-        context="alerts getting",
-    )
+    @handles_errors(fallback=[])
     def get_alerts(
         self,
         alert_type: str | None = None,
@@ -421,11 +381,7 @@ class Sentinel:
 
         return filtered_alerts
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="alerts clearing",
-    )
+    @handles_errors(fallback=None)
     def clear_alerts(self) -> None:
         """Clear all alerts."""
         alert_count = len(self.alerts)
@@ -449,11 +405,7 @@ class Sentinel:
             "alert_callbacks_count": len(self.alert_callbacks),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="sentinel cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the sentinel."""
         self.logger.info("🛑 Stopping Sentinel...")
@@ -469,11 +421,7 @@ class Sentinel:
 # Global sentinel instance
 sentinel: Sentinel | None = None
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="sentinel setup",
-)
+@handles_errors(fallback=None)
 async def setup_sentinel(config: dict[str, Any] | None = None) -> Sentinel | None:
     """
     Setup global sentinel.

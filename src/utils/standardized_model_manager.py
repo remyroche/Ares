@@ -19,10 +19,9 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class ModelMetadata:
     """Model metadata container."""
@@ -62,7 +61,6 @@ class ModelMetadata:
     def from_dict(cls, data: Dict[str, Any]) -> "ModelMetadata":
         """Create metadata from dictionary."""
         return cls(**data)
-
 
 class StandardizedModelManager:
     """Centralized model management system."""
@@ -105,7 +103,7 @@ class StandardizedModelManager:
         except Exception as e:
             self.logger.error(f"Could not save model registry: {e}")
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="model saving")
+    @handles_errors(fallback=False)
     def save_model(
         self, model: Any, metadata: Union[ModelMetadata, Dict[str, Any]], step_name: str, model_id: Optional[str] = None
     ) -> bool:
@@ -176,7 +174,7 @@ class StandardizedModelManager:
             self.logger.error(f"Error saving model: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="model loading")
+    @handles_errors(fallback=None)
     def load_model(self, model_id: str, step_name: Optional[str] = None) -> Optional[Tuple[Any, ModelMetadata]]:
         """Load a model and its metadata.
 
@@ -233,7 +231,7 @@ class StandardizedModelManager:
             self.logger.error(f"Error loading model: {e}")
             return None
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="model validation")
+    @handles_errors(fallback=False)
     def validate_model(
         self, model: Any, test_data: Union[pd.DataFrame, np.ndarray], expected_output_shape: Optional[Tuple] = None
     ) -> bool:
@@ -365,7 +363,6 @@ class StandardizedModelManager:
             stats["total_size"] += file_size
 
         return stats
-
 
 # Global instance
 standardized_model_manager = StandardizedModelManager()

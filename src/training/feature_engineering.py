@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import pandas as pd
 import numpy as np
-import os.path
+import os
 
 from src.utils.centralized_decorators import (
 

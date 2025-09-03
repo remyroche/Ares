@@ -16,9 +16,8 @@ from typing import Any
 from dataclasses_json import dataclass_json
 
 from src.supervisor.performance_monitor import PerformanceMonitor
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class ModelDriftType(Enum):
     """Model drift types."""
@@ -27,7 +26,6 @@ class ModelDriftType(Enum):
     DATA_DRIFT = "data_drift"
     LABEL_DRIFT = "label_drift"
     FEATURE_DRIFT = "feature_drift"
-
 
 @dataclass_json
 @dataclass
@@ -44,7 +42,6 @@ class ModelDriftAlert:
     severity: str  # "low", "medium", "high", "critical"
     description: str
 
-
 @dataclass_json
 @dataclass
 class FeatureDriftMetrics:
@@ -57,7 +54,6 @@ class FeatureDriftMetrics:
     ks_statistic: float
     p_value: float
     is_drifted: bool
-
 
 @dataclass_json
 @dataclass
@@ -77,7 +73,6 @@ class ModelPerformanceSnapshot:
     concept_drift_score: float
     data_drift_score: float
 
-
 @dataclass_json
 @dataclass
 class EnsemblePerformanceMetrics:
@@ -91,7 +86,6 @@ class EnsemblePerformanceMetrics:
     diversity_score: float
     agreement_score: float
     meta_learner_performance: float | None = None
-
 
 class EnhancedModelMonitor:
     """
@@ -160,7 +154,7 @@ class EnhancedModelMonitor:
 
         self.logger.info("🚀 Enhanced Model Monitor initialized")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model monitor configuration"),
             AttributeError: (False, "Missing required monitor parameters"),
@@ -190,11 +184,7 @@ class EnhancedModelMonitor:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="reference data loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_reference_data(self) -> None:
         """Load reference data for drift detection."""
         try:
@@ -211,11 +201,7 @@ class EnhancedModelMonitor:
         except Exception as e:
             self.logger.error(f"Error loading reference data: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="drift detection initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_drift_detection(self) -> None:
         """Initialize drift detection components."""
         try:
@@ -224,11 +210,7 @@ class EnhancedModelMonitor:
         except Exception as e:
             self.logger.error(f"Error initializing drift detection: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature tracking initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_feature_tracking(self) -> None:
         """Initialize feature importance tracking."""
         try:
@@ -237,11 +219,7 @@ class EnhancedModelMonitor:
         except Exception as e:
             self.logger.error(f"Error initializing feature tracking: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_ensemble_monitoring(self) -> None:
         """Initialize ensemble performance monitoring."""
         try:

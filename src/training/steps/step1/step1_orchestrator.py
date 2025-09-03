@@ -27,13 +27,13 @@ from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 import os.path
+from src.core.decorators import handles_errors
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("Step1Orchestrator")
-
 
 class Step1Orchestrator:
     """Orchestrates step01 data collection processes with proper decorators and security."""
@@ -49,17 +49,7 @@ class Step1Orchestrator:
         self.data_downloader = MissingDataDownloaderAndGapFiller(data_cache_path)
         self.comprehensive_gap_filler = ComprehensiveGapFiller(data_cache_path)
 
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            pd.errors.EmptyDataError,
-            FileNotFoundError,
-            PermissionError,
-            MemoryError,
-        ),
+    @handles_errors
         default_return={
             "success": False,
             "errors": ["Step1 orchestration failed"],
@@ -321,15 +311,7 @@ class Step1Orchestrator:
             return results
 
     @with_tracing_span("validate_step1_5_readiness")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            FileNotFoundError,
-            PermissionError,
-        ),
+    @handles_errors
         default_return={
             "ready": False,
             "issues": ["Step1_5 readiness validation failed"],
@@ -407,11 +389,7 @@ class Step1Orchestrator:
         return readiness_result
 
     @with_tracing_span("generate_comprehensive_report")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError, AttributeError),
-        default_return="❌ ERROR: Failed to generate comprehensive report",
-        context="step1_orchestrator.generate_comprehensive_report"
-    )
+    @handles_errors(fallback="❌ ERROR: Failed to generate comprehensive report")
     def generate_comprehensive_report(
         self, symbol: str, exchange: str, results: dict
     ) -> str:
@@ -541,8 +519,7 @@ class Step1Orchestrator:
         return report
 
     @with_tracing_span("quick_health_check")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
+    @handles_errors
         default_return={"healthy": False, "issues": ["Health check failed"], "recommendations": ["Check system status"]},
         context="step1_orchestrator.quick_health_check"
     )

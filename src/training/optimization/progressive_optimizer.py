@@ -10,7 +10,7 @@ from typing import Any
 import optuna
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import copy
 import datetime as datetime
@@ -22,14 +22,12 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-
 class OptimizationTier(Enum):
     """Enum for optimization tiers."""
 
     TIER_1_CRITICAL = "tier_1_critical"
     TIER_2_IMPORTANT = "tier_2_important"
     TIER_3_ADVANCED = "tier_3_advanced"
-
 
 @dataclass
 class ProgressiveConfig:
@@ -49,7 +47,6 @@ class ProgressiveConfig:
     use_previous_results: bool = True
     adaptive_timeout: bool = True
     convergence_threshold: float = 0.01
-
 
 class ProgressiveOptimizer:
     """Implements progressive optimization strategy for efficiency."""
@@ -90,11 +87,7 @@ class ProgressiveOptimizer:
         self.optimization_history = []
         self.tier_results = {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="tier 1 optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_tier1_parameters(
         self,
         initial_params: dict[str, Any] | None = None,
@@ -168,11 +161,7 @@ class ProgressiveOptimizer:
             self.print(error("Error in Tier 1 optimization: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="tier 2 optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_tier2_parameters(
         self,
         tier1_results: dict[str, Any] | None = None,
@@ -249,11 +238,7 @@ class ProgressiveOptimizer:
             self.print(error("Error in Tier 2 optimization: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="tier 3 optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_tier3_parameters(
         self,
         tier2_results: dict[str, Any] | None = None,
@@ -319,11 +304,7 @@ class ProgressiveOptimizer:
             self.print(error("Error in Tier 3 optimization: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="progressive optimization execution",
-    )
+    @handles_errors(fallback=None)
     async def run_progressive_optimization(
         self,
         initial_params: dict[str, Any] | None = None,

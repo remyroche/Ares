@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -66,11 +66,7 @@ class MLTargetUpdater:
         self.update_task: Optional[asyncio.Task] = None
         self.is_running = False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="ML target updater initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """
         Initialize the ML Target Updater.
@@ -124,11 +120,7 @@ class MLTargetUpdater:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="target update start"
-    )
+    @handles_errors(fallback=None)
     async def start_updating(self) -> bool:
         """
         Start continuous target updating.
@@ -151,11 +143,7 @@ class MLTargetUpdater:
             self.logger.error(failed(f"❌ Failed to start ML target updating: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="target update stop"
-    )
+    @handles_errors(fallback=None)
     async def stop_updating(self) -> bool:
         """
         Stop continuous target updating.

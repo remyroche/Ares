@@ -14,12 +14,11 @@ from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )
 from src.training.factory import OptimizedTrainingFactory
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
 )
-
 
 class OptimizedAresLauncherMixin:
     """Mixin class that provides optimized training methods for AresLauncher.
@@ -61,11 +60,7 @@ class OptimizedAresLauncherMixin:
             self.print(failed(error_msg))
             self.optimization_enabled = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="optimized_training_pipeline",
-    )
+    @handles_errors(fallback=False)
     def _run_optimized_unified_training(
         self,
         symbol: str,
@@ -82,11 +77,7 @@ class OptimizedAresLauncherMixin:
         mode_display = f"{training_mode} training (OPTIMIZED)"
         self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
 
-        @handle_errors(
-            exceptions=(Exception,),
-            default_return=False,
-            context="optimized_enhanced_training_pipeline",
-        )
+        @handles_errors(fallback=False)
         async def run_optimized_enhanced_training() -> bool:
             """Execute optimized enhanced training using EnhancedTrainingManagerOptimized."""
             from src.database.sqlite_manager import SQLiteManager
@@ -336,7 +327,6 @@ class OptimizedAresLauncherMixin:
             "optimization_factory_ready": self.optimization_factory is not None,
         }
 
-
 def create_optimized_launcher_patch() -> Callable[[Any], Any]:
     """Create a patch that can be applied to the existing AresLauncher."""
 
@@ -380,7 +370,6 @@ def create_optimized_launcher_patch() -> Callable[[Any], Any]:
         return launcher_instance
 
     return patch_launcher
-
 
 # Quick integration function for immediate use
 def enable_optimizations_in_launcher() -> Optional[Callable[[Any], Any]]:

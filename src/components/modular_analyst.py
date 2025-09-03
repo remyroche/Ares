@@ -3,7 +3,7 @@
 from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
 import copy
 import asyncio
@@ -44,7 +44,7 @@ class ModularAnalyst:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid modular analyst configuration"),
             AttributeError: (False, "Missing required analyst parameters"),
@@ -81,11 +81,7 @@ class ModularAnalyst:
             self.logger.error(failed(f"❌ Modular Analyst initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analyst configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_analyst_configuration(self) -> None:
         """Load analyst configuration."""
         try:
@@ -112,11 +108,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(error(f"Error loading analyst configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate analyst configuration.
@@ -149,11 +141,7 @@ class ModularAnalyst:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analysis modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_analysis_modules(self) -> None:
         """Initialize analysis modules."""
         try:
@@ -178,11 +166,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing analysis modules: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="technical analysis initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_technical_analysis(self) -> None:
         """Initialize technical analysis module."""
         try:
@@ -201,11 +185,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing technical analysis: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="fundamental analysis initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_fundamental_analysis(self) -> None:
         """Initialize fundamental analysis module."""
         try:
@@ -224,11 +204,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing fundamental analysis: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="sentiment analysis initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_sentiment_analysis(self) -> None:
         """Initialize sentiment analysis module."""
         try:
@@ -245,11 +221,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing sentiment analysis: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk analysis initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_risk_analysis(self) -> None:
         """Initialize risk analysis module."""
         try:
@@ -268,7 +240,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing risk analysis: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid analysis parameters"),
             AttributeError: (False, "Missing analysis components"),
@@ -329,11 +301,7 @@ class ModularAnalyst:
             self.is_analyzing = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="market data validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_market_data(
         self,
         market_data: dict[str, Any],
@@ -370,11 +338,7 @@ class ModularAnalyst:
             self.logger.error(error(f"Error validating market data: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="technical analysis",
-    )
+    @handles_errors(fallback=None)
     async def _perform_technical_analysis(
         self,
         market_data: dict[str, Any],
@@ -422,11 +386,7 @@ class ModularAnalyst:
             self.logger.error(error(f"Error performing technical analysis: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="fundamental analysis",
-    )
+    @handles_errors(fallback=None)
     async def _perform_fundamental_analysis(
         self,
         market_data: dict[str, Any],
@@ -474,11 +434,7 @@ class ModularAnalyst:
             self.logger.error(error(f"Error performing fundamental analysis: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="sentiment analysis",
-    )
+    @handles_errors(fallback=None)
     async def _perform_sentiment_analysis(
         self,
         market_data: dict[str, Any],
@@ -518,11 +474,7 @@ class ModularAnalyst:
             self.logger.error(error(f"Error performing sentiment analysis: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk analysis",
-    )
+    @handles_errors(fallback=None)
     async def _perform_risk_analysis(
         self,
         market_data: dict[str, Any],
@@ -762,11 +714,7 @@ class ModularAnalyst:
             self.logger.error(error(f"Error calculating volatility: {e}"))
             return 0.0
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analysis results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_analysis_results(self) -> None:
         """Store analysis results."""
         try:
@@ -785,11 +733,7 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.error(error(f"Error storing analysis results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analysis results getting",
-    )
+    @handles_errors(fallback=None)
     def get_analysis_results(
         self,
         analysis_type: str | None = None,
@@ -812,11 +756,7 @@ class ModularAnalyst:
             self.logger.error(error(f"Error getting analysis results: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analysis history getting",
-    )
+    @handles_errors(fallback=None)
     def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get analysis history.
@@ -863,11 +803,7 @@ class ModularAnalyst:
             "analysis_history_count": len(self.analysis_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="modular analyst cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the modular analyst."""
         self.logger.info("🛑 Stopping Modular Analyst...")
@@ -890,11 +826,7 @@ class ModularAnalyst:
 # Global modular analyst instance
 modular_analyst: ModularAnalyst | None = None
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="modular analyst setup",
-)
+@handles_errors(fallback=None)
 async def setup_modular_analyst(
     config: dict[str, Any] | None = None,
 ) -> ModularAnalyst | None:

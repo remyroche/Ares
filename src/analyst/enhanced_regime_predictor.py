@@ -21,7 +21,7 @@ from sklearn.metrics import silhouette_score
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import handle_errors, with_tracing_span
 import logging
-
+from src.core.decorators import handles_errors
 
 class EnhancedRegimePredictor:
     """Enhanced regime predictor with advanced change detection capabilities."""
@@ -44,8 +44,7 @@ class EnhancedRegimePredictor:
         self.boundary_scaler = None
         
     @with_tracing_span("enhanced_regime_predictor.predict_regime_changes")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "predictions": [], "error": "Prediction failed"},
         context="enhanced_regime_prediction"
     )
@@ -121,8 +120,7 @@ class EnhancedRegimePredictor:
             self.logger.exception(f"❌ Enhanced regime prediction failed: {e}")
             return {"success": False, "predictions": [], "error": str(e)}
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_regime_stability"
     )
@@ -134,8 +132,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating regime stability: {e}")
             return np.zeros(len(hmm_probs))
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_regime_entropy"
     )
@@ -149,8 +146,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating regime entropy: {e}")
             return np.zeros(len(hmm_probs))
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=bool),
         context="detect_regime_changes_multi_signal"
     )
@@ -203,8 +199,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error in multi-signal regime change detection: {e}")
             return np.zeros(len(hmm_states), dtype=bool)
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_transition_probabilities"
     )
@@ -232,8 +227,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating transition probabilities: {e}")
             return np.zeros(len(regime_changes), dtype=float)
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_prediction_confidence"
     )
@@ -272,8 +266,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating prediction confidence: {e}")
             return np.zeros(len(stability), dtype=float)
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.ones(0, dtype=float),
         context="apply_persistence_model"
     )
@@ -313,11 +306,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error applying persistence model: {e}")
             return np.ones(len(regime_changes), dtype=float)
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=[],
-        context="create_prediction_events"
-    )
+    @handles_errors(fallback=[])
     def _create_prediction_events(
         self, 
         regime_changes: np.ndarray, 
@@ -352,8 +341,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error creating prediction events: {e}")
             return []
     
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=int),
         context="calculate_regime_durations"
     )
@@ -385,11 +373,7 @@ class EnhancedRegimePredictor:
             return np.zeros(len(states), dtype=int)
     
     @with_tracing_span("enhanced_regime_predictor.fit_persistence_model")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="fit_persistence_model"
-    )
+    @handles_errors(fallback=False)
     def fit_persistence_model(self, regime_sequence: np.ndarray) -> bool:
         """Fit regime persistence model using statistical distributions."""
         try:
@@ -476,11 +460,7 @@ class EnhancedRegimePredictor:
             self.logger.exception(f"❌ Error fitting persistence model: {e}")
             return False
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=float('inf'),
-        context="calculate_aic"
-    )
+    @handles_errors(fallback=float('inf'))
     def _calculate_aic(self, data: np.ndarray, pdf_func, *params) -> float:
         """Calculate Akaike Information Criterion for distribution fitting."""
         try:
@@ -493,11 +473,7 @@ class EnhancedRegimePredictor:
             return float('inf')
     
     @with_tracing_span("enhanced_regime_predictor.fit_adaptive_boundaries")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="fit_adaptive_boundaries"
-    )
+    @handles_errors(fallback=False)
     def fit_adaptive_boundaries(self, features: pd.DataFrame) -> bool:
         """Fit adaptive regime boundaries using clustering."""
         try:
@@ -539,11 +515,7 @@ class EnhancedRegimePredictor:
             self.logger.exception(f"❌ Error fitting adaptive boundaries: {e}")
             return False
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="extract_regime_characteristics"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _extract_regime_characteristics(self, features: pd.DataFrame) -> pd.DataFrame:
         """Extract regime characteristics for boundary calculation."""
         try:

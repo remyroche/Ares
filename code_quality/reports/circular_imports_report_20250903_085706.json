@@ -1,0 +1,169 @@
+{
+  "total_modules": 26,
+  "total_imports": 17,
+  "circular_imports": {
+    "count": 0,
+    "cycles": []
+  },
+  "import_depths": {
+    "max_depth": 2,
+    "average_depth": 0.2647058823529412,
+    "deep_modules": []
+  },
+  "highly_imported": [
+    {
+      "module": "src.utils.logger",
+      "imported_by_count": 5,
+      "imported_by": [
+        "dynamic_regime_mapper",
+        "multi_timeframe_feature_engineering",
+        "decision_aggregator",
+        "enhanced_regime_predictor",
+        "predictive_ensembles.ensemble_orchestrator"
+      ]
+    },
+    {
+      "module": "src.utils.error_handler",
+      "imported_by_count": 3,
+      "imported_by": [
+        "predictive_ensembles.regime_ensembles.base_ensemble",
+        "dynamic_regime_mapper",
+        "multi_timeframe_feature_engineering"
+      ]
+    },
+    {
+      "module": "src.config",
+      "imported_by_count": 2,
+      "imported_by": [
+        "predictive_ensembles.ensemble_orchestrator",
+        "multi_timeframe_feature_engineering"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.ensemble_orchestrator",
+      "imported_by_count": 1,
+      "imported_by": [
+        "predictive_ensembles"
+      ]
+    },
+    {
+      "module": "src.analyst.feature_engineering_orchestrator",
+      "imported_by_count": 1,
+      "imported_by": [
+        "multi_timeframe_feature_engineering"
+      ]
+    },
+    {
+      "module": "src.utils.warning_symbols",
+      "imported_by_count": 1,
+      "imported_by": [
+        "multi_timeframe_feature_engineering"
+      ]
+    },
+    {
+      "module": "src.utils.centralized_decorators",
+      "imported_by_count": 1,
+      "imported_by": [
+        "enhanced_regime_predictor"
+      ]
+    },
+    {
+      "module": "src.analyst.regime_runtime",
+      "imported_by_count": 1,
+      "imported_by": [
+        "decision_aggregator"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.regime_ensembles.volatile_regime_ensemble",
+      "imported_by_count": 1,
+      "imported_by": [
+        "predictive_ensembles.regime_ensembles"
+      ]
+    },
+    {
+      "module": "src.utils.purged_kfold",
+      "imported_by_count": 1,
+      "imported_by": [
+        "predictive_ensembles.regime_ensembles.base_ensemble"
+      ]
+    }
+  ],
+  "highly_importing": [
+    {
+      "module": "multi_timeframe_feature_engineering",
+      "imports_count": 5,
+      "imports": [
+        "src.analyst.feature_engineering_orchestrator",
+        "src.utils.error_handler",
+        "src.config",
+        "src.utils.warning_symbols",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "dynamic_regime_mapper",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.error_handler",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "enhanced_regime_predictor",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.centralized_decorators",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "decision_aggregator",
+      "imports_count": 2,
+      "imports": [
+        "src.analyst.regime_runtime",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.ensemble_orchestrator",
+      "imports_count": 2,
+      "imports": [
+        "src.config",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.regime_ensembles.base_ensemble",
+      "imports_count": 2,
+      "imports": [
+        "src.utils.error_handler",
+        "src.utils.purged_kfold"
+      ]
+    },
+    {
+      "module": "predictive_ensembles",
+      "imports_count": 1,
+      "imports": [
+        "predictive_ensembles.ensemble_orchestrator"
+      ]
+    },
+    {
+      "module": "predictive_ensembles.regime_ensembles",
+      "imports_count": 1,
+      "imports": [
+        "predictive_ensembles.regime_ensembles.volatile_regime_ensemble"
+      ]
+    },
+    {
+      "module": "order_book_analyzer",
+      "imports_count": 0,
+      "imports": []
+    },
+    {
+      "module": "advanced_feature_engineering",
+      "imports_count": 0,
+      "imports": []
+    }
+  ]
+}

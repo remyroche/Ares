@@ -17,7 +17,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import get_logger
 import copy
-
+from src.core.decorators import handles_errors
 
 class FractionalDifferentiation:
     """Fractional differentiation for enhanced feature engineering.
@@ -210,7 +210,6 @@ class FractionalDifferentiation:
         self.logger.info(f"Applied fractional differentiation to {len(optimization_results)} columns")
         return result_data, optimization_results
 
-
 class FractionalFeatureGenerator:
     """High-level interface for generating fractional differentiation features."""
     
@@ -240,11 +239,7 @@ class FractionalFeatureGenerator:
         
         self.logger = get_logger("FractionalFeatureGenerator")
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="fractional_feature_generator.generate_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     @with_tracing_span("FractionalFeatureGenerator.generate_features", log_args=False)
     def generate_features(
         self, 

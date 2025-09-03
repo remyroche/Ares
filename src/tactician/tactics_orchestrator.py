@@ -45,7 +45,7 @@ from src.tactician.position_monitor import (
     PositionMonitor,
 )
 from src.tactician.position_sizer import PositionSizer
-from src.tactician.sr_breakout_predictor_refactored import SRBreakoutPredictor
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,

@@ -4,8 +4,7 @@
 This module provides intelligent multi-output prediction capabilities for both
 price direction and expected profit using the triple barrier method and
 profit-based feature engineering.
-""""
-
+"""
 import json
 import os
 import pickle
@@ -40,6 +39,7 @@ except ImportError:
 
 # Import existing model architectures from step06
 try:
+from sklearn.metrics import (
     from .steps.step9_hmm_based_training import (
         CNNModel, CNNTrainer,
         TCNModel, TCNTrainer,
@@ -49,7 +49,6 @@ try:
 except ImportError:
     EXISTING_MODELS_AVAILABLE = False
     CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
-from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score
 )
@@ -253,7 +252,7 @@ class MultiOutputModelTrainer:
         context="step7_features_loading"
     )
     async def load_step7_features(self, step7_output_path: str) -> bool:
-        """"
+        """
         Load comprehensive SR features from step07 enhanced matrix operations.
         
         Args:
@@ -261,7 +260,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             bool: True if features loaded successfully
-        """"
+        """
         try:
             self.logger.info(f"📊 Loading step07 SR features from: {step7_output_path}")
             
@@ -314,7 +313,7 @@ class MultiOutputModelTrainer:
         context="step2_5_sr_levels_loading"
     )
     async def load_step2_5_sr_levels(self, step2_5_output_path: str) -> bool:
-        """"
+        """
         Load SR levels from step2_5 SR optimization.
         
         Args:
@@ -322,7 +321,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             bool: True if SR levels loaded successfully
-        """"
+        """
         try:
             self.logger.info(f"📊 Loading step2_5 SR levels from: {step2_5_output_path}")
             
@@ -352,7 +351,7 @@ class MultiOutputModelTrainer:
             return False
 
     def convert_sr_levels_to_features(self, current_price: float) -> dict[str, float]:
-        """"
+        """
         Convert SR levels from step2_5 to ML features.
         
         Args:
@@ -360,7 +359,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             dict: SR level features
-        """"
+        """
         try:
             features = {}
             
@@ -434,7 +433,7 @@ class MultiOutputModelTrainer:
         }
 
     def validate_feature_completeness(self, features_df: pd.DataFrame) -> dict[str, list[str]]:
-        """"
+        """
         Validate that all required SR features are present.
         
         Args:
@@ -442,7 +441,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             dict: Missing features by category
-        """"
+        """
         try:
             required_features = {
                 # Step7 SR features (42 features)
@@ -490,7 +489,7 @@ class MultiOutputModelTrainer:
             return {}
 
     async def _add_comprehensive_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """"
+        """
         Add comprehensive SR features from step07 and step2_5 to the dataset.
         
         Args:
@@ -498,7 +497,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             pd.DataFrame: DataFrame with comprehensive SR features added
-        """"
+        """
         try:
             self.logger.info("🔧 Adding comprehensive SR features...")
             
@@ -558,7 +557,7 @@ class MultiOutputModelTrainer:
             return data
 
     def _create_combined_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """"
+        """
         Create combined SR features from individual SR features.
         
         Args:
@@ -566,7 +565,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             pd.DataFrame: DataFrame with combined SR features added
-        """"
+        """
         try:
             # Combined proximity features
             if 'sr_proximity' in data.columns and 'sr_zone_width' in data.columns:
@@ -605,7 +604,7 @@ class MultiOutputModelTrainer:
             return data
 
     def _analyze_sr_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
-        """"
+        """
         Analyze SR features in the dataset.
         
         Args:
@@ -613,7 +612,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             dict: SR feature analysis statistics
-        """"
+        """
         try:
             # Get SR feature columns
             sr_columns = [col for col in features_df.columns if 'sr_' in col.lower()]
@@ -681,7 +680,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             Tuple of (features, direction_target, profit_target)
-        """"
+        """
         self.logger.info("📊 Preparing multi-output training data with comprehensive SR features...")
         
         # Validate input data
@@ -768,7 +767,7 @@ class MultiOutputModelTrainer:
         
         Returns:
             Dictionary containing feature importance summaries by method
-        """"
+        """
         if not hasattr(self, 'feature_importance') or not self.feature_importance:
             return {}
         
@@ -982,7 +981,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             Dictionary containing training results and model artifacts
-        """"
+        """
         start_time = time.time()
         self.logger.info(f"🚀 Training multi-output model with comprehensive SR features: {model_name}")
         
@@ -1456,7 +1455,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             Tuple of (direction_predictions, profit_predictions, price_predictions)
-        """"
+        """
         if model_name not in self.models:
             raise ValueError(f"Model '{model_name}' not found")
         
@@ -1500,7 +1499,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             Dictionary containing predictions and confidence scores
-        """"
+        """
         from src.utils.confidence import calculate_multi_output_confidence_batch, get_confidence_threshold_signals
         
         # Make basic predictions
@@ -1630,7 +1629,7 @@ class MultiOutputModelTrainer:
         y: np.ndarray, 
         market_data: pd.DataFrame
     ) -> Dict[str, np.ndarray]:
-        """"
+        """
         Generate probability targets for multi-output training.
         
         Args:
@@ -1640,7 +1639,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             Dictionary containing all 4 probability targets
-        """"
+        """
         if not self.config.enable_probability_outputs:
             self.logger.warning("Probability outputs not enabled in config")
             return {}
@@ -1658,7 +1657,7 @@ class MultiOutputModelTrainer:
         market_data: pd.DataFrame,
         feature_names: List[str]
     ) -> Dict[str, Any]:
-        """"
+        """
         Train multi-output model with probability targets.
         
         Args:
@@ -1671,7 +1670,7 @@ class MultiOutputModelTrainer:
             
         Returns:
             Dictionary containing trained models and metadata
-        """"
+        """
         if not self.config.enable_probability_outputs:
             self.logger.warning("Probability outputs not enabled, using standard training")
             return self._train_standard_multi_output(X_train, X_val, y_train, y_val, feature_names)
@@ -1762,7 +1761,7 @@ class MultiOutputModelTrainer:
 import copy
 
 class_weights = compute_class_weight(
-                'balanced', 
+'balanced',
                 classes=np.unique(y_train), 
                 y=y_train
             )
@@ -2066,7 +2065,7 @@ def create_multi_output_trainer(
         
     Returns:
         Configured MultiOutputModelTrainer instance
-    """"
+    """
     config = MultiOutputModelConfig(
         model_type=model_type,
         use_profit_features=use_profit_features,

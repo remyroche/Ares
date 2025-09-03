@@ -3,8 +3,7 @@
 """Feature Integration Module for ML Training Pipeline."
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
-""""
-
+"""
 from typing import Any
 
 import numpy as np
@@ -14,8 +13,8 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     initialization_error,
@@ -25,8 +24,7 @@ import asyncio
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
     into the ML training pipeline.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("FeatureIntegrationManager")
@@ -65,13 +63,13 @@ class FeatureIntegrationManager:
 
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
+import copy
                 from src.analyst.advanced_feature_engineering import (
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
 
 AdvancedFeatureEngineering,
-                )
+)
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(
                     self.config,
@@ -109,7 +107,7 @@ AdvancedFeatureEngineering,
         Returns:
             DataFrame with integrated features
 
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.print(

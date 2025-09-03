@@ -18,8 +18,7 @@ class UnifiedDataManager:
 
     This class creates and manages a single, efficient database with all labels
     and features needed by subsequent training steps, with proper time-based splitting.
-    """"
-
+    """
     def __init__(
         self,
         data_dir: str,
@@ -84,7 +83,7 @@ class UnifiedDataManager:
         Returns:
             Dict containing database creation results
 
-        """"
+        """
         try:
             self.logger.info("🔄 Creating unified database with time-based splits...")
 
@@ -153,7 +152,7 @@ class UnifiedDataManager:
         Returns:
             Filtered DataFrame
 
-        """"
+        """
         if self.lookback_days and self.lookback_days > 0:
             self.logger.info(f"📅 Applying lookback filter: {self.lookback_days} days")
 
@@ -191,7 +190,7 @@ class UnifiedDataManager:
         Returns:
             Tuple of (train_data, validation_data, test_data)
 
-        """"
+        """
         total_samples = len(data)
 
         # Check for BLANK mode to adjust minimum requirements
@@ -564,7 +563,7 @@ class UnifiedDataManager:
         Returns:
             DataFrame for the requested split
 
-        """"
+        """
         split_files = {
             "train": (self.train_file_parquet, self.train_file),
             "validation": (self.validation_file_parquet, self.validation_file),
@@ -623,7 +622,7 @@ import copy
 import os.path
 
 with open(self.metadata_file) as f:
-            return json.load(f)
+    return json.load(f)
 
     def update_data_split(self, split_type: str, updated_data: pd.DataFrame) -> None:
         """Update a specific data split (useful for steps like step 8 that modify data)."
@@ -632,7 +631,7 @@ with open(self.metadata_file) as f:
             split_type: One of 'train', 'validation', 'test'
             updated_data: Updated DataFrame
 
-        """"
+        """
         split_files = {
             "train": (self.train_file_parquet, self.train_file),
             "validation": (self.validation_file_parquet, self.validation_file),
@@ -675,7 +674,7 @@ with open(self.metadata_file) as f:
         Returns:
             Tuple of (features_df, labels_series)
 
-        """"
+        """
         data = self.load_data_split(split_type)
 
         if label_column not in data.columns:
@@ -696,7 +695,7 @@ with open(self.metadata_file) as f:
         Returns:
             Dict containing validation results
 
-        """"
+        """
         try:
             validation_results = {"status": "SUCCESS", "issues": [], "warnings": []}
 

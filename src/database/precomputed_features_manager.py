@@ -27,7 +27,7 @@ except Exception:
 
 
 class PrecomputedFeaturesManager:
-    """"
+    """
     Manages precomputed features with standardized naming convention and database storage.
 
     Feature naming convention: {category}_{timeframe}_{name}
@@ -42,8 +42,7 @@ class PrecomputedFeaturesManager:
     - price_30m_change_pct
     - triple_barrier_1m_profit_take_hit
     - autoencoder_5m_reconstruction_error
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("PrecomputedFeaturesManager")
@@ -101,7 +100,7 @@ class PrecomputedFeaturesManager:
         return True
 
     def generate_feature_name(self, category: str, timeframe: str, name: str) -> str:
-        """"
+        """
         Generate standardized feature name.
 
         Args:
@@ -111,7 +110,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             Standardized feature name
-        """"
+        """
         if category not in self.feature_categories:
             msg = (
                 f"Invalid category: {category}. "
@@ -126,7 +125,7 @@ class PrecomputedFeaturesManager:
         return f"{category}_{timeframe}_{name}"
 
     def parse_feature_name(self, feature_name: str) -> tuple[str, str, str]:
-        """"
+        """
         Parse standardized feature name into components.
 
         Args:
@@ -134,7 +133,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             Tuple of (category, timeframe, name)
-        """"
+        """
         parts = feature_name.split("_", 2)
         if len(parts) != 3:
             msg = f"Invalid feature name format: {feature_name}"
@@ -163,7 +162,7 @@ class PrecomputedFeaturesManager:
         symbol: str,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """"
+        """
         Store precomputed features in the database.
 
         Args:
@@ -173,7 +172,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             Success status
-        """"
+        """
         if features_df.empty:
             self.logger.warning(warning("Empty features DataFrame provided"))
             return False
@@ -226,7 +225,7 @@ class PrecomputedFeaturesManager:
         category_filter: str | None = None,
         timeframe_filter: str | None = None,
     ) -> pd.DataFrame:
-        """"
+        """
         Retrieve precomputed features from the database.
 
         Args:
@@ -239,7 +238,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             DataFrame with requested features
-        """"
+        """
         if self.db_manager is None:
             self.logger.warning(warning("InfluxDB not available; cannot retrieve features"))
             return pd.DataFrame()
@@ -269,8 +268,7 @@ class PrecomputedFeaturesManager:
           |> filter(fn: (r) => r["_measurement"] == "precomputed_features")
           |> filter(fn: (r) => {" and ".join(query_filters)})
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        """"
-
+        """
         df = self.db_manager.query_api.query_data_frame(
             query,
             org=self.db_manager.org,
@@ -299,7 +297,7 @@ class PrecomputedFeaturesManager:
         return df
 
     def _ensure_price_differences(self, df: pd.DataFrame) -> pd.DataFrame:
-        """"
+        """
         Ensure price-based features use differences rather than absolute values.
 
         Args:
@@ -307,7 +305,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             DataFrame with price differences applied
-        """"
+        """
         df_copy = df.copy()
 
         for col in df_copy.columns:
@@ -431,7 +429,7 @@ class PrecomputedFeaturesManager:
         category: str | None = None,
         timeframe: str | None = None,
     ) -> list[str]:
-        """"
+        """
         Get list of available feature names based on filters.
 
         Args:
@@ -440,7 +438,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             List of available feature names
-        """"
+        """
         # This would query the metadata to get available features
         # For now, return example features based on the standardized naming
 

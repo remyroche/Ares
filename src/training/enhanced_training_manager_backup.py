@@ -98,7 +98,7 @@ def _safe_json_write(target: Path, obj: Any) -> None:
     - Writes UTF-8 with Unix newlines
     - Sorts keys for deterministic diffs
     - fsyncs before atomic replace
-    """"
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8", newline="\n") as f:
@@ -152,15 +152,14 @@ class EnhancedTrainingManager:
     - Acts as the main entry point for all training operations
     - Delegates optimization tasks to EnhancedTrainingManagerOptimized
     - Provides unified interface while leveraging optimized backend
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize enhanced training manager."
 
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("EnhancedTrainingManager")
 
@@ -529,7 +528,7 @@ class EnhancedTrainingManager:
             step_name: Current step name
             pipeline_state: Current pipeline state
 
-        """"
+        """
         if not self.enable_checkpointing:
             return
 
@@ -567,7 +566,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Checkpoint data or None if no checkpoint exists
 
-        """"
+        """
         # Attempt to load namespaced checkpoint based on current params
         # Ensure enable_checkpointing is defined
         if not hasattr(self, "enable_checkpointing"):
@@ -634,7 +633,7 @@ class EnhancedTrainingManager:
         Args:
             message: Heartbeat message to log
 
-        """"
+        """
         self.logger.info(f"💓 {message}")
 
     def _get_system_resources(self) -> dict[str, float]:
@@ -643,7 +642,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: System resource information
 
-        """"
+        """
         try:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
@@ -684,7 +683,7 @@ class EnhancedTrainingManager:
         Returns:
             True if dependencies are met, False otherwise
 
-        """"
+        """
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
@@ -729,7 +728,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Resource analysis information
 
-        """"
+        """
         try:
             # Get system info
             cpu_count = int(psutil.cpu_count() or 0)
@@ -786,7 +785,7 @@ class EnhancedTrainingManager:
         Returns:
             list: Recommendations
 
-        """"
+        """
         recommendations = []
 
         if memory_gb < 8:
@@ -825,7 +824,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Time estimates for each step in minutes
 
-        """"
+        """
         if is_blank_mode:
             return {
                 "step1_data_collection": 5,
@@ -908,7 +907,7 @@ class EnhancedTrainingManager:
         Returns:
             float: Progress percentage
 
-        """"
+        """
         return (completed_steps / total_steps) * 100
 
     def _log_progress(
@@ -921,7 +920,7 @@ class EnhancedTrainingManager:
             total_steps: Total number of steps
             elapsed_time: Time elapsed so far
 
-        """"
+        """
         progress = self._get_progress_percentage(current_step, total_steps)
         if elapsed_time > 0:
             avg_time = elapsed_time / max(current_step, 1)
@@ -952,7 +951,7 @@ class EnhancedTrainingManager:
             step_times: Dictionary to store step times
             success: Whether the step was successful
 
-        """"
+        """
         step_time = time.time() - step_start
         step_times[step_name] = step_time
 
@@ -1001,7 +1000,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
             # Ensure blank_training_mode is defined
@@ -1100,7 +1099,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate enhanced training manager specific settings
             # Ensure max_enhanced_training_history is defined
@@ -1152,7 +1151,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if training successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("=" * 80)
             self.logger.info(
@@ -1255,7 +1254,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if input is valid, False otherwise
 
-        """"
+        """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
@@ -1354,7 +1353,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if all steps successful, False otherwise
 
-        """"
+        """
         try:
             symbol = training_input.get("symbol", "")
             exchange = training_input.get("exchange", "")
@@ -2357,6 +2356,23 @@ class EnhancedTrainingManager:
                     self._heartbeat("Step 6_5: Unified Regime Intelligence")
                     step_start_6_5 = time.time()
                     try:
+from src.training.steps import step7_analyst_enhancement
+from src.training.steps import step8_tactician_labeling
+from src.training.steps import step9_tactician_specialist_training
+from src.training.steps import step10_confidence_calibration
+from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+import pandas as _pd
+from src.training.steps import (
+from src.training.steps import step12_walk_forward_validation
+from src.training.steps import step13_monte_carlo_validation
+from src.training.steps import step14_ab_testing
+from src.training.steps import step15_saving
+from src.training.steps import step2_feature_engineering
+from pathlib import Path
+import glob
+import glob
+from pathlib import Path
+import copy
                         from src.training.steps import (
                             step5_5_unified_regime_intelligence as _step6_5,
                         )
@@ -2421,7 +2437,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 7 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step7_analyst_enhancement
 
                     analyst_timeframes = ["30m", "15m", "5m"]
                     for tf in analyst_timeframes:
@@ -2474,7 +2489,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 8 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step8_tactician_labeling
 
                     step8_success = await step8_tactician_labeling.run_step(
                         symbol=symbol,
@@ -2522,7 +2536,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 9 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step9_tactician_specialist_training
 
                     step9_success = await step9_tactician_specialist_training.run_step(
                         symbol=symbol,
@@ -2572,7 +2585,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 10 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step10_confidence_calibration
 
                     step10_success = await step10_confidence_calibration.run_step(
                         symbol=symbol,
@@ -2611,13 +2623,11 @@ class EnhancedTrainingManager:
 
                 # Run meta-label relevance evaluation with complementarity and persist active labels
                 try:
-                    from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
 
                     # Load the latest processed frame if available
                     processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.parquet"
                     df_proc = None
                     if processed_path.exists():
-                        import pandas as _pd
 
                         df_proc = _pd.read_parquet(processed_path)
                     # Fallback to generic_val (guard)
@@ -2752,7 +2762,6 @@ class EnhancedTrainingManager:
                             exchange=exchange,
                         )
                     else:
-                        from src.training.steps import (
                             step11_final_parameters_optimization,
                         )
 
@@ -2804,7 +2813,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 12 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step12_walk_forward_validation
 
                     step12_success = await step12_walk_forward_validation.run_step(
                         symbol=symbol,
@@ -2850,7 +2858,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 13 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step13_monte_carlo_validation
 
                     step13_success = await step13_monte_carlo_validation.run_step(
                         symbol=symbol,
@@ -2896,7 +2903,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 14 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step14_ab_testing
 
                     step14_success = await step14_ab_testing.run_step(
                         symbol=symbol,
@@ -2942,7 +2948,6 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 15 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step15_saving
 
                     step15_success = await step15_saving.run_step(
                         symbol=symbol,
@@ -3361,7 +3366,7 @@ class EnhancedTrainingManager:
         return stats
 
     def _get_validation_level(self, step_name: str, is_fatal: bool) -> str:
-        """"
+        """
         Determine the appropriate validation level for a step.
         By default, all steps use CRITICAL validation for maximum thoroughness.
         
@@ -3371,7 +3376,7 @@ class EnhancedTrainingManager:
             
         Returns:
             Validation level string (defaults to CRITICAL)
-        """"
+        """
         # All steps now default to CRITICAL validation for maximum thoroughness
         # This ensures comprehensive validation across the entire pipeline
         
@@ -3405,12 +3410,12 @@ class EnhancedTrainingManager:
         return "CRITICAL"
     
     def _log_validation_details(self, validation_result: dict[str, Any]) -> None:
-        """"
+        """
         Log detailed validation information for comprehensive validation levels.
         
         Args:
             validation_result: Validation result dictionary
-        """"
+        """
         try:
             if not validation_result:
                 return
@@ -3448,12 +3453,12 @@ class EnhancedTrainingManager:
             self.logger.debug(f"Error logging validation details: {e}")
     
     def _log_validation_failure(self, validation_result: dict[str, Any]) -> None:
-        """"
+        """
         Log validation failure details.
         
         Args:
             validation_result: Validation result dictionary
-        """"
+        """
         try:
             if not validation_result:
                 return
@@ -3503,7 +3508,7 @@ class EnhancedTrainingManager:
         Returns:
             Validation result dictionary
 
-        """"
+        """
         if not self.enable_validators:
             return {
                 "step_name": step_name,
@@ -3654,7 +3659,6 @@ class EnhancedTrainingManager:
         step_warnings = []
         
         try:
-            from src.training.steps import step2_feature_engineering
 
             # Execute the original step function
             result = await step2_feature_engineering.run_step(
@@ -3707,7 +3711,7 @@ class EnhancedTrainingManager:
         Args:
             enhanced_training_input: Enhanced training input parameters
 
-        """"
+        """
         try:
             # Add to training history
             history_entry = {
@@ -3771,7 +3775,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Enhanced training results
 
-        """"
+        """
         try:
             if enhanced_training_type:
                 return self.enhanced_training_results.get(enhanced_training_type, {})
@@ -3798,7 +3802,7 @@ class EnhancedTrainingManager:
         Returns:
             list: Enhanced training history
 
-        """"
+        """
         try:
             history = self.enhanced_training_history.copy()
             if limit:
@@ -3815,7 +3819,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Enhanced training status information
 
-        """"
+        """
         return {
             "is_training": self.is_training,
             "has_results": bool(self.enhanced_training_results),
@@ -3835,7 +3839,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Validation results summary
 
-        """"
+        """
         return {
             "validation_results": self.validation_results,
             "validation_summary": validator_orchestrator.get_validation_summary(),
@@ -3848,7 +3852,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Computational optimization results
 
-        """"
+        """
         if self.computational_optimization_manager:
             return {
                 "optimization_statistics": self.computational_optimization_manager.get_optimization_statistics(),
@@ -4030,7 +4034,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("🔍 Starting comprehensive feature selection...")
 
@@ -4152,7 +4156,7 @@ class EnhancedTrainingManager:
         Returns:
             pd.DataFrame: DataFrame with selected features
 
-        """"
+        """
         try:
             self.logger.info("🎯 Executing tiered feature selection...")
 
@@ -4503,7 +4507,7 @@ class EnhancedTrainingManager:
             exchange: Exchange name
             timeframe: Timeframe
 
-        """"
+        """
         try:
             self.logger.info(f"🧹 Clearing artifacts from {start_step} onward")
 
@@ -4543,7 +4547,7 @@ class EnhancedTrainingManager:
         Returns:
             True if previous step artifacts exist, False otherwise
 
-        """"
+        """
         try:
             # Find the index of the current step using class constant
             try:
@@ -4567,8 +4571,6 @@ class EnhancedTrainingManager:
                 return True
 
             # Check if at least one critical artifact exists with proper pattern substitution
-            from pathlib import Path
-            import glob
             artifacts_found = []
 
             for artifact_pattern in previous_artifacts:
@@ -4618,16 +4620,13 @@ class EnhancedTrainingManager:
             exchange: Exchange name
             timeframe: Timeframe
 
-        """"
+        """
         try:
-            import glob
-            from pathlib import Path
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
 
 # Get patterns for this step using class constant
-            patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
+patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
 
             cleared_count = 0
             for pattern in patterns:
@@ -4668,7 +4667,7 @@ import copy
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """"
+        """
         try:
             if data is not None:
                 # Convert data to numpy array for metrics calculation
@@ -4716,7 +4715,7 @@ import copy
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """"
+        """
         try:
             if model is not None and hasattr(model, 'predict'):
                 # Generate sample predictions for tracking
@@ -4758,7 +4757,7 @@ import copy
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """"
+        """
         try:
             if optimization_results:
                 # Extract key metrics from optimization results
@@ -4805,7 +4804,7 @@ import copy
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """"
+        """
         try:
             if validation_results:
                 # Extract key metrics from validation results
@@ -4854,7 +4853,7 @@ import copy
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """"
+        """
         try:
             if ab_test_results:
                 # Extract key metrics from A/B testing results
@@ -5034,7 +5033,7 @@ async def setup_enhanced_training_manager(
     Returns:
         EnhancedTrainingManager: Configured enhanced training manager instance
 
-    """"
+    """
     try:
         manager = EnhancedTrainingManager(config or {})
         if await manager.initialize():

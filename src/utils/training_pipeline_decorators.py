@@ -1,8 +1,7 @@
-""""
+"""
 Training Pipeline Decorators
 Provides automatic pipeline monitoring, validation, and logging for training steps.
-""""
-
+"""
 import asyncio
 import functools
 import time
@@ -723,7 +722,7 @@ def monitor_pipeline_step(
     memory_threshold: float = 80.0,
     duration_threshold: float = 600.0,  # 10 minutes
 ):
-    """"
+    """
     Decorator to monitor and validate pipeline steps.
 
     Args:
@@ -732,8 +731,7 @@ def monitor_pipeline_step(
         enable_data_quality: Whether to enable data quality validation
         memory_threshold: Memory usage threshold for warnings
         duration_threshold: Duration threshold for warnings
-    """"
-
+    """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(self: Any, *args, **kwargs) -> Any:
@@ -810,9 +808,9 @@ async def _monitor_and_execute_pipeline_step(
     memory_threshold: float,
     duration_threshold: float,
 ) -> Any:
-    """"
+    """
     Monitor and execute a pipeline step with comprehensive logging.
-    """"
+    """
     logger = system_logger.getChild("PipelineStepMonitor")
     step_name = func.__name__
 
@@ -937,15 +935,14 @@ def validate_pipeline_input(
     data_validation: bool = True,
     memory_check: bool = True,
 ):
-    """"
+    """
     Decorator to validate pipeline input parameters and data.
 
     Args:
         required_params: List of required parameter names
         data_validation: Whether to validate input data
         memory_check: Whether to check memory usage
-    """"
-
+    """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(self: Any, *args, **kwargs) -> Any:
@@ -1006,9 +1003,9 @@ async def _validate_pipeline_input_and_execute(
     data_validation: bool,
     memory_check: bool,
 ) -> Any:
-    """"
+    """
     Validate pipeline input and execute the function.
-    """"
+    """
     logger = system_logger.getChild("PipelineInputValidator")
     method_name = func.__name__
 
@@ -1089,7 +1086,7 @@ async def _validate_pipeline_input_and_execute(
 import os.path
 
 disk_usage = shutil.disk_usage(".")
-            available_disk_gb = disk_usage.free / (1024**3)
+available_disk_gb = disk_usage.free / (1024**3)
             print(f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB")
             logger.info(f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB")
 
@@ -1188,15 +1185,14 @@ def monitor_pipeline_performance(
     memory_threshold_gb: float = 32.0,
     cpu_threshold_percent: float = 90.0,
 ):
-    """"
+    """
     Decorator to monitor pipeline performance metrics.
 
     Args:
         enable_memory_tracking: Whether to track memory usage
         enable_cpu_tracking: Whether to track CPU usage
         enable_gc_tracking: Whether to track garbage collection
-    """"
-
+    """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(self: Any, *args, **kwargs) -> Any:
@@ -1248,9 +1244,9 @@ async def _monitor_performance_and_execute(
     memory_threshold_gb: float,
     cpu_threshold_percent: float,
 ) -> Any:
-    """"
+    """
     Monitor performance and execute the function.
-    """"
+    """
     logger = system_logger.getChild("PerformanceMonitor")
     method_name = func.__name__
 

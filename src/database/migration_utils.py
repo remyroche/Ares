@@ -27,20 +27,19 @@ from src.utils.warning_symbols import (
 
 
 class DatabaseMigrationUtils:
-    """"
+    """
     Utility class for managing database migrations between computers.
     Handles export, import, validation, and backup operations.
-    """"
-
+    """
     def __init__(self, db_manager: SQLiteManager):
         self.db_manager = db_manager
         self.logger = system_logger.getChild("MigrationUtils")
 
     async def export_for_trading(self, export_name: str = None) -> str:
-        """"
+        """
         Exports database from backtesting computer for use on trading computer.
         Filters out backtest-specific data and keeps only essential trading data.
-        """"
+        """
         if not export_name:
             export_name = f"trading_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -129,9 +128,9 @@ class DatabaseMigrationUtils:
             )
 
     async def import_for_trading(self, import_path: str) -> bool:
-        """"
+        """
         Imports database on trading computer from backtesting computer export.
-        """"
+        """
         try:
             # Verify file exists
             if not os.path.exists(import_path):
@@ -181,9 +180,9 @@ class DatabaseMigrationUtils:
             return False
 
     async def export_backtest_results(self, export_name: str = None) -> str:
-        """"
+        """
         Exports only backtest results for analysis on another computer.
-        """"
+        """
         if not export_name:
             export_name = f"backtest_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -222,9 +221,9 @@ class DatabaseMigrationUtils:
             return ""
 
     async def validate_migration_file(self, file_path: str) -> dict[str, Any]:
-        """"
+        """
         Validates a migration file for integrity and compatibility.
-        """"
+        """
         validation_result = {
             "valid": False,
             "file_exists": False,
@@ -309,9 +308,9 @@ class DatabaseMigrationUtils:
         return validation_result
 
     async def list_migrations(self) -> list[dict[str, Any]]:
-        """"
+        """
         Lists all available migrations with their details.
-        """"
+        """
         try:
             migrations = await self.db_manager.get_collection("database_migrations")
             return sorted(
@@ -324,9 +323,9 @@ class DatabaseMigrationUtils:
             return []
 
     async def cleanup_old_migrations(self, keep_days: int = 30):
-        """"
+        """
         Cleans up old migration files and records.
-        """"
+        """
         try:
             cutoff_date = datetime.now() - timedelta(days=keep_days)
 

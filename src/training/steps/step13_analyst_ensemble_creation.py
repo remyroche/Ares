@@ -67,7 +67,7 @@ class AnalystEnsembleCreationStep:
         Returns:
             bool: True if successful
 
-        """"
+        """
         logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
 
         try:
@@ -150,15 +150,15 @@ class AnalystEnsembleCreationStep:
         try:
             # Apply optimized feature selection for ensemble creation
             try:
-                from src.training.optimized_feature_selection_manager import (
-            except Exception as e:
-                pass  # TODO: Handle exception properly
 import copy
 import datetime as datetime
 import os.path
+                from src.training.optimized_feature_selection_manager import (
+            except Exception as e:
+                pass  # TODO: Handle exception properly
 
 OptimizedFeatureSelectionManager,
-                )
+)
 
                 optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)
 
@@ -359,6 +359,6 @@ def step7_analyst_ensemble_creation(
     Returns:
         bool: True if successful
 
-    """"
+    """
     step = AnalystEnsembleCreationStep(config)
     return step.execute(symbol, exchange, data_dir, training_input)

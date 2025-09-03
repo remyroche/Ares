@@ -1,6 +1,6 @@
 # src/utils/enhanced_mlflow_integration.py
 
-""""
+"""
 Enhanced MLflow Integration for Enhanced Training Manager
 
 This module provides comprehensive MLflow integration that ensures all models
@@ -12,8 +12,7 @@ in the enhanced_training_manager pipeline are properly associated with:
 - date: The training date
 
 This ensures complete traceability and reproducibility of all training runs.
-""""
-
+"""
 import os
 import sys
 import tempfile
@@ -27,8 +26,8 @@ import pandas as pd
 from src.config import ARES_VERSION
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.mlflow_utils import (
 import asyncio
+from src.utils.mlflow_utils import (
 
     extract_training_metadata,
     log_artifacts_with_metadata,
@@ -55,8 +54,7 @@ def with_enhanced_mlflow_logging(step_name: str):
         async def execute(self, training_input, pipeline_state):
             # Step execution logic
             return results
-    """"
-
+    """
     def decorator(func):
         @wraps(func)
         async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
@@ -194,7 +192,7 @@ def log_step_artifact(
         artifact_type: Type of artifact (e.g., "model", "data", "plot")
         run_id: Optional MLflow run ID
         additional_metadata: Additional metadata to log
-    """"
+    """
     try:
         if not os.path.exists(artifact_path):
             system_logger.warning(f"Artifact file not found: {artifact_path}")
@@ -250,7 +248,7 @@ def generate_standardized_artifact_name(
 
     Returns:
         Standardized artifact name
-    """"
+    """
     if timestamp is None:
         # Fallback implementation for timestamp
         timestamp = datetime.now()
@@ -292,7 +290,7 @@ def log_step_dataframe(
         artifact_name: Name for the artifact
         run_id: Optional MLflow run ID
         additional_metadata: Additional metadata to log
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
 
@@ -340,7 +338,7 @@ def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[st
 
     Returns:
         Dictionary mapping folder types to their paths
-    """"
+    """
     folders = {
         "base": base_dir,
         "dataframes": f"{base_dir}/dataframes",
@@ -373,7 +371,7 @@ def get_standardized_artifact_path(
 
     Returns:
         Standardized artifact path
-    """"
+    """
     folders = create_standardized_artifact_folders(base_dir)
 
     # Map artifact types to folders
@@ -412,7 +410,7 @@ def log_step_dataframe_with_standardized_name(
 
     Returns:
         Generated artifact name
-    """"
+    """
     metadata = extract_training_metadata(config)
     exchange = metadata["exchange"]
     token = metadata["asset"]
@@ -458,7 +456,7 @@ def log_step_artifact_with_standardized_name(
 
     Returns:
         Generated artifact name
-    """"
+    """
     metadata = extract_training_metadata(config)
     exchange = metadata["exchange"]
     token = metadata["asset"]
@@ -507,7 +505,7 @@ def log_step_report(
 
     Returns:
         Generated report name
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
         exchange = metadata["exchange"]
@@ -580,7 +578,7 @@ def log_step_model(
         model_type: Type of model (e.g., "hmm", "analyst", "tactician")
         run_id: Optional MLflow run ID
         additional_metadata: Additional metadata to log
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
 
@@ -626,7 +624,7 @@ def log_step_metrics(
         metrics: Dictionary of metrics to log
         run_id: Optional MLflow run ID
         additional_metadata: Additional metadata to log
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
 
@@ -663,7 +661,7 @@ class EnhancedMLflowManager:
 
         Args:
             config: Configuration dictionary from enhanced training manager
-        """"
+        """
         self.config = config
         self.metadata = extract_training_metadata(config)
         self.current_run_id: Optional[str] = None
@@ -696,7 +694,7 @@ class EnhancedMLflowManager:
 
         Returns:
             MLflow run ID
-        """"
+        """
         try:
             if not run_name:
                 run_name = f"{self.metadata['exchange']}_{self.metadata['asset']}_{step_name or 'training'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -739,7 +737,7 @@ class EnhancedMLflowManager:
             model_name: Name of the model
             model_type: Type of model (e.g., "hmm", "analyst", "tactician")
             additional_metadata: Additional metadata to log
-        """"
+        """
         if not self.current_run_id:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
@@ -782,7 +780,7 @@ class EnhancedMLflowManager:
             metrics: Dictionary of metrics to log
             step: Optional step number
             additional_metadata: Additional metadata to log
-        """"
+        """
         if not self.current_run_id:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
@@ -829,7 +827,7 @@ class EnhancedMLflowManager:
         Args:
             parameters: Dictionary of parameters to log
             additional_metadata: Additional metadata to log
-        """"
+        """
         if not self.current_run_id:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
@@ -872,7 +870,7 @@ class EnhancedMLflowManager:
             artifact_path: Path within the MLflow run
             artifact_type: Type of artifact (e.g., "data", "model", "plot")
             additional_metadata: Additional metadata to log
-        """"
+        """
         if not self.current_run_id:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
@@ -915,7 +913,7 @@ class EnhancedMLflowManager:
             df: DataFrame to log
             artifact_path: Path within the MLflow run
             additional_metadata: Additional metadata to log
-        """"
+        """
         try:
             # Create temporary file
             with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
@@ -957,7 +955,7 @@ class EnhancedMLflowManager:
         Args:
             summary: Training summary dictionary
             additional_metadata: Additional metadata to log
-        """"
+        """
         try:
             # Create temporary file
             import json
@@ -995,7 +993,7 @@ class EnhancedMLflowManager:
 
         Returns:
             True if validation passes, False otherwise
-        """"
+        """
         if not self.current_run_id:
             self.logger.warning("No active run to validate")
             return False
@@ -1007,7 +1005,7 @@ class EnhancedMLflowManager:
 
         Returns:
             Dictionary containing run metadata
-        """"
+        """
         if not self.current_run_id:
             raise ValueError("No active MLflow run")
 
@@ -1037,7 +1035,7 @@ def log_step_metadata(
         step_name: Name of the pipeline step
         step_data: Data from the pipeline step
         run_id: Optional MLflow run ID
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
 
@@ -1078,7 +1076,7 @@ def log_model_performance(
         model_type: Type of model
         performance_metrics: Performance metrics dictionary
         run_id: Optional MLflow run ID
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
 
@@ -1115,7 +1113,7 @@ def log_pipeline_completion(
         config: Configuration dictionary
         pipeline_results: Results from the pipeline execution
         run_id: Optional MLflow run ID
-    """"
+    """
     try:
         metadata = extract_training_metadata(config)
 
@@ -1163,7 +1161,7 @@ def create_detailed_step_report(
 
     Returns:
         Detailed report dictionary
-    """"
+    """
     report = {
         "step_info": {
             "step_name": step_name,

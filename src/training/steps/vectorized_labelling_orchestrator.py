@@ -3,8 +3,7 @@
 """Vectorized Labelling Orchestrator for comprehensive feature engineering and labeling pipeline."
 Coordinates optimized_triple_barrier_labeling.py, vectorized_advanced_feature_engineering.py
 and autoencoder_feature_generator.py with advanced preprocessing and feature selection.
-""""
-
+"""
 from __future__ import annotations
 
 import contextlib
@@ -27,12 +26,12 @@ from copy import copy
 
     get_current_datetime, format_datetime, ensure_directory,
     safe_copy, safe_fillna, safe_read_parquet, safe_to_parquet
-from src.utils.common_operations import (
-)
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
 from src.utils.common_operations import ensure_directory
+from src.utils.common_operations import (
+)
 
 
 # -----------------------------------------------------------------------------
@@ -73,8 +72,7 @@ warnings.showwarning = _showwarning
 class VectorizedLabellingOrchestrator:
     """Comprehensive vectorized labeling orchestrator that coordinates all feature generation"
     and labeling components with advanced preprocessing and feature selection.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLabellingOrchestrator")
@@ -334,7 +332,7 @@ class VectorizedLabellingOrchestrator:
 
         Returns:
             Dictionary containing processed data and metadata
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error("Vectorized labeling orchestrator not initialized")
@@ -1468,7 +1466,7 @@ class VectorizedLabellingOrchestrator:
     ) -> tuple[dict[str, pd.Series], dict[str, Any]]:
         """Ensure each feature is a well-formed pd.Series aligned to target_index."
         Returns formatted_features and a report dict with diagnostics.
-        """"
+        """
         formatted: dict[str, pd.Series] = {}
         report: dict[str, Any] = {
             "input_features": len(features),

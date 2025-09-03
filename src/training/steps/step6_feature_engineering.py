@@ -3,8 +3,7 @@
 """Step 6: Complete Feature Engineering with Standardized Data Quality Management."
 This step creates comprehensive features including both basic and advanced features,
 with regime-aware optimization after HMM regime discovery.
-""""
-
+"""
 import asyncio
 import hashlib
 import json
@@ -206,7 +205,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """"
+    """
     Step 6: Complete Feature Engineering with Standardized Data Quality Management.
     
     This step creates comprehensive features including both basic and advanced features,
@@ -222,7 +221,7 @@ async def run_step(
         
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     logger = system_logger.getChild("Step6FeatureEngineering")
     
     # Use standardized path construction
@@ -1056,7 +1055,7 @@ import numpy as np
 import pandas as pd
         
 # Initialize SR detection optimizer
-        optimizer = await setup_sr_detection_optimizer(config)
+optimizer = await setup_sr_detection_optimizer(config)
         if not optimizer:
             system_logger.warning("⚠️ SR detection optimizer not available, skipping optimization features")
             return features

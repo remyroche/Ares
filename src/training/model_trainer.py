@@ -93,15 +93,14 @@ class TrainingData:
 class RayModelTrainer:
     """Ray-based model trainer for distributed model training and data processing."
     Handles both analyst and tactician models with parallel processing capabilities.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Ray model trainer."
 
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("RayModelTrainer")
 
@@ -157,7 +156,7 @@ class RayModelTrainer:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             if not ray.is_initialized():
                 ray.init(
@@ -189,7 +188,7 @@ class RayModelTrainer:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Ray Model Trainer...")
 
@@ -219,7 +218,7 @@ class RayModelTrainer:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate model trainer specific settings
             if not self.enable_analyst_models and not self.enable_tactician_models:
@@ -291,7 +290,7 @@ class RayModelTrainer:
         """Train all required models based on configuration using Ray."
         If use_hpo is True, run Optuna HPO before final model training.
         Logs all training runs to MLflow.
-        """"
+        """
         try:
             self.logger.info("🚀 Starting Ray-based model training...")
             self.is_training = True
@@ -325,6 +324,13 @@ class RayModelTrainer:
                 do_hpo = use_hpo
                 if do_hpo:
                     try:
+from src.utils.mlflow_utils import log_params_with_metadata
+from src.utils.mlflow_utils import log_metrics_with_metadata, log_artifacts_with_metadata
+import os
+import pandas as pd
+import copy
+import numpy as np
+import os.path
                         from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (
                             AdvancedOptunaManager,
                         )
@@ -354,7 +360,6 @@ class RayModelTrainer:
                     )
                     best_params = hpo_result.get("best_params")
                     if best_params:
-                        from src.utils.mlflow_utils import log_params_with_metadata
                         log_params_with_metadata(
                             params=best_params,
                             asset=symbol,
@@ -374,7 +379,6 @@ class RayModelTrainer:
                 )
                 self._store_trained_models(training_results)
                 # Log model metrics and artifacts with enhanced metadata
-                from src.utils.mlflow_utils import log_metrics_with_metadata, log_artifacts_with_metadata
                 tactician_models = training_results.get("tactician_models", {})
                 for model_name, result in tactician_models.items():
                     if result["training_status"] == "completed":
@@ -477,7 +481,7 @@ class RayModelTrainer:
         Returns:
             bool: True if input is valid, False otherwise
 
-        """"
+        """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
@@ -511,7 +515,7 @@ class RayModelTrainer:
         """Prepare training data for model training."
         Loads the labeled/enhanced feature file produced by the previous pipeline step (step 4),
         not the raw data from step 1.
-        """"
+        """
         try:
             self.logger.info(
                 "📊 Preparing training data from labeled/enhanced pipeline output...",
@@ -521,17 +525,12 @@ class RayModelTrainer:
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
             labeled_path = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
-            import os
 
-            import pandas as pd
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-import os.path
 
 if os.path.exists(labeled_path):
-                try:
+    try:
                     feat_cols = training_input.get(
                         "model_feature_columns",
                     ) or training_input.get("feature_columns")
@@ -637,7 +636,7 @@ if os.path.exists(labeled_path):
     ) -> dict[str, Any]:
         """Train models using Ray for distributed processing."
         Accepts best_params from HPO for model instantiation.
-        """"
+        """
         try:
             self.logger.info("🧠 Starting Ray-based model training...")
 
@@ -718,7 +717,7 @@ if os.path.exists(labeled_path):
     ) -> dict[str, Any]:
         """Train a single model (Ray remote function)."
         Accepts best_params from HPO for model instantiation.
-        """"
+        """
         try:
             X = training_data.features
             y = training_data.labels
@@ -791,7 +790,7 @@ if os.path.exists(labeled_path):
             model: Trained model
             scaler: Fitted scaler
 
-        """"
+        """
         try:
             # Create model directory
             model_dir = self.model_trainer_config.get("model_directory", "models")
@@ -826,7 +825,7 @@ if os.path.exists(labeled_path):
         Args:
             training_results: Complete training results
 
-        """"
+        """
         try:
             self.logger.info("📁 Storing trained models metadata...")
 
@@ -864,7 +863,7 @@ if os.path.exists(labeled_path):
         Args:
             model_name: Name of the multi-output model
             model_result: Multi-output model training result
-        """"
+        """
         try:
             self.logger.info(f"📁 Storing multi-output model metadata for {model_name}")
             
@@ -901,7 +900,7 @@ if os.path.exists(labeled_path):
         Args:
             model_result: Model training result
 
-        """"
+        """
         try:
             model_key = f"{model_result['model_type']}_{model_result['timeframe']}"
             self.model_metadata[model_key] = {
@@ -921,7 +920,7 @@ if os.path.exists(labeled_path):
         Returns:
             dict: Training status information
 
-        """"
+        """
         return {
             "is_training": self.is_training,
             "trained_models_count": len(self.trained_models),
@@ -940,7 +939,7 @@ if os.path.exists(labeled_path):
         Returns:
             dict: Trained models information
 
-        """"
+        """
         return self.trained_models.copy()
 
     def load_model(
@@ -957,7 +956,7 @@ if os.path.exists(labeled_path):
         Returns:
             tuple: (model, scaler) or None if not found
 
-        """"
+        """
         try:
             model_key = f"{model_type}_{timeframe}"
             if model_key in self.model_metadata:
@@ -1024,7 +1023,7 @@ def setup_model_trainer(
     Returns:
         RayModelTrainer: Configured model trainer instance
 
-    """"
+    """
     try:
         trainer = RayModelTrainer(config or {})
         if trainer.initialize():

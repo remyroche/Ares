@@ -6,8 +6,7 @@ This script demonstrates how to use the step01 module to:
 2. Validate and fix aggtrades format
 3. Resample data to multiple timeframes
 4. Ensure step1_5 compatibility
-""""
-
+"""
 import argparse
 import asyncio
 import sys

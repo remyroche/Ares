@@ -4,8 +4,7 @@
 
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
-""""
-
+"""
 import asyncio
 import multiprocessing as mp
 import os
@@ -120,7 +119,7 @@ class EfficiencyOptimizer:
         Returns:
             Optimization results with efficiency metrics
 
-        """"
+        """
         try:
             start_time = time.time()
             self.logger.info(f"Starting efficient optimization with {n_trials} trials")

@@ -2,8 +2,7 @@
 
 This module provides system-wide monitoring capabilities for the trading system,
 including health checks, performance tracking, and alerting functionality.
-""""
-
+"""
 # src/supervisor/monitoring.py
 
 import asyncio
@@ -13,18 +12,17 @@ from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
     error,
     failed,
     invalid
 )
 
 class Monitoring:
-    """"
+    """
     Enhanced Monitoring component with DI, type hints, and robust error handling.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Monitoring")

@@ -1,9 +1,9 @@
 # src/analyst/analyst.py
 
 from datetime import datetime
-from typing import (
 import logging
 import asyncio
+from typing import (
     TYPE_CHECKING,
     Any,
 )
@@ -37,19 +37,18 @@ if TYPE_CHECKING:
 
 
 class Analyst:
-    """"
+    """
     Analyst with comprehensive error handling and type safety.
     Determines IF we should enter a trade & which direction (short/long).
     Passes market health, volatility, and liquidation risk information to tactician.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize analyst with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("Analyst")
@@ -131,12 +130,12 @@ class Analyst:
         context="analyst initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize analyst with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         self.logger.info("Initializing Analyst...")
 
         # Load analyst configuration
@@ -309,7 +308,7 @@ import copy
 import numpy as np
 
 self.liquidation_risk_model = await setup_liquidation_risk_model(
-                self.config,
+self.config,
             )
             if self.liquidation_risk_model:
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
@@ -378,7 +377,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
         context="analysis execution",
     )
     async def execute_analysis(self, analysis_input: dict[str, Any]) -> bool:
-        """"
+        """
         Execute comprehensive analysis with dual model system integration.
 
         Args:
@@ -386,7 +385,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         Returns:
             bool: True if analysis successful, False otherwise
-        """"
+        """
         try:
             if not self._validate_analysis_inputs(analysis_input):
                 self.logger.error("Invalid analysis inputs")
@@ -553,7 +552,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Perform technical analysis.
 
         Args:
@@ -561,7 +560,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         Returns:
             dict: Technical analysis results
-        """"
+        """
         analysis_input.get("market_data")
         analysis_input.get("current_price")
 
@@ -787,7 +786,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Perform ML predictions.
 
         Args:
@@ -795,7 +794,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         Returns:
             dict: ML prediction results
-        """"
+        """
         try:
             market_data = analysis_input.get("market_data")
             current_price = analysis_input.get("current_price")
@@ -837,7 +836,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Perform regime and location classification.
 
         Args:
@@ -845,7 +844,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         Returns:
             dict: Regime and location classification results
-        """"
+        """
         try:
             market_data = analysis_input.get("market_data")
             analysis_input.get("current_price")
@@ -922,7 +921,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
         context="analysis results getting",
     )
     def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
-        """"
+        """
         Get analysis results.
 
         Args:
@@ -930,7 +929,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         Returns:
             dict: Analysis results
-        """"
+        """
         try:
             if analysis_type is None:
                 return self.analysis_results
@@ -947,7 +946,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
         context="analysis history getting",
     )
     def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """"
+        """
         Get analysis history.
 
         Args:
@@ -955,7 +954,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         Returns:
             list: Analysis history
-        """"
+        """
         try:
             if limit is None:
                 return self.analysis_history
@@ -1020,7 +1019,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
     context="analyst setup",
 )
 async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
-    """"
+    """
     Setup and initialize Analyst.
 
     Args:
@@ -1028,7 +1027,7 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
 
     Returns:
         Analyst: Initialized analyst or None if failed
-    """"
+    """
     try:
         if config is None:
             config = {}

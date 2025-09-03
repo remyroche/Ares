@@ -1,4 +1,4 @@
-""""
+"""
 Enhanced Missing Value Handler
 
 This module provides sophisticated missing value handling including:
@@ -7,8 +7,7 @@ This module provides sophisticated missing value handling including:
 - Gap analysis and classification
 - Intelligent fill strategy selection
 - Data integrity preservation
-""""
-
+"""
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -57,7 +56,7 @@ class EnhancedMissingValueHandler:
         Args:
             max_forward_fill_gap: Maximum gap size for forward fill (seconds)
             download_threshold: Gap size threshold for data download (seconds)
-        """"
+        """
         self.standards = pipeline_standards
         self.logger = system_logger.getChild("EnhancedMissingValueHandler")
         self.max_forward_fill_gap = max_forward_fill_gap
@@ -99,7 +98,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Data with intelligently filled missing values
-        """"
+        """
         if timestamp_column not in data.columns:
             self.logger.error(f"Timestamp column '{timestamp_column}' not found")
             return data
@@ -154,7 +153,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             List of gap information
-        """"
+        """
         gaps = []
         timestamps = data[timestamp_column].values
 
@@ -183,7 +182,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Gap type
-        """"
+        """
         if gap_size <= self.gap_thresholds[GapType.SMALL]:
             return GapType.SMALL
         elif gap_size <= self.gap_thresholds[GapType.MEDIUM]:
@@ -216,7 +215,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Data with small gap filled
-        """"
+        """
         self.logger.info(f"Handling small gap with forward fill: {gap}")
 
         # Find the row before the gap
@@ -265,7 +264,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Data with downloaded data filling the gap
-        """"
+        """
         self.logger.info(f"Downloading data for gap: {gap}")
 
         try:
@@ -304,7 +303,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Downloaded data or None if failed
-        """"
+        """
         try:
             # Convert timestamps to datetime
             start_dt = datetime.fromtimestamp(start_time)
@@ -321,7 +320,7 @@ import copy
 
 downloader = DataDownloader()
 
-                # Download klines data
+# Download klines data
                 downloaded_data = downloader.download_klines(
                     symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
                 )
@@ -356,7 +355,7 @@ downloader = DataDownloader()
 
         Returns:
             Data with downloaded data inserted
-        """"
+        """
         # Combine datasets
         combined_data = pd.concat([data, downloaded_data], ignore_index=True)
 
@@ -376,7 +375,7 @@ downloader = DataDownloader()
 
         Returns:
             Data with gap filled using fallback strategy
-        """"
+        """
         self.logger.info(f"Using fallback strategy for gap: {gap}")
 
         # Use interpolation as fallback
@@ -434,7 +433,7 @@ downloader = DataDownloader()
 
         Returns:
             Data with critical gap handled
-        """"
+        """
         self.logger.error(f"Critical gap detected: {gap}")
         self.logger.error("Manual intervention required for critical gaps")
 
@@ -451,7 +450,7 @@ downloader = DataDownloader()
 
         Returns:
             Gap analysis report
-        """"
+        """
         gaps = self._analyze_gaps(data, timestamp_column)
 
         report = {
@@ -497,7 +496,7 @@ downloader = DataDownloader()
 
         Returns:
             Continuity validation report
-        """"
+        """
         if timestamp_column not in data.columns:
             return {"valid": False, "error": f"Timestamp column '{timestamp_column}' not found"}
 

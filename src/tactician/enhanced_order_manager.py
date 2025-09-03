@@ -1,11 +1,10 @@
 # src/tactician/enhanced_order_manager.py
 
-""""
+"""
 Enhanced Order Manager for Tactician
 Handles sophisticated order management including stop-limit orders and leveraged limit orders
 with partial fill management.
-""""
-
+"""
 import uuid
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -15,9 +14,9 @@ from typing import Any, Dict, List, Optional
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
-from src.utils.warning_symbols import (
 import copy
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     missing,
@@ -106,7 +105,7 @@ class OrderState:
     strategy_type: str | None = None
 
 class EnhancedOrderManager:
-    """"
+    """
     Enhanced order manager for sophisticated order handling.
 
     Features:
@@ -115,15 +114,14 @@ class EnhancedOrderManager:
     - Partial fill tracking
     - Order state management
     - Strategy-specific order handling
-    """"
-
+    """
     def __init__(self, config: Dict[str, Any]) -> None:
-        """"
+        """
         Initialize the enhanced order manager.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("EnhancedOrderManager")
 
@@ -145,12 +143,12 @@ class EnhancedOrderManager:
         context="order manager initialization"
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize the order manager.
 
         Returns:
             bool: True if initialization successful
-        """"
+        """
         try:
             self.logger.info("Initializing Enhanced Order Manager...")
 
@@ -171,7 +169,7 @@ class EnhancedOrderManager:
         context="order creation"
     )
     async def create_order(self, order_request: OrderRequest) -> Optional[OrderState]:
-        """"
+        """
         Create a new order.
 
         Args:
@@ -179,7 +177,7 @@ class EnhancedOrderManager:
 
         Returns:
             OrderState: Created order state or None if failed
-        """"
+        """
         try:
             # Validate order request
             if not self._validate_order_request(order_request):
@@ -213,7 +211,7 @@ class EnhancedOrderManager:
             return None
 
     def _validate_order_request(self, order_request: OrderRequest) -> bool:
-        """"
+        """
         Validate order request parameters.
 
         Args:
@@ -221,7 +219,7 @@ class EnhancedOrderManager:
 
         Returns:
             bool: True if valid, False otherwise
-        """"
+        """
         try:
             if not order_request.symbol:
                 self.logger.error(missing("Symbol is required"))
@@ -253,7 +251,7 @@ class EnhancedOrderManager:
         context="order update"
     )
     async def update_order(self, order_id: str, updates: Dict[str, Any]) -> Optional[OrderState]:
-        """"
+        """
         Update an existing order.
 
         Args:
@@ -262,7 +260,7 @@ class EnhancedOrderManager:
 
         Returns:
             OrderState: Updated order state or None if failed
-        """"
+        """
         try:
             if order_id not in self.active_orders:
                 self.logger.error(missing(f"Order {order_id} not found"))
@@ -290,7 +288,7 @@ class EnhancedOrderManager:
         context="order cancellation"
     )
     async def cancel_order(self, order_id: str) -> bool:
-        """"
+        """
         Cancel an active order.
 
         Args:
@@ -298,7 +296,7 @@ class EnhancedOrderManager:
 
         Returns:
             bool: True if cancellation successful
-        """"
+        """
         try:
             if order_id not in self.active_orders:
                 self.logger.error(missing(f"Order {order_id} not found"))
@@ -328,7 +326,7 @@ class EnhancedOrderManager:
         context="order fill processing"
     )
     async def process_fill(self, order_id: str, fill: OrderFill) -> Optional[OrderState]:
-        """"
+        """
         Process an order fill.
 
         Args:
@@ -337,7 +335,7 @@ class EnhancedOrderManager:
 
         Returns:
             OrderState: Updated order state or None if failed
-        """"
+        """
         try:
             if order_id not in self.active_orders:
                 self.logger.error(missing(f"Order {order_id} not found"))
@@ -378,25 +376,25 @@ class EnhancedOrderManager:
             return None
 
     def get_active_orders(self) -> Dict[str, OrderState]:
-        """"
+        """
         Get all active orders.
 
         Returns:
             Dict[str, OrderState]: Active orders
-        """"
+        """
         return self.active_orders.copy()
 
     def get_order_history(self) -> List[OrderState]:
-        """"
+        """
         Get order history.
 
         Returns:
             List[OrderState]: Order history
-        """"
+        """
         return self.order_history.copy()
 
     def get_order(self, order_id: str) -> Optional[OrderState]:
-        """"
+        """
         Get a specific order.
 
         Args:
@@ -404,13 +402,13 @@ class EnhancedOrderManager:
 
         Returns:
             OrderState: Order state or None if not found
-        """"
+        """
         return self.active_orders.get(order_id)
 
     async def cleanup(self) -> None:
-        """"
+        """
         Cleanup resources.
-        """"
+        """
         try:
             self.logger.info("Cleaning up Enhanced Order Manager...")
 

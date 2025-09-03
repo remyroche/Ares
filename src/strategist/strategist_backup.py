@@ -1,21 +1,20 @@
-""""
+"""
 Strategist module for trading strategy generation.
 
 This module provides the Strategist class which is responsible for:
 - Strategy Generation: Create trading strategies based on market analysis
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
-""""
-
+"""
 # src/strategist/strategist.py
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import asyncio
 
 from src.utils.error_handler import (
-import asyncio
 
     handle_errors,
     handle_specific_errors,
@@ -38,22 +37,21 @@ import numpy as np
 
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods
-    """"
+    """
     Strategy-Level Strategist component responsible for:
     - Strategy Generation: Create trading strategies based on market analysis
     - Market Analysis Integration: Combine analyst and tactician inputs
     - Strategy History Management: Track and store strategy performance
     
     Note: Position sizing is handled by the Tactician component
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize strategist with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Strategist")
 
@@ -109,12 +107,12 @@ class Strategist:
         context="strategist initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize strategist with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("Initializing Strategist...")
 
@@ -198,7 +196,7 @@ class Strategist:
         current_price: float,
         analysis_results: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        """"
+        """
         Generate trading strategy based on market data and analysis results.
 
         Args:
@@ -208,7 +206,7 @@ class Strategist:
 
         Returns:
             dict[str, Any] | None: Generated strategy or None if failed
-        """"
+        """
         try:
             if not self._validate_market_data(market_data):
                 self.logger.error("Invalid market data for strategy generation")
@@ -493,25 +491,25 @@ class Strategist:
             self.logger.error(f"Error storing strategy results: {e}")
 
     def get_strategy_results(self) -> dict[str, Any]:
-        """"
+        """
         Get current strategy results.
 
         Returns:
             dict[str, Any]: Current strategy results
-        """"
+        """
         return self.strategy_results.copy()
 
     def get_current_strategy(self) -> dict[str, Any]:
-        """"
+        """
         Get current strategy.
 
         Returns:
             dict[str, Any]: Current strategy
-        """"
+        """
         return self.current_strategy.copy()
 
     def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """"
+        """
         Get strategy history.
 
         Args:
@@ -519,7 +517,7 @@ class Strategist:
 
         Returns:
             list[dict[str, Any]]: Strategy history
-        """"
+        """
         history = self.strategy_history.copy()
         if limit:
             history = history[-limit:]

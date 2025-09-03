@@ -6,8 +6,8 @@ from typing import Any
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.trading_decorators import performance_monitor
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -288,14 +288,14 @@ class Sentinel:
         context="alert creation",
     )
     async def _create_alert(self, alert_type: str, message: str, value: float) -> None:
-        """"
+        """
         Create an alert.
 
         Args:
             alert_type: Type of alert
             message: Alert message
             value: Alert value
-        """"
+        """
         # Below per-alert threshold, no alert needed
         if value < self.alert_threshold:
             return
@@ -328,12 +328,12 @@ class Sentinel:
         context="alert callbacks execution",
     )
     async def _execute_alert_callbacks(self, alert: dict[str, Any]) -> None:
-        """"
+        """
         Execute alert callbacks.
 
         Args:
             alert: Alert information
-        """"
+        """
         if not self.alert_callbacks:
             return
 
@@ -357,12 +357,12 @@ class Sentinel:
         context="alert callback registration",
     )
     def register_alert_callback(self, callback: Callable) -> None:
-        """"
+        """
         Register an alert callback.
 
         Args:
             callback: Callback function to execute when alerts are created
-        """"
+        """
         if callback not in self.alert_callbacks:
             self.alert_callbacks.append(callback)
             self.logger.info("Alert callback registered")
@@ -375,12 +375,12 @@ class Sentinel:
         context="alert callback removal",
     )
     def unregister_alert_callback(self, callback: Callable) -> None:
-        """"
+        """
         Unregister an alert callback.
 
         Args:
             callback: Callback function to remove
-        """"
+        """
         if callback in self.alert_callbacks:
             self.alert_callbacks.remove(callback)
             self.logger.info("Alert callback unregistered")
@@ -397,7 +397,7 @@ class Sentinel:
         alert_type: str | None = None,
         severity: str | None = None,
     ) -> list[dict[str, Any]]:
-        """"
+        """
         Get alerts with optional filtering.
 
         Args:
@@ -406,7 +406,7 @@ class Sentinel:
 
         Returns:
             List[Dict[str, Any]]: Filtered alerts
-        """"
+        """
         filtered_alerts = self.alerts.copy()
 
         if alert_type:
@@ -433,12 +433,12 @@ class Sentinel:
         self.logger.info(f"Cleared {alert_count} alerts")
 
     def get_sentinel_status(self) -> dict[str, Any]:
-        """"
+        """
         Get sentinel status information.
 
         Returns:
             Dict[str, Any]: Sentinel status
-        """"
+        """
         return {
             "is_monitoring": self.is_monitoring,
             "monitoring_interval": self.monitoring_interval,
@@ -475,7 +475,7 @@ sentinel: Sentinel | None = None
     context="sentinel setup",
 )
 async def setup_sentinel(config: dict[str, Any] | None = None) -> Sentinel | None:
-    """"
+    """
     Setup global sentinel.
 
     Args:
@@ -483,7 +483,7 @@ async def setup_sentinel(config: dict[str, Any] | None = None) -> Sentinel | Non
 
     Returns:
         Optional[Sentinel]: Global sentinel instance
-    """"
+    """
     global sentinel
 
     if config is None:

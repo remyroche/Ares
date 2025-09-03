@@ -2,8 +2,7 @@
 
 """Complete workflow example for wavelet feature caching and backtesting."
 Demonstrates the full pipeline from pre-computation to fast backtesting.
-""""
-
+"""
 import asyncio
 import time
 from pathlib import Path
@@ -240,13 +239,13 @@ async def step4_cache_management(config: dict) -> bool | None:
     try:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
+import copy
         from src.training.steps.vectorized_advanced_feature_engineering import (
     except Exception as e:
         pass  # TODO: Handle exception properly
-import copy
 
 WaveletFeatureCache,
-        )
+)
 
         cache = WaveletFeatureCache(config)
 

@@ -4,8 +4,7 @@
 This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
-""""
-
+"""
 import json
 import os
 import pickle
@@ -68,8 +67,7 @@ class EnhancedHMMBasedTrainingStep:
     Extends the existing HMM-based training to support intelligent multi-output
     prediction for both direction and profit using the triple barrier method
     and profit-based feature engineering, with regime-specific optimization.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
@@ -551,7 +549,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Dictionary containing prepared data for both single and multi-output training
-        """"
+        """
         self.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
         if regime_key:
             self.logger.info(f"   - Regime: {regime_key}")
@@ -662,7 +660,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Dictionary containing training results and model artifacts
-        """"
+        """
         self.logger.info(f"🚀 Training enhanced model: {model_name}")
         
         results = {
@@ -755,7 +753,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Training results dictionary
-        """"
+        """
         try:
             architecture = self.model_architectures.get(timeframe, "LightGBM")
             self.logger.info(f"   🌳 Training {architecture} single-output model")
@@ -875,7 +873,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Dictionary containing regime-specific training results
-        """"
+        """
         self.logger.info(f"🎯 Training enhanced regime-specific models for {timeframe}")
         
         regime_results = {}
@@ -930,7 +928,7 @@ class EnhancedHMMBasedTrainingStep:
         Returns:
             For multi_output: Tuple of (direction_predictions, profit_predictions)
             For single_output: Array of predictions
-        """"
+        """
         if prediction_type == "multi_output" and self.multi_output_trainer:
             try:
                 # Create market data for prediction
@@ -967,7 +965,7 @@ class EnhancedHMMBasedTrainingStep:
         Args:
             results: Training results dictionary
             save_path: Path to save models
-        """"
+        """
         try:
             ensure_directory(save_path)
             
@@ -1022,7 +1020,7 @@ class EnhancedHMMBasedTrainingStep:
         Args:
             model_name: Name of the model to load
             load_path: Path to load models from
-        """"
+        """
         try:
             # Load multi-output models
             multi_output_dir = os.path.join(load_path, "multi_output_models")
@@ -1047,7 +1045,7 @@ import copy
 import os.path
 
 model = joblib.load(model_path)
-                    scaler = joblib.load(scaler_path)
+scaler = joblib.load(scaler_path)
                     
                     # Store in models dict
                     self.models[f"{model_name}_single"] = {
@@ -1067,7 +1065,7 @@ model = joblib.load(model_path)
         """Apply simple regime-aware feature selection placeholder."
 
         Drops all-zero columns and ensures numeric dtype; keeps columns with variance.
-        """"
+        """
         try:
             df = features_df.copy()
             # Keep numeric columns only
@@ -1099,7 +1097,7 @@ async def run_enhanced_step(
         
     Returns:
         True if successful, False otherwise
-    """"
+    """
     try:
         logger = system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM-Based Training for {symbol}")

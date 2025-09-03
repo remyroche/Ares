@@ -3,29 +3,28 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 import pandas as pd
-from src.utils.centralized_decorators_simple import (
 import logging
 import datetime as datetime
 import asyncio
+from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
 )
 
 class LiquidationRiskModel:
-    """"
+    """
     Simplified Liquidation Risk Model that takes ML confidence predictions
     and determines safe leverage levels based on adverse price change risk.
     Optimized for 10x-100x leverage trading.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize Liquidation Risk Model.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("LiquidationRiskModel")
@@ -76,12 +75,12 @@ class LiquidationRiskModel:
         context="liquidation risk model initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize Liquidation Risk Model with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("Initializing Liquidation Risk Model...")
 
@@ -155,7 +154,7 @@ class LiquidationRiskModel:
     async def calculate_liquidation_risk(
         self, ml_predictions: dict[str, Any], current_price: float, target_direction: str = "long"
     ) -> dict[str, Any]:
-        """"
+        """
         Calculate liquidation risk and safe leverage levels.
 
         Args:
@@ -165,7 +164,7 @@ class LiquidationRiskModel:
 
         Returns:
             dict: Risk assessment results
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error("Liquidation Risk Model not initialized")
@@ -209,7 +208,7 @@ class LiquidationRiskModel:
     def _extract_adverse_risk(
         self, ml_predictions: dict[str, Any], target_direction: str = "long"
     ) -> float:
-        """"
+        """
         Extract adverse risk from ML predictions.
 
         Args:
@@ -218,7 +217,7 @@ class LiquidationRiskModel:
 
         Returns:
             float: Adverse risk score (0-1)
-        """"
+        """
         try:
             # Get confidence from ML predictions
             confidence = ml_predictions.get("confidence", 0.5)
@@ -257,7 +256,7 @@ class LiquidationRiskModel:
     def _calculate_safe_leverage(
         self, adverse_risk: float, target_direction: str = "long"
     ) -> int:
-        """"
+        """
         Calculate safe leverage level based on adverse risk.
 
         Args:
@@ -266,7 +265,7 @@ class LiquidationRiskModel:
 
         Returns:
             int: Safe leverage level
-        """"
+        """
         try:
             # Find the highest leverage level that can handle the adverse risk
             safe_leverage = self.min_leverage
@@ -290,7 +289,7 @@ class LiquidationRiskModel:
             return self.min_leverage
 
     def _get_max_safe_leverage(self, adverse_risk: float) -> int:
-        """"
+        """
         Get maximum safe leverage for given adverse risk.
 
         Args:
@@ -298,7 +297,7 @@ class LiquidationRiskModel:
 
         Returns:
             int: Maximum safe leverage
-        """"
+        """
         try:
             max_leverage = self.min_leverage
 
@@ -315,7 +314,7 @@ class LiquidationRiskModel:
             return self.min_leverage
 
     def _classify_risk_level(self, adverse_risk: float) -> str:
-        """"
+        """
         Classify risk level based on adverse risk.
 
         Args:
@@ -323,7 +322,7 @@ class LiquidationRiskModel:
 
         Returns:
             str: Risk level classification
-        """"
+        """
         try:
             if adverse_risk <= 0.2:
                 return "LOW"
@@ -340,7 +339,7 @@ class LiquidationRiskModel:
     def _generate_risk_recommendation(
         self, adverse_risk: float, safe_leverage: int
     ) -> str:
-        """"
+        """
         Generate risk recommendation.
 
         Args:
@@ -349,7 +348,7 @@ class LiquidationRiskModel:
 
         Returns:
             str: Risk recommendation
-        """"
+        """
         try:
             if adverse_risk > 0.7:
                 return "AVOID_TRADING"
@@ -366,7 +365,7 @@ class LiquidationRiskModel:
     def _calculate_liquidation_prices(
         self, current_price: float, target_direction: str = "long"
     ) -> dict[str, float]:
-        """"
+        """
         Calculate liquidation prices for different leverage levels.
 
         Args:
@@ -375,7 +374,7 @@ class LiquidationRiskModel:
 
         Returns:
             dict: Liquidation prices for different leverage levels
-        """"
+        """
         try:
             liquidation_prices = {}
 

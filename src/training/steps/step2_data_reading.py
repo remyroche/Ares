@@ -3,8 +3,7 @@
 
 This module handles reading the unified data from step1_5 and performs comprehensive
 data quality validation before proceeding to HMM regime discovery.
-""""
-
+"""
 import asyncio
 import os
 import sys
@@ -272,7 +271,7 @@ class DataReadingStep:
 import pandas as pd
             
 # Create reports directory
-            reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
+reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Create report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

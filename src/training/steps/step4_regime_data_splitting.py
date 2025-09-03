@@ -4,8 +4,7 @@
 This module creates a unified dataset with regime labels for regime-aware processing.
 Uses labels to differentiate regimes instead of creating separate files per regime.
 This ensures trading indicators have the necessary lookback periods.
-""""
-
+"""
 import asyncio
 import os
 import sys
@@ -415,7 +414,7 @@ import pandas as pd
 
 safe_json_dump(metadata, metadata_file, indent=2)
             
-            self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
+self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
             
         except Exception as e:
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
@@ -454,7 +453,7 @@ async def run_step(
         
     Returns:
         bool: Success status
-    """"
+    """
     logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
     
     # Use standardized path construction

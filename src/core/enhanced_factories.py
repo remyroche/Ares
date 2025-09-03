@@ -1,12 +1,11 @@
 # src/core/enhanced_factories.py
 
-""""
+"""
 Enhanced factory classes that use dependency injection.
 
 This module provides factory classes that create trading components
 using proper dependency injection patterns.
-""""
-
+"""
 from src.database.firestore_manager import FirestoreManager
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.core.dependency_injection import DependencyContainer
@@ -15,8 +14,8 @@ from typing import Any
 from src.database.influxdb_manager import InfluxDBManager
 from exchange.factory import ExchangeFactory
 from src.utils.state_manager import StateManager
-from src.interfaces.base_interfaces import (
 import asyncio
+from src.interfaces.base_interfaces import (
 
     IAnalyst,
     IExchangeClient,
@@ -30,10 +29,9 @@ from src.utils.warning_symbols import failed
 
 
 class TradingSystemFactory:
-    """"
+    """
     Factory for creating complete trading systems with dependency injection.
-    """"
-
+    """
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("TradingSystemFactory")
@@ -44,7 +42,7 @@ class TradingSystemFactory:
         state_manager: IStateManager,
         performance_reporter: IPerformanceReporter,
     ) -> dict[str, Any]:
-        """"
+        """
         Create a complete trading system with all components.
 
         Args:
@@ -54,7 +52,7 @@ class TradingSystemFactory:
 
         Returns:
             Dictionary containing all trading components
-        """"
+        """
         try:
             self.logger.info("Creating complete trading system")
 
@@ -88,10 +86,9 @@ class TradingSystemFactory:
 
 
 class ExchangeClientFactory:
-    """"
+    """
     Factory for creating exchange clients with dependency injection support.
-    """"
-
+    """
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("ExchangeClientFactory")
@@ -101,7 +98,7 @@ class ExchangeClientFactory:
         exchange_name: str,
         config: dict[str, Any] | None = None,
     ) -> IExchangeClient:
-        """"
+        """
         Create an exchange client with the specified configuration.
 
         Args:
@@ -110,7 +107,7 @@ class ExchangeClientFactory:
 
         Returns:
             Exchange client instance
-        """"
+        """
         try:
             # Use the exchange factory to create the client
             factory = ExchangeFactory()
@@ -128,10 +125,9 @@ class ExchangeClientFactory:
 
 
 class DatabaseFactory:
-    """"
+    """
     Factory for creating database managers with dependency injection support.
-    """"
-
+    """
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("DatabaseFactory")
@@ -160,10 +156,9 @@ class DatabaseFactory:
 
 
 class StateManagerFactory:
-    """"
+    """
     Factory for creating state managers with dependency injection support.
-    """"
-
+    """
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("StateManagerFactory")
@@ -182,10 +177,9 @@ class StateManagerFactory:
 
 
 class PerformanceReporterFactory:
-    """"
+    """
     Factory for creating performance reporters with dependency injection support.
-    """"
-
+    """
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("PerformanceReporterFactory")

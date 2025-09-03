@@ -1,4 +1,4 @@
-""""
+"""
 Reusable decorators for validation, vectorization, data hygiene, error normalization, and tracing.
 
 - Type/shape/schema validation: integrates with pydantic.validate_call if available,
@@ -14,8 +14,7 @@ ENHANCED FEATURES:
 - Intelligent caching for expensive operations
 - Performance monitoring and metrics
 - Centralized configuration support
-""""
-
+"""
 from __future__ import annotations
 
 import functools
@@ -251,8 +250,7 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
     - Automatic caching for expensive validation operations
     - Performance monitoring and metrics
     - Integration with enhanced configuration system
-    """"
-
+    """
     def decorator(func: F) -> F:
         # Apply the original validation logic
         if _pydantic_validate_call is not None:
@@ -289,8 +287,7 @@ def pa_check_input(
     - Intelligent caching for schema validation results
     - Performance monitoring for validation operations
     - Better error handling and recovery
-    """"
-
+    """
     def decorator(func: F) -> F:
         if pa is not None and hasattr(pa, "check_input"):
             # Use real pandera when available
@@ -327,8 +324,7 @@ def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
     - Intelligent caching for schema validation results
     - Performance monitoring for validation operations
     - Better error handling and recovery
-    """"
-
+    """
     def decorator(func: F) -> F:
         if pa is not None and hasattr(pa, "check_output"):
             # Use real pandera when available
@@ -373,8 +369,7 @@ def pa_check_io(
       argument identified by name or index and the returned DataFrame.
     - If pandera is not installed, performs a lightweight check that the
       argument/return is a pandas DataFrame when schemas are provided.
-    """"
-
+    """
     def decorator(func: F) -> F:
         def _resolve_df(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any | None:
             df_value: Any | None = None
@@ -491,8 +486,7 @@ def enforce_ndarray(
 
     - forbid_lists=True raises if a list is provided
     - require_vector=True requires at least 1-D input (no pure scalars)
-    """"
-
+    """
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any):
@@ -557,8 +551,7 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
     - If the first positional argument is an ndarray with ndim>=1, applies
       numpy.vectorize to broadcast the scalar logic across elements.
     - Otherwise, calls the function directly.
-    """"
-
+    """
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(first: Any, *args: Any, **kwargs: Any):
@@ -607,8 +600,7 @@ def guard_array_nan_inf(
       - "raise": raise DataValidationError on detection
       - "warn": log a warning and continue
       - "coerce": replace NaN/Inf with coerce_value before calling func
-    """"
-
+    """
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any):
@@ -718,8 +710,7 @@ def guard_dataframe_nulls(
 
     arg_index selects which positional argument is the DataFrame (0 for functions where df is first, 1 for instance methods).
     If columns is provided, restrict checks to those columns.
-    """"
-
+    """
     def decorator(func: F) -> F:
         def _check(df: pd.DataFrame) -> pd.DataFrame:
             if not isinstance(df, pd.DataFrame):
@@ -866,8 +857,7 @@ def normalize_errors(
     - if reraise=True, re-raises the normalized DomainError after logging
     - otherwise returns None and logs; for functions that must return a value,
       consider using together with default returns in your wrapper logic.
-    """"
-
+    """
     exception_map = dict(_EXCEPTION_MAP)
     if map_exceptions:
         exception_map.update(map_exceptions)
@@ -946,7 +936,7 @@ def _sanitize(value: Any) -> Any:
     """Best-effort PII scrubbing for dict-like inputs and sequences."
 
     Masks values of known sensitive keys. Keeps structure to aid debugging.
-    """"
+    """
     try:
         if isinstance(value, dict):
             redacted: dict[str, Any] = {}
@@ -986,8 +976,7 @@ def with_tracing_span(
     - Ensures a correlation ID is present
     - Optionally logs sanitized args/kwargs (avoid for heavy data)
     - Logs result size instead of full content by default
-    """"
-
+    """
     def decorator(func: F) -> F:
         resolved_span = span_name or func.__name__
         # Base fallback logger on the wrapped function's module'

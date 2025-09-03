@@ -7,8 +7,7 @@ parameters based on the current market context identified by the meta-labeling s
 
 The optimizer uses meta-label intensities and activations to determine optimal SL/TP levels
 for each label-driven regime, considering success proxies from backtest simulations.
-""""
-
+"""
 import os
 import sys
 from datetime import datetime
@@ -41,15 +40,14 @@ class RegimeSpecificTPSLOptimizer:
 
     This optimizer uses HMM market regimes to identify the current market state
     and then applies regime-specific optimization based on backtest performance.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the regime-specific TP/SL optimizer."
 
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
         self.print = self.logger.info
@@ -224,7 +222,7 @@ class RegimeSpecificTPSLOptimizer:
         Returns:
             bool: True if initialization successful = False otherwise
 
-        """"
+        """
         try:
             self.logger.info(
                 "Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...",
@@ -255,7 +253,7 @@ class RegimeSpecificTPSLOptimizer:
         Returns:
             bool: True if initialization successful = False otherwise
 
-        """"
+        """
         try:
             ok = await self.meta_labeling_system.initialize()
             if ok:
@@ -296,7 +294,7 @@ class RegimeSpecificTPSLOptimizer:
 import os.path
 
 with open(results_file, "w") as f:
-                json.dump(self.optimization_results, f, indent=2, default=str)
+    json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info("✅ Saved optimization results")
         except Exception:
             self.print(failed("Failed to save optimization results: {e}"))
@@ -315,7 +313,7 @@ with open(results_file, "w") as f:
 
         Returns: Tuple of (regime_label = confidence, additional_info)
 
-        """"
+        """
         try:
             # Require meta-labeling to be initialized
             if not getattr(self.meta_labeling_system, "is_initialized", False):
@@ -397,7 +395,7 @@ with open(results_file, "w") as f:
         Returns:
             Dictionary with optimized TP/SL parameters
 
-        """"
+        """
         try:
             self.logger.info(f"🎯 Optimizing TP/SL for regime: {regime}")
 
@@ -465,7 +463,7 @@ with open(results_file, "w") as f:
         Returns:
             float: Optimization score (higher is better)
 
-        """"
+        """
         try:
             # Suggest parameters within reasonable bounds
             target_pct = trial.suggest_float(
@@ -529,7 +527,7 @@ with open(results_file, "w") as f:
         Returns:
             List of trade dictionaries
 
-        """"
+        """
         trades = []
         position_open = False
         entry_price = 0.0
@@ -594,7 +592,7 @@ with open(results_file, "w") as f:
         Returns:
             Dictionary with optimized TP/SL parameters
 
-        """"
+        """
         try:
             # Identify current regime via meta-labels
             regime, confidence, regime_info = await self.identify_current_regime(current_data)
@@ -640,7 +638,7 @@ with open(results_file, "w") as f:
         Returns:
             Dictionary with optimization statistics
 
-        """"
+        """
         return {
             "optimized_regimes": list(self.optimization_results.keys()),
             "total_optimizations": len(self.optimization_results),

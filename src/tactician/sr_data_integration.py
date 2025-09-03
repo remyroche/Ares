@@ -27,6 +27,10 @@ sys.path.insert(0, str(project_root))
 
 try:
     from src.config.constants import DEFAULT_LOOKBACK_DAYS
+from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.training.steps.unified_data_loader import UnifiedDataLoader
+from src.training.steps.data_downloader import download_all_data_with_consolidation
     from src.config.training_modes import (
         TRAINING_MODES,
         FULL_TRAINING_LOOKBACK_DAYS,
@@ -34,8 +38,6 @@ try:
         SHORT_BLANK_LOOKBACK_DAYS,
         LIGHT_TRAINING_LOOKBACK_DAYS,
     )
-    from src.utils.logger import system_logger
-    from src.utils.error_handler import handle_errors, handle_specific_errors
 except ImportError as e:
     print(f"Warning: Could not import config modules: {e}")
     # Fallback imports
@@ -44,7 +46,6 @@ except ImportError as e:
 
 # Try to import training modules separately to handle import errors gracefully
 try:
-    from src.training.steps.unified_data_loader import UnifiedDataLoader
     UNIFIED_LOADER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: UnifiedDataLoader not available: {e}")
@@ -52,7 +53,6 @@ except ImportError as e:
     UnifiedDataLoader = None
 
 try:
-    from src.training.steps.data_downloader import download_all_data_with_consolidation
     DATA_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Data downloader not available: {e}")

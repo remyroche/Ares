@@ -44,7 +44,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if validation passed, False otherwise
 
-        """"
+        """
         self.logger.info("🔍 Validating tactician labeling step...")
 
         # Extract parameters
@@ -129,7 +129,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if files exist
 
-        """"
+        """
         try:
             # Expected tactician labeling file patterns
             expected_files = [
@@ -173,7 +173,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if signal quality is acceptable
 
-        """"
+        """
         try:
             # Load tactician signals (prefer Parquet)
             signals_parquet = (
@@ -186,6 +186,14 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 if os.path.exists(signals_parquet):
                     # Prefer dataset scan if labeled partition exists
                     try:
+from src.utils.logger import (
+from src.utils.logger import log_io_operation
+from src.training.enhanced_training_manager_optimized import (
+from src.utils.logger import (
+from src.utils.logger import log_io_operation
+from src.utils.logger import log_io_operation
+from src.utils.logger import log_io_operation
+import json
                         from src.training.enhanced_training_manager_optimized import (
                             ParquetDatasetManager,
                         )
@@ -212,7 +220,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 to_pandas=True,
                             )
                         else:
-                            from src.utils.logger import (
                                 log_dataframe_overview,
                                 log_io_operation,
                             )
@@ -232,7 +239,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                     self.logger, signals_data, name="signals_data",
                                 )
                     except Exception:
-                        from src.utils.logger import log_io_operation
 
                         with log_io_operation(
                             self.logger, "read_parquet", signals_parquet,
@@ -343,7 +349,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if labeling is consistent
 
-        """"
+        """
         try:
             # Load tactician labels (prefer Parquet)
             labels_parquet = f"{data_dir}/{exchange}_{symbol}_tactician_labels.parquet"
@@ -353,7 +359,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
             if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
                 if os.path.exists(labels_parquet):
                     try:
-                        from src.training.enhanced_training_manager_optimized import (
                             ParquetDatasetManager,
                         )
 
@@ -378,7 +383,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 to_pandas=True,
                             )
                         else:
-                            from src.utils.logger import (
                                 log_dataframe_overview,
                                 log_io_operation,
                             )
@@ -397,7 +401,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                     self.logger, labels_data, name="labels_data",
                                 )
                     except Exception:
-                        from src.utils.logger import log_io_operation
 
                         with log_io_operation(
                             self.logger, "read_parquet", labels_parquet,
@@ -434,7 +437,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
                     if os.path.exists(signals_parquet):
                         try:
-                            from src.utils.logger import log_io_operation
 
                             with log_io_operation(
                                 self.logger,
@@ -447,7 +449,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                     columns=["timestamp", "signal", "confidence"],
                                 )
                         except Exception:
-                            from src.utils.logger import log_io_operation
 
                             with log_io_operation(
                                 self.logger, "read_parquet", signals_parquet,
@@ -538,7 +539,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if signal distribution is acceptable
 
-        """"
+        """
         try:
             # Load tactician labeling metadata
             metadata_file = (
@@ -546,7 +547,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
             )
 
             if os.path.exists(metadata_file):
-                import json
 
                 with open(metadata_file) as f:
                     metadata = json.load(f)
@@ -661,7 +661,7 @@ async def run_validator(
     Returns:
         Dictionary containing validation results
 
-    """"
+    """
     validator = Step8TacticianLabelingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
 

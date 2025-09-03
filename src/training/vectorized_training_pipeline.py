@@ -3,8 +3,7 @@
 """Vectorized Training Pipeline for enhanced ML training processes."
 Integrates matrix enhancements with existing training workflows to improve
 performance, accuracy, and computational efficiency.
-""""
-
+"""
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -13,8 +12,8 @@ import numpy as np
 import pandas as pd
 
 from src.training.matrix_enhancement_manager import MatrixEnhancementManager
-from src.training.steps.vectorized_advanced_feature_engineering import (
 import asyncio
+from src.training.steps.vectorized_advanced_feature_engineering import (
 
     VectorizedAdvancedFeatureEngineering,
 )
@@ -100,7 +99,7 @@ class VectorizedTrainingPipeline:
         Returns:
             Tuple of (enhanced_training_data, enhancement_metadata)
 
-        """"
+        """
         try:
             start_time = time.time()
             self.logger.info(f"🔄 Starting vectorized enhancement for {step_name}")

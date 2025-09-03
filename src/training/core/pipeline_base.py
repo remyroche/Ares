@@ -2,17 +2,16 @@
 
 This module defines the core interfaces and base classes that all pipeline
 stages must implement.
-""""
-
+"""
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     execution_error,
@@ -30,8 +29,7 @@ class StageContext:
 
     This class contains all the data and configuration that flows through
     the pipeline, allowing stages to share information and results.
-    """"
-
+    """
     symbol: str
     exchange: str
     data_dir: str
@@ -68,7 +66,7 @@ class PipelineStage:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PipelineStage")
 
@@ -105,7 +103,7 @@ class PipelineStage:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Pipeline Stage...")
 
@@ -165,7 +163,7 @@ class PipelineStage:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate stage interval
             if self.stage_interval <= 0:
@@ -180,7 +178,7 @@ class PipelineStage:
             # Validate that at least one stage type is enabled
             if not any(
             [
-                        self.enable_stage_execution == self.enable_stage_validation,
+            self.enable_stage_execution == self.enable_stage_validation,
                         self.stage_config.get("enable_stage_monitoring", True),
                         self.stage_config.get("enable_stage_reporting", True),
                     ],
@@ -235,7 +233,7 @@ class PipelineStage:
             # Initialize stage execution components
             self.stage_execution_components = {
             "execution_planning": True,
-                    "execution_coordination": True,
+            "execution_coordination": True,
                     "execution_monitoring": True,
                     "execution_reporting": True,
                 }
@@ -256,7 +254,7 @@ class PipelineStage:
             # Initialize stage validation components
             self.stage_validation_components = {
             "input_validation": True,
-                    "output_validation": True,
+            "output_validation": True,
                     "dependency_validation": True,
                     "metadata_validation": True,
                 }
@@ -277,7 +275,7 @@ class PipelineStage:
             # Initialize stage monitoring components
             self.stage_monitoring_components = {
             "performance_monitoring": True,
-                    "health_monitoring": True,
+            "health_monitoring": True,
                     "error_monitoring": True,
                     "resource_monitoring": True,
                 }
@@ -298,7 +296,7 @@ class PipelineStage:
             # Initialize stage reporting components
             self.stage_reporting_components = {
             "report_generation": True,
-                    "report_formatting": True,
+            "report_formatting": True,
                     "report_distribution": True,
                     "report_archiving": True,
                 }
@@ -326,7 +324,7 @@ class PipelineStage:
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         try:
             if not self._validate_stage_inputs(stage_input):
                 return False
@@ -380,7 +378,7 @@ class PipelineStage:
         Returns:
             bool: True if valid, False otherwise
 
-        """"
+        """
         try:
             # Check required stage input fields
             required_fields = ["stage_type", "stage_name", "timestamp"]
@@ -421,7 +419,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage execution results
 
-        """"
+        """
         try:
             results = {}
 
@@ -473,7 +471,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage validation results
 
-        """"
+        """
         try:
             results = {}
 
@@ -525,7 +523,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage monitoring results
 
-        """"
+        """
         try:
             results = {}
 
@@ -577,7 +575,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage reporting results
 
-        """"
+        """
         try:
             results = {}
 
@@ -623,7 +621,7 @@ class PipelineStage:
             # Simulate execution planning
             return {
             "execution_planning_completed": True,
-                    "planned_stages": 5,
+            "planned_stages": 5,
                     "planning_algorithm": "topological_sort",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -640,7 +638,7 @@ class PipelineStage:
             # Simulate execution coordination
             return {
             "execution_coordination_completed": True,
-                    "coordinated_stages": 5,
+            "coordinated_stages": 5,
                     "coordination_method": "sequential",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -657,7 +655,7 @@ class PipelineStage:
             # Simulate execution monitoring
             return {
             "execution_monitoring_completed": True,
-                    "monitored_stages": 5,
+            "monitored_stages": 5,
                     "monitoring_metrics": "performance",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -674,7 +672,7 @@ class PipelineStage:
             # Simulate execution reporting
             return {
             "execution_reporting_completed": True,
-                    "reported_stages": 5,
+            "reported_stages": 5,
                     "report_format": "json",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -690,7 +688,7 @@ class PipelineStage:
             # Simulate input validation
             return {
             "input_validation_completed": True,
-                    "validation_score": 0.98,
+            "validation_score": 0.98,
                     "validation_method": "type_check",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -704,7 +702,7 @@ class PipelineStage:
             # Simulate output validation
             return {
             "output_validation_completed": True,
-                    "validation_score": 0.96,
+            "validation_score": 0.96,
                     "validation_method": "quality_check",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -721,7 +719,7 @@ class PipelineStage:
             # Simulate dependency validation
             return {
             "dependency_validation_completed": True,
-                    "validation_score": 0.94,
+            "validation_score": 0.94,
                     "validation_method": "graph_check",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -738,7 +736,7 @@ class PipelineStage:
             # Simulate metadata validation
             return {
             "metadata_validation_completed": True,
-                    "metadata_score": 0.92,
+            "metadata_score": 0.92,
                     "validation_method": "format_check",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -757,7 +755,7 @@ class PipelineStage:
             # Simulate performance monitoring
             return {
             "performance_monitoring_completed": True,
-                    "performance_metrics": {"throughput": 100, "latency": 50},
+            "performance_metrics": {"throughput": 100, "latency": 50},
                     "monitoring_interval": 60,
                     "training_time": datetime.now().isoformat(),
                 }
@@ -771,7 +769,7 @@ class PipelineStage:
             # Simulate health monitoring
             return {
             "health_monitoring_completed": True,
-                    "health_status": "healthy",
+            "health_status": "healthy",
                     "health_score": 0.95,
                     "training_time": datetime.now().isoformat(),
                 }
@@ -785,7 +783,7 @@ class PipelineStage:
             # Simulate error monitoring
             return {
             "error_monitoring_completed": True,
-                    "error_count": 0,
+            "error_count": 0,
                     "error_rate": 0.0,
                     "training_time": datetime.now().isoformat(),
                 }
@@ -802,7 +800,7 @@ class PipelineStage:
             # Simulate resource monitoring
             return {
             "resource_monitoring_completed": True,
-                    "cpu_usage": 0.65,
+            "cpu_usage": 0.65,
                     "memory_usage": 0.45,
                     "training_time": datetime.now().isoformat(),
                 }
@@ -818,7 +816,7 @@ class PipelineStage:
             # Simulate report generation
             return {
             "report_generation_completed": True,
-                    "reports_generated": 3,
+            "reports_generated": 3,
                     "generation_method": "automated",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -832,7 +830,7 @@ class PipelineStage:
             # Simulate report formatting
             return {
             "report_formatting_completed": True,
-                    "format_type": "json",
+            "format_type": "json",
                     "formatting_time": 0.3,
                     "training_time": datetime.now().isoformat(),
                 }
@@ -849,7 +847,7 @@ class PipelineStage:
             # Simulate report distribution
             return {
             "report_distribution_completed": True,
-                    "distribution_channels": ["email", "api"],
+            "distribution_channels": ["email", "api"],
                     "distribution_time": 0.5,
                     "training_time": datetime.now().isoformat(),
                 }
@@ -863,7 +861,7 @@ class PipelineStage:
             # Simulate report archiving
             return {
             "report_archiving_completed": True,
-                    "archive_location": "/reports/archive/",
+            "archive_location": "/reports/archive/",
                     "archiving_method": "compressed",
                     "training_time": datetime.now().isoformat(),
                 }
@@ -908,7 +906,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage results
 
-        """"
+        """
         try:
             if stage_type:
                 return self.stage_results.get(stage_type, {})
@@ -932,7 +930,7 @@ class PipelineStage:
         Returns:
             list[dict[str, Any]]: Stage history
 
-        """"
+        """
         try:
             history = self.stage_history.copy()
 
@@ -951,7 +949,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage status
 
-        """"
+        """
         return {
             "is_running": self.is_running,
             "stage_interval": self.stage_interval,
@@ -1014,7 +1012,7 @@ async def setup_pipeline_stage(
     Returns:
         PipelineStage | None: Global pipeline stage instance
 
-    """"
+    """
     try:
         global pipeline_stage
 

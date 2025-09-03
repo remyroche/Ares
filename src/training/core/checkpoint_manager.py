@@ -3,20 +3,19 @@
 This module provides checkpointing functionality for pipeline stages,
 allowing for resuming from failures and maintaining state across
 pipeline executions.
-""""
-
+"""
 from datetime import datetime
 from typing import Any
+import asyncio
 
 from src.utils.error_handler import (
-import asyncio
 
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     execution_error,
@@ -36,7 +35,7 @@ class CheckpointManager:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CheckpointManager")
 
@@ -82,7 +81,7 @@ class CheckpointManager:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         self.logger.info("Initializing Checkpoint Manager...")
 
         # Load checkpoint configuration
@@ -141,7 +140,7 @@ class CheckpointManager:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         # Validate checkpoint interval
         if self.checkpoint_interval <= 0:
             self.logger.error(invalid("Invalid checkpoint interval"))
@@ -278,7 +277,7 @@ class CheckpointManager:
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         if not self._validate_checkpoint_inputs(checkpoint_input):
             return False
 
@@ -338,7 +337,7 @@ class CheckpointManager:
         Returns:
             bool: True if valid, False otherwise
 
-        """"
+        """
         # Check required checkpoint input fields
         required_fields = ["checkpoint_type", "checkpoint_name", "timestamp"]
         for field in required_fields:
@@ -376,7 +375,7 @@ class CheckpointManager:
         Returns:
             Dict[str, Any]: Checkpoint saving results
 
-        """"
+        """
         results: dict[str, Any] = {}
 
         # Perform checkpoint creation
@@ -423,7 +422,7 @@ class CheckpointManager:
         Returns:
             Dict[str, Any]: Checkpoint loading results
 
-        """"
+        """
         results: dict[str, Any] = {}
 
         # Perform checkpoint discovery
@@ -473,7 +472,7 @@ class CheckpointManager:
         Returns:
             Dict[str, Any]: Checkpoint validation results
 
-        """"
+        """
         results: dict[str, Any] = {}
 
         # Perform integrity validation
@@ -523,7 +522,7 @@ class CheckpointManager:
         Returns:
             Dict[str, Any]: Checkpoint cleanup results
 
-        """"
+        """
         results: dict[str, Any] = {}
 
         # Perform cleanup scheduling
@@ -801,7 +800,7 @@ class CheckpointManager:
         Returns:
             Dict[str, Any]: Checkpoint results
 
-        """"
+        """
         if checkpoint_type:
             return self.checkpoint_results.get(checkpoint_type, {})
         return self.checkpoint_results.copy()
@@ -823,7 +822,7 @@ class CheckpointManager:
         Returns:
             List[Dict[str, Any]]: Checkpoint history
 
-        """"
+        """
         history = self.checkpoint_history.copy()
         if limit:
             history = history[-limit:]
@@ -835,7 +834,7 @@ class CheckpointManager:
         Returns:
             Dict[str, Any]: Checkpoint status
 
-        """"
+        """
         return {
             "is_managing": self.is_managing,
             "checkpoint_interval": self.checkpoint_interval,
@@ -894,7 +893,7 @@ async def setup_checkpoint_manager(
     Returns:
         Optional[CheckpointManager]: Global checkpoint manager instance
 
-    """"
+    """
     try:
         global checkpoint_manager
 

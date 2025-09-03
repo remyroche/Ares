@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-""""
+"""
 Exchange Volume Adapter for Model Transfer Learning
 
 This module handles the adaptation of models trained on high-volume exchanges
 (Binance) to work effectively on lower-volume exchanges (MEXC = Gate.io).
-""""
-
+"""
 from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, execution_error, initialization_error, warning
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
     error,
     execution_error,
     initialization_error,
@@ -22,7 +21,7 @@ import asyncio
 )
 
 class ExchangeVolumeAdapter:
-    """"
+    """
     Adapts trading strategies and position sizing based on exchange volume characteristics.
 
     This class handles the critical differences between exchanges:
@@ -30,8 +29,7 @@ class ExchangeVolumeAdapter:
     - Spread and slippage variations
     - Market impact considerations
     - Data quality adjustments
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ExchangeVolumeAdapter")
@@ -199,7 +197,7 @@ class ExchangeVolumeAdapter:
         current_volume: float = None,
         confidence_score: float = None,
     ) -> float:
-        """"
+        """
         Calculate position size adjustment based on exchange volume characteristics.
 
         Args:
@@ -210,7 +208,7 @@ class ExchangeVolumeAdapter:
 
         Returns:
             Adjusted position size
-        """"
+        """
         try:
             profile = self.get_volume_profile(exchange)
             base_multiplier = profile["position_size_multiplier"]
@@ -285,7 +283,7 @@ class ExchangeVolumeAdapter:
         base_confidence: float = None,
         data_quality_metrics: dict[str, Any] = None,
     ) -> float:
-        """"
+        """
         Adjust model confidence based on exchange data quality.
 
         Args:
@@ -295,7 +293,7 @@ class ExchangeVolumeAdapter:
 
         Returns:
             Adjusted confidence score
-        """"
+        """
         try:
             profile = self.get_volume_profile(exchange)
             data_quality_score = profile["data_quality_score"]
@@ -333,7 +331,7 @@ class ExchangeVolumeAdapter:
         current_volume: float = None,
         market_impact_threshold: float = None,
     ) -> tuple[bool, str]:
-        """"
+        """
         Determine if a trade should be executed based on volume constraints.
 
         Args:
@@ -344,7 +342,7 @@ class ExchangeVolumeAdapter:
 
         Returns:
             Tuple of (should_execute = reason)
-        """"
+        """
         try:
             profile = self.get_volume_profile(exchange)
             threshold = market_impact_threshold or profile["market_impact_threshold"]

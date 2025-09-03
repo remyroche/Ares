@@ -1,4 +1,4 @@
-""""
+"""
 Configuration Security Module
 
 This module provides secure configuration management including:
@@ -7,8 +7,7 @@ This module provides secure configuration management including:
 - Configuration validation and schema checking
 - Secure configuration updates and persistence
 - Audit logging for configuration changes
-""""
-
+"""
 import configparser
 import json
 import logging
@@ -109,7 +108,7 @@ class ConfigurationSecurityManager:
 
         Returns:
             Loaded configuration dictionary
-        """"
+        """
         file_path = Path(file_path)
 
         if not file_path.exists():
@@ -362,7 +361,7 @@ import copy
 
 shutil.copy2(file_path, backup_file)
 
-            # Set secure permissions on backup
+# Set secure permissions on backup
             backup_file.chmod(self.security_policies["config_file_permissions"])
 
             self.logger.info(f"Configuration backup created: {backup_file}")
@@ -381,7 +380,7 @@ shutil.copy2(file_path, backup_file)
 
         Returns:
             Configuration value or default
-        """"
+        """
         try:
             keys = key_path.split(".")
             value = config
@@ -414,7 +413,7 @@ shutil.copy2(file_path, backup_file)
 
         Returns:
             Updated configuration dictionary
-        """"
+        """
         try:
             keys = key_path.split(".")
             updated_config = config.copy()
@@ -452,7 +451,7 @@ shutil.copy2(file_path, backup_file)
 
         Returns:
             True if successful
-        """"
+        """
         try:
             file_path = Path(file_path)
 
@@ -503,7 +502,7 @@ shutil.copy2(file_path, backup_file)
 
         Returns:
             Configuration security report
-        """"
+        """
         try:
             # Count sensitive keys in recent configurations
             sensitive_access_count = sum(1 for entry in self.access_audit_log if "sensitive" in entry["action"])

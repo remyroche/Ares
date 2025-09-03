@@ -2,9 +2,9 @@
 
 import time
 from typing import Any
+import copy
 
 from src.training.steps.data_preparation_components.training_validation_config import (
-import copy
 
     VALIDATION_FUNCTIONS,
     can_proceed_to_step,

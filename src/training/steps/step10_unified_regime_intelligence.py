@@ -1,14 +1,17 @@
 # src/training/steps/step10_unified_regime_intelligence.py
 
-from src.core.decorators import (
 import logging
 import queue
 import threading
+
+from src.core.decorators import (
     cached,
     circuit_breaker,
     log_call,
     log_execution_time,
-    validates
+    validates,
+    handles_errors,
+    timeout
 )
 
 from src.core.domain import (
@@ -23,7 +26,7 @@ from src.core.domain import (
     time_budget_watchdog
 )
 
-"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management."
+"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management.
 
 This unified step consolidates:
 1. Multi-timeframe HMM state analysis with intensity scores for regime detection
@@ -48,7 +51,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 # Common utilities
 from src.utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
@@ -89,6 +92,26 @@ pandas = PipelineStandards.safe_import("pandas", None)
 torch = PipelineStandards.safe_import("torch", None)
 sklearn = PipelineStandards.safe_import("sklearn", None)
 
+# Import torch components if available
+if torch is not None:
+    import torch.nn as nn
+    import torch.nn.functional as F
+    from torch.utils.data import DataLoader, TensorDataset
+    import torch.nn.utils.prune as prune
+else:
+    nn = None
+    F = None
+    DataLoader = None
+    TensorDataset = None
+    prune = None
+
+# Import sklearn components if available
+if sklearn is not None:
+    from sklearn.preprocessing import StandardScaler, LabelEncoder
+else:
+    StandardScaler = None
+    LabelEncoder = None
+
 # Fallback functions if imports fail
 def create_fallback_logger():
     logging.basicConfig(level=logging.INFO)
@@ -125,7 +148,7 @@ if enhanced_lm_optimizer is not None:
     ENHANCED_OPTIMIZER_AVAILABLE = True
 else:
     ENHANCED_OPTIMIZER_AVAILABLE = False
-    logger.warning("⚠️ Enhanced LM optimizer not available, using basic optimization")
+    system_logger.warning("⚠️ Enhanced LM optimizer not available, using basic optimization")
 
 warnings.filterwarnings("ignore")
 
@@ -293,7 +316,10 @@ class UnifiedRegimeIntelligenceStep:
         sr_config = config.copy()
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor = SRBreakoutPredictor(sr_config)
+        if sr_breakout_predictor is not None:
+            self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+        else:
+            self.sr_predictor = None
 
         # Artifacts
         self.artifacts_dir = config.get(
@@ -316,7 +342,7 @@ class UnifiedRegimeIntelligenceStep:
         self.enhanced_lm_optimizer = None
         if ENHANCED_OPTIMIZER_AVAILABLE:
             try:
-                self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+                self.enhanced_lm_optimizer = enhanced_lm_optimizer.EnhancedLMOptimizer(config)
                 # Note: initialize() will be called later in an async context
                 self.logger.info("✅ Enhanced LM optimizer created for step6_5")
             except Exception as e:
@@ -660,7 +686,7 @@ class UnifiedRegimeIntelligenceStep:
             # Regime persistence features
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
-                # Calculate how long we've been in this regime'
+                # Calculate how long we've been in this regime
                 persistence = cluster_mask.groupby((cluster_mask != cluster_mask.shift()).cumsum()).cumsum()
                 intensity_df[f"persistence_cluster_{cluster_id}"] = persistence
 
@@ -1080,7 +1106,7 @@ class UnifiedRegimeIntelligenceStep:
                     if "1m" in hmm_data
                     else np.array([current_regime])
                 )
-                1 if len(set(future_regimes)) > 1 else 0
+                transition_label = 1 if len(set(future_regimes)) > 1 else 0
 
                 # TPSL-based direction prediction (long/short only)
                 tpsl_direction = await self._calculate_tpsl_direction(
@@ -1102,7 +1128,7 @@ class UnifiedRegimeIntelligenceStep:
             hmm_tensors: dict[str, torch.Tensor] = {}
             for tf in self.timeframes:
                 tf_states = [
-                    seq["hmm_states"].get(tf, np.zeros(self.sequence_length))
+                    seq["hmm_states"].get(tf, numpy.zeros(self.sequence_length) if numpy is not None else [0] * self.sequence_length)
                     for seq in sequences
                 ]
                 hmm_tensors[tf] = torch.tensor(tf_states, dtype=torch.long)
@@ -1885,11 +1911,12 @@ class UnifiedRegimeIntelligenceStep:
             )
             return None
 
-            pruner, optuna.pruners.MedianPruner() if self.hpo_pruning else None
-            study, optuna.create_study(direction="maximize", pruner=pruner)
+        try:
+            pruner = optuna.pruners.MedianPruner() if self.hpo_pruning else None
+            study = optuna.create_study(direction="maximize", pruner=pruner)
 
             def objective(trial: "optuna.Trial") -> float:
-                {
+                params = {
                     "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
                     "batch_size": trial.suggest_categorical("batch_size", [16, 32, 64]),
                     "d_model": trial.suggest_categorical("d_model", [128, 256, 512]),
@@ -1898,20 +1925,20 @@ class UnifiedRegimeIntelligenceStep:
                     "dropout": trial.suggest_float("dropout", 0.1, 0.5),
                     "sequence_length": trial.suggest_int("sequence_length", 10, 50),
                 }
-            # Lightweight proxy objective (no full training inside step to keep runtime bounded)
-            score = 0.5 + 0.3 * (1.0 - float(params["dropout"])) + 0.2 * (float(params["d_model"]) / 512.0),
-            return float(score)
+                # Lightweight proxy objective (no full training inside step to keep runtime bounded)
+                score = 0.5 + 0.3 * (1.0 - float(params["dropout"])) + 0.2 * (float(params["d_model"]) / 512.0)
+                return float(score)
 
-            # Get HPO parameters from training input or use defaults
-            hpo_trials = self.training_input.get("hpo_trials", self.n_trials)
-            hpo_timeout = self.training_input.get("hpo_timeout", self.hpo_timeout)
+            # Get HPO parameters from config or use defaults
+            hpo_trials = self.n_trials
+            hpo_timeout = self.hpo_timeout
 
             study.optimize(
                 objective, n_trials=hpo_trials, timeout=hpo_timeout, show_progress_bar=False,
             )
 
-            best_params = study.best_params,
-            best_value = study.best_value,
+            best_params = study.best_params
+            best_value = study.best_value
             self.logger.info(f"✅ HPO completed. Best score: {best_value:.4f}")
             self.logger.info(f"Best parameters: {best_params}")
 
@@ -2028,8 +2055,6 @@ class UnifiedRegimeIntelligenceStep:
                 "risk_level": "MEDIUM",
             }
 
-)
-
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step5_5_unified_regime_intelligence")
@@ -2048,15 +2073,8 @@ class UnifiedRegimeIntelligenceStep:
     },
     context="Unified Regime Intelligence",
 )
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
+# @secure_data_processing - removed, handled by validates
 # @prevent_data_leakage - removed, handled by validates
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    cross_validation_isolation=True,
-    lookahead_bias_prevention=True,
-)
 @log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
@@ -2084,9 +2102,6 @@ class UnifiedRegimeIntelligenceStep:
     data_quality_checks={"min_rows": 100},
 )
 # @quality_gate - removed, handled by validates
-    model_performance_thresholds={"accuracy": 0.55},
-    data_quality_metrics={"completeness": 0.85},
-)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

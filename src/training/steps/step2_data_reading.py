@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -263,8 +264,7 @@ class DataReadingStep:
 import pandas as pd
             
             # Create reports directory
-            reports_dir = Path(data_dir) / "reports" / "data_quality"
-            reports_dir.mkdir(parents=True, exist_ok=True)
+            reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Create report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -282,8 +282,7 @@ import pandas as pd
             }
             
             # Save report
-            with open(report_path, 'w') as f:
-                json.dump(report_data, f, indent=2, default=str)
+            safe_json_dump(report_data, report_path, indent=2, default=str)
             
             self.logger.info(f"✅ Validation report saved to {report_path}")
             self._log_step_timing("save_validation_report", step_start)
@@ -328,7 +327,7 @@ import pandas as pd
             
             # Save processed data for next step using standardized paths
             processed_dir = self.standards.build_path("processed_data", exchange, symbol)
-            os.makedirs(processed_dir, exist_ok=True)
+            ensure_directory(processed_dir)
             
             output_file = f"{exchange}_{symbol}_{timeframe}_validated_data.parquet"
             output_path = Path(processed_dir) / output_file

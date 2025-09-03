@@ -26,6 +26,7 @@ from src.utils.logger import system_logger
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
+from src.utils.common_operations import ensure_directory
 
 
 # -----------------------------------------------------------------------------
@@ -175,7 +176,7 @@ class VectorizedLabellingOrchestrator:
 
     def _log_feature_sample(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
+            ensure_directory("log/features_samples")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}.log"
@@ -1243,7 +1244,7 @@ class VectorizedLabellingOrchestrator:
         """Save data as Parquet file."""
         try:
             output_dir = "data/vectorized_features"
-            os.makedirs(output_dir, exist_ok=True)
+            ensure_directory(output_dir)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"vectorized_features_{timestamp}.parquet"
@@ -1256,7 +1257,7 @@ class VectorizedLabellingOrchestrator:
 
     def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
+            ensure_directory("log/features_samples")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Features.txt"
@@ -1300,7 +1301,7 @@ class VectorizedLabellingOrchestrator:
 
     def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
+            ensure_directory("log/features_samples")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Columns.txt"
@@ -1507,7 +1508,7 @@ class VectorizedLabellingOrchestrator:
 
     def _log_feature_format_report(self, stage: str, report: dict[str, Any], step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
+            ensure_directory("log/features_samples")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_FormatReport.json"
@@ -1599,7 +1600,7 @@ class VectorizedLabellingOrchestrator:
             if df is None or df.empty:
                 return
 
-            os.makedirs("log/mi", exist_ok=True)
+            ensure_directory("log/mi")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             meta_label_cols: list[str] = [
@@ -2436,8 +2437,6 @@ class VectorizedDataNormalizer:
     def _apply_minmax_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
         try:
             from sklearn.preprocessing import MinMaxScaler
-import copy
-import os.path
 
             scaler = MinMaxScaler()
             numeric_data = data.select_dtypes(include=[np.number])

@@ -30,6 +30,9 @@ from typing import Any
 from pathlib import Path
 import asyncio
 
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 import sys
@@ -273,7 +276,7 @@ class UnifiedRegimeIntelligenceStep:
         self.artifacts_dir = config.get(
             "artifacts_dir", "checkpoints/unified_regime_intelligence",
         )
-        os.makedirs(self.artifacts_dir, exist_ok=True)
+        ensure_directory(self.artifacts_dir)
 
         # Enhancement-related config (optional)
         self.enhancement_config = config.get("enhancement", {})
@@ -1479,8 +1482,7 @@ class UnifiedRegimeIntelligenceStep:
                 "training_timestamp": datetime.now().isoformat(),
             }
 
-            with open(os.path.join(self.artifacts_dir, "config.json"), "w") as f:
-                json.dump(config_save, f, indent=2)
+            safe_json_dump(config_save, os.path.join(self.artifacts_dir, "config.json"), indent=2)
 
             self.logger.info(f"💾 Artifacts saved to {self.artifacts_dir}")
 

@@ -9,7 +9,7 @@ This module provides the Strategist class which is responsible for:
 - Strategy History Management: Track and store strategy performance
 """
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 
@@ -32,6 +32,7 @@ from .utils import (
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
+    from src.tactician.tactician import Tactician
 
 
 class Strategist:
@@ -570,7 +571,9 @@ class Strategist:
             self.logger.error(f"Failed to apply regime adjustments: {e}")
             return strategy
 
+
     @handles_errors(Exception, fallback=False)
+
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:

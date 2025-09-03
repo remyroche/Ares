@@ -5,13 +5,7 @@ from src.core.decorators import handles_errors
 from datetime import datetime
 from typing import Any
 
-<<<<<<< HEAD
-=======
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
->>>>>>> origin/main
+# Removed error_handler imports - using core decorators instead
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,

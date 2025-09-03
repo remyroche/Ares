@@ -16,8 +16,7 @@ import numpy as np
 import pandas as pd
 
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
-from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import validate_data_quality
+from src.core.decorators import handles_errors, validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -282,13 +281,9 @@ class MLTargetUpdater:
             self.logger.exception(failed(f"❌ Error checking if target should be updated: {e}"))
             return False
 
-    @validate_data_quality(
-        required_columns=["open", "high", "low", "close", "volume"],
-        min_rows=20,
-        max_null_ratio=0.1,
-        check_duplicates=True,
-        check_timestamps=True,
-        context="ML target prediction generation",
+    @validate_dataframe(
+        columns=["open", "high", "low", "close", "volume"],
+        min_rows=20
     )
     async def _generate_target_prediction(
         self,
@@ -365,13 +360,9 @@ class MLTargetUpdater:
             self.logger.exception(failed(f"❌ Error validating target: {e}"))
             return False
 
-    @validate_data_quality(
-        required_columns=["timestamp", "open", "high", "low", "close", "volume"],
-        min_rows=1,
-        max_null_ratio=0.0,
-        check_duplicates=False,
-        check_timestamps=True,
-        context="ML target updater market data retrieval",
+    @validate_dataframe(
+        columns=["timestamp", "open", "high", "low", "close", "volume"],
+        min_rows=1
     )
     async def _get_market_data(self, symbol: str) -> pd.DataFrame | None:
         """

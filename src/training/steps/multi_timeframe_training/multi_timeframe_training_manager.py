@@ -65,7 +65,7 @@ class MultiTimeframeTrainingManager:
         # Initialize StepDependencyValidator for step dependency validation
         self.step_dependency_validator = step_dependency_validator
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (
                 False,
@@ -441,7 +441,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error generating multi-timeframe features: {e}"))
             return {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid multi-timeframe training parameters"),
             AttributeError: (False, "Missing multi-timeframe training components"),

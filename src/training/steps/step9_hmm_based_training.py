@@ -57,7 +57,7 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 
 # Safe imports with fallbacks
 sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
-centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+centralized_decorators = PipelineStandards.safe_import("src.core.decorators", None)
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
 model_probability_generator = PipelineStandards.safe_import("src.training.model_probability_generator", None)

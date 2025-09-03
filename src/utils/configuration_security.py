@@ -98,7 +98,7 @@ class ConfigurationSecurityManager:
         self.backup_dir = Path("data_cache/config_backups")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration loading")
+    @handles_errors(Exception,, fallback=None, context="configuration loading")
     def load_secure_configuration(self, file_path: str, config_format: str = "auto") -> Optional[Dict[str, Any]]:
         """Load configuration from file with security validation."
 
@@ -369,7 +369,7 @@ shutil.copy2(file_path, backup_file)
         except Exception as e:
             self.logger.error(f"Failed to create configuration backup: {e}")
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration value access")
+    @handles_errors(Exception,, fallback=None, context="configuration value access")
     def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
         """Get configuration value by dot-notation path."
 
@@ -402,7 +402,7 @@ shutil.copy2(file_path, backup_file)
             self.logger.error(f"Failed to get config value for {key_path}: {e}")
             return default
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration value setting")
+    @handles_errors(Exception,, fallback=None, context="configuration value setting")
     def set_config_value(self, config: Dict[str, Any], key_path: str, value: Any) -> Optional[Dict[str, Any]]:
         """Set configuration value by dot-notation path."
 

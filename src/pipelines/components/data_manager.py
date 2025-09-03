@@ -19,7 +19,7 @@ from typing import Any
 
 <<<<<<< HEAD
 =======
-from src.utils.centralized_decorators import (
+from src.core.decorators import handles_errors, validates, traced, cached, compose
     PerformanceLevel,
     handle_errors,
     handle_specific_errors,
@@ -53,7 +53,7 @@ class DataManager:
 
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @cached()
-    @validate_data_quality(required_columns=None, context="data_manager.process")
-    @handles_errors(exceptions=(Exception,), default_return=None, context="data_manager.process")
+    @validates(required_columns=None, context="data_manager.process")
+    @handles_errors(Exception,, fallback=None, context="data_manager.process")
     async def process(self, data):
         return data

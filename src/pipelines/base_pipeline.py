@@ -17,7 +17,7 @@ from typing import Any
 
 <<<<<<< HEAD
 =======
-from src.utils.centralized_decorators import (
+from src.core.decorators import handles_errors, validates, traced, cached, compose
     PerformanceLevel,
     handle_errors,
     handle_specific_errors,
@@ -116,7 +116,7 @@ class BasePipeline:
     @log_execution_time()
     @cached()
     @pipeline_checkpoint(checkpoint_name="base_pipeline.shutdown")
-    @handles_errors(exceptions=(Exception,), default_return=False, context="base_pipeline.shutdown")
+    @handles_errors(Exception,, fallback=False, context="base_pipeline.shutdown")
     async def shutdown(self) -> bool:
         self.logger.info("Shutting down BasePipeline ...")
         self.is_running = False

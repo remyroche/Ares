@@ -144,7 +144,7 @@ class ModelManager:
         self.auto_backup: bool = bool(self.model_config.get("auto_backup", True))
         self.max_models: int = int(self.model_config.get("max_models", 10))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model manager configuration"),
             AttributeError: (False, "Missing required model parameters"),
@@ -302,7 +302,7 @@ class ModelManager:
 
         self.logger.info(f"Loaded {len(self.models)} existing models")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model parameters"),
             AttributeError: (False, "Missing model components"),

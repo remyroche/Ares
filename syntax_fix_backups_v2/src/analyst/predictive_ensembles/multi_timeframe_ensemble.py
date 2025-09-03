@@ -6,7 +6,6 @@ Multi-Timeframe Ensemble Integration
 This integrates multi-timeframe training into the existing ensemble system,
 making each individual model (XGBoost, LSTM, etc.) a multi-timeframe ensemble.
 """
-
 import os
 import time
 from datetime import datetime
@@ -22,8 +21,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import logging
+from src.utils.warning_symbols import (
     error,
     failed,
     warning,
@@ -36,7 +35,6 @@ class MultiTimeframeEnsemble:
 
     Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
     """
-
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
         self,
@@ -336,7 +334,7 @@ import copy
 import os.path
 
 model = MLPClassifier(
-                hidden_layer_sizes=(100, 50),
+hidden_layer_sizes=(100, 50),
                 max_iter=200,
                 random_state=42,
             )

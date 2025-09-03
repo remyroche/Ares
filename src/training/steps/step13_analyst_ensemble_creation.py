@@ -153,7 +153,7 @@ class AnalystEnsembleCreationStep:
             try:
 import copy
 import datetime as datetime
-import os.path
+import os
                 from src.training.optimized_feature_selection_manager import (
             except Exception as e:
                 pass  # TODO: Handle exception properly

@@ -33,7 +33,6 @@ class OptimizedFeatureSelectionManager:
     4. Model-specific optimization for different architectures
     5. Computational efficiency with vectorized operations
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedFeatureSelection")
@@ -302,7 +301,7 @@ class OptimizedFeatureSelectionManager:
 import copy
 
 vif_scores = []
-        for i, _col in enumerate(features_df.columns):
+for i, _col in enumerate(features_df.columns):
             try:
                 vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)

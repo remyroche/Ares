@@ -983,7 +983,7 @@ class MetaLabelingSystem:
         """
         try:
             if not self.is_initialized:
-                self.logger.error(initialization_"Meta-labeling system not initialized")
+                self.logger.error("Meta-labeling system not initialized")
 
                 return {}
 
@@ -1082,7 +1082,7 @@ class MetaLabelingSystem:
         """
         try:
             if not self.is_initialized:
-                self.logger.error(initialization_"Meta-labeling system not initialized")
+                self.logger.error("Meta-labeling system not initialized")
 
                 return {}
 

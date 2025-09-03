@@ -7,7 +7,7 @@ from src.core.decorators import handles_errors
 import hashlib
 import json
 import os
-import os.path
+import os
 import pickle
 from dataclasses import dataclass
 from datetime import datetime, timedelta

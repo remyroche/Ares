@@ -823,7 +823,7 @@ class _PrefitWrapper:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 import copy
-import os.path
+import os
 from src.utils.enhanced_mlflow_integration import (
 
     with_enhanced_mlflow_logging,
@@ -1149,7 +1149,7 @@ async def run_step(
 
 if __name__ == "__main__":
     # Test the step
-    async def await test() -> None:
+    async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

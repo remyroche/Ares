@@ -1514,7 +1514,7 @@ import copy
     
     # Load test configuration
     test_config = {
-        "SYMBOL": "ETHUSDT",
+    "SYMBOL": "ETHUSDT",
         "EXCHANGE": "BINANCE",
         "TIMEFRAME": "1m",
         "DATA_DIR": "data_cache",

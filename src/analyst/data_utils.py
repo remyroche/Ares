@@ -239,7 +239,7 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing data cleaning: {e}")
+            self.logger.error(f"Error initializing data cleaning: {e}")
 
 
     @handles_errors(
@@ -262,7 +262,7 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error initializing data validation: {e}")
+            self.logger.error(f"Error initializing data validation: {e}")
 
 
     @handles_errors(
@@ -309,7 +309,7 @@ class DataUtils:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing data aggregation: {e}")
+            self.logger.error(f"Error initializing data aggregation: {e}")
 
 
     @handle_specific_errors(
@@ -526,7 +526,7 @@ class DataUtils:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing data validation: {e}")
+            self.logger.error(f"Error performing data validation: {e}")
 
             return {}
 
@@ -739,7 +739,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing data type validation: {e}")
+            self.logger.error(f"Error performing data type validation: {e}")
 
             return {}
 
@@ -759,7 +759,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing range validation: {e}")
+            self.logger.error(f"Error performing range validation: {e}")
 
             return {}
 
@@ -779,7 +779,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing format validation: {e}")
+            self.logger.error(f"Error performing format validation: {e}")
 
             return {}
 
@@ -799,7 +799,7 @@ class DataUtils:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing consistency validation: {e}")
+            self.logger.error(f"Error performing consistency validation: {e}")
 
             return {}
 

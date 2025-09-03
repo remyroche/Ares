@@ -331,7 +331,7 @@ class MultiTimeframeEnsemble:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
-import os.path
+import os
 
 model = MLPClassifier(
 hidden_layer_sizes=(100, 50),

@@ -227,7 +227,7 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing ensemble modules: {e}")
+            self.logger.error(f"Error initializing ensemble modules: {e}")
 
 
     @handles_errors(
@@ -250,7 +250,7 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing model ensemble: {e}")
+            self.logger.error(f"Error initializing model ensemble: {e}")
 
 
     @handles_errors(
@@ -273,7 +273,7 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing voting ensemble: {e}")
+            self.logger.error(f"Error initializing voting ensemble: {e}")
 
 
     @handles_errors(
@@ -320,7 +320,7 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing bagging ensemble: {e}")
+            self.logger.error(f"Error initializing bagging ensemble: {e}")
 
 
     @handles_errors(
@@ -905,7 +905,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing cross validation: {e}")
+            self.logger.error(f"Error performing cross validation: {e}")
 
             return {}
 
@@ -1038,7 +1038,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing bagging validation: {e}")
+            self.logger.error(f"Error performing bagging validation: {e}")
 
             return {}
 

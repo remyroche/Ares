@@ -1974,8 +1974,6 @@ class UnifiedRegimeIntelligenceStep:
                 "risk_level": "MEDIUM",
             }
 
-
-
 )
 
 

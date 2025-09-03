@@ -95,7 +95,7 @@ def regime_columns() -> list[str]:
         except Exception as e:  # pragma: no cover - safety
             self.logger.error(initialization_error(f"Error initializing cache: {e}"))
 
-    @handles_errors, default_return=lambda self, df, **_: df, context="optimize dataframe")
+    @handles_errors, default_return=lambda self, df: df, context="optimize dataframe")
     async def optimize_dataframe(self, df: pd.DataFrame, strategy: str = "auto") -> pd.DataFrame:
         """Optimize DataFrame for better performance and memory usage."""
         self.logger.info(f"Optimizing DataFrame with strategy: {strategy}")
@@ -330,11 +330,8 @@ def regime_columns() -> list[str]:
         }
 
     @with_tracing_span("DataOptimizer.optimize_market_data", log_args=False)
-    @validates
-    @handles_errors
-        default_return=lambda self, market_data: market_data,
-        context="market data optimization",
-    )
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @handles_errors, default_return=lambda self, market_data: market_data, context="market data optimization")
     async def optimize_market_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Optimize market data specifically for trading operations."""
         self.logger.info("Optimizing market data for trading operations...")
@@ -368,10 +365,7 @@ def regime_columns() -> list[str]:
         self.logger.info(f"Market data optimized: {len(market_data)} rows")
         return market_data
 
-    @handles_errors
-        default_return=lambda self, ensemble_data: ensemble_data,
-        context="ensemble data optimization",
-    )
+    @handles_errors, default_return=lambda self, ensemble_data: ensemble_data, context="ensemble data optimization")
     async def optimize_ensemble_data(self, ensemble_data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         """Optimize ensemble data for model training."""
         self.logger.info("Optimizing ensemble data for model training...")

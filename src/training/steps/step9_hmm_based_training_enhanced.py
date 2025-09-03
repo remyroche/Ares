@@ -1049,7 +1049,7 @@ import os.path
 model = joblib.load(model_path)
 scaler = joblib.load(scaler_path)
                     
-                    # Store in models dict
+# Store in models dict
                     self.models[f"{model_name}_single"] = {
                         "model": model,
                         "scaler": scaler,

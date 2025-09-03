@@ -935,7 +935,7 @@ import copy
 logger = system_logger.getChild("ComprehensiveGapFiller")
         
 gap_filling_start = datetime.now()
-        logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
+logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
         logger.info(f"⏱️  Max API calls per gap: {self.max_api_calls_per_gap}")
         logger.info(f"⏱️  Call delay: {self.call_delay}s")

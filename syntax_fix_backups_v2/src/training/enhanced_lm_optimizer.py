@@ -9,7 +9,6 @@ This module provides comprehensive optimization for Language Model (LM) componen
 4. Vectorized/matrix operations for efficiency
 5. Model-specific optimizations for different architectures
 """
-
 import asyncio
 import json
 import time
@@ -61,7 +60,6 @@ class EnhancedLMOptimizer:
     - Vectorized operations for efficiency
     - Model-specific optimizations
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedLMOptimizer")
@@ -1360,7 +1358,7 @@ class EnhancedFeatureSelector:
 import copy
 
 feature_stability = dict.fromkeys(features_df.columns, 0)
-            n_folds = 5
+n_folds = 5
 
             # Time series cross-validation for stability analysis
             tscv = TimeSeriesSplit(n_splits=n_folds)

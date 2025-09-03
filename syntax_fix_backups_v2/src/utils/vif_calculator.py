@@ -4,7 +4,6 @@ VIF Calculator
 This module provides robust VIF (Variance Inflation Factor) calculation functions
 with comprehensive error handling and validation.
 """
-
 import logging
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -67,7 +66,7 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
 import copy
 
 model = LinearRegression()
-            model.fit(X_clean, y_clean)
+model.fit(X_clean, y_clean)
             r_squared = model.score(X_clean, y_clean)
 
             # Calculate VIF

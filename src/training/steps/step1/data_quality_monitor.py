@@ -224,7 +224,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
 # Run quality check
             quality_results = await manager.comprehensive_quality_check(
-                symbol=symbol,
+            symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
                 check_gaps=True,

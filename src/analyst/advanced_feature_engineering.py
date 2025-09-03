@@ -2187,7 +2187,7 @@ class VolatilityRegimeModel:
             return True
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing volatility model: {e}")
+            self.logger.error(f"Error initializing volatility model: {e}")
 
             return False
 

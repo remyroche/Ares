@@ -372,7 +372,7 @@ if __name__ == "__main__":
 import datetime as datetime
     
     test_input = {
-        "symbol": "ETHUSDT",
+    "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",
         "data_dir": "data_cache",

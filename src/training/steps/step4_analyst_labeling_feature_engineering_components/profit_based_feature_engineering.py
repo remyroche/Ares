@@ -705,7 +705,7 @@ import copy
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame({
-        'open': np.random.uniform(100, 110, 1000),
+    'open': np.random.uniform(100, 110, 1000),
         'high': np.random.uniform(105, 115, 1000),
         'low': np.random.uniform(95, 105, 1000),
         'close': np.random.uniform(100, 110, 1000),

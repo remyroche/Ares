@@ -5,15 +5,14 @@
 This module provides a training manager that uses proper dependency injection
 patterns for managing the training pipeline and its components.
 """
-
 from typing import Any
 
 from src.core.dependency_injection import DependencyContainer
 from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     initialization_error,
@@ -29,7 +28,6 @@ class DITrainingManager(InjectableBase):
     This training manager uses proper dependency injection patterns
     for creating and managing training pipeline components.
     """
-
     def __init__(
         self,
         config: dict[str, Any] | None = None,
@@ -113,7 +111,7 @@ import os.path
 
 self.training_pipeline = TrainingPipeline(self.training_config)
 
-            # Initialize training steps
+# Initialize training steps
             await self._initialize_training_steps()
 
             self.logger.info("Training components initialized")

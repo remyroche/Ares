@@ -13,7 +13,7 @@ from typing import (
 import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
-from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
+from src.analyst.unified_regime_classifier_sr_optimized import UnifiedRegimeClassifierSROptimized as UnifiedRegimeClassifierFractal
 from src.core.decorators import (
     handles_errors,
 )
@@ -356,14 +356,18 @@ class Analyst:
         context="regime classifier initialization",
     )
     async def _initialize_regime_classifier(self) -> None:
-        """Initialize Unified Regime Classifier."""
-        self.logger.info("Initializing Unified Regime Classifier...")
-        self.regime_classifier = UnifiedRegimeClassifier(
+        """Initialize Unified Regime Classifier (Fractal Location-based)."""
+        self.logger.info("Initializing Fractal Location Classifier...")
+        self.regime_classifier = UnifiedRegimeClassifierFractal(
             self.config,
-            "UNKNOWN",
-            "UNKNOWN",
+            self.analyst_config.get("exchange", "UNKNOWN"),
+            self.analyst_config.get("symbol", "UNKNOWN"),
         )
-        self.logger.info("Unified Regime Classifier initialized successfully")
+        # Initialize the classifier
+        if await self.regime_classifier.initialize():
+            self.logger.info("✅ Fractal Location Classifier initialized successfully")
+        else:
+            self.logger.error("❌ Failed to initialize Fractal Location Classifier")
 
     @handle_specific_errors(
         error_handlers={
@@ -462,13 +466,13 @@ class Analyst:
                 exchange = analysis_input.get("exchange", "UNKNOWN")
                 timeframe = analysis_input.get("timeframe", "1h")
                 
-                # Get regime info from regime classifier if available
+                # Get location info from fractal classifier if available
                 regime_info = {}
                 if self.regime_classifier and features_df is not None:
                     try:
-                        regime_info = await self.regime_classifier.analyze_regime(features_df)
+                        regime_info = await self.analyze_regime(features_df)
                     except Exception as e:
-                        self.logger.warning(f"Failed to get regime info: {e}")
+                        self.logger.warning(f"Failed to get location info: {e}")
                         regime_info = {"regime": "UNKNOWN", "confidence": 0.0}
                 
                 enhanced_predictions = await self.supervisor.get_analyst_predictions(
@@ -839,6 +843,36 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
+    async def analyze_regime(self, features_df: pd.DataFrame) -> dict[str, Any]:
+        """
+        Analyze location using fractal classification.
+        This method is called by supervisor for regime info.
+        """
+        if not self.regime_classifier:
+            return {"regime": "UNKNOWN", "confidence": 0.0}
+        
+        try:
+            # Get fractal location classification
+            location_result = await self.regime_classifier.classify_location(features_df)
+            
+            # Convert to regime info format expected by supervisor
+            # Note: Actual regime is determined by HMM in training pipeline
+            regime_info = {
+                "regime": "LOCATION_BASED",  # Placeholder - actual regime from HMM
+                "location": location_result.get("primary_location", "OPEN_RANGE"),
+                "confidence": location_result.get("location_strength", 0.5),
+                "action_bias": location_result.get("action_bias", "NEUTRAL"),
+                "location_details": location_result.get("location_details", {}),
+                "nearby_levels": location_result.get("nearby_levels", []),
+                "fractal_analysis": location_result.get("fractal_analysis", {})
+            }
+            
+            return regime_info
+            
+        except Exception as e:
+            self.logger.error(f"Error in fractal location analysis: {e}")
+            return {"regime": "UNKNOWN", "confidence": 0.0}
+
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -849,54 +883,57 @@ class Analyst:
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Perform regime and location classification.
+        Perform fractal location classification.
 
         Args:
             analysis_input: Input data for analysis
 
         Returns:
-            dict: Regime and location classification results
+            dict: Location classification results
         """
         try:
             market_data = analysis_input.get("market_data")
-            analysis_input.get("current_price")
 
-            if self.regime_classifier:
-                # Use the new unified regime classifier for both regime and location
-                regime, location, confidence, additional_info = (
-                    self.regime_classifier.predict_regime_and_location(market_data)
-                )
-
+            if self.regime_classifier and market_data is not None:
+                # Use fractal location classifier
+                location_result = await self.regime_classifier.classify_location(market_data)
+                
+                # Format results for compatibility
                 regime_results = {
-                    "regime": regime,
-                    "location": location,
-                    "confidence": confidence,
-                    "regime_confidence": additional_info.get(
-                        "regime_confidence",
-                        confidence,
-                    ),
-                    "location_confidence": additional_info.get(
-                        "location_confidence",
-                        confidence,
-                    ),
-                    "regime_duration": 0,  # Could be enhanced with duration tracking
+                    "regime": "LOCATION_BASED",  # Actual regime comes from HMM
+                    "location": location_result.get("primary_location", "OPEN_RANGE"),
+                    "confidence": location_result.get("location_strength", 0.5),
+                    "regime_confidence": 0.5,  # Regime confidence from HMM
+                    "location_confidence": location_result.get("location_strength", 0.5),
+                    "action_bias": location_result.get("action_bias", "NEUTRAL"),
+                    "regime_duration": 0,
                     "timestamp": datetime.now().isoformat(),
-                    "additional_info": additional_info,
+                    "additional_info": {
+                        "location_details": location_result.get("location_details", {}),
+                        "nearby_levels": location_result.get("nearby_levels", []),
+                        "fractal_locations": location_result.get("fractal_locations", {})
+                    }
                 }
+                
+                # Add location features for ML models
+                if hasattr(self.regime_classifier, 'get_location_features'):
+                    location_features = self.regime_classifier.get_location_features(location_result)
+                    regime_results["location_features"] = location_features.to_dict()
             else:
-                # Fallback regime results
+                # Fallback results
                 regime_results = {
-                    "regime": "SIDEWAYS",
+                    "regime": "UNKNOWN",
                     "location": "OPEN_RANGE",
                     "confidence": 0.5,
                     "regime_confidence": 0.5,
                     "location_confidence": 0.5,
+                    "action_bias": "NEUTRAL",
                     "regime_duration": 0,
                     "timestamp": datetime.now().isoformat(),
                 }
 
             self.logger.info(
-                f"Regime and location classification completed: {regime_results['regime']} at {regime_results['location']}",
+                f"Fractal location classification completed: {regime_results['location']} with confidence {regime_results['location_confidence']:.2f}",
             )
             return regime_results
 

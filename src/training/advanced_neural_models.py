@@ -18,7 +18,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class TemporalConvNet(nn.Module):
     """
     Temporal Convolutional Network (TCN) for time series classification.
@@ -86,7 +85,6 @@ class TemporalConvNet(nn.Module):
         x = self.classifier(x)
         return x
 
-
 class TemporalBlock(nn.Module):
     """Temporal Block for TCN with residual connections."""
     
@@ -133,7 +131,6 @@ class TemporalBlock(nn.Module):
             
         out += residual
         return out
-
 
 class CNN1D(nn.Module):
     """
@@ -197,7 +194,6 @@ class CNN1D(nn.Module):
         # Classification
         x = self.classifier(x)
         return x
-
 
 class TransformerClassifier(nn.Module):
     """
@@ -265,7 +261,6 @@ class TransformerClassifier(nn.Module):
         x = self.classifier(x)
         return x
 
-
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
     
@@ -286,7 +281,6 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
-
 
 class LSTMClassifier(nn.Module):
     """
@@ -349,7 +343,6 @@ class LSTMClassifier(nn.Module):
         x = self.classifier(hidden)
         return x
 
-
 class GRUClassifier(nn.Module):
     """
     GRU-based classifier for time series data.
@@ -410,7 +403,6 @@ class GRUClassifier(nn.Module):
         # Classification
         x = self.classifier(hidden)
         return x
-
 
 class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
     """
@@ -541,7 +533,6 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
             
         return probabilities.cpu().numpy()
 
-
 def create_neural_model(
     model_type: str, 
     input_size: int, 
@@ -616,7 +607,6 @@ def create_neural_model(
         
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
-
 
 # Model configuration presets
 NEURAL_MODEL_CONFIGS = {

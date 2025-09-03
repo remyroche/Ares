@@ -1,5 +1,7 @@
 # src/training/vectorized_training_pipeline.py
 
+from src.core.decorators import handles_errors
+
 """Vectorized Training Pipeline for enhanced ML training processes."
 Integrates matrix enhancements with existing training workflows to improve
 performance, accuracy, and computational efficiency.
@@ -17,10 +19,9 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 
     VectorizedAdvancedFeatureEngineering,
 )
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 import copy
-
 
 @dataclass
 class VectorizedTrainingConfig:
@@ -44,7 +45,6 @@ class VectorizedTrainingConfig:
     integrate_with_existing_pipeline: bool = True
     preserve_original_features: bool = True
 
-
 class VectorizedTrainingPipeline:
     """Vectorized training pipeline with matrix enhancements."""
 
@@ -64,7 +64,7 @@ class VectorizedTrainingPipeline:
         self.pipeline_results = {}
         self.performance_metrics = {}
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=False)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False)
     async def initialize(self) -> bool:
         """Initialize the vectorized training pipeline."""
         try:
@@ -85,7 +85,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Failed to initialize vectorized training pipeline: {e}")
             return False
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def enhance_training_data(
         self, training_data: dict[str, Any],
         step_name: str = "vectorized_enhancement",
@@ -151,7 +151,7 @@ class VectorizedTrainingPipeline:
             )
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def _apply_vectorized_features(
         self, features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -167,7 +167,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Vectorized feature application failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=False)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False)
     async def _apply_quality_gates(self, enhanced_data: dict[str, Any]) -> bool:
         """Apply quality gates to enhanced data."""
         try:
@@ -198,7 +198,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Quality gate application failed: {e}")
             return False
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def optimize_for_performance(
         self, training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -227,7 +227,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Performance optimization failed: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def optimize_for_memory(
         self, training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -258,7 +258,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Memory optimization failed: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def optimize_for_accuracy(
         self, training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:

@@ -1,5 +1,11 @@
 # src/tactician/position_sizer.py
 
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    validate_data_quality
+)
+
 """
 Simplified Position Sizer for high leverage trading.
 Uses ML confidence scores and Kelly criterion for position sizing.
@@ -13,7 +19,7 @@ import contextlib
 from src.utils.confidence import normalize_dual_confidence
 from src.core.decorators import handles_errors
 from src.utils.warning_symbols import error, initialization_error, missing
-from src.utils.centralized_decorators import validate_data_quality
+
 from kelly_criterion_fix import calculate_correct_kelly_position_size
 import copy
 import asyncio

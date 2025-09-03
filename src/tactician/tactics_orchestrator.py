@@ -1,5 +1,7 @@
 # src/tactician/tactics_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 """
 Tactics Orchestrator for coordinating all tactical components.
 """
@@ -33,7 +35,7 @@ from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -68,7 +70,7 @@ class DecisionPolicy:
         self.sr_predictor: Optional[SRBreakoutPredictor] = None
         self.ml_tactics: Optional[MLTacticsManager] = None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="decision policy initialization"
@@ -175,7 +177,7 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="trade decision generation"
@@ -539,7 +541,7 @@ class TacticsOrchestrator:
         self.orchestrator_task: Optional[asyncio.Task] = None
         self.is_running = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="tactics orchestrator initialization"
@@ -641,7 +643,7 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactics orchestration start"
@@ -668,7 +670,7 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Failed to start tactics orchestration: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactics orchestration stop"

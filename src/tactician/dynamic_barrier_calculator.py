@@ -1,14 +1,15 @@
 # src/tactician/dynamic_barrier_calculator.py
 
+from src.core.decorators import (
+    handles_errors,
+    traced
+)
+
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 
-from src.utils.centralized_decorators import (
-    handle_errors,
-    with_tracing_span,
-)
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors
 
@@ -118,7 +119,7 @@ class DynamicBarrierCalculator:
         default_return=(0.001, 0.00025),
         context="dynamic_barrier_calculator.calculate_dynamic_barriers"
     )
-    @with_tracing_span("DynamicBarrier.calculateBarriers")
+    @traced("DynamicBarrier.calculateBarriers")
     def calculate_dynamic_barriers(
         self, 
         timeframe: str = "1m"

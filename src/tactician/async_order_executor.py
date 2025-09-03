@@ -1,5 +1,7 @@
 # src/tactician/async_order_executor.py
 
+from src.core.decorators import handles_errors
+
 """
 Async Order Executor with Advanced Analytics and Dynamic Parameter Optimization
 Integrates with Enhanced Order Manager, Performance Reporter, and Optuna for optimization.
@@ -23,7 +25,7 @@ from src.tactician.enhanced_order_manager import (
     OrderSide,
     OrderType,
 )
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -128,7 +130,7 @@ class AsyncOrderExecutor:
         self.total_volume_executed = 0.0
         self.total_slippage = 0.0
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="order executor initialization"
@@ -184,7 +186,7 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order execution"

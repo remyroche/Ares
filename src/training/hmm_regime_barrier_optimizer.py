@@ -41,7 +41,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class HMMRegimeBarrierOptimizer:
     """
     HMM Regime Barrier Optimizer for automatic barrier recalculation and optimization.

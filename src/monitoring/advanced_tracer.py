@@ -6,6 +6,13 @@ This module provides comprehensive request/response tracing across all component
 of the Ares trading bot with correlation IDs for debugging and performance analysis.
 """
 
+from src.core.decorators import log_execution_time
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    PerformanceLevel
+)
+
 from __future__ import annotations
 
 import asyncio
@@ -18,10 +25,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-)
+
 from src.utils.logger import system_logger
 
 class TraceLevel(Enum):
@@ -114,7 +118,7 @@ class AdvancedTracer:
         # Storage
         self._traces: Dict[str, TraceRequest] = {}
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time(level=PerformanceLevel.DETAILED)
     @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tracer configuration"),

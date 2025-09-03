@@ -1,12 +1,9 @@
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any
 import asyncio
 
-from src.utils.error_handler import (
-
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -18,7 +15,6 @@ from src.utils.warning_symbols import (
     missing,
     validation_error,
 )
-
 
 class StageContext:
     """Stage context with comprehensive error handling and type safety."""
@@ -54,7 +50,7 @@ class StageContext:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid stage context configuration"),
             AttributeError: (False, "Missing required stage context parameters"),
@@ -91,7 +87,7 @@ class StageContext:
             self.logger.exception(f"❌ Stage Context initialization failed: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context configuration loading",
@@ -122,7 +118,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error loading context configuration: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -164,7 +160,7 @@ class StageContext:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context modules initialization",
@@ -193,7 +189,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context modules: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context management initialization",
@@ -214,7 +210,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context management: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context validation initialization",
@@ -235,7 +231,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context validation: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context monitoring initialization",
@@ -256,7 +252,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context monitoring: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context reporting initialization",
@@ -277,7 +273,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error initializing context reporting: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid context parameters"),
             AttributeError: (False, "Missing context components"),
@@ -341,7 +337,7 @@ class StageContext:
             self.is_active = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="context inputs validation",
@@ -379,7 +375,7 @@ class StageContext:
             self.logger.exception(f"Error validating context inputs: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context management",
@@ -431,7 +427,7 @@ class StageContext:
             self.logger.exception(f"Error performing context management: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context validation",
@@ -483,7 +479,7 @@ class StageContext:
             self.logger.exception(f"Error performing context validation: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context monitoring",
@@ -535,7 +531,7 @@ class StageContext:
             self.logger.exception(f"Error performing context monitoring: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context reporting",
@@ -857,7 +853,7 @@ class StageContext:
             self.logger.exception(f"Error performing report archiving: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context results storage",
@@ -880,7 +876,7 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error storing context results: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context results getting",
@@ -904,7 +900,7 @@ class StageContext:
             self.logger.exception(f"Error getting context results: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context history getting",
@@ -955,7 +951,7 @@ class StageContext:
             "context_history_count": len(self.context_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="stage context cleanup",
@@ -979,12 +975,10 @@ class StageContext:
         except Exception as e:
             self.logger.exception(f"Error stopping stage context: {e}")
 
-
 # Global stage context instance
 stage_context: StageContext | None = None
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="stage context setup",

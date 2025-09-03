@@ -1,5 +1,21 @@
 # src/training/data_sharing_manager.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 import gc
 import time
 from typing import Any
@@ -8,24 +24,11 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 import asyncio
-from src.utils.training_pipeline_decorators import (
-
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
-
 
 class DataSharingManager:
     """Manages data sharing between training steps to eliminate redundant data loading."
@@ -163,7 +166,7 @@ class DataSharingManager:
                 if current_cache_size + required_size_gb <= self.max_cache_size_gb:
                     break
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["data_cache", "data_cache/unified"],
         min_memory_gb=4.0,
         min_disk_gb=5.0,
@@ -185,32 +188,32 @@ class DataSharingManager:
         feature_leakage_detection=True,
         lookahead_bias_prevention=True,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=8.0,
         cpu_threshold_percent=70.0,
         disk_threshold_gb=10.0,
         monitor_interval=30.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=15000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=35,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=3,
         recovery_timeout=180.0,
         expected_exception=Exception,
         monitor_interval=30.0,
     )
-    @validate_step_output(
+    @validates(
         required_files=["data_cache/unified/{exchange}/{symbol}/{timeframe}/*.parquet"],
         data_quality_checks={
             "min_rows": 100,
@@ -224,7 +227,7 @@ class DataSharingManager:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"data_quality_score": 0.8},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="data sharing manager get unified data",
@@ -436,10 +439,8 @@ class DataSharingManager:
         self.logger.info(f"   Memory saved: {stats['memory_saved_gb']:.2f}GB")
         self.logger.info(f"   Cached entries: {stats['cached_entries']}")
 
-
 # Global instance for easy access
 _data_sharing_manager: DataSharingManager | None = None
-
 
 def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     """Get or create the global data sharing manager instance."""
@@ -447,7 +448,6 @@ def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager(config)
     return _data_sharing_manager
-
 
 def reset_data_sharing_manager() -> None:
     """Reset the global data sharing manager instance."""

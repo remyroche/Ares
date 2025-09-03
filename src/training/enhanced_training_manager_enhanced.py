@@ -2,6 +2,17 @@
 Enhanced Training Manager with Existing Decorators Integration
 Provides thorough decorators, detailed reports, and consistent storage for all pipeline steps.
 """
+from src.core.decorators import handles_errors
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    PipelineStage,
+    PipelineValidationLevel,
+    monitor_pipeline_performance,
+    monitor_pipeline_step,
+    validate_pipeline_input
+)
+
 import asyncio
 import json
 import time
@@ -11,15 +22,6 @@ from typing import Any, Dict, List, Optional
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.training_pipeline_decorators import (
-    monitor_pipeline_step,
-    validate_pipeline_input,
-    monitor_pipeline_performance,
-    PipelineStage,
-    PipelineValidationLevel
-)
-
 
 class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     """
@@ -50,7 +52,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         self.logger.info(f"   📁 Reports Directory: {self.pipeline_reports_dir}")
         self.logger.info(f"   🧹 Auto Cleanup: {self.auto_cleanup_reports}")
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="enhanced_training_execution"
@@ -769,7 +771,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         return "\n".join(summary)
     
     # Enhanced step execution methods with report generation
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step1_data_collection"
@@ -837,7 +839,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step1_5_data_converter"
@@ -905,7 +907,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step2_feature_engineering"
@@ -975,7 +977,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step3_hmm_regime_discovery"
@@ -1045,7 +1047,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step4_regime_data_splitting"
@@ -1108,7 +1110,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step5_triple_barrier_method"
@@ -1171,7 +1173,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step6_feature_generation"
@@ -1240,7 +1242,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step7_matrix_feature_selection"
@@ -1303,7 +1305,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step8_tactician_labeling"
@@ -1366,7 +1368,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step9_tactician_specialist_training"
@@ -1435,7 +1437,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step10_confidence_calibration"
@@ -1498,7 +1500,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step11_final_parameters_optimization"
@@ -1561,7 +1563,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step12_walk_forward_validation"
@@ -1630,7 +1632,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step13_monte_carlo_validation"
@@ -1699,7 +1701,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step14_ab_testing"
@@ -1762,7 +1764,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step15_saving"
@@ -2815,7 +2817,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         return warnings
     
     # Enhanced step execution methods with comprehensive reporting
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step1_data_collection"
@@ -2866,7 +2868,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step1_5_data_converter"
@@ -2917,7 +2919,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step2_feature_engineering"
@@ -2968,7 +2970,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step3_hmm_regime_discovery"
@@ -3019,7 +3021,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step4_regime_data_splitting"
@@ -3069,7 +3071,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step5_triple_barrier_method"
@@ -3119,7 +3121,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step6_feature_generation"
@@ -3172,7 +3174,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step7_matrix_feature_selection"
@@ -3222,7 +3224,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step8_tactician_labeling"
@@ -3272,7 +3274,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step9_tactician_specialist_training"
@@ -3325,7 +3327,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step10_confidence_calibration"
@@ -3375,7 +3377,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step11_final_parameters_optimization"
@@ -3428,7 +3430,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step12_walk_forward_validation"
@@ -3481,7 +3483,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step13_monte_carlo_validation"
@@ -3535,7 +3537,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step14_ab_testing"
@@ -3585,7 +3587,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             )
             raise
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="step15_saving"
@@ -3673,7 +3675,6 @@ enhanced_training_input=enhanced_training_input,
     def _calculate_regime_duration(self, result: Any) -> Dict[str, Any]:
         return {"status": "Not implemented yet"}
 
-
 # Convenience function to create enhanced training manager
 async def create_enhanced_training_manager_with_reporting(config: Dict[str, Any]) -> EnhancedTrainingManagerWithReporting:
     """Create an enhanced training manager with comprehensive reporting."""
@@ -3681,7 +3682,6 @@ async def create_enhanced_training_manager_with_reporting(config: Dict[str, Any]
     manager = EnhancedTrainingManagerWithReporting(config)
     await manager.initialize()
     return manager
-
 
 # Export the main class and convenience function
 __all__ = [

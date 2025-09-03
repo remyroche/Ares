@@ -1,5 +1,11 @@
 # src/tactician/enhanced_execution_manager.py
 
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates
+)
+
 import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -7,11 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.utils.centralized_decorators import (
-    guard_dataframe_nulls,
-    handle_errors,
-    with_tracing_span,
-)
 from src.utils.logger import get_logger
 
 class EnhancedExecutionManager:
@@ -85,7 +86,7 @@ from src.core.decorators import handles_errors
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.validate_analyst_signal"
     )
-    @with_tracing_span("EnhancedExecution.validateAnalystSignal")
+    @traced("EnhancedExecution.validateAnalystSignal")
     def validate_analyst_predictions(
         self, 
         analyst_predictions: Dict[str, Any], 
@@ -188,7 +189,7 @@ from src.core.decorators import handles_errors
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.calculate_execution_parameters"
     )
-    @with_tracing_span("EnhancedExecution.calculateParameters")
+    @traced("EnhancedExecution.calculateParameters")
     def calculate_execution_parameters(
         self,
         market_data: pd.DataFrame,
@@ -359,7 +360,7 @@ from src.core.decorators import handles_errors
         default_return={"success": False, "reason": "error"},
         context="enhanced_execution_manager.execute_trade"
     )
-    @with_tracing_span("EnhancedExecution.executeTrade")
+    @traced("EnhancedExecution.executeTrade")
     async def execute_trade(
         self, 
         execution_params: Dict[str, Any],

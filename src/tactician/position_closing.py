@@ -1,5 +1,7 @@
 # src/tactician/position_closing.py
 
+from src.core.decorators import handles_errors
+
 """
 Position Closing Module for Tactician.
 Handles position closure based on dual model confidence scores and ATR-based exit rules.
@@ -7,7 +9,6 @@ Handles position closure based on dual model confidence scores and ATR-based exi
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import copy
 import asyncio
@@ -55,7 +56,7 @@ class PositionCloser:
         self.closed_positions = []
         self.position_history = []
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="position closer initialization"
@@ -137,7 +138,7 @@ class PositionCloser:
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="position closure evaluation"
@@ -249,7 +250,7 @@ class PositionCloser:
             self.logger.error(failed(f"❌ Time-based closure check failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="position closure execution"

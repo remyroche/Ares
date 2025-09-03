@@ -23,7 +23,6 @@ warnings.filterwarnings('ignore')
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-
 @dataclass
 class ProbabilisticOptimizationConfig:
     """Configuration for probabilistic Bayesian optimization."""
@@ -55,7 +54,6 @@ class ProbabilisticOptimizationConfig:
     def __post_init__(self):
         if self.objectives is None:
             self.objectives = ['calibration', 'sharpness', 'discrimination']
-
 
 class ProbabilisticBayesianOptimizer:
     """
@@ -599,7 +597,6 @@ class ProbabilisticBayesianOptimizer:
         except Exception as e:
             self.logger.error(f"Error plotting optimization results: {e}")
 
-
 # Example usage and model factories
 def create_tactician_model(params: Dict[str, Any]):
     """Factory function for creating Tactician models."""
@@ -616,7 +613,6 @@ def create_tactician_model(params: Dict[str, Any]):
     
     return model
 
-
 def create_analyst_model(params: Dict[str, Any]):
     """Factory function for creating Analyst models."""
     # This would integrate with your existing Analyst model creation
@@ -631,7 +627,6 @@ def create_analyst_model(params: Dict[str, Any]):
     )
     
     return model
-
 
 if __name__ == "__main__":
     # Example usage

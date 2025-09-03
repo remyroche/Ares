@@ -31,7 +31,6 @@ from src.utils.enhanced_mlflow_integration import (
     create_detailed_step_report
 )
 
-
 class QualityLevel(Enum):
     """Quality level enumeration."""
     EXCELLENT = "excellent"
@@ -39,7 +38,6 @@ class QualityLevel(Enum):
     ACCEPTABLE = "acceptable"
     POOR = "poor"
     CRITICAL = "critical"
-
 
 @dataclass
 class DataQualityMetrics:
@@ -57,7 +55,6 @@ class DataQualityMetrics:
     recommendations: List[str]
     timestamp: datetime
 
-
 @dataclass
 class CompatibilityMetrics:
     """Data compatibility metrics container."""
@@ -72,7 +69,6 @@ class CompatibilityMetrics:
     conversions_applied: List[str]
     timestamp: datetime
 
-
 @dataclass
 class FormatMetrics:
     """Data format metrics container."""
@@ -85,7 +81,6 @@ class FormatMetrics:
     issues: List[str]
     warnings: List[str]
     timestamp: datetime
-
 
 @dataclass
 class IndexMetrics:
@@ -100,7 +95,6 @@ class IndexMetrics:
     issues: List[str]
     warnings: List[str]
     timestamp: datetime
-
 
 class DataQualityMonitor:
     """
@@ -1028,7 +1022,6 @@ class DataQualityMonitor:
         
         return report
 
-
 async def main():
     """Main execution function for testing."""
     # Example configuration
@@ -1077,7 +1070,6 @@ async def main():
     
     print("\nQuality Summary:")
     print(json.dumps(report["quality_summary"], indent=2))
-
 
 if __name__ == "__main__":
     asyncio.run( main())

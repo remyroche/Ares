@@ -2,6 +2,8 @@
 """Model Training Integrator for Ares Trading System."
 Enables full functionality with trained models.
 """
+from src.core.decorators import handles_errors
+
 import json
 import os
 import pickle
@@ -20,7 +22,7 @@ from sklearn.model_selection import cross_val_score
 
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
-from src.utils.error_handler import handle_errors
+
 import os.path
 import asyncio
 from src.utils.warning_symbols import (
@@ -29,7 +31,6 @@ from src.utils.warning_symbols import (
     failed,
     initialization_error,
 )
-
 
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""
@@ -128,7 +129,7 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="model training integrator initialization",
@@ -635,7 +636,7 @@ class ModelTrainingIntegrator:
             self.print(error("Error getting training stats: {e}"))
             return {"error": str(e)}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="model training integrator cleanup",
@@ -659,10 +660,8 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-
 # Global model training integrator instance
 model_training_integrator: ModelTrainingIntegrator | None = None
-
 
 async def setup_model_training_integrator(
     config: dict[str, Any],
@@ -675,7 +674,6 @@ async def setup_model_training_integrator(
         await model_training_integrator.initialize()
 
     return model_training_integrator
-
 
 def get_model_training_integrator() -> ModelTrainingIntegrator | None:
     """Get global model training integrator instance."""

@@ -18,7 +18,6 @@ from typing import Any, Dict, List, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-
 class MockDataQualityMonitor:
     """Mock data quality monitor for demonstration."""
     
@@ -70,7 +69,6 @@ class MockDataQualityMonitor:
             }
         }
 
-
 class MockStepExecutor:
     """Mock step executor for demonstration."""
     
@@ -101,7 +99,6 @@ class MockStepExecutor:
             "total_execution_time": len(step_order) * 0.1,
             "errors_encountered": []
         }
-
 
 class DemoComprehensivePipelineExecutor:
     """
@@ -364,7 +361,6 @@ class DemoComprehensivePipelineExecutor:
         
         print("="*100)
 
-
 async def main():
     """Main execution function."""
     print("🚀 Starting Demo Comprehensive Pipeline Execution")
@@ -417,7 +413,6 @@ async def main():
         print(f"❌ Demo pipeline execution failed: {e}")
         import traceback
         traceback.print_exc()
-
 
 if __name__ == "__main__":
     asyncio.run( main())

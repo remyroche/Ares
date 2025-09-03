@@ -35,7 +35,6 @@ def handle_errors(func):
             return None
     return wrapper
 
-
 class ComprehensiveEnhancedScenarioPredictor:
     """
     Comprehensive enhanced scenario-based predictor with ALL technical indicators.

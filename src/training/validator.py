@@ -12,7 +12,6 @@ from src.training.steps.data_preparation_components.training_validation_config i
     get_validation_config,
 )
 
-
 class TrainingStepValidator:
     """Validates training steps and prevents progression on significant errors."""
 

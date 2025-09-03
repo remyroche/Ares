@@ -417,22 +417,18 @@ class StreamingDataProcessor:
             import pyarrow.parquet as pq_mod  # type: ignore
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
-import json
-
-writer = None
-for df in chunks_iter:
-                table = pa.Table.from_pandas(df)
-                if writer is None:
-                    writer = pq_mod.ParquetWriter(
-                        str(target), table.schema, compression=compression,
-                    )
-                writer.write_table(table)
-                if writer is not None:
-                writer.close()
-        except Exception as e:
-            self.logger.exception(f"Incremental Parquet write failed: {e}")
-            raise
+        import json
+        
+        writer = None
+        for df in chunks_iter:
+            table = pa.Table.from_pandas(df)
+            if writer is None:
+                writer = pq_mod.ParquetWriter(
+                    str(target), table.schema, compression=compression,
+                )
+            writer.write_table(table)
+        if writer is not None:
+            writer.close()
 
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""

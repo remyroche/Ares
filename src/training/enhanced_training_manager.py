@@ -2539,31 +2539,28 @@ class TrainingManager:
                     self._heartbeat("Step 6_5: Unified Regime Intelligence")
                     step_start_6_5 = time.time()
                     try:
-from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
-from src.training.steps import step8_tactician_labeling
-from src.training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
-from src.training.steps.validation.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
-from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
-import pandas as _pd
-from src.training.steps import step12_walk_forward_validation
-from src.training.steps import step13_monte_carlo_validation
-from src.training.steps import step14_ab_testing
-from src.training.steps import step15_saving
-from src.training.steps import step16_confidence_calibration
-from src.training.steps import step17_final_parameters_optimization
-from src.training.steps import step18_walk_forward_validation
-from src.training.steps import step19_monte_carlo_validation
-from src.training.steps import step20_ab_testing
-from src.training.steps import step21_saving
-from src.training.steps import step2_feature_engineering
-from pathlib import Path
-import glob
-import glob
-from pathlib import Path
-import copy
-import os.path
-from src.training.steps import (
-from src.training.steps import (
+                        from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
+                        from src.training.steps import step8_tactician_labeling
+                        from src.training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
+                        from src.training.steps.validation.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
+                        from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+                        import pandas as _pd
+                        from src.training.steps import step12_walk_forward_validation
+                        from src.training.steps import step13_monte_carlo_validation
+                        from src.training.steps import step14_ab_testing
+                        from src.training.steps import step15_saving
+                        from src.training.steps import step16_confidence_calibration
+                        from src.training.steps import step17_final_parameters_optimization
+                        from src.training.steps import step18_walk_forward_validation
+                        from src.training.steps import step19_monte_carlo_validation
+                        from src.training.steps import step20_ab_testing
+                        from src.training.steps import step21_saving
+                        from src.training.steps import step2_feature_engineering
+                        from pathlib import Path
+                        import glob
+                        import copy
+                        import os.path
+                        from src.training.steps import (
                             step5_5_unified_regime_intelligence as _step6_5,
                         )
 
@@ -2954,6 +2951,7 @@ from src.training.steps import (
                             exchange=exchange,
                         )
                     else:
+                        from src.training.steps import (
                             step11_final_parameters_optimization,
                         )
 
@@ -5188,11 +5186,8 @@ from src.training.steps import (
 
         """
         try:
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-# Get patterns for this step using class constant
-patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
+            # Get patterns for this step using class constant
+            patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
 
             cleared_count = 0
             for pattern in patterns:

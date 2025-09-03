@@ -1528,29 +1528,25 @@ class EnhancedMatrixOperations:
             from sklearn.linear_model import LogisticRegression
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
             
-for feature in features_df.columns:
-    try:
-                    # Use single feature for prediction
-                    X_single = features_df[[feature]]
-                    
-                    # Calculate cross-validation score
-                    cv_scores = cross_val_score(
-                        LogisticRegression(random_state=42),
-                        X_single,
-                        target,
-                        cv=3,
-                        scoring='accuracy'
-                    )
-                    
-                    # Stability score is the mean CV score
-                    stability_scores[feature] = np.mean(cv_scores)
-                        except Exception:
-                    stability_scores[feature] = 0.0
-                    
-        except Exception as e:
-            self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
+        for feature in features_df.columns:
+            try:
+                # Use single feature for prediction
+                X_single = features_df[[feature]]
+                
+                # Calculate cross-validation score
+                cv_scores = cross_val_score(
+                    LogisticRegression(random_state=42),
+                    X_single,
+                    target,
+                    cv=3,
+                    scoring='accuracy'
+                )
+                
+                # Stability score is the mean CV score
+                stability_scores[feature] = np.mean(cv_scores)
+            except Exception:
+                stability_scores[feature] = 0.0
         
         return stability_scores
 

@@ -62,7 +62,7 @@ class FinalParametersOptimizationStep:
             "✅ Final Parameters Optimization Step initialized successfully",
         )
 
-    @handles_errors
+    @handles_errors(
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="final parameters optimization step execution",
     )
@@ -1411,11 +1411,12 @@ class FinalParametersOptimizationStep:
         """Select the best solution from Pareto front."""
         try:
             # Use configurable weights for composite score
-from sklearn.metrics import accuracy_score
-from src.training.steps.validation.step17_final_parameters_optimization.hyperparameter_optimization_config import (
-
+            from sklearn.metrics import accuracy_score
+            from src.training.steps.validation.step17_final_parameters_optimization.hyperparameter_optimization_config import (
+                get_hyperparameter_config,
+            )
             config = get_hyperparameter_config()
-            weights, getattr(
+            weights = getattr(
                 config,
                 "composite_score_weights",
                 {
@@ -1710,15 +1711,8 @@ from src.utils.enhanced_mlflow_integration import (
     },
     context="Final Parameters Optimization",
 )
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
+# @secure_data_processing - removed, handled by validates
 # @prevent_data_leakage - removed, handled by validates
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    cross_validation_isolation=True,
-    lookahead_bias_prevention=True,
-)
 @log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
@@ -1751,14 +1745,8 @@ from src.utils.enhanced_mlflow_integration import (
     format_validation=True,
 )
 # @quality_gate - removed, handled by validates
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks=True,
-    overfitting_detection=True,
-    validation_score_requirements={"optimization_score": 0.6},
-)
-async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False
-    **kwargs, ) -> bool:
+async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
+    **kwargs) -> bool:
     """Run the final parameters optimization step.
 
     Args:

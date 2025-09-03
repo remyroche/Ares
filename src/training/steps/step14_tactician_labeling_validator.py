@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import json
 import os
 import pickle
 import sys
@@ -35,7 +36,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> bool:
-        """Validate the tactician labeling step."
+        """Validate the tactician labeling step.
 
         Args:
             training_input: Training input parameters
@@ -119,7 +120,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def _validate_labeling_files_existence(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate that tactician labeling files exist."
+        """Validate that tactician labeling files exist.
 
         Args:
             symbol: Trading symbol
@@ -163,7 +164,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def _validate_signal_quality(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate the quality of generated trading signals."
+        """Validate the quality of generated trading signals.
 
         Args:
             symbol: Trading symbol
@@ -186,17 +187,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 if os.path.exists(signals_parquet):
                     # Prefer dataset scan if labeled partition exists
                     try:
-from src.utils.logger import log_io_operation
-from src.training.enhanced_training_manager_optimized import (
-from src.utils.logger import (
-from src.utils.logger import log_io_operation
-from src.utils.logger import log_io_operation
-from src.utils.logger import log_io_operation
-import json
-from src.training.enhanced_training_manager_optimized import (
-from src.utils.logger import (
-                            ParquetDatasetManager,
-                        )
+                        from src.utils.logger import log_io_operation, log_dataframe_overview
+                        from src.data.parquet_dataset_manager import ParquetDatasetManager
 
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
@@ -220,6 +212,7 @@ from src.utils.logger import (
                                 to_pandas=True,
                             )
                         else:
+                            from src.utils.logger import (
                                 log_dataframe_overview,
                                 log_io_operation,
                             )
@@ -339,7 +332,7 @@ from src.utils.logger import (
     def _validate_labeling_consistency(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate consistency of tactician labeling."
+        """Validate consistency of tactician labeling.
 
         Args:
             symbol: Trading symbol
@@ -359,8 +352,7 @@ from src.utils.logger import (
             if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
                 if os.path.exists(labels_parquet):
                     try:
-                            ParquetDatasetManager,
-                        )
+                        from src.data.parquet_dataset_manager import ParquetDatasetManager
 
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
@@ -383,6 +375,7 @@ from src.utils.logger import (
                                 to_pandas=True,
                             )
                         else:
+                            from src.utils.logger import (
                                 log_dataframe_overview,
                                 log_io_operation,
                             )
@@ -529,7 +522,7 @@ from src.utils.logger import (
     def _validate_signal_distribution(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate the distribution of trading signals."
+        """Validate the distribution of trading signals.
 
         Args:
             symbol: Trading symbol
@@ -652,7 +645,7 @@ from src.utils.logger import (
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the step8_tactician_labeling validator."
+    """Run the step8_tactician_labeling validator.
 
     Args:
         training_input: Training input parameters
@@ -676,10 +669,10 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
-import os.path
+    import os.path
 
     # Example usage
-async def test_validator() -> None:
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",

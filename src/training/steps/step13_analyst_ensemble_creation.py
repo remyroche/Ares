@@ -53,11 +53,15 @@ class AnalystEnsembleCreationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    @handles_errors
-    def execute(
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst ensemble creation step execution",
+    )
+    async def execute(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:
-        """Execute Step 7: Create analyst ensemble models."
+        """Execute Step 7: Create analyst ensemble models.
 
         Args:
             symbol: Trading symbol
@@ -151,15 +155,12 @@ class AnalystEnsembleCreationStep:
         try:
             # Apply optimized feature selection for ensemble creation
             try:
-import copy
-import datetime as datetime
-import os
+                import copy
+                import datetime as datetime
+                import os
                 from src.training.optimized_feature_selection_manager import (
-            except Exception as e:
-                pass  # TODO: Handle exception properly
-
-OptimizedFeatureSelectionManager,
-)
+                    OptimizedFeatureSelectionManager,
+                )
 
                 optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)
 
@@ -341,14 +342,14 @@ OptimizedFeatureSelectionManager,
             logger.exception(f"❌ Error saving ensemble summary: {e}")
 
 
-def step7_analyst_ensemble_creation(
+async def step7_analyst_ensemble_creation(
     symbol: str,
     exchange: str,
     data_dir: str,
     training_input: dict[str, Any],
     config: dict[str, Any],
 ) -> bool:
-    """Step 7: Analyst Ensemble Creation."
+    """Step 7: Analyst Ensemble Creation.
 
     Args:
         symbol: Trading symbol
@@ -362,4 +363,4 @@ def step7_analyst_ensemble_creation(
 
     """
     step = AnalystEnsembleCreationStep(config)
-    return step.execute(symbol, exchange, data_dir, training_input)
+    return await step.execute(symbol, exchange, data_dir, training_input)

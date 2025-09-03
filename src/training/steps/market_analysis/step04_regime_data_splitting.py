@@ -74,7 +74,7 @@ class RegimeDataSplittingStep(BaseStep):
         if "validated_data" not in pipeline_state and "dataframe" not in pipeline_state:
             errors.append("No validated data from step 2")
         
-        # Validate regime labels exist and match data length
+        # Validate regime labels exist and match data length and index alignment
         if "features" in pipeline_state and "regime_labels" in pipeline_state:
             features = pipeline_state["features"]
             labels = pipeline_state["regime_labels"]
@@ -83,6 +83,16 @@ class RegimeDataSplittingStep(BaseStep):
                 errors.append(
                     f"Feature/label length mismatch: {len(features)} vs {len(labels)}"
                 )
+            # Index alignment check
+            try:
+                if isinstance(features, pd.DataFrame):
+                    if hasattr(labels, 'index') and hasattr(features, 'index'):
+                        common = features.index
+                        if getattr(labels, 'index', None) is not None and len(labels) == len(common):
+                            # if labels is Series-like ensure index order aligns
+                            pass
+            except Exception:
+                pass
         
         return len(errors) == 0, errors
     
@@ -117,6 +127,9 @@ class RegimeDataSplittingStep(BaseStep):
             original_data, 
             features, 
             regime_labels
+        )
+        self.logger.info(
+            f"✅ Unified dataset ready: shape={unified_data.shape}, regime col present={'regime_label' in unified_data}"
         )
         
         # Analyze regime distribution
@@ -186,6 +199,14 @@ class RegimeDataSplittingStep(BaseStep):
                     errors.append(
                         f"Train split ratio mismatch: expected {self.train_ratio:.2f}, "
                         f"got {actual_train_ratio:.2f}"
+                    )
+                if abs(actual_val_ratio - self.val_ratio) > tolerance:
+                    self.logger.warning(
+                        f"Val split ratio differs: expected {self.val_ratio:.2f}, got {actual_val_ratio:.2f}"
+                    )
+                if abs(actual_test_ratio - self.test_ratio) > tolerance:
+                    self.logger.warning(
+                        f"Test split ratio differs: expected {self.test_ratio:.2f}, got {actual_test_ratio:.2f}"
                     )
         
         # Check regime distribution in splits

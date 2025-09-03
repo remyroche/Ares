@@ -4,6 +4,7 @@ import csv
 import glob
 import os
 import shutil
+import os.path
 
 
 def check_file_format(file_path) -> bool | None:

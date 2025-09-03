@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
+import asyncio
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -150,6 +151,8 @@ class UnifiedDataLoader:
             # Load data using ParquetDatasetManager if available
             try:
                 from src.training.steps.step1_5_data_converter import ParquetDatasetManager
+import os.path
+
                 pdm = ParquetDatasetManager(logger=self.logger)
 
                 # Build filters for date range if specified

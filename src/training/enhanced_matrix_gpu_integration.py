@@ -22,6 +22,8 @@ from src.training.steps.step7_enhanced_matrix_operations import (
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
+import copy
+
     circuit_breaker_protection,
     debug_training_step,
     memory_efficient,

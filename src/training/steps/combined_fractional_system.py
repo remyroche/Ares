@@ -455,6 +455,9 @@ class CombinedFractionalSystem:
             # Export to JSON
             report_file = output_path / "combined_system_performance.json"
             import json
+import copy
+import datetime as datetime
+
             with open(report_file, 'w') as f:
                 json.dump(summary, f, indent=2, default=str)
             

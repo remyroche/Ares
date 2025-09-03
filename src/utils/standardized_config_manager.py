@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 # Import pipeline standards
 from .pipeline_standards import PipelineStandards, pipeline_standards
+import copy
 
 
 class StandardizedConfigManager:

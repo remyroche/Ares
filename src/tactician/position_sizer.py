@@ -15,6 +15,8 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
 from src.utils.centralized_decorators import validate_data_quality
 from kelly_criterion_fix import calculate_correct_kelly_position_size
+import copy
+import asyncio
 
 
 class PositionSizer:

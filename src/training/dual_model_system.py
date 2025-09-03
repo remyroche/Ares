@@ -11,6 +11,8 @@ import pandas as pd
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.utils.confidence import aggregate_directional_confidences
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
     handle_specific_errors,
 )

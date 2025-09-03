@@ -356,6 +356,7 @@ class ConfigurationSecurityManager:
             else:
                 # For other formats, just copy the file
                 import shutil
+import copy
 
                 shutil.copy2(file_path, backup_file)
 

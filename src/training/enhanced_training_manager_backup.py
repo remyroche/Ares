@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 import psutil
+import asyncio
 
 # Optional dependency: pyarrow is used for efficient parquet streaming; import lazily in methods
 try:
@@ -4621,6 +4622,7 @@ class EnhancedTrainingManager:
         try:
             import glob
             from pathlib import Path
+import copy
 
             # Get patterns for this step using class constant
             patterns = self.ARTIFACT_PATTERNS.get(step_name, [])

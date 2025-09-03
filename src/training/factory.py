@@ -181,6 +181,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     # Check system resources
     cpu_count = os.cpu_count()
     import psutil
+import copy
 
     memory_gb = psutil.virtual_memory().total / (1024**3)
 

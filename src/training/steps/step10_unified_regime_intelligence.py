@@ -28,6 +28,7 @@ import warnings
 from datetime import datetime
 from typing import Any
 from pathlib import Path
+import asyncio
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -1967,6 +1968,11 @@ from src.utils.training_pipeline_decorators import (
 )
 
 from src.utils.enhanced_mlflow_integration import (
+import copy
+import numpy as np
+import os.path
+import pandas as pd
+
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,

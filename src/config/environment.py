@@ -21,6 +21,7 @@ except Exception:  # minimal fallback types for smoke test
         return default
 
 from src.utils.logger import system_logger
+import os.path
 
 # --- Environment Loading ---
 dotenv_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")

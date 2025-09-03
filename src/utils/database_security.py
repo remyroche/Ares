@@ -343,6 +343,7 @@ class DatabaseSecurityManager:
         """Create secure Redis connection."""
         try:
             import redis
+import copy
 
             connection_params = {
                 "host": params["host"],

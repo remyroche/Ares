@@ -90,6 +90,7 @@ async def run_validator(
         try:
             import pandas as pd
             import json
+import numpy as np
             
             # Read the most recent data file
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)

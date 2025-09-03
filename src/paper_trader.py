@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 
 from src.config.constants import (
+import asyncio
+
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,
     DEFAULT_MAX_POSITION_SIZE,
@@ -26,6 +28,8 @@ from src.utils.trading_decorators import (
     get_trade_tracker,
 )
 from src.utils.warning_symbols import (
+import copy
+
     execution_error,
     initialization_error,
     invalid,

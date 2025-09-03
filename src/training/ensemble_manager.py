@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
     handle_specific_errors,
 )
@@ -131,6 +133,7 @@ class EnsembleManager:
         try:
             # Initialize ensemble creator
             from src.training.ensemble_creator import EnsembleCreator
+import copy
 
             self.ensemble_creator = EnsembleCreator(self.config)
             await self.ensemble_creator.initialize()

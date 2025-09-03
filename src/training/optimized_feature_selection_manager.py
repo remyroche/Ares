@@ -299,6 +299,7 @@ class OptimizedFeatureSelectionManager:
     def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
+import copy
 
         vif_scores = []
         for i, _col in enumerate(features_df.columns):

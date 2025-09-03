@@ -20,6 +20,7 @@ import pandas as pd
 
 from .enhanced_outlier_handler import OutlierSeverity, enhanced_outlier_handler
 from .logger import system_logger
+import copy
 
 
 class DataQualityLevel(Enum):

@@ -5,6 +5,7 @@ Based on the computational_optimization_strategies.md document.
 """
 
 from typing import Any
+import copy
 
 # Default computational optimization configuration
 COMPUTATIONAL_OPTIMIZATION_CONFIG = {

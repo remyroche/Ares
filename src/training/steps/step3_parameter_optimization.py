@@ -689,5 +689,5 @@ if __name__ == "__main__":
     }
     
     # Run the step
-    success = asyncio.run(run_step(test_config))
+    success = asyncio.run( run_step(test_config))
     print(f"Step execution {'successful' if success else 'failed'}")

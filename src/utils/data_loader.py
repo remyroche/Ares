@@ -21,6 +21,7 @@ import pyarrow.parquet as pq
 from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import os.path
 
 try:
     PYARROW_AVAILABLE = True

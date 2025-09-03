@@ -535,7 +535,7 @@ async def _create_comprehensive_features(
         system_logger.info("🔧 Creating features with parallel processing...")
         
         # Create basic features
-        features_df = _create_basic_features(merged_data)
+        features_df = await _create_basic_features(merged_data)
         
         # Add technical indicators
         features_df = _add_technical_indicators(features_df)
@@ -1046,6 +1046,9 @@ async def _add_sr_optimization_features(
     """Add SR detection optimization features using all optimization capabilities."""
     try:
         from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
+import copy
+import numpy as np
+import pandas as pd
         
         # Initialize SR detection optimizer
         optimizer = await setup_sr_detection_optimizer(config)

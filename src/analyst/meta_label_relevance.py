@@ -106,6 +106,8 @@ def compute_shap_importance(
     if isinstance(sv, list) and len(sv) > 0:
         sv = sv[-1]
     import numpy as _np
+import copy
+import os.path
 
     magnitudes = _np.abs(_np.array(sv))
     if magnitudes.ndim == 1:

@@ -6,6 +6,8 @@ and adaptive indicators for improved prediction accuracy with vectorized operati
 """
 
 import asyncio
+import copy
+import datetime
 import hashlib
 import json
 import os

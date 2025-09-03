@@ -13,6 +13,8 @@ from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
+import asyncio
+
     failed,
     initialization_error,
     invalid,
@@ -105,6 +107,7 @@ class DITrainingManager(InjectableBase):
             else:
                 # Fallback to manual creation
                 from src.training.core.pipeline_base import TrainingPipeline
+import os.path
 
                 self.training_pipeline = TrainingPipeline(self.training_config)
 

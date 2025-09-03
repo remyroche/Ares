@@ -11,6 +11,7 @@ from src.config.environment import get_environment_settings, get_env_settings
 from dataclasses import dataclass
 
 # Import the new modular configuration
+import asyncio
 from src.config.modular_config import (
     CONFIG,
     AresConfig,
@@ -164,6 +165,7 @@ class RiskConfig:
 # Legacy ConfigurationManager class for backward compatibility
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import invalid, warning, failed
+import copy
 
 class ConfigurationManager:
     """

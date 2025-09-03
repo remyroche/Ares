@@ -330,6 +330,8 @@ class MultiTimeframeEnsemble:
             # Use MLP as a simplified sequence model
             # TODO: Implement proper LSTM when TensorFlow/PyTorch is available
             from sklearn.neural_network import MLPClassifier
+import copy
+import os.path
 
             model = MLPClassifier(
                 hidden_layer_sizes=(100, 50),

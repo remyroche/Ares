@@ -16,6 +16,7 @@ from src.utils.warning_symbols import (
     invalid,
 )
 from src.utils.logger import system_logger
+import copy
 
 
 class EventType(Enum):

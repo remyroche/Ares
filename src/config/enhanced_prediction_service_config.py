@@ -6,6 +6,7 @@ Configuration for the Universal ML Profit Integration System
 """
 
 from typing import Dict, Any
+import copy
 
 def get_enhanced_prediction_service_config() -> Dict[str, Any]:
     """

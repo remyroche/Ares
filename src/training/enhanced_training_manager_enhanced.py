@@ -3604,6 +3604,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         
         try:
             from src.training.steps import step15_saving
+import os.path
             
             result = await step15_saving.run_step(
                 enhanced_training_input=enhanced_training_input,

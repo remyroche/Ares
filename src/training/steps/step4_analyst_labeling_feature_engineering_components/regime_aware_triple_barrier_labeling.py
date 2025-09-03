@@ -793,6 +793,8 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
     except Exception as e:
         # Log error and return original data with error indicator
         import logging
+import copy
+
         logger = logging.getLogger(__name__)
         logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
         

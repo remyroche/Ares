@@ -13,6 +13,7 @@ import pandas as pd
 from src.utils.error_handler import handle_data_processing_errors, handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import copy
 
 
 class LookaheadBiasDetector:

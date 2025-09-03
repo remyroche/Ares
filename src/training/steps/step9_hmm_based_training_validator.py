@@ -243,4 +243,4 @@ if __name__ == "__main__":
         result = await run_validator(test_input, test_state)
         print(f"Validation result: {result}")
 
-    asyncio.run(test())
+    asyncio.run( test())

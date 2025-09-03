@@ -28,6 +28,7 @@ from optuna.samplers import TPESampler
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+import copy
 
 
 class MatrixDiverseLookbackOptimizer:

@@ -37,6 +37,8 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import copy
+
     failed,
     invalid,
 )

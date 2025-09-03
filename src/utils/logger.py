@@ -558,14 +558,14 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, enhanced_logger.initialize())
+                    future = executor.submit(asyncio.run, enhanced_logger.await initialize())
                     success = future.result()
             except RuntimeError:
                 # No event loop running, create a new one
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    success = loop.run_until_complete(enhanced_logger.initialize())
+                    success = loop.run_until_complete(enhanced_logger.await initialize())
                 finally:
                     loop.close()
 
@@ -741,6 +741,7 @@ def ensure_comprehensive_logging_available():
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
+import os.path
 
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:

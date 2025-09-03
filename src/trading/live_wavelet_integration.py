@@ -14,6 +14,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, failed
 import numpy as np
 import pandas as pd
+import asyncio
 
 class LiveWaveletIntegration:
     """

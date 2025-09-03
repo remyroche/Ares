@@ -14,6 +14,7 @@ import warnings
 from datetime import datetime
 from typing import Any
 from pathlib import Path
+import asyncio
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -5246,6 +5247,9 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
     """
     try:
         from src.utils.logger import system_logger
+import copy
+import numpy as np
+import os.path
 
         # Create configuration
         config = {

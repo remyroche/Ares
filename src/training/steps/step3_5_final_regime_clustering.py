@@ -874,6 +874,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
+import copy
     
     # Load test configuration
     test_config = {

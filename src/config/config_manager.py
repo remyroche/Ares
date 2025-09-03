@@ -20,6 +20,7 @@ from .config_technical_indicators import get_technical_indicators_config, get_te
 from .config_system_monitoring import get_system_monitoring_config, get_system_monitoring_search_space
 from .config_training_optimization import get_training_optimization_config, get_training_optimization_search_space
 from .config_regime_transitions import get_regime_transition_config, get_regime_transition_search_space
+import copy
 
 
 class ConfigManager:

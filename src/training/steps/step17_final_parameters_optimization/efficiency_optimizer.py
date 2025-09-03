@@ -771,6 +771,7 @@ if __name__ == "__main__":
 
     # Run optimization
     import asyncio
+import os.path
 
     async def test() -> None:
         await optimizer.initialize()

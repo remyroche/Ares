@@ -20,6 +20,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import copy
 
 
 @dataclass

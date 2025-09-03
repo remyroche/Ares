@@ -19,6 +19,8 @@ from src.utils.warning_symbols import error, failed, initialization_error, inval
 # Import Pydantic models and utilities
 from .config import StrategistConfig, MarketIndicators, StrategyResult, RiskLevel
 from .utils import (
+import asyncio
+
     StrategistError, ValidationError, CalculationError,
     log_error, validate_required_columns, validate_data_sufficiency,
     PerformanceOptimizer, create_strategy_validator, StrategyComponentExtractor
@@ -27,6 +29,7 @@ from .utils import (
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
+import copy
 
 
 class Strategist:

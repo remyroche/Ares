@@ -35,14 +35,15 @@ from scipy import stats
 
 from src.utils.logger import setup_logging
 from pathlib import Path
+import copy
 
+from src.config.config_optuna import (
     SROptimizationParameters,
     HyperparameterOptimizationConfig,
     get_parameter_search_space
-import copy
-from src.config.config_optuna import (
+)
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
-
+    OptimizedTripleBarrierLabeling
 )
 
 setup_logging()
@@ -454,12 +455,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Apply regime-specific triple barrier labeling."""
         
         try:
-            # Import the optimized triple barrier labeling
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-OptimizedTripleBarrierLabeling
-)
+            # Create labeler with regime-specific parameters
             
             # Create labeler with regime-specific parameters
             labeler = OptimizedTripleBarrierLabeling(

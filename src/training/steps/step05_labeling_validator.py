@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Validator for Step 5: Labeling."
+"""Validator for Step 5: Labeling.
 
-import pandas as pd
 This module validates the labeling step outputs.
 """
-from src.core.domain import (
 
-from src.core.decorators import validates
+import pandas as pd
+from src.core.decorators import (
+    validates,
     smart_validation_cache,
     validate_step5_comprehensive
 )
@@ -100,7 +100,7 @@ class Step5LabelingValidator(BaseValidator):
         try:
             self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(labeled_file), "labeled file")
             if not file_exists:
                 return False
@@ -108,7 +108,7 @@ class Step5LabelingValidator(BaseValidator):
             # Load and validate the labeled file
             df = pd.read_parquet(labeled_file)
 
-            # Use BaseValidator's DataFrame validation'
+            # Use BaseValidator's DataFrame validation
             df_valid, df_metrics = self.validate_dataframe_quality(
                 df=df,
                 min_rows=100,
@@ -154,7 +154,7 @@ class Step5LabelingValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(metadata_file), "metadata file")
             if not file_exists:
                 return False
@@ -197,7 +197,7 @@ class Step5LabelingValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate metadata file: {error_context}")
             return False
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 5 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -232,7 +232,7 @@ class Step5LabelingValidator(BaseValidator):
 
         return validation_result
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 5 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -277,7 +277,7 @@ class Step5LabelingValidator(BaseValidator):
                     if file_path.endswith(".parquet"):
                         try:
                             df = pd.read_parquet(file_path)
-                            # Use BaseValidator's DataFrame validation'
+                            # Use BaseValidator's DataFrame validation
                             df_valid, df_metrics = self.validate_dataframe_quality(
                                 df, min_rows=100, check_data_types=True
                             )
@@ -298,7 +298,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 5: Labeling."
+    """Run validation for Step 5: Labeling.
 
     Args:
         training_input: Training input parameters
@@ -369,10 +369,10 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-import datetime as datetime
+    import datetime
     
     test_input = {
-    "symbol": "ETHUSDT",
+        "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",
         "data_dir": "data_cache",

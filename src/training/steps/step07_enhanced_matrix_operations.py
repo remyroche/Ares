@@ -1,6 +1,7 @@
 # src/training/steps/step7_enhanced_matrix_operations.py
 
-"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management."
+"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
+
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
 """
 import asyncio
@@ -209,8 +210,15 @@ class Step7EnhancedMatrixOperations:
 
             
             # Initialize feature engineering optimization
-            feature_optimizer = FeatureEngineeringOptimizer(self.config)
-            timeframe_analyzer = TimeframeRelevanceAnalyzer(self.config)
+            if feature_engineering_optimizer is not None:
+                feature_optimizer = feature_engineering_optimizer.FeatureEngineeringOptimizer(self.config)
+            else:
+                feature_optimizer = None
+                
+            if timeframe_relevance_analyzer is not None:
+                timeframe_analyzer = timeframe_relevance_analyzer.TimeframeRelevanceAnalyzer(self.config)
+            else:
+                timeframe_analyzer = None
             
             # Load HMM regime data if available, with unified naming and fallback alias
             hmm_regimes = None
@@ -236,7 +244,7 @@ class Step7EnhancedMatrixOperations:
                 self.logger.warning("⚠️ No target variable found for feature optimization")
             
             # 1. Optimize feature engineering parameters
-            if target is not None:
+            if target is not None and feature_optimizer is not None:
                 self.logger.info("🔧 Starting feature engineering parameter optimization...")
                 feature_optimization_results = await feature_optimizer.optimize_feature_parameters(
                     data=df,
@@ -252,7 +260,10 @@ class Step7EnhancedMatrixOperations:
                 
                 self.logger.info("✅ Feature engineering parameter optimization completed")
             else:
-                self.logger.warning("⚠️ Skipping feature engineering optimization - no target variable")
+                if feature_optimizer is None:
+                    self.logger.warning("⚠️ Skipping feature engineering optimization - optimizer not available")
+                else:
+                    self.logger.warning("⚠️ Skipping feature engineering optimization - no target variable")
                 feature_optimization_results = {}
             
             # 2. Analyze timeframe relevance for high leverage trading
@@ -266,7 +277,7 @@ class Step7EnhancedMatrixOperations:
                     tf_data = pd.read_parquet(tf_path)
                     timeframe_data[tf] = tf_data
             
-            if timeframe_data:
+            if timeframe_data and timeframe_analyzer is not None:
                 timeframe_analysis_results = await timeframe_analyzer.analyze_timeframe_relevance(
                     data_dict=timeframe_data,
                     symbol=symbol,
@@ -279,7 +290,10 @@ class Step7EnhancedMatrixOperations:
                 
                 self.logger.info("✅ Timeframe relevance analysis completed")
             else:
-                self.logger.warning("⚠️ Skipping timeframe analysis - insufficient multi-timeframe data")
+                if timeframe_analyzer is None:
+                    self.logger.warning("⚠️ Skipping timeframe analysis - analyzer not available")
+                else:
+                    self.logger.warning("⚠️ Skipping timeframe analysis - insufficient multi-timeframe data")
                 timeframe_analysis_results = {}
             
             # Prepare matrix operations configuration
@@ -458,7 +472,7 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails'
+            # Don't fail the step if MLflow logging fails
 
     def _prepare_matrix_operations_config(
         self, 
@@ -1295,7 +1309,7 @@ class Step7EnhancedMatrixOperations:
             self.logger.error(f"Error calculating overall quality score: {str(e)}")
             return 0.0
 
-    def _generate_detailed_quality_report(self, quality_metrics: dict[str, Any]) -> str:
+    def _generate_detailed_quality_report(self, quality_metrics: dict[str, Any], matrix_results: dict[str, Any] = None) -> str:
         """Generate detailed quality report with recommendations."""
         try:
             report = []
@@ -1448,7 +1462,7 @@ class Step7EnhancedMatrixOperations:
             report.append("")
             
             # 9. SR-Specific Analysis (if available)
-            if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
+            if matrix_results and ("sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results):
                 report.append("🎯 9. SR-SPECIFIC ANALYSIS")
                 report.append("-" * 40)
                 
@@ -1510,7 +1524,7 @@ class Step7EnhancedMatrixOperations:
                 recommendations.append("• Optimize data types to reduce memory usage")
             
             # SR-specific recommendations
-            if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results:
+            if matrix_results and ("sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results):
                 recommendations.append("• Review SR feature correlations and consider feature selection")
                 recommendations.append("• Validate SR feature stability across different market conditions")
                 recommendations.append("• Consider SR feature importance for model training prioritization")
@@ -1531,7 +1545,7 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Overall Quality Score: {overall_score:.2f}/1.00")
             
             # SR-specific summary
-            if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
+            if matrix_results and ("sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results):
                 report.append("   SR Analysis: ✅ COMPREHENSIVE SR FEATURES ANALYZED")
                 
                 total_sr_features = 0
@@ -1622,7 +1636,7 @@ class Step7EnhancedMatrixOperations:
         output_files["quality_metrics"] = str(quality_file)
         
         # Generate and save detailed quality report
-        detailed_report = self._generate_detailed_quality_report(quality_metrics)
+        detailed_report = self._generate_detailed_quality_report(quality_metrics, results)
         report_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_quality_report.txt"
         with open(report_file, 'w') as f:
             f.write(detailed_report)
@@ -1687,16 +1701,13 @@ async def run_step(
         
         # Load configuration
         from src.config.training import get_training_config
-    except Exception as e:
-        pass  # TODO: Handle exception properly
-import numpy as np
-import os.path
-import pandas as pd
-
-config = get_training_config()
+        config = get_training_config()
         
-# Create step instance
+        # Create step instance
         step = Step7EnhancedMatrixOperations(config)
+    except Exception as e:
+        system_logger.error(f"Failed to load training config: {e}")
+        return False
         
         # Prepare training input
         training_input = {

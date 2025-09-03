@@ -67,7 +67,7 @@ async def run_validator(
         if not triple_barrier_path.exists():
             logger.error(f"❌ Triple barrier labels file not found: {triple_barrier_path}")
             return {
-                "step_name": "step4_5_triple_barrier_method",
+                "step_name": "step04_5_triple_barrier_method",
                 "validation_passed": False,
                 "error": f"Triple barrier labels file not found: {triple_barrier_path}",
             }
@@ -77,7 +77,7 @@ async def run_validator(
         if file_size == 0:
             logger.error(f"❌ Triple barrier labels file is empty: {triple_barrier_path}")
             return {
-                "step_name": "step4_5_triple_barrier_method",
+                "step_name": "step04_5_triple_barrier_method",
                 "validation_passed": False,
                 "error": "Triple barrier labels file is empty",
             }
@@ -95,7 +95,7 @@ from src.core.decorators import handles_errors, traced
             if missing_columns:
                 logger.error(f"❌ Missing required columns: {missing_columns}")
                 return {
-                    "step_name": "step4_5_triple_barrier_method",
+                    "step_name": "step04_5_triple_barrier_method",
                     "validation_passed": False,
                     "error": f"Missing required columns: {missing_columns}",
                 }
@@ -104,7 +104,7 @@ from src.core.decorators import handles_errors, traced
             if len(data) == 0:
                 logger.error("❌ No data rows found")
                 return {
-                    "step_name": "step4_5_triple_barrier_method",
+                    "step_name": "step04_5_triple_barrier_method",
                     "validation_passed": False,
                     "error": "No data rows found",
                 }
@@ -117,14 +117,14 @@ from src.core.decorators import handles_errors, traced
             if 0 in label_counts and label_counts[0] == len(data):
                 logger.warning("⚠️ All labels are 0 (hold) - this might indicate an issue")
                 return {
-                    "step_name": "step4_5_triple_barrier_method",
+                    "step_name": "step04_5_triple_barrier_method",
                     "validation_passed": True,  # Still pass but warn
                     "warning": "All labels are 0 (hold) - this might indicate an issue",
                 }
             
             logger.info("✅ Step 4: Triple Barrier Method validation passed")
             return {
-                "step_name": "step4_5_triple_barrier_method",
+                "step_name": "step04_5_triple_barrier_method",
                 "validation_passed": True,
                 "file_path": str(triple_barrier_path),
                 "data_shape": data.shape,
@@ -134,7 +134,7 @@ from src.core.decorators import handles_errors, traced
         except Exception as e:
             logger.error(f"❌ Error reading triple barrier labels file: {e}")
             return {
-                "step_name": "step4_5_triple_barrier_method",
+                "step_name": "step04_5_triple_barrier_method",
                 "validation_passed": False,
                 "error": f"Error reading file: {e}",
             }

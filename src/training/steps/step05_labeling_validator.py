@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Validator for Step 4: Regime Data Splitting."
+"""Validator for Step 5: Labeling."
 
-This module validates the regime data splitting step outputs with support for 10+ regimes.
+This module validates the labeling step outputs.
 """
 from src.core.domain import (
 
 from src.core.decorators import validates
     smart_validation_cache,
-    validate_step4_comprehensive
+    validate_step5_comprehensive
 )
 
 import json
@@ -21,21 +21,21 @@ from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 from src.utils.common_operations import safe_json_load
 
-logger = system_logger.getChild("Step4RegimeDataSplittingValidator")
+logger = system_logger.getChild("Step5LabelingValidator")
 
 
-class Step4RegimeDataSplittingValidator(BaseValidator):
-    """Validator for Step 4: Regime Data Splitting."""
+class Step5LabelingValidator(BaseValidator):
+    """Validator for Step 5: Labeling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step4_regime_data_splitting", config)
-        self.logger = system_logger.getChild("Validator.Step4")
+        super().__init__("step05_labeling", config)
+        self.logger = system_logger.getChild("Validator.Step5")
 
     @validates()
-    async def validate_step4_regime_data_splitting(
+    async def validate_step5_labeling(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:
-        """Validate Step 4: Regime Data Splitting."
+        """Validate Step 5: Labeling."
 
         Args:
             symbol: Trading symbol
@@ -46,44 +46,44 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         Returns:
             bool: True if validation passes
         """
-        self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
+        self.logger.info("🔍 Starting Step 5: Labeling validation")
 
         try:
-            # Check if regime data splitting directory exists
-            regime_splits_dir = Path(data_dir) / "training" / "regime_splits"
-            if not regime_splits_dir.exists():
+            # Check if labeled data directory exists
+            labeled_data_dir = Path(data_dir) / "training" / "labeled_data"
+            if not labeled_data_dir.exists():
                 self.logger.warning(
-                    f"⚠️ Regime splits directory not found: {regime_splits_dir}"
+                    f"⚠️ Labeled data directory not found: {labeled_data_dir}"
                 )
                 return False
 
-            # Validate regime split files
-            regime_files = list(regime_splits_dir.glob("*.parquet"))
-            if not regime_files:
-                self.logger.warning("⚠️ No regime split files found")
+            # Validate labeled data files
+            labeled_files = list(labeled_data_dir.glob("*.parquet"))
+            if not labeled_files:
+                self.logger.warning("⚠️ No labeled data files found")
                 return False
 
-            # Validate each regime file
-            for regime_file in regime_files:
-                if not await self._validate_regime_file(regime_file):
+            # Validate each labeled file
+            for labeled_file in labeled_files:
+                if not await self._validate_labeled_file(labeled_file):
                     return False
 
-            # Check for regime statistics file
-            stats_file = regime_splits_dir / f"{exchange}_{symbol}_1m_regime_statistics.json"
-            if not stats_file.exists():
-                self.logger.warning(f"⚠️ Regime statistics file not found: {stats_file}")
+            # Check for labeling metadata file
+            metadata_file = labeled_data_dir / f"{exchange}_{symbol}_1m_labeling_metadata.json"
+            if not metadata_file.exists():
+                self.logger.warning(f"⚠️ Labeling metadata file not found: {metadata_file}")
                 return False
 
-            # Validate statistics file
-            if not await self._validate_statistics_file(stats_file):
+            # Validate metadata file
+            if not await self._validate_metadata_file(metadata_file):
                 return False
 
-            self.logger.info("✅ Step 4: Regime Data Splitting validation passed")
+            self.logger.info("✅ Step 5: Labeling validation passed")
             return True
 
         except Exception as e:
             error_context = {
-                "step": "step4_regime_data_splitting",
+                "step": "step05_labeling",
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
@@ -91,28 +91,28 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 "error_message": str(e),
                 "timestamp": pd.Timestamp.now().isoformat()
             }
-            self.logger.exception(f"❌ Step 4 validation failed: {error_context}")
+            self.logger.exception(f"❌ Step 5 validation failed: {error_context}")
             return False
 
     @smart_validation_cache(ttl_seconds=300)  # Cache for 5 minutes
-    async def _validate_regime_file(self, regime_file: Path) -> bool:
-        """Validate a regime split file with caching."""
+    async def _validate_labeled_file(self, labeled_file: Path) -> bool:
+        """Validate a labeled data file with caching."""
         try:
-            self.logger.info(f"📁 Validating regime file: {regime_file.name}")
+            self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
             # Use BaseValidator's file validation'
-            file_exists, file_metrics = self.validate_file_exists(str(regime_file), "regime file")
+            file_exists, file_metrics = self.validate_file_exists(str(labeled_file), "labeled file")
             if not file_exists:
                 return False
 
-            # Load and validate the regime file
-            df = pd.read_parquet(regime_file)
+            # Load and validate the labeled file
+            df = pd.read_parquet(labeled_file)
 
             # Use BaseValidator's DataFrame validation'
             df_valid, df_metrics = self.validate_dataframe_quality(
                 df=df,
                 min_rows=100,
-                required_columns=["timestamp", "composite_cluster_id"],
+                required_columns=["timestamp", "label"],
                 check_data_types=True,
                 check_value_ranges=True,
                 check_duplicates=True,
@@ -120,81 +120,85 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             )
 
             if not df_valid:
-                self.logger.warning(f"⚠️ DataFrame validation failed for {regime_file.name}")
+                self.logger.warning(f"⚠️ DataFrame validation failed for {labeled_file.name}")
                 return False
 
-            # Additional regime-specific validation
-            if "composite_cluster_id" in df.columns:
-                unique_regimes = df["composite_cluster_id"].nunique()
-                if unique_regimes < 2 or unique_regimes > 50:
-                    self.logger.warning(
-                        f"⚠️ Unusual number of regimes ({unique_regimes}) in {regime_file.name}"
-                    )
+            # Additional labeling-specific validation
+            if "label" in df.columns:
+                unique_labels = df["label"].nunique()
+                if unique_labels < 2:
+                    self.logger.warning(f"⚠️ Insufficient label diversity in {labeled_file.name}: {unique_labels} labels")
+                    return False
+                
+                # Check label distribution
+                label_counts = df["label"].value_counts()
+                min_label_count = label_counts.min()
+                if min_label_count < 10:  # Minimum samples per label
+                    self.logger.warning(f"⚠️ Some labels have very few samples in {labeled_file.name}: min={min_label_count}")
 
-            self.logger.info(f"✅ Regime file validated: {regime_file.name}")
+            self.logger.info(f"✅ Labeled file validated: {labeled_file.name}")
             return True
 
         except Exception as e:
             error_context = {
-                "file": str(regime_file),
+                "file": str(labeled_file),
                 "error_type": type(e).__name__,
                 "error_message": str(e)
             }
-            self.logger.exception(f"❌ Failed to validate regime file: {error_context}")
+            self.logger.exception(f"❌ Failed to validate labeled file: {error_context}")
             return False
 
     @smart_validation_cache(ttl_seconds=600)  # Cache for 10 minutes
-    async def _validate_statistics_file(self, stats_file: Path) -> bool:
-        """Validate the regime statistics file with caching."""
+    async def _validate_metadata_file(self, metadata_file: Path) -> bool:
+        """Validate the labeling metadata file with caching."""
         try:
-            self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
+            self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
             # Use BaseValidator's file validation'
-            file_exists, file_metrics = self.validate_file_exists(str(stats_file), "statistics file")
+            file_exists, file_metrics = self.validate_file_exists(str(metadata_file), "metadata file")
             if not file_exists:
                 return False
 
-            stats_data = safe_json_load(stats_file)
+            metadata = safe_json_load(metadata_file)
 
-            # Check if it's a dictionary'
-            if not isinstance(stats_data, dict):
-                self.logger.warning("⚠️ Statistics file should contain a dictionary")
+            # Check if metadata is a dictionary
+            if not isinstance(metadata, dict):
+                self.logger.warning("⚠️ Metadata file should contain a dictionary")
                 return False
 
-            # Check for regime statistics
-            if not stats_data:
-                self.logger.warning("⚠️ Empty statistics data")
+            # Check for required fields
+            required_fields = ["labeling_method", "label_distribution", "total_samples", "labeling_timestamp"]
+            missing_fields = [field for field in required_fields if field not in metadata]
+            if missing_fields:
+                self.logger.warning(f"⚠️ Missing required fields in metadata: {missing_fields}")
                 return False
 
-            # Validate each regime's statistics'
-            for regime_id, stats in stats_data.items():
-                if not isinstance(stats, dict):
-                    self.logger.warning(f"⚠️ Invalid statistics format for regime {regime_id}")
-                    return False
+            # Validate label distribution
+            label_distribution = metadata.get("label_distribution", {})
+            if not isinstance(label_distribution, dict):
+                self.logger.warning("⚠️ Label distribution should be a dictionary")
+                return False
 
-                # Check for basic statistics
-                basic_fields = ["count", "percentage", "mean_volatility", "mean_momentum"]
-                missing_basic = [field for field in basic_fields if field not in stats]
-                if missing_basic:
-                    self.logger.warning(
-                        f"⚠️ Missing basic statistics for regime {regime_id}: {missing_basic}"
-                    )
-                    return False
+            # Validate total samples
+            total_samples = metadata.get("total_samples", 0)
+            if not isinstance(total_samples, int) or total_samples <= 0:
+                self.logger.warning(f"⚠️ Invalid total_samples: {total_samples}")
+                return False
 
-            self.logger.info(f"✅ Statistics file validated: {stats_file.name}")
+            self.logger.info(f"✅ Metadata file validated: {metadata_file.name}")
             return True
 
         except Exception as e:
             error_context = {
-                "file": str(stats_file),
+                "file": str(metadata_file),
                 "error_type": type(e).__name__,
                 "error_message": str(e)
             }
-            self.logger.exception(f"❌ Failed to validate statistics file: {error_context}")
+            self.logger.exception(f"❌ Failed to validate metadata file: {error_context}")
             return False
 
     def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Validate prerequisites for Step 4 using BaseValidator methods."""
+        """Validate prerequisites for Step 5 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
             "warnings": [],
@@ -203,24 +207,24 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         }
 
         try:
-            # Check if step3_hmm_regime_discovery output exists using BaseValidator
-            step3_output_dir = Path("data/training")
-            step3_files = list(step3_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
+            # Check if step4_regime_data_splitting output exists using BaseValidator
+            step4_output_dir = Path("data/training/regime_splits")
+            step4_files = list(step4_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
             
-            if not step3_files:
+            if not step4_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
-                    f"Step 3 HMM regime discovery output not found for {exchange}_{symbol}_{timeframe}"
+                    f"Step 4 regime data splitting output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
                 # Validate each file using BaseValidator
-                for file_path in step3_files:
-                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step03 output file")
+                for file_path in step4_files:
+                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step04 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
                 
-                validation_result["details"]["step3_files_found"] = len(step3_files)
-                validation_result["details"]["step3_files"] = [str(f) for f in step3_files]
+                validation_result["details"]["step4_files_found"] = len(step4_files)
+                validation_result["details"]["step4_files"] = [str(f) for f in step4_files]
 
         except Exception as e:
             validation_result["validation_passed"] = False
@@ -229,7 +233,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         return validation_result
 
     def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Validate Step 4 output files and content using BaseValidator methods."""
+        """Validate Step 5 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
             "warnings": [],
@@ -239,10 +243,10 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
 
         try:
             # Define expected output files
-            output_dir = Path("data/training/regime_splits")
+            output_dir = Path("data/training/labeled_data")
             expected_files = [
-                f"{exchange}_{symbol}_{timeframe}_regime_splits.parquet",
-                f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
+                f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet",
+                f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
             ]
 
             # Check if all expected files exist using BaseValidator
@@ -261,7 +265,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             if missing_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].extend([
-                    f"Missing regime data splitting file: {f}" for f in missing_files
+                    f"Missing labeling file: {f}" for f in missing_files
                 ])
             else:
                 validation_result["details"]["files_found"] = len(existing_files)
@@ -294,7 +298,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 4: Regime Data Splitting."
+    """Run validation for Step 5: Labeling."
 
     Args:
         training_input: Training input parameters
@@ -303,7 +307,7 @@ async def run_validator(
     Returns:
         Dictionary containing validation results
     """
-    logger.info("🔍 Validating Step 4: Regime Data Splitting")
+    logger.info("🔍 Validating Step 5: Labeling")
     
     try:
         # Extract parameters
@@ -314,13 +318,13 @@ async def run_validator(
         
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})
-        validator = Step4RegimeDataSplittingValidator(config)
+        validator = Step5LabelingValidator(config)
         
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
         
         # Validate step execution
-        step_result = await validator.validate_step4_regime_data_splitting(
+        step_result = await validator.validate_step5_labeling(
             symbol, exchange, data_dir, training_input
         )
         
@@ -335,7 +339,7 @@ async def run_validator(
         )
         
         return {
-            "step_name": "step4_regime_data_splitting",
+            "step_name": "step05_labeling",
             "validation_passed": validation_passed,
             "prerequisites": prereq_result,
             "step_execution": step_result,
@@ -346,16 +350,16 @@ async def run_validator(
         
     except Exception as e:
         error_context = {
-            "step": "step4_regime_data_splitting",
+            "step": "step05_labeling",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
             "error_type": type(e).__name__,
             "error_message": str(e),
             "timestamp": pd.Timestamp.now().isoformat()
         }
-        logger.exception(f"❌ Step 4 validation failed: {error_context}")
+        logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return {
-            "step_name": "step4_regime_data_splitting",
+            "step_name": "step05_labeling",
             "validation_passed": False,
             "error": str(e),
             "error_context": error_context

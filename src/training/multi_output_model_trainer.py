@@ -700,7 +700,7 @@ class MultiOutputModelTrainer:
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.steps.step9_hmm_based_training import HMMBasedTrainingStep
+                from src.training.steps.step09_hmm_based_training import HMMBasedTrainingStep
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 

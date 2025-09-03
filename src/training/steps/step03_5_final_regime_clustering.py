@@ -732,7 +732,7 @@ class FinalRegimeClusteringStep:
             # Generate summary report
             summary_report = {
                 "execution_summary": {
-                    "step_name": "step3_5_final_regime_clustering",
+                    "step_name": "step03_5_final_regime_clustering",
                     "execution_time": time.time() - self.start_time,
                     "timestamp": datetime.now().isoformat(),
                     "status": "completed"
@@ -838,7 +838,7 @@ class FinalRegimeClusteringStep:
 @handles_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step3_5_final_regime_clustering"
+    context="step03_5_final_regime_clustering"
 )
 @secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:

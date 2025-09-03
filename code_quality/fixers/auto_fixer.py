@@ -7,6 +7,12 @@ import subprocess
 import sys
 import tempfile
 from typing import Any
+import configparser
+
+try:
+    import tomllib as toml  # Python 3.11+
+except Exception:  # pragma: no cover
+    toml = None
 
 from ..core.config import CodeQualityConfig, get_default_config
 from ..core.plugins import PluginManager
@@ -33,6 +39,9 @@ class AutoFixer:
         self.plugin_manager = PluginManager(self.config.__dict__)
         self.progress_manager = ProgressManager()
 
+        # Try to unify tool configs from pyproject/setup.cfg
+        self._unify_tool_configurations()
+
         # Register built-in plugins
         self._register_builtin_plugins()
 
@@ -57,48 +66,24 @@ class AutoFixer:
         self._create_backups(python_files)
 
         try:
-            # Use progress manager to track the fixing operation
-            def fix_operation():
-                results = {}
+            # Use progress manager to track the fixing operation with simple concurrency
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
-                # Get available fixers for each file
-                for file_path in python_files:
-                    available_fixers = self.plugin_manager.get_available_fixers(file_path)
+            def run_for_file(file_path: str) -> dict[str, Any]:
+                return self._fix_single_file(file_path)
 
-                    if not available_fixers:
-                        results[file_path] = {
-                            "success": False,
-                            "message": "No suitable fixers available",
-                            "fixers_used": [],
-                        }
-                        continue
+            results = {}
+            max_workers = min(8, max(1, os.cpu_count() or 2))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {executor.submit(run_for_file, f): f for f in python_files}
+                for future in as_completed(future_map):
+                    file_path = future_map[future]
+                    try:
+                        results[file_path] = future.result()
+                    except Exception as e:
+                        results[file_path] = {"success": False, "error": str(e)}
 
-                    file_results = []
-                    for fixer in available_fixers:
-                        try:
-                            result = fixer.fix(file_path)
-                            file_results.append(result)
-                        except Exception as e:
-                            file_results.append({
-                                "success": False,
-                                "tool": fixer.get_name(),
-                                "error": str(e),
-                            })
-
-                    results[file_path] = {
-                        "success": any(r.get("success", False) for r in file_results),
-                        "fixers_used": [f.get_name() for f in available_fixers],
-                        "results": file_results,
-                    }
-
-                return results
-
-            # Run with progress tracking
-            self.fix_results = self.progress_manager.track_file_operation(
-                python_files,
-                "Auto-fixing code",
-                lambda f: self._fix_single_file(f),
-            )
+            self.fix_results = results
 
             # Validate fixes
             self._validate_fixes(python_files)
@@ -110,6 +95,47 @@ class AutoFixer:
 
         return self.fix_results
 
+    def _unify_tool_configurations(self) -> None:
+        """Best-effort read of project config to set line length and options."""
+        try:
+            project_root = Path(self.config.project_root or os.getcwd())
+            pyproject = project_root / "pyproject.toml"
+            setup_cfg = project_root / "setup.cfg"
+
+            line_length = None
+
+            if toml and pyproject.exists():
+                try:
+                    with open(pyproject, "rb") as f:
+                        data = toml.load(f)
+                    # Look for black/ruff settings
+                    black = data.get("tool", {}).get("black", {})
+                    ruff = data.get("tool", {}).get("ruff", {})
+                    if isinstance(black, dict) and "line-length" in black:
+                        line_length = int(black["line-length"])  # pyproject uses hyphen
+                    elif isinstance(ruff, dict):
+                        # ruff can nest format options
+                        fmt = ruff.get("format", {})
+                        if isinstance(fmt, dict) and "line-length" in fmt:
+                            line_length = int(fmt["line-length"])  # type: ignore[arg-type]
+                except Exception:
+                    pass
+
+            if line_length is None and setup_cfg.exists():
+                try:
+                    parser = configparser.ConfigParser()
+                    parser.read(setup_cfg)
+                    if parser.has_section("flake8") and parser.has_option("flake8", "max-line-length"):
+                        line_length = parser.getint("flake8", "max-line-length")
+                except Exception:
+                    pass
+
+            if line_length and line_length != self.config.auto_fix.max_line_length:
+                self.config.auto_fix.max_line_length = int(line_length)
+        except Exception:
+            # Non-fatal
+            pass
+
     def _register_builtin_plugins(self):
         """Register built-in code fixing plugins."""
         try:
@@ -119,6 +145,13 @@ class AutoFixer:
             from code_quality.plugins.isort_fixer import IsortFixer
             from code_quality.plugins.unify_fixer import UnifyFixer
             from code_quality.plugins.yapf_fixer import YapfFixer
+            from code_quality.plugins.ruff_fixer import RuffFixer
+            from code_quality.plugins.pyupgrade_fixer import PyupgradeFixer
+            from code_quality.plugins.flynt_fixer import FlyntFixer
+            from code_quality.plugins.autoflake_fixer import AutoflakeFixer
+            from code_quality.plugins.yesqa_fixer import YesqaFixer
+            from code_quality.plugins.import_hygiene_fixer import ImportHygieneFixer
+            from code_quality.plugins.future_annotations_fixer import FutureAnnotationsFixer
 
             # Register plugins with configuration
             black_config = {
@@ -166,6 +199,20 @@ class AutoFixer:
                 self.plugin_manager.register_plugin("docformatter", DocformatterFixer(docformatter_config))
             if "unify" in tools:
                 self.plugin_manager.register_plugin("unify", UnifyFixer(unify_config))
+            if "ruff" in tools:
+                self.plugin_manager.register_plugin("ruff", RuffFixer({"max_line_length": self.config.auto_fix.max_line_length}))
+            if "pyupgrade" in tools:
+                self.plugin_manager.register_plugin("pyupgrade", PyupgradeFixer({"py311_plus": True}))
+            if "flynt" in tools:
+                self.plugin_manager.register_plugin("flynt", FlyntFixer({"aggressive": self.config.auto_fix.aggressive}))
+            if "autoflake" in tools:
+                self.plugin_manager.register_plugin("autoflake", AutoflakeFixer({}))
+            if "yesqa" in tools:
+                self.plugin_manager.register_plugin("yesqa", YesqaFixer({}))
+            if "import_hygiene" in tools:
+                self.plugin_manager.register_plugin("import_hygiene", ImportHygieneFixer({}))
+            if "future_annotations" in tools:
+                self.plugin_manager.register_plugin("future_annotations", FutureAnnotationsFixer({"enabled": True}))
 
         except ImportError as e:
             print(f"Warning: Could not import built-in plugins: {e}")

@@ -1,20 +1,19 @@
 # src/training/steps/step14_tactician_labeling.py
 
 
-"""Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."
+"""Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."""
 
 from src.core.decorators import handles_errors
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 from src.utils.enhanced_mlflow_integration import (
-This step applies regime-aware triple barrier labeling for Tactician multi-outcome predictions
-with regime-specific barrier calculation, precision thresholds, and quality filters.
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
-Enhanced for high precision completion of Analyst signals with:
-- Regime-specific barrier calculation
-- Per-regime precision thresholds
-- Regime-specific quality filters
-- Regime-aware multi-outcome prediction structure
-"""
 import asyncio
 import contextlib
 import os
@@ -570,9 +569,7 @@ class RegimeAwareTacticianLabeler:
 
 
 class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""
-
-    
+    """Step 8: Tactician Model Labeling using Analyst model."""
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -619,21 +616,8 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
-        except Exception as e:
-            pass  # TODO: Handle exception
-from src.utils.logger import log_dataframe_overview, log_io_operation
-from src.training.enhanced_training_manager_optimized import (
-from src.utils.logger import log_dataframe_overview, log_io_operation
-from src.core.domain import (
-    config,
-    constants,
-    enhanced_training_manager_optimized,
-    from,
-    import,
-    src,
-    training,
-    BLANK_TRAINING_LOOKBACK_DAYS
-)
+            from src.utils.logger import log_dataframe_overview, log_io_operation
+            from src.core.domain import BLANK_TRAINING_LOOKBACK_DAYS
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
@@ -797,7 +781,7 @@ from src.core.domain import (
             if not regime_mask.any():
                 continue
 
-            # Ensure the model's expected features are present'
+            # Ensure the model's expected features are present
             if hasattr(ensemble, "feature_names_in_"):
                 features_for_model = [
                     f
@@ -821,12 +805,12 @@ from src.core.domain import (
         return data_with_features, all_signals
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
-        """Placeholder for your market regime detection logic."
+        """Placeholder for your market regime detection logic.
         This should be consistent with the logic from step4_regime_specific_training.
         """
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
-        # It is NOT used by the Tactician's labeler.'
+        # It is NOT used by the Tactician's labeler.
         vol_percentile = data["volatility"].rank(pct=True)
         bins = [0, 0.33, 0.66, 1.0]
         labels = ["SIDEWAYS", "BULL", "BEAR"]
@@ -837,13 +821,13 @@ from src.core.domain import (
         """Calculate all necessary features for both Analyst and Tactician."""
         data = data.copy()
         data["returns"] = data["close"].pct_change()
-        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.'
+        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.
         data["volatility"] = (
             data["returns"].rolling(window=60).std().bfill()
         )  # 1-hour volatility
         # ... Add all other features your Analyst models were trained on ...
         # e.g., RSI, MACD, Bollinger Bands, etc.
-        return data.fillna(method="ffill").fillna(0)
+        return data.ffill().fillna(0)
 
     def _save_results(self, labeled_data: pd.DataFrame, signals: pd.Series, data_dir: str, exchange: str, symbol: str) -> Tuple[str, str]:
         """Saves the labeled data and signals to disk."""
@@ -855,20 +839,18 @@ from src.core.domain import (
             f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         )
         try:
+            from src.data.parquet_dataset_manager import ParquetDatasetManager
+
+            ParquetDatasetManager(logger=self.logger).write_flat_parquet(
+                labeled_data,
+                labeled_file_parquet,
+                schema_name="split",
+                compression="snappy",
+                use_dictionary=True,
+                row_group_size=128_000,
+            )
+        except Exception:
             try:
-                    ParquetDatasetManager,
-                )
-
-                ParquetDatasetManager(logger=self.logger).write_flat_parquet(
-                    labeled_data,
-                    labeled_file_parquet,
-                    schema_name="split",
-                    compression="snappy",
-                    use_dictionary=True,
-                    row_group_size=128_000,
-                )
-            except Exception:
-
                 with log_io_operation(
                     self.logger,
                     "to_parquet",
@@ -882,13 +864,13 @@ from src.core.domain import (
                     log_dataframe_overview(
                         self.logger, labeled_data, name="labeled_data"
                     )
-        except Exception:
-            # Fallback to Pickle for compatibility
-            labeled_file_pickle = (
-                f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
-            )
-            labeled_data.to_pickle(labeled_file_pickle)
-            labeled_file_parquet = labeled_file_pickle
+            except Exception:
+                # Fallback to Pickle for compatibility
+                labeled_file_pickle = (
+                    f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
+                )
+                labeled_data.to_pickle(labeled_file_pickle)
+                labeled_file_parquet = labeled_file_pickle
 
         signals_file_parquet = (
             f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
@@ -896,20 +878,18 @@ from src.core.domain import (
         try:
             # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
+            from src.data.parquet_dataset_manager import ParquetDatasetManager
+
+            ParquetDatasetManager(logger=self.logger).write_flat_parquet(
+                _signals_df,
+                signals_file_parquet,
+                schema_name="split",
+                compression="snappy",
+                use_dictionary=True,
+                row_group_size=128_000,
+            )
+        except Exception:
             try:
-                    ParquetDatasetManager,
-                )
-
-                ParquetDatasetManager(logger=self.logger).write_flat_parquet(
-                    _signals_df,
-                    signals_file_parquet,
-                    schema_name="split",
-                    compression="snappy",
-                    use_dictionary=True,
-                    row_group_size=128_000,
-                )
-            except Exception:
-
                 with log_io_operation(
                     self.logger,
                     "to_parquet",
@@ -921,43 +901,28 @@ from src.core.domain import (
                     )
                 with contextlib.suppress(Exception):
                     log_dataframe_overview(self.logger, _signals_df, name="signals_df")
-        except Exception:
-            signals_file_pickle = (
-                f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
-            )
-            signals.to_pickle(signals_file_pickle)
-            signals_file_parquet = signals_file_pickle
+            except Exception:
+                signals_file_pickle = (
+                    f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
+                )
+                signals.to_pickle(signals_file_pickle)
+                signals_file_parquet = signals_file_pickle
 
         return labeled_file_parquet, signals_file_parquet
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
+from src.core.decorators import (
     deterministic_seed,
     idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
+    timeout,
+    validates,
+    log_execution_time,
+    cached,
+    log_call,
+    circuit_breaker
 )
 import copy
-
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 
 # For backward compatibility with existing step structure
@@ -978,10 +943,12 @@ import copy
     },
     context="Tactician Labeling",
 )
-# @secure_data_processing - removed, handled by validates(
+# @secure_data_processing - removed, handled by validates
+@validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 # @prevent_data_leakage - removed, handled by validates
+@validates(
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
@@ -1018,6 +985,7 @@ import copy
     format_validation=True,
 )
 # @quality_gate - removed, handled by validates
+@validates(
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"labeling_accuracy": 0.7},
 )
@@ -1028,12 +996,13 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the tactician labeling step."
+    """Run the tactician labeling step.
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
+        force_rerun: Force rerun of the step
         **kwargs: Additional parameters
 
     Returns:

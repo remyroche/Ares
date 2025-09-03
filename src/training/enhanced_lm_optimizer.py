@@ -49,7 +49,6 @@ except ImportError:
     EnhancedLMOptimizerConfig = None
     DEFAULT_CONFIG = None
 
-
 class EnhancedLMOptimizer:
     """Enhanced LM Model Optimizer with comprehensive optimization features."
 
@@ -165,7 +164,6 @@ class EnhancedLMOptimizer:
         # Merge with config using recursive update
         config = self.config.get("enhanced_lm_optimizer", {})
         return self._recursive_update(default_config, config)
-
 
     def _recursive_update(self, base_dict: dict[str, Any], update_dict: dict[str, Any]) -> dict[str, Any]:
         """Recursively update nested dictionaries."""
@@ -682,7 +680,6 @@ class EnhancedLMOptimizer:
                 features_df, target, step_name, architecture,
             )
 
-
         except Exception as e:
             self.logger.exception(f"❌ Regularization optimization failed: {e}")
             return {"error": str(e)}
@@ -1026,7 +1023,6 @@ class EnhancedLMOptimizer:
             # Risk-adjusted metric (combine accuracy with win rate)
             return (accuracy * 0.6 + balanced_acc * 0.3 + win_rate * 0.1)
 
-
         except Exception as e:
             self.logger.warning(f"⚠️ Classification metrics calculation failed: {e}")
             return 0.5
@@ -1050,7 +1046,6 @@ class EnhancedLMOptimizer:
 
             # Combined metric
             return (normalized_sharpe * 0.7 + win_rate * 0.3)
-
 
         except Exception as e:
             self.logger.warning(f"⚠️ Regression metrics calculation failed: {e}")
@@ -1076,7 +1071,6 @@ class EnhancedLMOptimizer:
                 params, features_df, target, architecture, model_type,
             )
 
-
         except Exception as e:
             self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
             return np.array([0.5])  # Fallback score
@@ -1095,7 +1089,6 @@ class EnhancedLMOptimizer:
             return self._run_neural_network_training_loop(
                 params, features_df, target, architecture, model_type,
             )
-
 
         except Exception as e:
             self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
@@ -1230,7 +1223,6 @@ class EnhancedLMOptimizer:
             "cache_size": len(self.optimization_cache),
             "cached_steps": list(self.optimization_cache.keys()),
         }
-
 
 class EnhancedFeatureSelector:
     """Enhanced feature selector with multiple algorithms and vectorized operations."""
@@ -1437,7 +1429,6 @@ n_folds = 5
             selected_indices = feature_indices[:target_features]
             return features_df.columns[selected_indices].tolist()
 
-
         except Exception as e:
             self.logger.warning(f"⚠️ Mutual info selection failed: {e}")
             return features_df.columns[:target_features].tolist()
@@ -1502,7 +1493,6 @@ n_folds = 5
             top_indices = np.argsort(importance)[::-1][:target_features]
             return features_df.columns[top_indices].tolist()
 
-
         except Exception as e:
             self.logger.warning(f"⚠️ Random Forest selection failed: {e}")
             return features_df.columns[:target_features].tolist()
@@ -1534,11 +1524,9 @@ n_folds = 5
             top_indices = np.argsort(mean_shap)[::-1][:target_features]
             return features_df.columns[top_indices].tolist()
 
-
         except Exception as e:
             self.logger.warning(f"⚠️ SHAP selection failed: {e}")
             return features_df.columns[:target_features].tolist()
-
 
 class EnhancedRegularizationManager:
     """Enhanced regularization manager with model-specific tuning."""
@@ -1693,7 +1681,6 @@ class EnhancedRegularizationManager:
             self.logger.exception(f"❌ General regularization optimization failed: {e}")
             return {"alpha": 0.01, "l1_ratio": 0.5}
 
-
 # Simple model classes for demonstration
 class SimpleNNModel(nn.Module):
     def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:
@@ -1715,7 +1702,6 @@ class SimpleNNModel(nn.Module):
 
     def forward(self, x):
         return self.layers(x)
-
 
 class SimpleCNNModel(nn.Module):
     def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:
@@ -1745,7 +1731,6 @@ class SimpleCNNModel(nn.Module):
         x = self.conv_layers(x)
         x = x.squeeze(-1)
         return self.fc_layers(x)
-
 
 class SimpleTCNModel(nn.Module):
     def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:
@@ -1826,8 +1811,6 @@ class SimpleTCNModel(nn.Module):
 
         # Global average pooling
         return self.global_pool(x).squeeze(-1)
-
-
 
 class SimpleTransformerModel(nn.Module):
     def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:

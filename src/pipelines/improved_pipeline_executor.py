@@ -1,23 +1,19 @@
 # src/pipelines/improved_pipeline_executor.py
 
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import asyncio
 
-from src.utils.error_handler import (
-
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     warning,
 )
-
 
 class ImprovedPipelineExecutor:
     """
@@ -46,7 +42,7 @@ class ImprovedPipelineExecutor:
         self.cycle_history: List[Dict[str, Any]] = []
         self.max_history_size = 100
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline configuration"),
             AttributeError: (False, "Missing required pipeline components"),
@@ -77,7 +73,7 @@ class ImprovedPipelineExecutor:
             self.logger.error(failed(f"❌ Pipeline executor initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="component validation",
@@ -102,7 +98,7 @@ class ImprovedPipelineExecutor:
             self.logger.error(f"Error validating components: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid market data"),
             AttributeError: (None, "Missing market data fields"),
@@ -180,7 +176,7 @@ base_price = 100.0
         current_price = float(prices[-1])
         return market_data, current_price
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Step 1 execution failed"),
             AttributeError: (None, "Analyst component error"),
@@ -243,7 +239,7 @@ base_price = 100.0
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Step 2 execution failed"),
             AttributeError: (None, "Strategist component error"),
@@ -310,7 +306,7 @@ base_price = 100.0
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Step 3 execution failed"),
             AttributeError: (None, "Tactician component error"),
@@ -381,7 +377,7 @@ base_price = 100.0
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Step 4 execution failed"),
             AttributeError: (None, "Dual model system error"),
@@ -475,7 +471,7 @@ base_price = 100.0
                 "timestamp": datetime.now().isoformat(),
             }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="dual model tactician integration",
@@ -587,7 +583,7 @@ base_price = 100.0
                 "integrated": False,
             }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Pipeline execution failed"),
             AttributeError: (None, "Pipeline component error"),

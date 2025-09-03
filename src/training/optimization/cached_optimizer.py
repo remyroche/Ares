@@ -1,5 +1,7 @@
 # src/training/optimization/cached_optimizer.py
 
+from src.core.decorators import handles_errors
+
 """Cached Optimizer for efficient parameter optimization with caching and warm start."""
 
 import hashlib
@@ -13,13 +15,11 @@ from typing import Any
 
 import optuna
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     warning,
 )
-
 
 @dataclass
 class CacheConfig:
@@ -30,7 +30,6 @@ class CacheConfig:
     max_cache_size_mb: int = 100
     enable_warm_start: bool = True
     warm_start_threshold: float = 0.8  # Similarity threshold for warm start
-
 
 class CachedOptimizer:
     """Implements caching for optimization efficiency with warm start capabilities."""
@@ -51,7 +50,7 @@ class CachedOptimizer:
         )
         self.cache_metadata = self._load_cache_metadata()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="cache metadata loading",
@@ -67,7 +66,7 @@ class CachedOptimizer:
             self.print(warning("Could not load cache metadata: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="cache metadata saving",
@@ -91,7 +90,7 @@ class CachedOptimizer:
         """Get cache file path for given key."""
         return os.path.join(self.cache_config.cache_dir, f"{cache_key}.pkl")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="cached results retrieval",
@@ -128,7 +127,7 @@ class CachedOptimizer:
             self.print(warning("Error retrieving cached results: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="cache validation",
@@ -155,7 +154,7 @@ class CachedOptimizer:
             self.print(warning("Error validating cache: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="warm start parameters retrieval",
@@ -223,7 +222,7 @@ class CachedOptimizer:
             self.print(warning("Error calculating config similarity: {e}"))
             return 0.0
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="optimization results caching",
@@ -267,7 +266,7 @@ class CachedOptimizer:
             self.print(error("Error caching optimization results: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="optimization with warm start",
@@ -341,7 +340,7 @@ class CachedOptimizer:
             self.print(error("Error running optimization with warm start: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="cache cleanup",

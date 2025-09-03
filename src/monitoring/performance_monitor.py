@@ -1,5 +1,13 @@
 # src/monitoring/performance_monitor.py
 
+from src.core.decorators import (
+    cached,
+    handles_errors,
+    log_execution_time
+)
+
+from src.core.domain import PerformanceLevel
+
 """
 Performance Monitor for Dual Model System
 Comprehensive monitoring of model performance, system metrics, trading performance, and optimization opportunities.
@@ -11,15 +19,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    memory_efficient,
-    performance_monitor,
-    resource_monitor,
-)
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
 
+from src.utils.logger import system_logger
 
 @dataclass
 class PerformanceMetrics:
@@ -44,7 +45,6 @@ class PerformanceMetrics:
     confidence_tactician: float = 0.0
     confidence_final: float = 0.0
 
-
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
 
@@ -67,10 +67,10 @@ class PerformanceMonitor:
             maxlen=int(self.monitoring_config.get("metrics_history_size", 1000)),
         )
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @resource_monitor()
-    @memory_efficient()
-    @handle_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
+    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @log_execution_time()
+    @cached()
+    @handles_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
     async def initialize(self) -> bool:
         self.logger.info("📈 Initializing Performance Monitor ...")
         self.metrics_history.clear()

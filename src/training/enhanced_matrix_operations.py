@@ -1,5 +1,20 @@
 # src/training/enhanced_matrix_operations.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 """Enhanced Matrix Operations Manager for advanced ML training processes."
 Implements sophisticated matrix operations with security decorators and
 performance optimizations for improved model training.
@@ -29,7 +44,6 @@ from sklearn.linear_model import Lasso, Ridge
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 try:
@@ -39,17 +53,6 @@ except Exception:
     _DASK_AVAILABLE = False
 
 # Import security and monitoring decorators
-from src.utils.centralized_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-)
-
 
 @dataclass
 class MatrixOperationsConfig:
@@ -82,7 +85,6 @@ class MatrixOperationsConfig:
     variance_threshold: float = 0.01
     correlation_threshold: float = 0.95
     mutual_info_threshold: float = 0.01
-
 
 class EnhancedMatrixOperations:
     """Enhanced matrix operations manager with security decorators and optimizations."
@@ -118,16 +120,16 @@ class EnhancedMatrixOperations:
 
     @secure_data_processing(encryption_level="high", data_validation=True)
     @prevent_data_leakage(validate_inputs=True, sanitize_outputs=True)
-    @resource_monitor(cpu_threshold_percent=90.0, memory_threshold_gb=16.0)
-    @memory_efficient(chunk_size=5000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True, save_debug_artifacts=True)
-    @circuit_breaker_protection(failure_threshold=3, recovery_timeout=300.0)
-    @validate_step_output(required_files=[], data_quality_checks={"min_rows": 100})
+    @log_execution_time(cpu_threshold_percent=90.0, memory_threshold_gb=16.0)
+    @cached(chunk_size=5000, streaming_processing=True)
+    @log_call(log_intermediate_results=True, save_debug_artifacts=True)
+    @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
+    @validates(required_files=[], data_quality_checks={"min_rows": 100})
     @quality_gate(
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def eigenvalue_based_feature_engineering(
         self,
         features_df: pd.DataFrame,
@@ -210,10 +212,10 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium", data_validation=True)
-    @memory_efficient(chunk_size=2000, streaming_processing=False)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=2000, streaming_processing=False)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def cholesky_covariance_estimation(
         self,
         features_df: pd.DataFrame,
@@ -290,10 +292,10 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium", data_validation=True)
-    @memory_efficient(chunk_size=3000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=3000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def sparse_matrix_optimizations(
         self,
         features_df: pd.DataFrame,
@@ -362,11 +364,11 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="high", data_validation=True)
-    @resource_monitor(cpu_threshold_percent=85.0, memory_threshold_gb=12.0)
-    @memory_efficient(chunk_size=1000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @log_execution_time(cpu_threshold_percent=85.0, memory_threshold_gb=12.0)
+    @cached(chunk_size=1000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def advanced_decomposition_techniques(
         self,
         features_df: pd.DataFrame,
@@ -465,10 +467,10 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium", data_validation=True)
-    @memory_efficient(chunk_size=2000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=2000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def matrix_completion_techniques(
         self,
         features_df: pd.DataFrame,
@@ -533,10 +535,10 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium", data_validation=True)
-    @memory_efficient(chunk_size=3000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=3000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def advanced_clustering_features(
         self,
         features_df: pd.DataFrame,
@@ -644,11 +646,11 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="high", data_validation=True)
-    @resource_monitor(cpu_threshold_percent=80.0, memory_threshold_gb=10.0)
-    @memory_efficient(chunk_size=2000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @log_execution_time(cpu_threshold_percent=80.0, memory_threshold_gb=10.0)
+    @cached(chunk_size=2000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def optimization_algorithms(
         self,
         features_df: pd.DataFrame,
@@ -728,10 +730,10 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium", data_validation=True)
-    @memory_efficient(chunk_size=1000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=1000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def advanced_feature_engineering(
         self,
         features_df: pd.DataFrame,
@@ -846,10 +848,10 @@ class EnhancedMatrixOperations:
             return features_df, {"error": str(e)}
 
     @secure_data_processing(encryption_level="high", data_validation=True)
-    @memory_efficient(chunk_size=2000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=2000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def quality_assurance_checks(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """Perform comprehensive quality assurance checks."
 
@@ -984,7 +986,7 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Quality assurance failed: {e}")
             return {"error": str(e), "passed": False}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=(pd.DataFrame(), {}),
         context="feature selection step02",

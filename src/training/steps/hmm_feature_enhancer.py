@@ -1,11 +1,17 @@
 # src/training/steps/hmm_feature_enhancer.py
 
 
+<<<<<<< HEAD
+from src.core.decorators import (
+    traced,
+    validates
+)
+=======
+>>>>>>> origin/main
 
 import numpy as np
 import pandas as pd
 
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
 
 
@@ -16,8 +22,8 @@ class HMMFeatureEnhancer:
         self.config = config or {}
         self.logger = system_logger.getChild("HMMFeatureEnhancer")
 
-    @with_tracing_span("HMMFeatureEnhancer.enhance_hmm_features")
-    @guard_dataframe_nulls(mode="warn", arg_index=0)
+    @traced("HMMFeatureEnhancer.enhance_hmm_features")
+    @validates(mode="warn", arg_index=0)
     def enhance_hmm_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Enhance HMM features with additional derived features.
 

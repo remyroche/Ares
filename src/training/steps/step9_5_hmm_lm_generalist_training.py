@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -34,7 +34,7 @@ from src.utils.centralized_decorators import (
     validate_data_quality,
     validate_step_output,
     validate_step_prerequisites,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors

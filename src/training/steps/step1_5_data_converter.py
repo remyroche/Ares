@@ -492,9 +492,9 @@ class ParquetDatasetManager:
 			msg = "pyarrow is required for ParquetDatasetManager operations"
 			raise ImportError(msg)
 
-	@guard_dataframe_nulls(mode="warn", arg_index=1)
-	@with_tracing_span(
-		"ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True,
+	@validates(mode="warn", arg_index=1)
+	@traced(
+		"ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True
 	)
 	def enforce_schema(self, df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
 		if df is None or df.empty:
@@ -1662,8 +1662,8 @@ class UnifiedDataConverter:
 	@validate_klines_data_quality
 	@secure_data_processing
 	@prevent_data_leakage
-	@resource_monitor
-	@memory_efficient
+	@log_execution_time
+	@cached
 	@quality_gate
 	@handles_errors(fallback=None)
 	async def _create_klines_from_aggtrades(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame | None:
@@ -1762,10 +1762,10 @@ class UnifiedDataConverter:
 @handles_errors(fallback=False)
 @secure_data_processing
 @prevent_data_leakage
-@resource_monitor
-@memory_efficient
+@log_execution_time
+@cached
 @quality_gate
-@circuit_breaker_protection
+@circuit_breaker
 @handles_errors(fallback=False)
 async def run_step(
 	symbol: str,

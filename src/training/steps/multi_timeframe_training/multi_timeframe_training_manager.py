@@ -1,20 +1,11 @@
 # src/training/multi_timeframe_training_manager.py
 
-# Add multi-timeframe feature engineering and regime integration imports
-# Temporarily commented out due to syntax errors
-# from src.analyst.multi_timeframe_feature_engineering import (
-#     MultiTimeframeFeatureEngineering,
-# )
-# from src.analyst.multi_timeframe_regime_integration import (
-#     MultiTimeframeRegimeIntegration,
-# )
-from datetime import datetime
+from src.core.decorators import handles_errors
+from src.core.domain import handle_specific_errors
 from typing import Any
-
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from datetime import datetime
+from src.analyst.multi_timeframe_regime_integration import MultiTimeframeRegimeIntegration
+from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
 from src.utils.logger import system_logger
 
 # Import StepDependencyValidator for step dependency validation
@@ -126,7 +117,7 @@ class MultiTimeframeTrainingManager:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="multi-timeframe training configuration loading",
@@ -171,7 +162,7 @@ class MultiTimeframeTrainingManager:
                 f"Error loading multi-timeframe training configuration: {e}",
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -218,7 +209,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="multi-timeframe training modules initialization",
@@ -251,7 +242,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing multi-timeframe training modules: {e}",
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe analysis initialization",
@@ -278,7 +269,7 @@ class MultiTimeframeTrainingManager:
             # Re-raise the exception to prevent silent failures
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="cross timeframe features initialization",
@@ -305,7 +296,7 @@ class MultiTimeframeTrainingManager:
             # Re-raise the exception to prevent silent failures
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe ensemble initialization",
@@ -332,7 +323,7 @@ class MultiTimeframeTrainingManager:
             # Re-raise the exception to prevent silent failures
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe optimization initialization",
@@ -530,7 +521,7 @@ class MultiTimeframeTrainingManager:
             self.is_training = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="multi-timeframe training inputs validation",
@@ -580,7 +571,7 @@ class MultiTimeframeTrainingManager:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe analysis",
@@ -629,7 +620,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error performing timeframe analysis: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="cross timeframe features",
@@ -687,7 +678,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error performing cross timeframe features: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe ensemble",
@@ -736,7 +727,7 @@ class MultiTimeframeTrainingManager:
             self.print(error("Error performing timeframe ensemble: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe optimization",
@@ -1044,7 +1035,7 @@ class MultiTimeframeTrainingManager:
             )
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="multi-timeframe training results storage",
@@ -1076,7 +1067,7 @@ class MultiTimeframeTrainingManager:
                 f"Error storing multi-timeframe training results: {e}",
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="multi-timeframe training results getting",
@@ -1106,7 +1097,7 @@ class MultiTimeframeTrainingManager:
             )
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="multi-timeframe training history getting",
@@ -1161,7 +1152,7 @@ class MultiTimeframeTrainingManager:
             ),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="multi-timeframe training manager cleanup",
@@ -1229,7 +1220,7 @@ class MultiTimeframeTrainingManager:
 multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="multi-timeframe training manager setup",

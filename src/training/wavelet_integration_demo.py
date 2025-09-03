@@ -33,7 +33,6 @@ from src.utils.warning_symbols import (
     problem,
 )
 
-
 class WaveletIntegrationDemo:
     """Comprehensive demonstration of the complete wavelet workflow integration.
     Shows all features from advanced_feature_engineering.py and feature_engineering_orchestrator.py
@@ -462,7 +461,6 @@ class WaveletIntegrationDemo:
         except Exception:
             self.print(error("Error running complete demo: {e}"))
 
-
 async def main() -> None:
     """Main function to run the wavelet integration demo."""
     try:
@@ -515,7 +513,6 @@ async def main() -> None:
 
     except Exception:
         pass
-
 
 if __name__ == "__main__":
     asyncio.run( main())

@@ -14,7 +14,6 @@ from sklearn.metrics import accuracy_score
 
 logger = logging.getLogger(__name__)
 
-
 class BaseProbabilityCalculator:
     """Base class for probability calculations across different model types."""
 
@@ -35,7 +34,6 @@ class BaseProbabilityCalculator:
             return np.mean(np.maximum(y_pred_proba, 1 - y_pred_proba))
         # Multi-class classification
         return np.mean(np.max(y_pred_proba, axis=1))
-
 
 class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for classification models."""
@@ -211,7 +209,6 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
         except Exception as e:
             self.logger.exception(f"Error calculating barrier avoidance probability: {e}")
             return 0.5  # Default fallback
-
 
 class RegressionProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for regression models."""
@@ -400,8 +397,7 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             self.logger.exception(f"Error calculating barrier avoidance probability: {e}")
             return 0.5
 
-
-def get_probability_calculator(model_type: str) -> ClassificationProbabilityCalculator | RegressionProbabilityCalculator:
+def get_probability_calculator(model_type: str) -> Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator]:
     """
     Factory function to get appropriate probability calculator.
 

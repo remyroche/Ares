@@ -1,14 +1,14 @@
 # src/training/steps/step11_*.py
 
+from src.core.domain import (
+    validate_dataframe_operation,
+    validate_file_operation,
+    validate_step2_operation
+)
 from pathlib import Path
 from typing import Any
-
 from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_step2_operation,
-)
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
 

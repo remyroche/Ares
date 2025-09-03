@@ -24,7 +24,6 @@ from src.utils.warning_symbols import (
     initialization_error,
 )
 
-
 @dataclass
 class PerformanceMetrics:
     """Structured performance metrics for comparison."""
@@ -45,7 +44,6 @@ class PerformanceMetrics:
     model_complexity: float
     training_time: float
     inference_time: float
-
 
 class PerformanceComparison:
     """Comprehensive performance comparison system."""
@@ -720,10 +718,8 @@ class PerformanceComparison:
         """Generate trading-specific recommendations."""
         return ["Deploy improvements gradually", "Monitor risk metrics closely"]
 
-
 # Global performance comparison instance
 performance_comparison: PerformanceComparison | None = None
-
 
 async def setup_performance_comparison(
     config: dict[str, Any] | None = None,

@@ -17,10 +17,10 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     handle_errors,
     resource_monitor,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import system_logger
 

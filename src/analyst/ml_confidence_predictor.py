@@ -1,3 +1,10 @@
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    handle_file_operations,
+    handle_specific_errors
+)
+
 import contextlib
 import os
 from datetime import datetime
@@ -12,11 +19,6 @@ import logging
 import asyncio
 from src.tactician.enhanced_order_manager import (
     OrderSide,
-)
-from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
@@ -294,7 +296,7 @@ class MLConfidencePredictor:
             )
             return self._generate_fallback_predictions(current_price)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="prediction preparation",
@@ -344,7 +346,7 @@ class MLConfidencePredictor:
             or self.multi_timeframe_models
         )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="price target predictions generation",
@@ -376,7 +378,7 @@ class MLConfidencePredictor:
 
         return price_target_confidences
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="adversarial predictions generation",
@@ -438,7 +440,7 @@ class MLConfidencePredictor:
             return self._predict_single_target(features, model_key, model_type)
         return fallback_func(target_level)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="ensemble predictions generation",
@@ -770,7 +772,7 @@ class MLConfidencePredictor:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="enhanced training integration initialization",
@@ -834,7 +836,7 @@ class MLConfidencePredictor:
                 f"Error initializing model training capabilities: {e}",
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature engineering integration initialization",
@@ -905,7 +907,7 @@ from src.analyst.feature_engineering_orchestrator import (
             self.multi_timeframe_feature_engineering = None
             self.feature_engineering_orchestrator = None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="meta labeling system initialization",
@@ -946,7 +948,6 @@ from src.analyst.feature_engineering_orchestrator import (
             )
             # Continue without meta-labeling system if not available
             self.meta_labeling_system = None
-
 
 
     async def _generate_analyst_meta_labels(
@@ -1032,7 +1033,7 @@ from src.analyst.feature_engineering_orchestrator import (
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="trained models loading from enhanced training",
@@ -1287,7 +1288,7 @@ from src.analyst.feature_engineering_orchestrator import (
             f"  - Multi-timeframe models: {len(self.multi_timeframe_models)}",
         )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="predictor configuration loading",
@@ -1307,7 +1308,7 @@ from src.analyst.feature_engineering_orchestrator import (
         self.predictor_config.setdefault("max_prediction_horizon", 1)  # hours
         self.predictor_config.setdefault("enhanced_training_integration", True)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model parameters initialization",
@@ -1345,7 +1346,7 @@ from src.analyst.feature_engineering_orchestrator import (
                 self.model = None
                 self.is_trained = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -1383,7 +1384,6 @@ from src.analyst.feature_engineering_orchestrator import (
             self.logger.error(validation_"Configuration validation error: {e}")
 
             return False
-
 
 
     async def predict_ensemble_confidence(
@@ -2677,7 +2677,7 @@ ExecutionStrategy,
 
             return {"error": str(e)}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="ML confidence predictor cleanup",
@@ -2762,7 +2762,7 @@ ExecutionStrategy,
         self.logger.info(f"Ablation study results: {results}")
         return results
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="label-level MoE confidence prediction",
@@ -2897,7 +2897,7 @@ ExecutionStrategy,
                 weights = {k: float(v / total) for k, v in weights.items()}
         return weights
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="multi-timeframe label-level confidence prediction",
@@ -2920,7 +2920,7 @@ ExecutionStrategy,
                 all_conf[f"{tf}_{label}"] = float(val)
         return all_conf
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="tactician label-level confidence prediction",
@@ -3001,7 +3001,7 @@ ExecutionStrategy,
                 confidences[label] = 0.5
         return confidences
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="multi-timeframe tactician label-level confidence prediction",
@@ -3023,7 +3023,7 @@ ExecutionStrategy,
         return all_conf
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="ML confidence predictor setup",

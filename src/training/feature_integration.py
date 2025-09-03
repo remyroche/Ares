@@ -1,5 +1,7 @@
 # src/training/feature_integration.py
 
+from src.core.decorators import handles_errors
+
 """Feature Integration Module for ML Training Pipeline."
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
@@ -11,7 +13,6 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
 from src.utils.warning_symbols import (
@@ -19,7 +20,6 @@ from src.utils.warning_symbols import (
     error,
     initialization_error,
 )
-
 
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
@@ -51,7 +51,7 @@ class FeatureIntegrationManager:
 
         self.is_initialized = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="feature integration initialization",
@@ -86,7 +86,7 @@ AdvancedFeatureEngineering,
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature integration",

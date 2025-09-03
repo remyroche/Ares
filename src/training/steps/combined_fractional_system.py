@@ -1,5 +1,7 @@
 # src/training/steps/combined_fractional_system.py
 
+from src.core.decorators import handles_errors
+
 """Combined Fractional System: Integration of fractional labeling and fractional differentiation."
 Designed to work with existing HMM regime system without redundant regime tuning.
 """
@@ -12,10 +14,9 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection,
+    validate_feature_engineering_with_lookahead_bias_detection
 )
 
 # Import fractional components
@@ -235,7 +236,7 @@ class CombinedFractionalSystem:
         
         self.logger.info("✅ Combined Fractional System initialized successfully")
     
-    @handle_errors("Combined fractional system processing")
+    @handles_errors("Combined fractional system processing")
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     async def process_data(

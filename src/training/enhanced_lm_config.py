@@ -11,7 +11,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, validator
 
-
 class SamplerType(str, Enum):
     """Available Optuna samplers."""
 
@@ -19,14 +18,12 @@ class SamplerType(str, Enum):
     CMAES = "cmaes"
     RANDOM = "random"
 
-
 class PrunerType(str, Enum):
     """Available Optuna pruners."""
 
     MEDIAN = "median"
     HYPERBAND = "hyperband"
     THRESHOLD = "threshold"
-
 
 class FeatureSelectionConfig(BaseModel):
     """Configuration for feature selection."""
@@ -54,7 +51,6 @@ class FeatureSelectionConfig(BaseModel):
                 msg = f"Invalid method '{method}'. Valid methods: {valid_methods}"
                 raise ValueError(msg)
         return v
-
 
 class RegularizationConfig(BaseModel):
     """Configuration for regularization optimization."""
@@ -88,7 +84,6 @@ class RegularizationConfig(BaseModel):
             raise ValueError(msg)
         return v
 
-
 class OptunaConfig(BaseModel):
     """Configuration for Optuna hyperparameter optimization."""
 
@@ -107,7 +102,6 @@ class OptunaConfig(BaseModel):
             raise ValueError(msg)
         return v
 
-
 class VectorizationConfig(BaseModel):
     """Configuration for vectorized operations."""
 
@@ -115,7 +109,6 @@ class VectorizationConfig(BaseModel):
     batch_size: int = Field(default=1024, ge=32, le=10000, description="Batch size for operations")
     use_gpu: bool = Field(default=True, description="Use GPU if available")
     memory_efficient: bool = Field(default=True, description="Use memory-efficient operations")
-
 
 class ExperimentTrackingConfig(BaseModel):
     """Configuration for experiment tracking."""
@@ -125,7 +118,6 @@ class ExperimentTrackingConfig(BaseModel):
     wandb: bool = Field(default=False, description="Enable Weights & Biases tracking")
     log_artifacts: bool = Field(default=True, description="Log model artifacts")
     log_metrics: bool = Field(default=True, description="Log detailed metrics")
-
 
 class EnhancedLMOptimizerConfig(BaseModel):
     """Main configuration for Enhanced LM Optimizer."""
@@ -224,7 +216,6 @@ class EnhancedLMOptimizerConfig(BaseModel):
             },
         }
 
-
 # Default configuration
 DEFAULT_CONFIG = EnhancedLMOptimizerConfig()
 
@@ -246,7 +237,6 @@ def get_fast_config() -> EnhancedLMOptimizerConfig:
         ),
     )
 
-
 def get_comprehensive_config() -> EnhancedLMOptimizerConfig:
     """Get configuration optimized for comprehensive optimization."""
     return EnhancedLMOptimizerConfig(
@@ -266,7 +256,6 @@ def get_comprehensive_config() -> EnhancedLMOptimizerConfig:
             wandb=True,
         ),
     )
-
 
 def get_memory_efficient_config() -> EnhancedLMOptimizerConfig:
     """Get configuration optimized for memory efficiency."""

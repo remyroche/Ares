@@ -1,5 +1,7 @@
 # src/tactician/tactics_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 """
 Tactics Orchestrator for coordinating all tactical components.
 """
@@ -40,7 +42,7 @@ from src.tactician.position_monitor import (
 )
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -74,7 +76,7 @@ class DecisionPolicy:
         self.sr_predictor: SRBreakoutPredictor | None = None
         self.ml_tactics: MLTacticsManager | None = None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="decision policy initialization",
@@ -181,7 +183,7 @@ class DecisionPolicy:
             self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="trade decision generation",
@@ -542,7 +544,7 @@ class TacticsOrchestrator:
         self.orchestrator_task: asyncio.Task | None = None
         self.is_running = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="tactics orchestrator initialization",
@@ -644,7 +646,7 @@ class TacticsOrchestrator:
             self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactics orchestration start",
@@ -671,7 +673,7 @@ class TacticsOrchestrator:
             self.logger.exception(failed(f"❌ Failed to start tactics orchestration: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactics orchestration stop",

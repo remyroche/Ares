@@ -1,5 +1,14 @@
 # src/training/steps/step9_hmm_based_training.py
 
+from src.core.domain import (
+    OptimizedFeatureSelectionManager,
+    feature_artifact_loader,
+    optimized_feature_selection_manager,
+    src,
+    steps,
+    training
+)
+
 """Step 9: HMM-Based Model Training with Standardized Data Quality Management."
 
 This step performs HMM-based model training with timeframe-specific architectures
@@ -272,11 +281,6 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import shap
 from src.training.steps.sr_outcome_model_trainer import (
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
-from src.training.optimized_feature_selection_manager import (
-from src.training.steps.feature_artifact_loader import (
-                OptimizedFeatureSelectionManager,
-            )
             self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
@@ -382,7 +386,7 @@ from src.training.steps.feature_artifact_loader import (
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="HMM-based training step initialization",
@@ -466,7 +470,7 @@ from src.training.steps.feature_artifact_loader import (
             raise RuntimeError(msg)
 
     @with_enhanced_mlflow_logging("step9_hmm_based_training")
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-based training step execution",
@@ -3150,7 +3154,6 @@ class CNNModel(nn.Module):
         return self.fc2(x)
 
 
-
 class TCNModel(nn.Module):
     """Temporal Convolutional Network for 5m timeframe."""
 
@@ -3183,7 +3186,6 @@ class TCNModel(nn.Module):
         x = x[:, -1, :]  # Take last timestep,
         x = self.dropout(x)
         return self.fc(x)
-
 
 
 class TemporalBlock(nn.Module):
@@ -3264,7 +3266,6 @@ class TransformerModel(nn.Module):
         x = x[:, -1, :]  # Take last timestep,
         x = self.dropout(x)
         return self.fc(x)
-
 
 
 class PositionalEncoding(nn.Module):
@@ -5185,7 +5186,7 @@ class TransformerTrainer:
     output_validation=True,
     validation_level=ValidationLevel.WARNING,
 )
-@validate_step_prerequisites(
+@validates(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,
     min_disk_gb=5.0,
@@ -5205,29 +5206,29 @@ class TransformerTrainer:
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
     monitor_interval=60.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=300.0,
     expected_exception=Exception,
     monitor_interval=60.0,
 )
-@validate_step_output(
+@validates(
     required_files=["models/{exchange}_{symbol}_hmm_model.pkl"],
     data_quality_checks={
         "min_rows": 100,

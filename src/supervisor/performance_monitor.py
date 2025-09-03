@@ -5,6 +5,10 @@ including real-time tracking, drift detection, statistical analysis, and
 performance metrics calculation. It integrates with the model behavior tracker
 to provide holistic performance insights.
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 import asyncio
 import json
 from datetime import datetime
@@ -14,7 +18,6 @@ import numpy as np
 import yaml
 from scipy import stats
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid, warning
 
@@ -92,7 +95,7 @@ class PerformanceMonitor:
             self.print(failed(f"❌ Performance Monitor initialization failed with unexpected error: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="monitor configuration loading",
@@ -114,7 +117,7 @@ class PerformanceMonitor:
             self.print(error(f"Unexpected error loading monitor configuration: {e}"))
             self.monitor_config = {"monitor_interval": 60, "max_history": 100}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -153,7 +156,7 @@ class PerformanceMonitor:
             self.is_running = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="performance monitoring step",
@@ -171,7 +174,7 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error in performance monitoring step: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="performance metrics collection",
@@ -191,7 +194,7 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error collecting performance metrics: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="performance alerts check",
@@ -221,7 +224,7 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error checking performance alerts: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="performance monitor stop",
@@ -381,7 +384,7 @@ class PerformanceMonitor:
     # REAL-TIME PERFORMANCE TRACKING METHODS
     # ============================================================================
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="real-time performance update",
@@ -424,7 +427,7 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"Error updating model performance: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="real-time metrics calculation",
@@ -481,7 +484,7 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"Error calculating real-time metrics: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="retraining trigger check",
@@ -557,7 +560,7 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"Error checking retraining triggers: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="adaptive model selection",
@@ -670,7 +673,7 @@ class PerformanceMonitor:
             self.logger.exception(f"Error getting regime performance adjustment: {e}")
             return 1.0
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="performance feedback loop",
@@ -742,7 +745,7 @@ class PerformanceMonitor:
 performance_monitor: PerformanceMonitor | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="performance monitor setup",

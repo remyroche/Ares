@@ -51,7 +51,6 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-
 class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning,"
     and wider hyperparameter search. Uses functional programming approach and multiprocessing.

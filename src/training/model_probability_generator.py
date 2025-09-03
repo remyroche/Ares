@@ -21,7 +21,6 @@ from .probability_calculators import (
 
 logger = logging.getLogger(__name__)
 
-
 class ModelProbabilityGenerator:
     """
     Main class for generating probability outputs for trained models.
@@ -324,7 +323,6 @@ class ModelProbabilityGenerator:
         except Exception as e:
             self.logger.exception(f"Error generating calibrated probabilities: {e}")
             return self._get_default_probabilities(f"{model_type}_calibrated")
-
 
 # Convenience function for easy access
 def generate_model_probabilities(

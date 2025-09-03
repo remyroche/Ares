@@ -16,8 +16,7 @@ from typing import Any
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    with_tracing_span,
+
 )
 from src.utils.logger import system_logger
 

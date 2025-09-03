@@ -27,6 +27,13 @@ from function_validator import FunctionValidator
 from comprehensive_code_review import CodeQualityReviewer
 from scripts.simple_interaction_mapper import extract_interactions, generate_report
 from utils.report_aggregator import ReportAggregator
+from analyzers.metrics_analyzer import MetricsAnalyzer
+from analyzers.test_coverage_analyzer import TestCoverageAnalyzer
+from analyzers.code_smell_detector import CodeSmellDetector
+from analyzers.documentation_analyzer import DocumentationAnalyzer
+from analyzers.performance_analyzer import PerformanceAnalyzer
+from analyzers.configuration_analyzer import ConfigurationAnalyzer
+from analyzers.data_flow_analyzer import DataFlowAnalyzer
 
 
 class UnifiedEnhancedPipeline:
@@ -349,6 +356,168 @@ class UnifiedEnhancedPipeline:
             
         return result
         
+    def run_metrics_analysis(self) -> Dict[str, Any]:
+        """Run code metrics analysis."""
+        print("\n" + "="*60)
+        print("Running Code Metrics Analysis")
+        print("="*60)
+        
+        start_time = time.time()
+        analyzer = MetricsAnalyzer(str(self.project_root))
+        
+        # Analyze all Python files
+        python_files = list(self.project_root.rglob('*.py'))
+        for file_path in python_files:
+            analyzer.analyze_file(file_path)
+            
+        result = analyzer.generate_report()
+        result['execution_time'] = time.time() - start_time
+        
+        # Add to aggregator
+        self.report_aggregator.file_metrics.update(analyzer.file_metrics)
+        
+        # Save report
+        report_path = self.reports_dir / f"metrics_analysis_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_test_coverage_analysis(self) -> Dict[str, Any]:
+        """Run test coverage analysis."""
+        print("\n" + "="*60)
+        print("Running Test Coverage Analysis")
+        print("="*60)
+        
+        start_time = time.time()
+        analyzer = TestCoverageAnalyzer(str(self.project_root))
+        result = analyzer.analyze_project()
+        result['execution_time'] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"test_coverage_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_code_smell_detection(self) -> Dict[str, Any]:
+        """Run code smell detection."""
+        print("\n" + "="*60)
+        print("Running Code Smell Detection")
+        print("="*60)
+        
+        start_time = time.time()
+        detector = CodeSmellDetector(str(self.project_root))
+        
+        # Analyze all Python files
+        python_files = list(self.project_root.rglob('*.py'))
+        for file_path in python_files:
+            detector.analyze_file(file_path)
+            
+        result = detector.generate_report()
+        result['execution_time'] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"code_smells_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_documentation_analysis(self) -> Dict[str, Any]:
+        """Run documentation quality analysis."""
+        print("\n" + "="*60)
+        print("Running Documentation Analysis")
+        print("="*60)
+        
+        start_time = time.time()
+        analyzer = DocumentationAnalyzer(str(self.project_root))
+        
+        # Analyze all Python files
+        python_files = list(self.project_root.rglob('*.py'))
+        for file_path in python_files:
+            analyzer.analyze_file(file_path)
+            
+        # Analyze README
+        analyzer.analyze_readme()
+        
+        result = analyzer.generate_report()
+        result['execution_time'] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"documentation_analysis_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_performance_analysis(self) -> Dict[str, Any]:
+        """Run performance analysis."""
+        print("\n" + "="*60)
+        print("Running Performance Analysis")
+        print("="*60)
+        
+        start_time = time.time()
+        analyzer = PerformanceAnalyzer(str(self.project_root))
+        
+        # Analyze all Python files
+        python_files = list(self.project_root.rglob('*.py'))
+        for file_path in python_files:
+            analyzer.analyze_file(file_path)
+            
+        result = analyzer.generate_report()
+        result['execution_time'] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"performance_analysis_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_configuration_analysis(self) -> Dict[str, Any]:
+        """Run configuration analysis."""
+        print("\n" + "="*60)
+        print("Running Configuration Analysis")
+        print("="*60)
+        
+        start_time = time.time()
+        analyzer = ConfigurationAnalyzer(str(self.project_root))
+        result = analyzer.analyze_project()
+        result['execution_time'] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"configuration_analysis_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_data_flow_analysis(self) -> Dict[str, Any]:
+        """Run data flow analysis."""
+        print("\n" + "="*60)
+        print("Running Data Flow Analysis")
+        print("="*60)
+        
+        start_time = time.time()
+        analyzer = DataFlowAnalyzer(str(self.project_root))
+        
+        # Analyze all Python files
+        python_files = list(self.project_root.rglob('*.py'))
+        for file_path in python_files:
+            analyzer.analyze_file(file_path)
+            
+        result = analyzer.generate_report()
+        result['execution_time'] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"data_flow_analysis_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
     def run_all(self) -> Dict[str, Any]:
         """Run all code quality tools with unified reporting."""
         print(f"\n{'='*80}")
@@ -376,7 +545,14 @@ class UnifiedEnhancedPipeline:
         self.results['analysis'] = {
             'function_validation': self.run_function_validation(),
             'comprehensive_review': self.run_comprehensive_review(),
-            'interaction_mapping': self.run_interaction_mapping()
+            'interaction_mapping': self.run_interaction_mapping(),
+            'metrics': self.run_metrics_analysis(),
+            'test_coverage': self.run_test_coverage_analysis(),
+            'code_smells': self.run_code_smell_detection(),
+            'documentation': self.run_documentation_analysis(),
+            'performance': self.run_performance_analysis(),
+            'configuration': self.run_configuration_analysis(),
+            'data_flow': self.run_data_flow_analysis()
         }
         
         # Generate summary

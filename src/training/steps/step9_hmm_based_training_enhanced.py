@@ -54,6 +54,7 @@ from src.utils.centralized_decorators import (
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -507,7 +508,7 @@ class EnhancedHMMBasedTrainingStep:
             for regime, results in self.regime_results.items():
                 if results.get("success", False):
                     regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
-                    os.makedirs(regime_save_path, exist_ok=True)
+                    ensure_directory(regime_save_path)
                     
                     # Save regime-specific model
                     self.save_enhanced_models(results, regime_save_path)
@@ -965,12 +966,12 @@ class EnhancedHMMBasedTrainingStep:
             save_path: Path to save models
         """
         try:
-            os.makedirs(save_path, exist_ok=True)
+            ensure_directory(save_path)
             
             # Save multi-output models
             if results.get("multi_output_results") and self.multi_output_trainer:
                 multi_output_dir = os.path.join(save_path, "multi_output_models")
-                os.makedirs(multi_output_dir, exist_ok=True)
+                ensure_directory(multi_output_dir)
                 
                 # Save the multi-output trainer
                 model_path = os.path.join(multi_output_dir, f"{results['model_name']}_multi_output.pkl")
@@ -980,7 +981,7 @@ class EnhancedHMMBasedTrainingStep:
             # Save single-output models
             if results.get("single_output_results"):
                 single_output_dir = os.path.join(save_path, "single_output_models")
-                os.makedirs(single_output_dir, exist_ok=True)
+                ensure_directory(single_output_dir)
                 
                 single_result = results["single_output_results"]
                 model_path = os.path.join(single_output_dir, f"{results['model_name']}_single.pkl")
@@ -1001,8 +1002,7 @@ class EnhancedHMMBasedTrainingStep:
             }
             
             metadata_path = os.path.join(save_path, "metadata.json")
-            with open(metadata_path, "w") as f:
-                json.dump(metadata, f, indent=2)
+            safe_json_dump(metadata, metadata_path, indent=2)
             
             self.logger.info(f"✅ Enhanced models saved to {save_path}")
             
@@ -1158,10 +1158,10 @@ async def run_enhanced_step(
             # Save per-regime models if available
             if per_regime_results:
                 per_regime_dir = os.path.join(save_path, "per_regime")
-                os.makedirs(per_regime_dir, exist_ok=True)
+                ensure_directory(per_regime_dir)
                 for regime_key, regime_result in per_regime_results.items():
                     regime_dir = os.path.join(per_regime_dir, f"regime_{regime_key}")
-                    os.makedirs(regime_dir, exist_ok=True)
+                    ensure_directory(regime_dir)
                     try:
                         enhanced_trainer.save_enhanced_models(regime_result, regime_dir)
                     except Exception:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Step 3.5: Final Regime Clustering with Advanced Reporting.
+"""Step 3.5: Final Regime Clustering with Advanced Reporting."
 
 This module performs final regime clustering using optimized parameters from step03,
 with comprehensive reporting and analysis of regime characteristics.
-"""
+""""
 
 import asyncio
 import sys

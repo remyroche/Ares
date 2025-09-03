@@ -1,0 +1,12 @@
+{
+  "dry_run": true,
+  "files_with_errors": 178,
+  "error_types": {
+    "invalid syntax": 102,
+    "unterminated string literal (detected at line 583)": 1,
+    "expected 'except' or 'finally' block": 44,
+    "unexpected indent": 29,
+    "expected an indented block after 'except' statement on line 165": 1,
+    "unmatched ')'": 1
+  }
+}

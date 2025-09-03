@@ -1,11 +1,11 @@
-"""
+""""
 Strategist module for trading strategy generation.
 
 This module provides the Strategist class which is responsible for:
 - Strategy Generation: Create trading strategies based on market analysis
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
-"""
+""""
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -33,22 +33,22 @@ import copy
 
 
 class Strategist:
-    """
+    """"
     Strategy-Level Strategist component responsible for:
     - Strategy Generation: Create trading strategies based on market analysis
     - Market Analysis Integration: Combine analyst and tactician inputs
     - Strategy History Management: Track and store strategy performance
     
     Note: Position sizing is handled by the Tactician component
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize strategist with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config
         self.logger = system_logger.getChild("Strategist")
 
@@ -86,12 +86,12 @@ class Strategist:
         context="strategist initialization",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize strategist with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         try:
             self.logger.info("Initializing Strategist...")
 
@@ -138,7 +138,7 @@ class Strategist:
         current_price: float,
         analysis_results: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Generate trading strategy based on market data and analysis results.
 
         Args:
@@ -148,7 +148,7 @@ class Strategist:
 
         Returns:
             Generated strategy or None if failed
-        """
+        """"
         try:
             # Validate market data
             self._validate_market_data(market_data)
@@ -190,12 +190,12 @@ class Strategist:
             return None
 
     def _validate_market_data(self, market_data: pd.DataFrame) -> None:
-        """
+        """"
         Validate market data for strategy generation.
         
         Raises:
             ValidationError: If validation fails
-        """
+        """"
         required_columns = ["close", "volume", "timestamp"]
         validate_required_columns(market_data, required_columns)
         validate_data_sufficiency(market_data, min_rows=100)
@@ -203,7 +203,7 @@ class Strategist:
     async def _extract_market_indicators_optimized(
         self, market_data: pd.DataFrame, current_price: float
     ) -> MarketIndicators:
-        """
+        """"
         Extract market indicators with performance optimization.
         
         Args:
@@ -212,7 +212,7 @@ class Strategist:
             
         Returns:
             MarketIndicators object with calculated values
-        """
+        """"
         try:
             # Use performance optimizer for parallel calculation
             config_dict = self.strategist_config.technical_indicator_thresholds.dict()
@@ -246,7 +246,7 @@ class Strategist:
     def _generate_base_strategy_simplified(
         self, indicators: MarketIndicators, current_price: float
     ) -> Dict[str, Any]:
-        """
+        """"
         Generate base strategy with simplified logic.
         
         Args:
@@ -255,7 +255,7 @@ class Strategist:
             
         Returns:
             Base strategy dictionary
-        """
+        """"
         strategy = StrategyResult(
             direction="HOLD",
             confidence=0.5,
@@ -298,7 +298,7 @@ class Strategist:
     def _integrate_analysis_results_simplified(
         self, strategy: Dict[str, Any], analysis_results: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
+        """"
         Integrate analysis results with simplified, modular approach.
         
         Args:
@@ -307,7 +307,7 @@ class Strategist:
             
         Returns:
             Updated strategy
-        """
+        """"
         # Extract market health component
         health_component = self.component_extractor.extract_market_health(analysis_results)
         if health_component:
@@ -342,7 +342,7 @@ class Strategist:
     def _apply_risk_management_simplified(
         self, strategy: Dict[str, Any], current_price: float
     ) -> Dict[str, Any]:
-        """
+        """"
         Apply risk management with simplified logic.
         
         Args:
@@ -351,7 +351,7 @@ class Strategist:
             
         Returns:
             Strategy with risk management applied
-        """
+        """"
         if strategy["direction"] == "HOLD":
             return strategy
         
@@ -368,7 +368,7 @@ class Strategist:
             strategy["take_profit"] = current_price * (1 - risk_percentage * risk_reward_ratio)
             strategy["reasoning"].append(f"Risk management: SL={strategy['stop_loss']:.2f}, TP={strategy['take_profit']:.2f}")
         
-        # Reduce confidence if it's below threshold
+        # Reduce confidence if it's below threshold'
         if strategy["confidence"] < self.strategist_config.min_confidence_threshold:
             strategy["direction"] = "HOLD"
             strategy["reasoning"].append(f"Confidence below threshold ({self.strategist_config.min_confidence_threshold})")

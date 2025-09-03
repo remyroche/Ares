@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Step 4: Regime Data Splitting with Standardized Data Quality Management.
+"""Step 4: Regime Data Splitting with Standardized Data Quality Management."
 
 This module creates a unified dataset with regime labels for regime-aware processing.
 Uses labels to differentiate regimes instead of creating separate files per regime.
 This ensures trading indicators have the necessary lookback periods.
-"""
+""""
 
 import asyncio
 import os
@@ -16,6 +16,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -245,7 +248,7 @@ class RegimeDataSplittingStep:
                 on='timestamp', 
                 how='inner'
             )
-            # Retention check: ensure we didn't lose too many rows during merge
+            # Retention check: ensure we didn't lose too many rows during merge'
             try:
                 retention_ratio = (len(merged_data) / max(len(unified_df), 1)) if len(unified_df) else 0.0
                 self.logger.info(f"📈 Merge retention ratio: {retention_ratio:.3f}")
@@ -279,8 +282,7 @@ class RegimeDataSplittingStep:
             data = data.sort_values('timestamp').reset_index(drop=True)
             
             # Create training directory
-            training_dir = Path(data_dir) / "training"
-            training_dir.mkdir(parents=True, exist_ok=True)
+            training_dir = ensure_directory(Path(data_dir) / "training")
             
             # Save unified dataset with regime labels
             unified_file = training_dir / f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
@@ -312,8 +314,7 @@ class RegimeDataSplittingStep:
             }
             
             labels_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
-            with open(labels_file, 'w') as f:
-                json.dump(regime_labels, f, indent=2)
+            safe_json_dump(regime_labels, labels_file, indent=2)
             
             self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
             
@@ -407,11 +408,12 @@ class RegimeDataSplittingStep:
             
             metadata_file = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
             import json
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import numpy as np
 import pandas as pd
 
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+safe_json_dump(metadata, metadata_file, indent=2)
             
             self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
             
@@ -440,7 +442,7 @@ async def run_step(
     force_rerun: bool = False,
     config: dict[str, Any] = None,
 ) -> bool:
-    """Run Step 4: Regime Data Splitting with standardized data quality management.
+    """Run Step 4: Regime Data Splitting with standardized data quality management."
     
     Args:
         symbol: Trading symbol
@@ -452,7 +454,7 @@ async def run_step(
         
     Returns:
         bool: Success status
-    """
+    """"
     logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
     
     # Use standardized path construction

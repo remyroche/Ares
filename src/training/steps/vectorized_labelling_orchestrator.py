@@ -1,9 +1,9 @@
 # src/training/steps/vectorized_labelling_orchestrator.py
 
-"""Vectorized Labelling Orchestrator for comprehensive feature engineering and labeling pipeline.
+"""Vectorized Labelling Orchestrator for comprehensive feature engineering and labeling pipeline."
 Coordinates optimized_triple_barrier_labeling.py, vectorized_advanced_feature_engineering.py
 and autoencoder_feature_generator.py with advanced preprocessing and feature selection.
-"""
+""""
 
 from __future__ import annotations
 
@@ -23,9 +23,16 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from copy import copy
+
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_copy, safe_fillna, safe_read_parquet, safe_to_parquet
+from src.utils.common_operations import (
+)
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
+from src.utils.common_operations import ensure_directory
 
 
 # -----------------------------------------------------------------------------
@@ -64,9 +71,9 @@ warnings.showwarning = _showwarning
 # Orchestrator
 # -----------------------------------------------------------------------------
 class VectorizedLabellingOrchestrator:
-    """Comprehensive vectorized labeling orchestrator that coordinates all feature generation
+    """Comprehensive vectorized labeling orchestrator that coordinates all feature generation"
     and labeling components with advanced preprocessing and feature selection.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -175,12 +182,12 @@ class VectorizedLabellingOrchestrator:
 
     def _log_feature_sample(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ensure_directory("log/features_samples")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}.log"
             # Merge raw/returns for visibility when available
-            sample = df.copy()
+            sample = safe_copy(df)
             if self._debug_raw_ohlcv is not None:
                 for c in ["open", "high", "low", "close", "volume"]:
                     if c in self._debug_raw_ohlcv.columns and c not in sample.columns:
@@ -317,7 +324,7 @@ class VectorizedLabellingOrchestrator:
         order_flow_data: pd.DataFrame | None = None,
         sr_levels: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Orchestrate the complete labeling and feature engineering pipeline.
+        """Orchestrate the complete labeling and feature engineering pipeline."
 
         Args:
             price_data: OHLCV price data
@@ -327,7 +334,7 @@ class VectorizedLabellingOrchestrator:
 
         Returns:
             Dictionary containing processed data and metadata
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.logger.error("Vectorized labeling orchestrator not initialized")
@@ -372,7 +379,7 @@ class VectorizedLabellingOrchestrator:
 
             # Capture raw and returns for logging
             try:
-                self._debug_raw_ohlcv = price_data[["open", "high", "low", "close", "volume"]].copy()  # noqa: E501
+                self._debug_raw_ohlcv = safe_copy(price_data[["open", "high", "low", "close", "volume"]])  # noqa: E501
             except Exception:
                 self._debug_raw_ohlcv = None
             try:
@@ -1243,21 +1250,21 @@ class VectorizedLabellingOrchestrator:
         """Save data as Parquet file."""
         try:
             output_dir = "data/vectorized_features"
-            os.makedirs(output_dir, exist_ok=True)
+            ensure_directory(output_dir)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             filename = f"vectorized_features_{timestamp}.parquet"
             filepath = os.path.join(output_dir, filename)
 
-            data.to_parquet(filepath, index=True, compression="snappy")
+            safe_to_parquet(data, filepath, index=True, compression="snappy")
             self.logger.info(f"💾 Data saved as Parquet: {filepath}")
         except Exception as e:
             self.logger.exception(f"Error saving data as Parquet: {e}")
 
     def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ensure_directory("log/features_samples")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Features.txt"
             total = len(features)
@@ -1300,8 +1307,8 @@ class VectorizedLabellingOrchestrator:
 
     def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ensure_directory("log/features_samples")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Columns.txt"
             cols = df.columns.tolist()
@@ -1459,9 +1466,9 @@ class VectorizedLabellingOrchestrator:
     def _format_and_align_features(
         self, features: dict[str, Any], target_index: pd.Index
     ) -> tuple[dict[str, pd.Series], dict[str, Any]]:
-        """Ensure each feature is a well-formed pd.Series aligned to target_index.
+        """Ensure each feature is a well-formed pd.Series aligned to target_index."
         Returns formatted_features and a report dict with diagnostics.
-        """
+        """"
         formatted: dict[str, pd.Series] = {}
         report: dict[str, Any] = {
             "input_features": len(features),
@@ -1507,8 +1514,8 @@ class VectorizedLabellingOrchestrator:
 
     def _log_feature_format_report(self, stage: str, report: dict[str, Any], step_no: str) -> None:
         try:
-            os.makedirs("log/features_samples", exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ensure_directory("log/features_samples")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_FormatReport.json"
             with open(fname, "w") as f:
@@ -1599,9 +1606,8 @@ class VectorizedLabellingOrchestrator:
             if df is None or df.empty:
                 return
 
-            os.makedirs("log/mi", exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
+            ensure_directory("log/mi")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             meta_label_cols: list[str] = [
                 c
                 for c in df.columns
@@ -2436,8 +2442,6 @@ class VectorizedDataNormalizer:
     def _apply_minmax_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
         try:
             from sklearn.preprocessing import MinMaxScaler
-import copy
-import os.path
 
             scaler = MinMaxScaler()
             numeric_data = data.select_dtypes(include=[np.number])

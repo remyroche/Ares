@@ -1,4 +1,4 @@
-"""
+""""
 Enhanced Missing Value Handler
 
 This module provides sophisticated missing value handling including:
@@ -7,7 +7,7 @@ This module provides sophisticated missing value handling including:
 - Gap analysis and classification
 - Intelligent fill strategy selection
 - Data integrity preservation
-"""
+""""
 
 import logging
 from datetime import datetime, timedelta
@@ -52,12 +52,12 @@ class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
 
     def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5):
-        """Initialize enhanced missing value handler.
+        """Initialize enhanced missing value handler."
 
         Args:
             max_forward_fill_gap: Maximum gap size for forward fill (seconds)
             download_threshold: Gap size threshold for data download (seconds)
-        """
+        """"
         self.standards = pipeline_standards
         self.logger = system_logger.getChild("EnhancedMissingValueHandler")
         self.max_forward_fill_gap = max_forward_fill_gap
@@ -88,7 +88,7 @@ class EnhancedMissingValueHandler:
         exchange: str = None,
         timeframe: str = "1m",
     ) -> pd.DataFrame:
-        """Handle missing values intelligently based on gap size.
+        """Handle missing values intelligently based on gap size."
 
         Args:
             data: Data with missing values
@@ -99,7 +99,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Data with intelligently filled missing values
-        """
+        """"
         if timestamp_column not in data.columns:
             self.logger.error(f"Timestamp column '{timestamp_column}' not found")
             return data
@@ -146,7 +146,7 @@ class EnhancedMissingValueHandler:
         return filled_data
 
     def _analyze_gaps(self, data: pd.DataFrame, timestamp_column: str) -> List[GapInfo]:
-        """Analyze gaps in the data.
+        """Analyze gaps in the data."
 
         Args:
             data: Data to analyze
@@ -154,7 +154,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             List of gap information
-        """
+        """"
         gaps = []
         timestamps = data[timestamp_column].values
 
@@ -176,14 +176,14 @@ class EnhancedMissingValueHandler:
         return gaps
 
     def _classify_gap(self, gap_size: int) -> GapType:
-        """Classify gap based on size.
+        """Classify gap based on size."
 
         Args:
             gap_size: Gap size in seconds
 
         Returns:
             Gap type
-        """
+        """"
         if gap_size <= self.gap_thresholds[GapType.SMALL]:
             return GapType.SMALL
         elif gap_size <= self.gap_thresholds[GapType.MEDIUM]:
@@ -207,7 +207,7 @@ class EnhancedMissingValueHandler:
             self.logger.info(f"  {gap_type}: {count} gaps")
 
     def _handle_small_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle small gap with forward fill.
+        """Handle small gap with forward fill."
 
         Args:
             data: Data to fill
@@ -216,7 +216,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Data with small gap filled
-        """
+        """"
         self.logger.info(f"Handling small gap with forward fill: {gap}")
 
         # Find the row before the gap
@@ -253,7 +253,7 @@ class EnhancedMissingValueHandler:
     def _handle_large_gap_with_download(
         self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str, symbol: str, exchange: str, timeframe: str
     ) -> pd.DataFrame:
-        """Handle large gap by downloading missing data.
+        """Handle large gap by downloading missing data."
 
         Args:
             data: Data to fill
@@ -265,7 +265,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Data with downloaded data filling the gap
-        """
+        """"
         self.logger.info(f"Downloading data for gap: {gap}")
 
         try:
@@ -293,7 +293,7 @@ class EnhancedMissingValueHandler:
     def _download_missing_data(
         self, symbol: str, exchange: str, timeframe: str, start_time: int, end_time: int
     ) -> Optional[pd.DataFrame]:
-        """Download missing data from exchange.
+        """Download missing data from exchange."
 
         Args:
             symbol: Trading symbol
@@ -304,7 +304,7 @@ class EnhancedMissingValueHandler:
 
         Returns:
             Downloaded data or None if failed
-        """
+        """"
         try:
             # Convert timestamps to datetime
             start_dt = datetime.fromtimestamp(start_time)
@@ -315,9 +315,11 @@ class EnhancedMissingValueHandler:
             # Import exchange-specific downloader
             if exchange.lower() == "binance":
                 from src.training.steps.data_downloader import DataDownloader
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-                downloader = DataDownloader()
+downloader = DataDownloader()
 
                 # Download klines data
                 downloaded_data = downloader.download_klines(
@@ -345,7 +347,7 @@ import copy
     def _insert_downloaded_data(
         self, data: pd.DataFrame, downloaded_data: pd.DataFrame, timestamp_column: str
     ) -> pd.DataFrame:
-        """Insert downloaded data into the main dataset.
+        """Insert downloaded data into the main dataset."
 
         Args:
             data: Main dataset
@@ -354,7 +356,7 @@ import copy
 
         Returns:
             Data with downloaded data inserted
-        """
+        """"
         # Combine datasets
         combined_data = pd.concat([data, downloaded_data], ignore_index=True)
 
@@ -365,7 +367,7 @@ import copy
         return combined_data
 
     def _handle_large_gap_with_fallback(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle large gap with fallback strategy (interpolation).
+        """Handle large gap with fallback strategy (interpolation)."
 
         Args:
             data: Data to fill
@@ -374,7 +376,7 @@ import copy
 
         Returns:
             Data with gap filled using fallback strategy
-        """
+        """"
         self.logger.info(f"Using fallback strategy for gap: {gap}")
 
         # Use interpolation as fallback
@@ -423,7 +425,7 @@ import copy
         return filled_data
 
     def _handle_critical_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle critical gap (requires manual intervention).
+        """Handle critical gap (requires manual intervention)."
 
         Args:
             data: Data to fill
@@ -432,7 +434,7 @@ import copy
 
         Returns:
             Data with critical gap handled
-        """
+        """"
         self.logger.error(f"Critical gap detected: {gap}")
         self.logger.error("Manual intervention required for critical gaps")
 
@@ -441,7 +443,7 @@ import copy
         return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
 
     def get_gap_report(self, data: pd.DataFrame, timestamp_column: str = "timestamp") -> Dict[str, Any]:
-        """Generate gap analysis report.
+        """Generate gap analysis report."
 
         Args:
             data: Data to analyze
@@ -449,7 +451,7 @@ import copy
 
         Returns:
             Gap analysis report
-        """
+        """"
         gaps = self._analyze_gaps(data, timestamp_column)
 
         report = {
@@ -486,7 +488,7 @@ import copy
     def validate_data_continuity(
         self, data: pd.DataFrame, timestamp_column: str = "timestamp", expected_interval: int = 60
     ) -> Dict[str, Any]:
-        """Validate data continuity and identify issues.
+        """Validate data continuity and identify issues."
 
         Args:
             data: Data to validate
@@ -495,7 +497,7 @@ import copy
 
         Returns:
             Continuity validation report
-        """
+        """"
         if timestamp_column not in data.columns:
             return {"valid": False, "error": f"Timestamp column '{timestamp_column}' not found"}
 

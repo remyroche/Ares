@@ -24,12 +24,12 @@ class StageContext:
     """Stage context with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize stage context with enhanced type safety.
+        """Initialize stage context with enhanced type safety."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("StageContext")
 
@@ -64,12 +64,12 @@ class StageContext:
         context="stage context initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize stage context with enhanced error handling.
+        """Initialize stage context with enhanced error handling."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Stage Context...")
 
@@ -128,12 +128,12 @@ class StageContext:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate context configuration.
+        """Validate context configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate context interval
             if self.context_interval <= 0:
@@ -287,7 +287,7 @@ class StageContext:
         context="context execution",
     )
     async def execute_context(self, context_input: dict[str, Any]) -> bool:
-        """Execute context operations.
+        """Execute context operations."
 
         Args:
             context_input: Context input dictionary
@@ -295,7 +295,7 @@ class StageContext:
         Returns:
             bool: True if successful, False otherwise
 
-        """
+        """"
         try:
             if not self._validate_context_inputs(context_input):
                 return False
@@ -347,7 +347,7 @@ class StageContext:
         context="context inputs validation",
     )
     def _validate_context_inputs(self, context_input: dict[str, Any]) -> bool:
-        """Validate context inputs.
+        """Validate context inputs."
 
         Args:
             context_input: Context input dictionary
@@ -355,7 +355,7 @@ class StageContext:
         Returns:
             bool: True if valid, False otherwise
 
-        """
+        """"
         try:
             # Check required context input fields
             required_fields = ["context_type", "context_name", "timestamp"]
@@ -388,7 +388,7 @@ class StageContext:
         self,
         context_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform context management.
+        """Perform context management."
 
         Args:
             context_input: Context input dictionary
@@ -396,7 +396,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context management results
 
-        """
+        """"
         try:
             results = {}
 
@@ -440,7 +440,7 @@ class StageContext:
         self,
         context_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform context validation.
+        """Perform context validation."
 
         Args:
             context_input: Context input dictionary
@@ -448,7 +448,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context validation results
 
-        """
+        """"
         try:
             results = {}
 
@@ -492,7 +492,7 @@ class StageContext:
         self,
         context_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform context monitoring.
+        """Perform context monitoring."
 
         Args:
             context_input: Context input dictionary
@@ -500,7 +500,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context monitoring results
 
-        """
+        """"
         try:
             results = {}
 
@@ -544,7 +544,7 @@ class StageContext:
         self,
         context_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform context reporting.
+        """Perform context reporting."
 
         Args:
             context_input: Context input dictionary
@@ -552,7 +552,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context reporting results
 
-        """
+        """"
         try:
             results = {}
 
@@ -886,7 +886,7 @@ class StageContext:
         context="context results getting",
     )
     def get_context_results(self, context_type: str | None) -> dict[str, Any]:
-        """Get context results.
+        """Get context results."
 
         Args:
             context_type: Optional context type filter
@@ -894,7 +894,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context results
 
-        """
+        """"
         try:
             if context_type:
                 return self.context_results.get(context_type, {})
@@ -910,7 +910,7 @@ class StageContext:
         context="context history getting",
     )
     def get_context_history(self, limit: int | None) -> list[dict[str, Any]]:
-        """Get context history.
+        """Get context history."
 
         Args:
             limit: Optional limit on number of records
@@ -918,7 +918,7 @@ class StageContext:
         Returns:
             list[dict[str, Any]]: Context history
 
-        """
+        """"
         try:
             history = self.context_history.copy()
 
@@ -932,12 +932,12 @@ class StageContext:
             return []
 
     def get_context_status(self) -> dict[str, Any]:
-        """Get context status information.
+        """Get context status information."
 
         Returns:
             dict[str, Any]: Context status
 
-        """
+        """"
         return {
             "is_active": self.is_active,
             "context_interval": self.context_interval,
@@ -992,7 +992,7 @@ stage_context: StageContext | None = None
 async def setup_stage_context(
     config: dict[str, Any] | None,
 ) -> StageContext | None:
-    """Setup global stage context.
+    """Setup global stage context."
 
     Args:
         config: Optional configuration dictionary
@@ -1000,7 +1000,7 @@ async def setup_stage_context(
     Returns:
         StageContext | None: Global stage context instance
 
-    """
+    """"
     try:
         global stage_context
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Validator for Step 4: Regime Data Splitting.
+"""Validator for Step 4: Regime Data Splitting."
 
 This module validates the regime data splitting step outputs with support for 10+ regimes.
-"""
+""""
 
 import json
 import os
@@ -17,6 +17,7 @@ from src.utils.enhanced_validation_decorators import (
     validate_step4_comprehensive,
     smart_validation_cache
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step4RegimeDataSplittingValidator")
 
@@ -32,7 +33,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
     async def validate_step4_regime_data_splitting(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:
-        """Validate Step 4: Regime Data Splitting.
+        """Validate Step 4: Regime Data Splitting."
 
         Args:
             symbol: Trading symbol
@@ -42,7 +43,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """
+        """"
         self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
 
         try:
@@ -97,7 +98,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         try:
             self.logger.info(f"📁 Validating regime file: {regime_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(regime_file), "regime file")
             if not file_exists:
                 return False
@@ -105,7 +106,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             # Load and validate the regime file
             df = pd.read_parquet(regime_file)
 
-            # Use BaseValidator's DataFrame validation
+            # Use BaseValidator's DataFrame validation'
             df_valid, df_metrics = self.validate_dataframe_quality(
                 df=df,
                 min_rows=100,
@@ -146,15 +147,14 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(stats_file), "statistics file")
             if not file_exists:
                 return False
 
-            with open(stats_file, 'r') as f:
-                stats_data = json.load(f)
+            stats_data = safe_json_load(stats_file)
 
-            # Check if it's a dictionary
+            # Check if it's a dictionary'
             if not isinstance(stats_data, dict):
                 self.logger.warning("⚠️ Statistics file should contain a dictionary")
                 return False
@@ -164,7 +164,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 self.logger.warning("⚠️ Empty statistics data")
                 return False
 
-            # Validate each regime's statistics
+            # Validate each regime's statistics'
             for regime_id, stats in stats_data.items():
                 if not isinstance(stats, dict):
                     self.logger.warning(f"⚠️ Invalid statistics format for regime {regime_id}")
@@ -271,7 +271,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                     if file_path.endswith(".parquet"):
                         try:
                             df = pd.read_parquet(file_path)
-                            # Use BaseValidator's DataFrame validation
+                            # Use BaseValidator's DataFrame validation'
                             df_valid, df_metrics = self.validate_dataframe_quality(
                                 df, min_rows=100, check_data_types=True
                             )
@@ -292,7 +292,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 4: Regime Data Splitting.
+    """Run validation for Step 4: Regime Data Splitting."
 
     Args:
         training_input: Training input parameters
@@ -300,7 +300,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """
+    """"
     logger.info("🔍 Validating Step 4: Regime Data Splitting")
     
     try:

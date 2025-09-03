@@ -12,8 +12,8 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.analyst.predictive_ensembles.ensemble_orchestrator import (
 import logging
+from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
 )
 from src.analyst.regime_runtime import get_current_regime_info
@@ -22,10 +22,10 @@ from src.analyst.regime_runtime import get_current_regime_info
 
 
 class RegimeExpertOrchestrator:
-    """
+    """"
     Orchestrates regime detection and expert selection using composite_cluster_id.
     Integrates with Step 9.5 (HMM-LM Generalist) and Step 10 (Event Transition Modeling).
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -86,7 +86,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="regime expert initialization",
     )
     async def initialize(self) -> bool:
@@ -114,7 +114,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="current regime detection"
-    )
+            )
     async def get_current_regime_info(
         self, exchange: str, symbol: str, timeframe: str
     ) -> Optional[Dict[str, Any]]:
@@ -154,7 +154,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="regime expert prediction"
-    )
+            )
     async def get_regime_expert_prediction(
         self, current_features: pd.DataFrame, regime_info: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -275,7 +275,7 @@ class RegimeExpertOrchestrator:
             if cluster_id is None:
                 continue
 
-            # Get prediction from this regime's expert
+            # Get prediction from this regime's expert'
             expert = self.get_regime_expert(cluster_id)
             if expert is None:
                 continue
@@ -318,7 +318,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="step9_5 integration"
-    )
+            )
     async def integrate_step9_5_prediction(
         self, regime_info: Dict[str, Any], step9_5_prediction: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -365,7 +365,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="step10 integration"
-    )
+            )
     async def integrate_step10_prediction(
         self, regime_info: Dict[str, Any], step10_prediction: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -411,7 +411,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="two-tier decision system"
-    )
+            )
     async def get_two_tier_decision(
         self,
         exchange: str,
@@ -524,7 +524,7 @@ class RegimeExpertOrchestrator:
 
     @handle_errors(
         exceptions=(Exception,), default_return=False, context="continuous monitoring"
-    )
+            )
     async def start_continuous_monitoring(
         self, exchange: str, symbol: str, timeframe: str
     ) -> bool:

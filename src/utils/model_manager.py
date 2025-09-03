@@ -1,10 +1,10 @@
-"""
+""""
 Model manager for loading, serving, and hot-swapping trading models.
 
 This module manages the loading, serving, and hot-swapping of trading models, parameters,
 and their versions. This allows for updating the strategy without restarting the bot,
 with full version tracking. Now uses async operations for better performance.
-"""
+""""
 
 import json
 import os
@@ -16,8 +16,12 @@ from typing import Any
 import h5py
 import joblib
 import numpy as np
-
 import asyncio
+
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_json_dump, safe_json_load, safe_copy
+)
 from src.utils.error_handler import (
     error,
     failed,
@@ -40,18 +44,18 @@ _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
 
 # type: ignore[override]
 def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:
-    """Normalized ctor to keep picklable; avoids closures.
+    """Normalized ctor to keep picklable; avoids closures."
 
     Attempts to resolve the bit generator by name/class and call the original constructor
     with a possibly adjusted signature for cross-version compatibility.
-    """
+    """"
     global _NP_ORIGINAL_BITGEN_CTOR  # noqa: F824
     name_candidate: Any = bit_generator_name
     try:
         if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
     except Exception:
         pass
 
@@ -79,9 +83,11 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
         return
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
+    except Exception as e:
+        pass  # TODO: Handle exception properly
 import os.path
 
-        original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
+original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
             # Fallback implementation for original_ctor
             _NUMPY_RNG_UNPICKLE_PATCHED = True
@@ -108,17 +114,17 @@ import os.path
 
 
 class ModelManager:
-    """
+    """"
     Enhanced model manager with comprehensive error handling and type safety.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize model manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ModelManager")
 
@@ -147,12 +153,12 @@ class ModelManager:
         context="model manager initialization",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize model manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         self.logger.info("Initializing Model Manager...")
 
         # Load model configuration
@@ -204,12 +210,12 @@ class ModelManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate model configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """
+        """"
         # Validate models directory
         if not self.models_dir:
             self.logger.error(invalid("Invalid models directory"))
@@ -236,7 +242,7 @@ class ModelManager:
         """Initialize directories."""
         # Create models directory
         if not os.path.exists(self.models_dir):
-            os.makedirs(self.models_dir, exist_ok=True)
+            ensure_directory(self.models_dir)
             self.logger.info(f"Created models directory: {self.models_dir}")
 
         # Create subdirectories
@@ -244,7 +250,7 @@ class ModelManager:
         for subdir in subdirs:
             subdir_path = os.path.join(self.models_dir, subdir)
             if not os.path.exists(subdir_path):
-                os.makedirs(subdir_path, exist_ok=True)
+                ensure_directory(subdir_path)
                 self.logger.info(f"Created subdirectory: {subdir_path}")
 
         self.logger.info("Directories initialized successfully")
@@ -265,7 +271,7 @@ class ModelManager:
             self.model_metadata = {
                 "models": {},
                 "active_model": None,
-                "last_updated": datetime.now().isoformat(),
+                "last_updated": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "version": "1.0.0",
             }
             self.logger.info("Created new model metadata")
@@ -310,7 +316,7 @@ class ModelManager:
         model_path: str,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """
+        """"
         Register a new model.
 
         Args:
@@ -320,7 +326,7 @@ class ModelManager:
 
         Returns:
             bool: True if successful, False otherwise
-        """
+        """"
         if not model_name or not model_path:
             self.logger.error(invalid("Invalid model name or path"))
             return False
@@ -342,7 +348,7 @@ class ModelManager:
             "size": stat.st_size,
             "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
             "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "registered": datetime.now().isoformat(),
+            "registered": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
         }
 
         # Add metadata
@@ -352,11 +358,11 @@ class ModelManager:
             self.model_metadata.setdefault("models", {})[model_name] = {
                 "description": f"Model {model_name}",
                 "version": "1.0.0",
-                "created": datetime.now().isoformat(),
+                "created": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
             }
 
         # Update metadata
-        self.model_metadata["last_updated"] = datetime.now().isoformat()
+        self.model_metadata["last_updated"] = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
         # Save metadata
         await self._save_metadata()
@@ -370,7 +376,7 @@ class ModelManager:
         context="model loading",
     )
     async def load_model(self, model_name: str) -> Any | None:
-        """
+        """"
         Load a model.
 
         Args:
@@ -378,7 +384,7 @@ class ModelManager:
 
         Returns:
             Optional[Any]: Loaded model or None if failed
-        """
+        """"
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
         if model_name not in self.models:
@@ -414,7 +420,7 @@ class ModelManager:
         model_name: str,
         format: str = "joblib",
     ) -> bool:
-        """
+        """"
         Save a model.
 
         Args:
@@ -424,7 +430,7 @@ class ModelManager:
 
         Returns:
             bool: True if successful, False otherwise
-        """
+        """"
         if not model_name:
             self.logger.error(invalid("Invalid model name"))
             return False
@@ -467,7 +473,7 @@ class ModelManager:
         context="active model setting",
     )
     async def set_active_model(self, model_name: str) -> bool:
-        """
+        """"
         Set the active model.
 
         Args:
@@ -475,14 +481,14 @@ class ModelManager:
 
         Returns:
             bool: True if successful, False otherwise
-        """
+        """"
         if model_name not in self.models:
             self.logger.error(missing(f"Model {model_name} not found"))
             return False
 
         self.active_model = model_name
         self.model_metadata["active_model"] = model_name
-        self.model_metadata["last_updated"] = datetime.now().isoformat()
+        self.model_metadata["last_updated"] = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
         # Save metadata
         await self._save_metadata()
@@ -496,12 +502,12 @@ class ModelManager:
         context="active model getting",
     )
     async def get_active_model(self) -> str | None:
-        """
+        """"
         Get the active model name.
 
         Returns:
             Optional[str]: Active model name or None
-        """
+        """"
         return self.active_model
 
     @handle_file_operations(
@@ -522,12 +528,12 @@ class ModelManager:
         context="model backup creation",
     )
     async def create_backup(self, model_name: str) -> None:
-        """
+        """"
         Create backup of a model.
 
         Args:
             model_name: Name of the model to backup
-        """
+        """"
         if model_name not in self.models:
             self.logger.error(missing(f"Model {model_name} not found"))
             return
@@ -539,8 +545,8 @@ class ModelManager:
 
         # Create backup directory
         backup_dir = os.path.join(self.models_dir, "backups")
-        os.makedirs(backup_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ensure_directory(backup_dir)
+        timestamp = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
         backup_path = os.path.join(
             backup_dir,
             f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
@@ -552,12 +558,12 @@ class ModelManager:
         self.logger.info(f"Model backup created: {backup_path}")
 
     def get_model_status(self) -> dict[str, Any]:
-        """
+        """"
         Get model manager status information.
 
         Returns:
             Dict[str, Any]: Model manager status
-        """
+        """"
         return {
             "total_models": len(self.models),
             "active_model": self.active_model,
@@ -595,7 +601,7 @@ model_manager: ModelManager | None = None
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:
-    """
+    """"
     Setup global model manager.
 
     Args:
@@ -603,7 +609,7 @@ async def setup_model_manager(
 
     Returns:
         Optional[ModelManager]: Global model manager instance
-    """
+    """"
     global model_manager
 
     if config is None:

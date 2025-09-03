@@ -1,0 +1,18 @@
+{
+  "current_coverage": 0.9293032786885246,
+  "target_coverage": 0.9,
+  "files_processed": 15,
+  "files_needing_hints": 21,
+  "sample_files": [
+    "/workspace/src/tasks.py",
+    "/workspace/src/ares_pipeline.py",
+    "/workspace/src/config.py",
+    "/workspace/src/config_optuna.py",
+    "/workspace/src/monitoring/fractional_system_monitor.py",
+    "/workspace/src/monitoring/surrogate_optimization_monitor.py",
+    "/workspace/src/monitoring/fractional_performance_tracker.py",
+    "/workspace/src/trading/live_wavelet_demo.py",
+    "/workspace/src/trading/sr_trading_intelligence.py",
+    "/workspace/src/supervisor/enhanced_prediction_service.py"
+  ]
+}

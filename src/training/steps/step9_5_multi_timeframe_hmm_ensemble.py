@@ -1,6 +1,6 @@
 # src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
 
-"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
+"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic."
 
 This step trains a multi-timeframe HMM cluster ensemble system that combines
 predictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)
@@ -8,7 +8,7 @@ to improve regime forecasting accuracy and reduce MAPE, with regime-specific opt
 
 The ensemble predicts REGIME TRANSITIONS only, not price direction.
 Price direction predictions are made in other components.
-"""
+""""
 
 import asyncio
 import json
@@ -21,10 +21,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from src.training.steps.multi_timeframe_hmm_ensemble import (
+from copy import copy
+
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
+from src.training.steps.multi_timeframe_hmm_ensemble import (
 )
 from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
@@ -50,19 +52,8 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
+from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 
-
-from src.utils.enhanced_mlflow_integration import (
-import copy
-import os.path
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
@@ -506,18 +497,16 @@ class RegimeSpecificMultiTimeframeEnsemble:
             for regime, ensemble in self.regime_ensembles.items():
                 if ensemble:
                     regime_save_path = f"{data_dir}/regime_ensembles/{symbol}/regime_{regime}"
-                    os.makedirs(regime_save_path, exist_ok=True)
+                    ensure_directory(regime_save_path)
                     
                     # Save ensemble configuration
                     ensemble_config_path = f"{regime_save_path}/ensemble_config.json"
-                    with open(ensemble_config_path, 'w') as f:
-                        json.dump(ensemble, f, indent=2, default=str)
+                    safe_json_dump(ensemble, ensemble_config_path, indent=2, default=str)
                     
                     # Save validation results
                     if regime in self.regime_validation_results:
                         validation_path = f"{regime_save_path}/validation_results.json"
-                        with open(validation_path, 'w') as f:
-                            json.dump(self.regime_validation_results[regime], f, indent=2, default=str)
+                        safe_json_dump(self.regime_validation_results[regime], validation_path, indent=2, default=str)
                     
                     self.logger.info(f"✅ Saved regime {regime} ensemble to {regime_save_path}")
                     
@@ -607,7 +596,7 @@ async def run_step(
     lookback_days: int = 365,
     **kwargs,
 ) -> Dict[str, Any]:
-    """
+    """"
     Run multi-timeframe HMM ensemble training step.
 
     Args:
@@ -620,7 +609,7 @@ async def run_step(
 
     Returns:
         Dict containing step results
-    """
+    """"
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsemble")
     
     try:
@@ -683,8 +672,7 @@ async def run_step(
             
             if os.path.exists(rf_path):
                 try:
-                    with open(rf_path, 'r') as f:
-                        rf_data = json.load(f)
+                    rf_data = safe_json_load(rf_path)
                     
                     # Convert to DataFrame format expected by ensemble
                     # Create a simple DataFrame with regime data
@@ -785,7 +773,7 @@ async def validate_step(
     data_dir: str,
     **kwargs,
 ) -> Dict[str, Any]:
-    """
+    """"
     Validate multi-timeframe HMM ensemble training step.
 
     Args:
@@ -796,7 +784,7 @@ async def validate_step(
 
     Returns:
         Dict containing validation results
-    """
+    """"
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
     
     try:
@@ -829,8 +817,7 @@ async def validate_step(
         # Load and validate ensemble metadata
         metadata_path = os.path.join(models_dir, "ensemble_metadata.json")
         try:
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_path)
             
             # Validate metadata structure
             required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]

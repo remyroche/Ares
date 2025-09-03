@@ -26,6 +26,8 @@ A focused tool specifically for function-related validation:
 ### 3. Runner Script (`run_validation.py`)
 A convenient wrapper that runs both tools with easy configuration.
 
+
+
 ## Installation
 
 The tools use only Python standard library modules, so no additional installation is required beyond Python 3.7+.
@@ -39,7 +41,13 @@ pip install astroid mypy bandit
 
 ### Quick Start
 
-Run both validation tools on the current directory:
+Run comprehensive code quality checks using the unified pipeline:
+```bash
+cd /workspace/code_quality/pipelines
+python pipeline_unified_enhanced.py --project-root /workspace/src
+```
+
+Or run the basic validation tools:
 ```bash
 python code_quality/run_validation.py
 ```
@@ -67,6 +75,16 @@ python code_quality/comprehensive_code_review.py --project-root /path/to/project
 **Function Validator:**
 ```bash
 python code_quality/function_validator.py --project-root /path/to/project --output validation.json
+```
+
+**Enhanced Validator (Function Arguments & Data Access):**
+```bash
+python code_quality/enhanced_validator.py --project-root /path/to/project --output enhanced_report.txt
+```
+
+**Integrated Validator (All Validators Combined):**
+```bash
+python code_quality/integrated_validator.py --project-root /path/to/project --output-dir reports/
 ```
 
 ### Examples
@@ -109,11 +127,23 @@ python code_quality/function_validator.py --project-root /path/to/project --outp
 - ✅ Function argument counts
 - ✅ Default parameter values
 - ⚠️ Functions with too many arguments (warnings)
+- ✅ Missing required arguments detection
+- ✅ Unknown keyword arguments detection
+- ✅ Type consistency checking
 
 ### Import Consistency
 - ✅ Import statement validation
 - ⚠️ Potential naming conflicts
 - ✅ Import path verification
+
+### Data Access Validation (Enhanced Validator)
+- ✅ Safe dictionary access patterns (using .get())
+- ❌ Unsafe dictionary key access without checks
+- ✅ Safe attribute access with null checks
+- ❌ Unsafe attribute access on potentially None objects
+- ✅ Safe list/array access with bounds checking
+- ❌ Unsafe list indexing without validation
+- ✅ Tracking of null/None checks for safety analysis
 
 ### Code Style
 - ✅ Line length limits (120 characters)

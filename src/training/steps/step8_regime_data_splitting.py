@@ -14,6 +14,9 @@ project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -148,10 +151,12 @@ class RegimeDataSplittingStep:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
             from src.config.constants import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import numpy as np
 import os.path
 
-                BLANK_TRAINING_LOOKBACK_DAYS,
+BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
             # Use lookback_days from config (should be passed from enhanced training manager)
@@ -209,8 +214,8 @@ import os.path
             # Create regime summary
             summary = self._create_regime_summary(unified_data, unique_clusters)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"log/step8_regime_unified_{ts}.json", "w") as f:
-                json.dump(summary, f, indent=2)
+            log_dir = ensure_directory("log")
+            safe_json_dump(summary, log_dir / f"step8_regime_unified_{ts}.json", indent=2)
 
             self.logger.info("✅ Unified HMM composite regime data creation completed successfully")
             
@@ -344,15 +349,14 @@ import os.path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     @with_tracing_span("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
         try:
-            data_dir = self.config.get("data_dir", "data/training")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = ensure_directory(self.config.get("data_dir", "data/training"))
             
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
@@ -386,15 +390,13 @@ import os.path
             }
             
             labels_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
-            with open(labels_file, 'w') as f:
-                json.dump(regime_labels, f, indent=2)
+            safe_json_dump(regime_labels, labels_file, indent=2)
             self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
             
             # Create regime statistics
             regime_stats = self._create_regime_statistics(unified_data, unique_clusters)
             stats_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_statistics.json")
-            with open(stats_file, 'w') as f:
-                json.dump(regime_stats, f, indent=2)
+            safe_json_dump(regime_stats, stats_file, indent=2)
             self.logger.info(f"✅ Saved regime statistics: {stats_file}")
             
             return True

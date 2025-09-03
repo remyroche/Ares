@@ -17,6 +17,12 @@ import pandas as pd
 import psutil
 import asyncio
 
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_json_dump, safe_json_load, safe_read_parquet, safe_to_parquet,
+    generate_cache_key, safe_copy
+)
+
 # Optional dependency: pyarrow is used for efficient parquet streaming; import lazily in methods
 try:
     import pyarrow.parquet as pq  # type: ignore
@@ -97,13 +103,13 @@ def _is_relative_to(path: Path, base: Path) -> bool:
 
 
 def _safe_json_write(target: Path, obj: Any) -> None:
-    """Atomically and deterministically write JSON to target.
+    """Atomically and deterministically write JSON to target."
 
     - Ensures parent directory exists
     - Writes UTF-8 with Unix newlines
     - Sorts keys for deterministic diffs
     - fsyncs before atomic replace
-    """
+    """"
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8", newline="\n") as f:
@@ -132,7 +138,7 @@ def _sanitize_identifier(value: str) -> str:
 
 
 class EnhancedTrainingManager:
-    """Enhanced training manager with comprehensive 16-step pipeline.
+    """Enhanced training manager with comprehensive 16-step pipeline."
 
     This is the MAIN PIPELINE that orchestrates the complete training pipeline including
     analyst and tactician steps. It uses optimized tools and utilities from
@@ -157,15 +163,15 @@ class EnhancedTrainingManager:
     - Acts as the main entry point for all training operations
     - Delegates optimization tasks to EnhancedTrainingManagerOptimized
     - Provides unified interface while leveraging optimized backend
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize enhanced training manager.
+        """Initialize enhanced training manager."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("EnhancedTrainingManager")
 
@@ -581,19 +587,19 @@ class EnhancedTrainingManager:
             raise
 
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
-        """Save training progress checkpoint.
+        """Save training progress checkpoint."
 
         Args:
             step_name: Current step name
             pipeline_state: Current pipeline state
 
-        """
+        """"
         if not self.enable_checkpointing:
             return
 
         try:
             checkpoint_data = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "current_step": step_name,
                 "pipeline_state": pipeline_state,
                 "training_mode": "blank" if self.blank_training_mode else "full",
@@ -620,12 +626,12 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Failed to save checkpoint: {e}")
 
     def _load_checkpoint(self) -> dict[str, Any] | None:
-        """Load training progress checkpoint.
+        """Load training progress checkpoint."
 
         Returns:
             dict: Checkpoint data or None if no checkpoint exists
 
-        """
+        """"
         # Attempt to load namespaced checkpoint based on current params
         # Ensure enable_checkpointing is defined
         if not hasattr(self, "enable_checkpointing"):
@@ -687,21 +693,21 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _heartbeat(self, message: str) -> None:
-        """Log a heartbeat message for monitoring training progress.
+        """Log a heartbeat message for monitoring training progress."
 
         Args:
             message: Heartbeat message to log
 
-        """
+        """"
         self.logger.info(f"💓 {message}")
 
     def _get_system_resources(self) -> dict[str, float]:
-        """Get current system resource usage.
+        """Get current system resource usage."
 
         Returns:
             dict: System resource information
 
-        """
+        """"
         try:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
@@ -732,7 +738,7 @@ class EnhancedTrainingManager:
         pipeline_state: dict[str, Any],
         force_rerun: bool,
     ) -> bool:
-        """Validate that all dependencies for a step are met.
+        """Validate that all dependencies for a step are met."
 
         Args:
             step_name: Name of the step to validate
@@ -742,11 +748,11 @@ class EnhancedTrainingManager:
         Returns:
             True if dependencies are met, False otherwise
 
-        """
+        """"
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
-            # If force_rerun is True, we're starting from this step, so skip dependency validation
+            # If force_rerun is True, we're starting from this step, so skip dependency validation'
             if force_rerun:
                 self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
                 return True
@@ -782,12 +788,12 @@ class EnhancedTrainingManager:
             return False
 
     def _analyze_resource_requirements(self) -> dict[str, Any]:
-        """Analyze resource requirements for the training process.
+        """Analyze resource requirements for the training process."
 
         Returns:
             dict: Resource analysis information
 
-        """
+        """"
         try:
             # Get system info
             cpu_count = int(psutil.cpu_count() or 0)
@@ -835,7 +841,7 @@ class EnhancedTrainingManager:
     def _get_resource_recommendations(
         self, memory_gb: float, cpu_count: int,
     ) -> list[str]:
-        """Get resource recommendations based on system specs.
+        """Get resource recommendations based on system specs."
 
         Args:
             memory_gb: Available memory in GB
@@ -844,7 +850,7 @@ class EnhancedTrainingManager:
         Returns:
             list: Recommendations
 
-        """
+        """"
         recommendations = []
 
         if memory_gb < 8:
@@ -875,7 +881,7 @@ class EnhancedTrainingManager:
         return recommendations
 
     def _get_step_time_breakdown(self, is_blank_mode: bool) -> dict[str, int]:
-        """Get realistic time breakdown for each step.
+        """Get realistic time breakdown for each step."
 
         Args:
             is_blank_mode: Whether this is blank training mode
@@ -883,7 +889,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Time estimates for each step in minutes
 
-        """
+        """"
         if is_blank_mode:
             return {
                 "step1_data_collection": 5,
@@ -969,7 +975,7 @@ class EnhancedTrainingManager:
     def _get_progress_percentage(
         self, completed_steps: int, total_steps: int,
     ) -> float:
-        """Calculate progress percentage.
+        """Calculate progress percentage."
 
         Args:
             completed_steps: Number of completed steps
@@ -978,20 +984,20 @@ class EnhancedTrainingManager:
         Returns:
             float: Progress percentage
 
-        """
+        """"
         return (completed_steps / total_steps) * 100
 
     def _log_progress(
         self, current_step: int, total_steps: int, elapsed_time: float,
     ) -> None:
-        """Log progress with estimated completion time.
+        """Log progress with estimated completion time."
 
         Args:
             current_step: Current step number
             total_steps: Total number of steps
             elapsed_time: Time elapsed so far
 
-        """
+        """"
         progress = self._get_progress_percentage(current_step, total_steps)
         if elapsed_time > 0:
             avg_time = elapsed_time / max(current_step, 1)
@@ -1014,7 +1020,7 @@ class EnhancedTrainingManager:
     def _log_step_completion(
         self, step_name: str, step_start: float, step_times: dict[str, float], success: bool,
     ) -> None:
-        """Log step completion with timing and memory usage.
+        """Log step completion with timing and memory usage."
 
         Args:
             step_name: Name of the completed step
@@ -1022,7 +1028,7 @@ class EnhancedTrainingManager:
             step_times: Dictionary to store step times
             success: Whether the step was successful
 
-        """
+        """"
         step_time = time.time() - step_start
         step_times[step_name] = step_time
 
@@ -1066,12 +1072,12 @@ class EnhancedTrainingManager:
         context="enhanced training manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize enhanced training manager.
+        """Initialize enhanced training manager."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
             # Ensure blank_training_mode is defined
@@ -1165,12 +1171,12 @@ class EnhancedTrainingManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate enhanced training manager configuration.
+        """Validate enhanced training manager configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate enhanced training manager specific settings
             # Ensure max_enhanced_training_history is defined
@@ -1214,7 +1220,7 @@ class EnhancedTrainingManager:
         self,
         enhanced_training_input: dict[str, Any],
     ) -> bool:
-        """Execute the comprehensive 16-step enhanced training pipeline.
+        """Execute the comprehensive 16-step enhanced training pipeline."
 
         Args:
             enhanced_training_input: Enhanced training input parameters
@@ -1222,7 +1228,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if training successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("=" * 80)
             self.logger.info(
@@ -1230,7 +1236,7 @@ class EnhancedTrainingManager:
             )
             self.logger.info("=" * 80)
             self.logger.info(
-                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
             )
             self.logger.info(
                 f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
@@ -1247,7 +1253,7 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 N Trials: {self.n_trials}")
 
             # Initialize enhanced reporting
-            self.current_pipeline_execution_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
+            self.current_pipeline_execution_id = f"pipeline_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
             self.step_reports = {}
 
             self.is_training = True
@@ -1271,7 +1277,7 @@ class EnhancedTrainingManager:
                 )
                 self.logger.info("=" * 80)
                 self.logger.info(
-                    f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    f"📅 Completed at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
                 )
                 self.logger.info(
                     f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
@@ -1317,7 +1323,7 @@ class EnhancedTrainingManager:
         self,
         enhanced_training_input: dict[str, Any],
     ) -> bool:
-        """Validate enhanced training input parameters.
+        """Validate enhanced training input parameters."
 
         Args:
             enhanced_training_input: Enhanced training input parameters
@@ -1325,7 +1331,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if input is valid, False otherwise
 
-        """
+        """"
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
@@ -1416,7 +1422,7 @@ class EnhancedTrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the comprehensive 16-step training pipeline.
+        """Execute the comprehensive 16-step training pipeline."
 
         Args:
             training_input: Training input parameters
@@ -1424,7 +1430,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if all steps successful, False otherwise
 
-        """
+        """"
         try:
             symbol = training_input.get("symbol", "")
             exchange = training_input.get("exchange", "")
@@ -1479,7 +1485,7 @@ class EnhancedTrainingManager:
             self.logger.info("🚀 COMPREHENSIVE 15-STEP TRAINING PIPELINE START")
             self.logger.info("=" * 100)
             self.logger.info(
-                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
             )
             self.logger.info(f"🎯 Symbol: {symbol}")
             self.logger.info(f"🏢 Exchange: {exchange}")
@@ -3386,7 +3392,7 @@ class EnhancedTrainingManager:
                 )
                 self.logger.info("=" * 100)
                 self.logger.info(
-                    f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    f"📅 Completed at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
                 )
                 self.logger.info(
                     f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)",
@@ -3772,7 +3778,7 @@ class EnhancedTrainingManager:
         return stats
 
     def _get_validation_level(self, step_name: str, is_fatal: bool) -> str:
-        """
+        """"
         Determine the appropriate validation level for a step.
         By default, all steps use CRITICAL validation for maximum thoroughness.
         
@@ -3782,7 +3788,7 @@ class EnhancedTrainingManager:
             
         Returns:
             Validation level string (defaults to CRITICAL)
-        """
+        """"
         # All steps now default to CRITICAL validation for maximum thoroughness
         # This ensures comprehensive validation across the entire pipeline
         
@@ -3816,12 +3822,12 @@ class EnhancedTrainingManager:
         return "CRITICAL"
     
     def _log_validation_details(self, validation_result: dict[str, Any]) -> None:
-        """
+        """"
         Log detailed validation information for comprehensive validation levels.
         
         Args:
             validation_result: Validation result dictionary
-        """
+        """"
         try:
             if not validation_result:
                 return
@@ -3859,12 +3865,12 @@ class EnhancedTrainingManager:
             self.logger.debug(f"Error logging validation details: {e}")
     
     def _log_validation_failure(self, validation_result: dict[str, Any]) -> None:
-        """
+        """"
         Log validation failure details.
         
         Args:
             validation_result: Validation result dictionary
-        """
+        """"
         try:
             if not validation_result:
                 return
@@ -3903,7 +3909,7 @@ class EnhancedTrainingManager:
         pipeline_state: dict[str, Any],
         validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
-        """Run validator for a specific step.
+        """Run validator for a specific step."
 
         Args:
             step_name: Name of the step to validate
@@ -3914,7 +3920,7 @@ class EnhancedTrainingManager:
         Returns:
             Validation result dictionary
 
-        """
+        """"
         if not self.enable_validators:
             return {
                 "step_name": step_name,
@@ -3971,7 +3977,7 @@ class EnhancedTrainingManager:
         previous_step_name: Optional[str] = None,
         training_input: dict[str, Any] = None
     ) -> dict[str, Any]:
-        """Run enhanced validation including cross-step, statistical, and feature engineering checks.
+        """Run enhanced validation including cross-step, statistical, and feature engineering checks."
         
         Args:
             step_name: Current step name
@@ -3981,7 +3987,7 @@ class EnhancedTrainingManager:
             
         Returns:
             Enhanced validation results
-        """
+        """"
         self.logger.info(f"🔍 Running enhanced validation for {step_name}")
         
         enhanced_results = {
@@ -4281,16 +4287,16 @@ class EnhancedTrainingManager:
     async def _store_enhanced_training_history(
         self, enhanced_training_input: dict[str, Any],
     ) -> None:
-        """Store enhanced training history.
+        """Store enhanced training history."
 
         Args:
             enhanced_training_input: Enhanced training input parameters
 
-        """
+        """"
         try:
             # Add to training history
             history_entry = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "training_input": enhanced_training_input,
                 "results": self.enhanced_training_results,
             }
@@ -4322,7 +4328,7 @@ class EnhancedTrainingManager:
 
             # Store results in a format that can be retrieved later
             results_key = (
-                f"enhanced_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                f"enhanced_training_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}"
             )
 
             # This would typically store to database or file system
@@ -4342,7 +4348,7 @@ class EnhancedTrainingManager:
         self,
         enhanced_training_type: str | None,
     ) -> dict[str, Any]:
-        """Get enhanced training results.
+        """Get enhanced training results."
 
         Args:
             enhanced_training_type: Type of training results to get
@@ -4350,7 +4356,7 @@ class EnhancedTrainingManager:
         Returns:
             dict: Enhanced training results
 
-        """
+        """"
         try:
             if enhanced_training_type:
                 return self.enhanced_training_results.get(enhanced_training_type, {})
@@ -4369,7 +4375,7 @@ class EnhancedTrainingManager:
         self,
         limit: int | None,
     ) -> list[dict[str, Any]]:
-        """Get enhanced training history.
+        """Get enhanced training history."
 
         Args:
             limit: Maximum number of history entries to return
@@ -4377,7 +4383,7 @@ class EnhancedTrainingManager:
         Returns:
             list: Enhanced training history
 
-        """
+        """"
         try:
             history = self.enhanced_training_history.copy()
             if limit:
@@ -4389,12 +4395,12 @@ class EnhancedTrainingManager:
             return []
 
     def get_enhanced_training_status(self) -> dict[str, Any]:
-        """Get enhanced training status.
+        """Get enhanced training status."
 
         Returns:
             dict: Enhanced training status information
 
-        """
+        """"
         return {
             "is_training": self.is_training,
             "has_results": bool(self.enhanced_training_results),
@@ -4409,12 +4415,12 @@ class EnhancedTrainingManager:
         }
 
     def get_validation_results(self) -> dict[str, Any]:
-        """Get validation results for all steps.
+        """Get validation results for all steps."
 
         Returns:
             dict: Validation results summary
 
-        """
+        """"
         return {
             "validation_results": self.validation_results,
             "validation_summary": validator_orchestrator.get_validation_summary(),
@@ -4422,12 +4428,12 @@ class EnhancedTrainingManager:
         }
 
     def get_computational_optimization_results(self) -> dict[str, Any]:
-        """Get computational optimization results and statistics.
+        """Get computational optimization results and statistics."
 
         Returns:
             dict: Computational optimization results
 
-        """
+        """"
         if self.computational_optimization_manager:
             return {
                 "optimization_statistics": self.computational_optimization_manager.get_optimization_statistics(),
@@ -4591,7 +4597,7 @@ class EnhancedTrainingManager:
         timeframe: str,
         exchange: str,
     ) -> bool:
-        """Execute comprehensive feature selection and pruning.
+        """Execute comprehensive feature selection and pruning."
 
         Implements tiered feature selection strategy for 240+ features:
         - Tier 1: Core features (80)
@@ -4609,7 +4615,7 @@ class EnhancedTrainingManager:
         Returns:
             bool: True if successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("🔍 Starting comprehensive feature selection...")
 
@@ -4689,7 +4695,7 @@ class EnhancedTrainingManager:
                     / len(features_df.columns)
                     * 100
                 ),
-                "selection_timestamp": datetime.now().isoformat(),
+                "selection_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "selection_config": selection_tiers,
             }
 
@@ -4717,7 +4723,7 @@ class EnhancedTrainingManager:
         tier_5_count: int,
         total_max_features: int,
     ) -> pd.DataFrame:
-        """Execute tiered feature selection strategy.
+        """Execute tiered feature selection strategy."
 
         Args:
             features_df: DataFrame with all engineered features
@@ -4731,7 +4737,7 @@ class EnhancedTrainingManager:
         Returns:
             pd.DataFrame: DataFrame with selected features
 
-        """
+        """"
         try:
             self.logger.info("🎯 Executing tiered feature selection...")
 
@@ -5073,7 +5079,7 @@ class EnhancedTrainingManager:
         exchange: str,
         timeframe: str,
     ) -> None:
-        """Clear artifacts from the specified step and all subsequent steps.
+        """Clear artifacts from the specified step and all subsequent steps."
         Preserves artifacts from previous steps.
 
         Args:
@@ -5082,7 +5088,7 @@ class EnhancedTrainingManager:
             exchange: Exchange name
             timeframe: Timeframe
 
-        """
+        """"
         try:
             self.logger.info(f"🧹 Clearing artifacts from {start_step} onward")
 
@@ -5111,7 +5117,7 @@ class EnhancedTrainingManager:
         exchange: str,
         timeframe: str,
     ) -> bool:
-        """Verify that artifacts from the previous step exist before starting a step.
+        """Verify that artifacts from the previous step exist before starting a step."
 
         Args:
             step_name: Name of the current step
@@ -5122,7 +5128,7 @@ class EnhancedTrainingManager:
         Returns:
             True if previous step artifacts exist, False otherwise
 
-        """
+        """"
         try:
             # Find the index of the current step using class constant
             try:
@@ -5189,7 +5195,7 @@ class EnhancedTrainingManager:
         exchange: str,
         timeframe: str,
     ) -> None:
-        """Clear artifacts for a specific step.
+        """Clear artifacts for a specific step."
 
         Args:
             step_name: Name of the step
@@ -5197,14 +5203,16 @@ class EnhancedTrainingManager:
             exchange: Exchange name
             timeframe: Timeframe
 
-        """
+        """"
         try:
             import glob
             from pathlib import Path
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
 
-            # Get patterns for this step using class constant
+# Get patterns for this step using class constant
             patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
 
             cleared_count = 0
@@ -5217,7 +5225,7 @@ import os.path
                         cleared_count += 1
                         self.logger.debug(f"   🗑️ Cleared: {file_path}")
                     except FileNotFoundError:
-                        pass  # File doesn't exist, which is fine
+                        pass  # File doesn't exist, which is fine'
                     except Exception as e:
                         self.logger.warning(f"   ⚠️ Could not delete {file_path}: {e}")
 
@@ -5236,7 +5244,7 @@ import os.path
         context="track_step_performance"
     )
     async def _track_step_performance(self, step_type: str, step_name: str, data: Any, expected: Any) -> bool:
-        """Track performance for a specific step.
+        """Track performance for a specific step."
         
         Args:
             step_type: Type of step (e.g., "data_collection")
@@ -5246,7 +5254,7 @@ import os.path
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """
+        """"
         try:
             if data is not None:
                 # Convert data to numpy array for metrics calculation
@@ -5284,7 +5292,7 @@ import os.path
         context="track_model_performance"
     )
     async def _track_model_performance(self, model_type: str, step_name: str, model: Any, training_input: dict) -> bool:
-        """Track performance for a trained model.
+        """Track performance for a trained model."
         
         Args:
             model_type: Type of model (e.g., "hmm_based_training")
@@ -5294,11 +5302,11 @@ import os.path
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """
+        """"
         try:
             if model is not None and hasattr(model, 'predict'):
                 # Generate sample predictions for tracking
-                # This is a simplified approach - in practice, you'd use actual test data
+                # This is a simplified approach - in practice, you'd use actual test data'
                 sample_data = np.random.randn(100, 10)  # Sample features
                 predictions = model.predict(sample_data)
                 
@@ -5327,7 +5335,7 @@ import os.path
         context="track_optimization_performance"
     )
     async def _track_optimization_performance(self, opt_type: str, step_name: str, optimization_results: dict) -> bool:
-        """Track performance for optimization results.
+        """Track performance for optimization results."
         
         Args:
             opt_type: Type of optimization (e.g., "final_parameters_optimization")
@@ -5336,7 +5344,7 @@ import os.path
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """
+        """"
         try:
             if optimization_results:
                 # Extract key metrics from optimization results
@@ -5374,7 +5382,7 @@ import os.path
         context="track_validation_performance"
     )
     async def _track_validation_performance(self, val_type: str, step_name: str, validation_results: dict) -> bool:
-        """Track performance for validation results.
+        """Track performance for validation results."
         
         Args:
             val_type: Type of validation (e.g., "walk_forward_validation")
@@ -5383,7 +5391,7 @@ import os.path
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """
+        """"
         try:
             if validation_results:
                 # Extract key metrics from validation results
@@ -5423,7 +5431,7 @@ import os.path
         context="track_ab_testing_performance"
     )
     async def _track_ab_testing_performance(self, ab_type: str, step_name: str, ab_test_results: dict) -> bool:
-        """Track performance for A/B testing results.
+        """Track performance for A/B testing results."
         
         Args:
             ab_type: Type of A/B testing (e.g., "ab_testing")
@@ -5432,7 +5440,7 @@ import os.path
             
         Returns:
             bool: True if tracking successful, False otherwise
-        """
+        """"
         try:
             if ab_test_results:
                 # Extract key metrics from A/B testing results
@@ -5491,7 +5499,7 @@ import os.path
                 "errors": step_errors or [],
                 "warnings": step_warnings or [],
                 "system_resources": await self._get_system_resources(),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
             }
             
             # Load existing shared report or create new one
@@ -5604,7 +5612,7 @@ import os.path
 async def setup_enhanced_training_manager(
     config: dict[str, Any] | None,
 ) -> EnhancedTrainingManager | None:
-    """Setup and return a configured EnhancedTrainingManager instance.
+    """Setup and return a configured EnhancedTrainingManager instance."
 
     Args:
         config: Configuration dictionary
@@ -5612,7 +5620,7 @@ async def setup_enhanced_training_manager(
     Returns:
         EnhancedTrainingManager: Configured enhanced training manager instance
 
-    """
+    """"
     try:
         manager = EnhancedTrainingManager(config or {})
         if await manager.initialize():

@@ -1,9 +1,10 @@
 # src/analyst/analyst.py
 
+import copy
 from datetime import datetime
-from typing import (
 import logging
 import asyncio
+from typing import (
     TYPE_CHECKING,
     Any,
 )
@@ -37,19 +38,19 @@ if TYPE_CHECKING:
 
 
 class Analyst:
-    """
+    """"
     Analyst with comprehensive error handling and type safety.
     Determines IF we should enter a trade & which direction (short/long).
     Passes market health, volatility, and liquidation risk information to tactician.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize analyst with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("Analyst")
@@ -131,12 +132,12 @@ class Analyst:
         context="analyst initialization",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize analyst with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         self.logger.info("Initializing Analyst...")
 
         # Load analyst configuration
@@ -182,7 +183,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analyst configuration loading",
     )
     async def _load_analyst_configuration(self) -> None:
@@ -194,7 +195,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -213,7 +214,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analyst modules initialization",
     )
     async def _initialize_analyst_modules(self) -> None:
@@ -230,7 +231,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="technical analysis initialization",
     )
     async def _initialize_technical_analysis(self) -> None:
@@ -241,7 +242,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="risk analysis initialization",
     )
     async def _initialize_risk_analysis(self) -> None:
@@ -252,7 +253,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="dual model system initialization",
     )
     async def _initialize_dual_model_system(self) -> None:
@@ -268,12 +269,12 @@ class Analyst:
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Dual Model System: {e}"),
+                initialization_error(f"Error initializing Dual Model System: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="market health analyzer initialization",
     )
     async def _initialize_market_health_analyzer(self) -> None:
@@ -291,20 +292,19 @@ class Analyst:
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Market Health Analyzer: {e}"),
+                initialization_error(f"Error initializing Market Health Analyzer: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="liquidation risk model initialization",
     )
     async def _initialize_liquidation_risk_model(self) -> None:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-import copy
-import numpy as np
+            import numpy as np
 
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,
@@ -316,12 +316,12 @@ import numpy as np
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Liquidation Risk Model: {e}"),
+                initialization_error(f"Error initializing Liquidation Risk Model: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="feature engineering orchestrator initialization",
     )
     async def _initialize_feature_engineering_orchestrator(self) -> None:
@@ -342,7 +342,7 @@ import numpy as np
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ML confidence predictor initialization",
     )
     async def _initialize_ml_confidence_predictor(self) -> None:
@@ -353,7 +353,7 @@ import numpy as np
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="regime classifier initialization",
     )
     async def _initialize_regime_classifier(self) -> None:
@@ -376,7 +376,7 @@ import numpy as np
         context="analysis execution",
     )
     async def execute_analysis(self, analysis_input: dict[str, Any]) -> bool:
-        """
+        """"
         Execute comprehensive analysis with dual model system integration.
 
         Args:
@@ -384,7 +384,7 @@ import numpy as np
 
         Returns:
             bool: True if analysis successful, False otherwise
-        """
+        """"
         try:
             if not self._validate_analysis_inputs(analysis_input):
                 self.logger.error("Invalid analysis inputs")
@@ -485,13 +485,13 @@ import numpy as np
 
         except Exception:
             self.is_analyzing = False
-            self.logger.error(failed("❌ Analysis failed: {e}"))
+            self.logger.error(failed(f"❌ Analysis failed: {e}"))
 
             return False
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="ML predictions",
     )
     async def _get_ml_predictions(
@@ -514,7 +514,7 @@ import numpy as np
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="analysis inputs validation",
     )
     def _validate_analysis_inputs(self, analysis_input: dict[str, Any]) -> bool:
@@ -544,14 +544,14 @@ import numpy as np
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="technical analysis",
     )
     async def _perform_technical_analysis(
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform technical analysis.
 
         Args:
@@ -559,7 +559,7 @@ import numpy as np
 
         Returns:
             dict: Technical analysis results
-        """
+        """"
         analysis_input.get("market_data")
         analysis_input.get("current_price")
 
@@ -602,7 +602,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing price analysis: {e}")
+            self.logger.error(f"Error performing price analysis: {e}")
 
             return {}
 
@@ -631,7 +631,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing volume analysis: {e}")
+            self.logger.error(f"Error performing volume analysis: {e}")
 
             return {}
 
@@ -665,7 +665,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing indicator analysis: {e}")
+            self.logger.error(f"Error performing indicator analysis: {e}")
 
             return {}
 
@@ -684,7 +684,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing pattern analysis: {e}")
+            self.logger.error(f"Error performing pattern analysis: {e}")
 
             return {}
 
@@ -711,7 +711,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing volatility analysis: {e}")
+            self.logger.error(f"Error performing volatility analysis: {e}")
 
             return {}
 
@@ -730,7 +730,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing correlation analysis: {e}")
+            self.logger.error(f"Error performing correlation analysis: {e}")
 
             return {}
 
@@ -755,7 +755,7 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing drawdown analysis: {e}")
+            self.logger.error(f"Error performing drawdown analysis: {e}")
 
             return {}
 
@@ -772,20 +772,20 @@ import numpy as np
             }
 
         except Exception:
-            self.logger.error("Error performing risk scoring: {e}")
+            self.logger.error(f"Error performing risk scoring: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ML predictions",
     )
     async def _perform_ml_predictions(
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform ML predictions.
 
         Args:
@@ -793,7 +793,7 @@ import numpy as np
 
         Returns:
             dict: ML prediction results
-        """
+        """"
         try:
             market_data = analysis_input.get("market_data")
             current_price = analysis_input.get("current_price")
@@ -817,25 +817,25 @@ import numpy as np
             return ml_results
 
         except Exception:
-            self.logger.error("Error performing ML predictions: {e}")
+            self.logger.error(f"Error performing ML predictions: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="SR analysis",
     )
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="regime classification",
     )
     async def _perform_regime_classification(
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform regime and location classification.
 
         Args:
@@ -843,7 +843,7 @@ import numpy as np
 
         Returns:
             dict: Regime and location classification results
-        """
+        """"
         try:
             market_data = analysis_input.get("market_data")
             analysis_input.get("current_price")
@@ -888,13 +888,13 @@ import numpy as np
             return regime_results
 
         except Exception:
-            self.logger.error("Error performing regime classification: {e}")
+            self.logger.error(f"Error performing regime classification: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analysis results storage",
     )
     async def _store_analysis_results(self) -> None:
@@ -911,16 +911,16 @@ import numpy as np
 
             self.logger.info("Analysis results stored successfully")
         except Exception:
-            self.logger.error("Error storing analysis results: {e}")
+            self.logger.error(f"Error storing analysis results: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analysis results getting",
     )
     def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
-        """
+        """"
         Get analysis results.
 
         Args:
@@ -928,24 +928,24 @@ import numpy as np
 
         Returns:
             dict: Analysis results
-        """
+        """"
         try:
             if analysis_type is None:
                 return self.analysis_results
             return self.analysis_results.get(analysis_type, {})
 
         except Exception:
-            self.logger.error("Error getting analysis results: {e}")
+            self.logger.error(f"Error getting analysis results: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analysis history getting",
     )
     def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
+        """"
         Get analysis history.
 
         Args:
@@ -953,14 +953,14 @@ import numpy as np
 
         Returns:
             list: Analysis history
-        """
+        """"
         try:
             if limit is None:
                 return self.analysis_history
             return self.analysis_history[-limit:]
 
         except Exception:
-            self.logger.error("Error getting analysis history: {e}")
+            self.logger.error(f"Error getting analysis history: {e}")
 
             return []
 
@@ -984,7 +984,7 @@ import numpy as np
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="analyst cleanup",
     )
     async def stop(self) -> None:
@@ -1008,17 +1008,17 @@ import numpy as np
 
             self.logger.info("✅ Analyst stopped successfully")
         except Exception:
-            self.logger.error("❌ Error stopping Analyst: {e}")
+            self.logger.error(f"❌ Error stopping Analyst: {e}")
 
 
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
+        default_return=None,
     context="analyst setup",
 )
 async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
-    """
+    """"
     Setup and initialize Analyst.
 
     Args:
@@ -1026,7 +1026,7 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
 
     Returns:
         Analyst: Initialized analyst or None if failed
-    """
+    """"
     try:
         if config is None:
             config = {}

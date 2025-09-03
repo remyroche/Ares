@@ -1,8 +1,8 @@
 # src/training/steps/combined_fractional_system.py
 
-"""Combined Fractional System: Integration of fractional labeling and fractional differentiation.
+"""Combined Fractional System: Integration of fractional labeling and fractional differentiation."
 Designed to work with existing HMM regime system without redundant regime tuning.
-"""
+""""
 
 import asyncio
 import time
@@ -30,11 +30,11 @@ class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize HMM integration component.
+        """Initialize HMM integration component."
         
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config or {}
         self.regime_metrics = {}  # Track performance per regime
         self.feature_enhancement = self.config.get('feature_enhancement', True)
@@ -42,7 +42,7 @@ class HMMFractionalIntegration:
         self.logger = get_logger("HMMFractionalIntegration")
     
     def enhance_features(self, features: pd.DataFrame, hmm_regime: Optional[str] = None) -> pd.DataFrame:
-        """Enhance features with HMM regime information.
+        """Enhance features with HMM regime information."
         
         Args:
             features: Input features DataFrame
@@ -50,7 +50,7 @@ class HMMFractionalIntegration:
             
         Returns:
             Enhanced features DataFrame
-        """
+        """"
         enhanced_features = features.copy()
         
         if self.feature_enhancement and hmm_regime:
@@ -79,7 +79,7 @@ class HMMFractionalIntegration:
         return enhanced_features
     
     def calculate_regime_quality(self, features: pd.DataFrame, regime: str) -> float:
-        """Calculate feature quality for specific HMM regime.
+        """Calculate feature quality for specific HMM regime."
         
         Args:
             features: Features DataFrame
@@ -87,7 +87,7 @@ class HMMFractionalIntegration:
             
         Returns:
             Quality score (0-1)
-        """
+        """"
         try:
             # Calculate various quality metrics
             variance_scores = []
@@ -155,7 +155,7 @@ class HMMFractionalIntegration:
             return 0.5
     
     def calculate_regime_stability(self, features: pd.DataFrame, regime: str) -> float:
-        """Calculate feature stability for specific HMM regime.
+        """Calculate feature stability for specific HMM regime."
         
         Args:
             features: Features DataFrame
@@ -163,7 +163,7 @@ class HMMFractionalIntegration:
             
         Returns:
             Stability score (0-1)
-        """
+        """"
         try:
             stability_scores = []
             
@@ -196,26 +196,26 @@ class HMMFractionalIntegration:
             return 0.5
     
     def get_regime_metrics(self) -> Dict[str, Any]:
-        """Get current regime metrics.
+        """Get current regime metrics."
         
         Returns:
             Dictionary of regime metrics
-        """
+        """"
         return self.regime_metrics.copy()
 
 
 class CombinedFractionalSystem:
-    """Unified system combining fractional labeling and differentiation.
+    """Unified system combining fractional labeling and differentiation."
     
     Designed to work with existing HMM regime system without redundant regime tuning.
-    """
+    """"
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize combined fractional system.
+        """Initialize combined fractional system."
         
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config or {}
         
         # Initialize components
@@ -246,7 +246,7 @@ class CombinedFractionalSystem:
         volume_data: pd.DataFrame, 
         hmm_regime: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Process data through combined fractional system.
+        """Process data through combined fractional system."
         
         Args:
             price_data: OHLCV price data
@@ -255,7 +255,7 @@ class CombinedFractionalSystem:
             
         Returns:
             Dictionary containing processed features, labels, and metrics
-        """
+        """"
         start_time = time.time()
         
         try:
@@ -310,7 +310,7 @@ class CombinedFractionalSystem:
         hmm_regime: Optional[str], 
         processing_time: float
     ) -> Dict[str, Any]:
-        """Calculate performance metrics for the combined system.
+        """Calculate performance metrics for the combined system."
         
         Args:
             features: Enhanced features DataFrame
@@ -320,7 +320,7 @@ class CombinedFractionalSystem:
             
         Returns:
             Dictionary of performance metrics
-        """
+        """"
         try:
             metrics = {
                 'processing_time': processing_time,
@@ -391,11 +391,11 @@ class CombinedFractionalSystem:
             }
     
     def get_performance_summary(self) -> Dict[str, Any]:
-        """Get performance summary across all processing runs.
+        """Get performance summary across all processing runs."
         
         Returns:
             Dictionary with performance summary
-        """
+        """"
         if not self.performance_history:
             return {'message': 'No performance data available'}
         
@@ -437,14 +437,14 @@ class CombinedFractionalSystem:
             return {'error': str(e)}
     
     def export_performance_report(self, output_dir: str = "data/fractional_performance/combined_system") -> str:
-        """Export performance report to file.
+        """Export performance report to file."
         
         Args:
             output_dir: Output directory for the report
             
         Returns:
             Path to the exported report
-        """
+        """"
         try:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -455,10 +455,12 @@ class CombinedFractionalSystem:
             # Export to JSON
             report_file = output_path / "combined_system_performance.json"
             import json
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import datetime as datetime
 
-            with open(report_file, 'w') as f:
+with open(report_file, 'w') as f:
                 json.dump(summary, f, indent=2, default=str)
             
             # Export detailed history
@@ -480,7 +482,7 @@ def get_combined_fractional_config(
     differentiation_config: Optional[Dict[str, Any]] = None,
     hmm_integration_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Get configuration for combined fractional system.
+    """Get configuration for combined fractional system."
     
     Args:
         labeling_config: Fractional labeling configuration
@@ -489,7 +491,7 @@ def get_combined_fractional_config(
         
     Returns:
         Combined configuration dictionary
-    """
+    """"
     return {
         'labeling': labeling_config or {
             'enable_distance_scaling': True,

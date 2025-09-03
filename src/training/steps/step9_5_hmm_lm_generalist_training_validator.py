@@ -13,6 +13,7 @@ from src.utils.validation_decorators import (
     validate_dataframe_operation,
     validate_step2_operation,
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step9_5HMMLMGeneralistTrainingValidator")
 
@@ -115,8 +116,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
             # Load and validate the metadata file
-            with open(metadata_file, "r") as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_file)
 
             # Check if metadata is a dictionary
             if not isinstance(metadata, dict):

@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG  # noqa: E402
 from src.utils.base_validator import BaseValidator  # noqa: E402
+from src.utils.common_operations import safe_json_load
 
 
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
@@ -180,10 +181,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                 )
                 return True  # Not critical for validation
 
-            import json
-
-            with open(history_file) as f:
-                training_history = json.load(f)
+            training_history = safe_json_load(history_file)
 
             # Extract performance metrics
             if "metrics" in training_history:
@@ -270,10 +268,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                 )
                 return True
 
-            import json
-
-            with open(history_file) as f:
-                training_history = json.load(f)
+            training_history = safe_json_load(history_file)
 
             # Check for training epochs
             if "epochs" in training_history:
@@ -358,10 +353,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             )
 
             if os.path.exists(metadata_file):
-                import json
-
-                with open(metadata_file) as f:
-                    metadata = json.load(f)
+                metadata = safe_json_load(metadata_file)
 
                 # Check model type
                 if "model_type" in metadata:

@@ -1,8 +1,8 @@
 # src/analyst/regime_expert_orchestrator.py
 
-from src.core.decorators import handles_errors
-
 from __future__ import annotations
+
+from src.core.decorators import handles_errors
 
 import asyncio
 import logging
@@ -14,7 +14,42 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
 from src.analyst.regime_runtime import get_current_regime_info
-)
+
+
+class RegimeExpertOrchestrator:
+    """Manages and integrates regime experts for trading decisions."""
+    
+    def __init__(self, config: dict[str, Any]):
+        """Initialize the orchestrator with configuration."""
+        self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Configuration
+        self.use_step9_5 = config.get("use_step9_5", True)
+        self.use_step10 = config.get("use_step10", True)
+        self.min_expert_confidence = config.get("min_expert_confidence", 0.6)
+        
+        # Components
+        self.predictive_ensembles = None
+        self.transition_handler = None
+        
+    async def initialize(self):
+        """Initialize components."""
+        try:
+            # Initialize predictive ensembles
+            self.predictive_ensembles = RegimePredictiveEnsembles(self.config)
+            await self.predictive_ensembles.initialize()
+            
+            # Initialize transition handler if needed
+            # self.transition_handler = TransitionHandler(self.config)
+            
+            self.logger.info("RegimeExpertOrchestrator initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"Error initializing RegimeExpertOrchestrator: {e}")
+            return False
+    
     async def get_current_regime_info(
         self, exchange: str, symbol: str, timeframe: str,
     ) -> dict[str, Any] | None:

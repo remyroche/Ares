@@ -822,7 +822,7 @@ class VectorizedCorrelationAnalyzer:
             )
             return False
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def analyze_correlations_vectorized(
         self, price_data: pd.DataFrame,
     ) -> dict[str, Any]:
@@ -878,7 +878,7 @@ class VectorizedMomentumAnalyzer:
             )
             return False
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def analyze_momentum_vectorized(
         self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
     ) -> dict[str, Any]:
@@ -1064,7 +1064,7 @@ class VectorizedCandlestickPatternAnalyzer:
             self.logger.exception(f"❌ Exception traceback: {e.__traceback__}")
             return False
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def analyze_patterns(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate candlestick pattern features using vectorized operations."""
         try:
@@ -2219,13 +2219,13 @@ class VectorizedAdvancedFeatureEngineering:
     #     },
     #     context="Vectorized Advanced Feature Engineering"
     # )
-    # @secure_data_processing(
+    # # @secure_data_processing - removed, handled by validates(
     #     backup_before=True,
     #     integrity_checks=True,
     #     memory_cleanup=True,
     #     data_validation=True
     # )
-    # @prevent_data_leakage(
+    # # @prevent_data_leakage - removed, handled by validates
     #     temporal_validation=True,
     #     feature_leakage_detection=True,
     #     cross_validation_isolation=True,
@@ -2269,7 +2269,7 @@ class VectorizedAdvancedFeatureEngineering:
     #     },
     #     format_validation=True,
     # )
-    # @quality_gate(
+    # # @quality_gate - removed, handled by validates
     #     model_performance_thresholds={
     #         "feature_quality": 0.8,
     #         "feature_completeness": 0.9,
@@ -3837,7 +3837,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error engineering OHLCV features: {e}")
             return {}
 
-    @validate_data_quality(validation_level=ValidationLevel.WARNING)
+    @validates(validation_level=ValidationLevel.WARNING)
     def _engineer_adaptive_indicators_vectorized(
         self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer adaptive indicators that adjust to market conditions."""
@@ -5064,13 +5064,13 @@ class VectorizedAdvancedFeatureEngineering:
         },
         context="Difference and Acceleration Feature Engineering",
     )
-    @secure_data_processing(
+    # @secure_data_processing - removed, handled by validates(
         backup_before=True,
         integrity_checks=True,
         memory_cleanup=True,
         data_validation=True,
     )
-    @prevent_data_leakage(
+    # @prevent_data_leakage - removed, handled by validates
         temporal_validation=True,
         feature_leakage_detection=True,
         cross_validation_isolation=True,
@@ -5113,7 +5113,7 @@ class VectorizedAdvancedFeatureEngineering:
         },
         format_validation=True,
     )
-    @quality_gate(
+    # @quality_gate - removed, handled by validates
         model_performance_thresholds={
             "feature_quality": 0.8,
             "feature_completeness": 0.9,

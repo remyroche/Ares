@@ -27,7 +27,7 @@ from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 import os.path
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -310,7 +310,7 @@ class Step1Orchestrator:
             results["errors"].append(f"Critical error: {str(e)}")
             return results
 
-    @with_tracing_span("validate_step1_5_readiness")
+    @traced(span_name="validate_step1_5_readiness")
     @handles_errors
         default_return={
             "ready": False,
@@ -388,7 +388,7 @@ class Step1Orchestrator:
 
         return readiness_result
 
-    @with_tracing_span("generate_comprehensive_report")
+    @traced(span_name="generate_comprehensive_report")
     @handles_errors(fallback="❌ ERROR: Failed to generate comprehensive report")
     def generate_comprehensive_report(
         self, symbol: str, exchange: str, results: dict
@@ -518,7 +518,7 @@ class Step1Orchestrator:
 
         return report
 
-    @with_tracing_span("quick_health_check")
+    @traced(span_name="quick_health_check")
     @handles_errors
         default_return={"healthy": False, "issues": ["Health check failed"], "recommendations": ["Check system status"]},
         context="step1_orchestrator.quick_health_check"

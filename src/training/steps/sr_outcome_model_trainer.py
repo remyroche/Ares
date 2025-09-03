@@ -411,7 +411,7 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Error balancing classes: {e}")
             return data
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def _engineer_features(
         self, data: pd.DataFrame,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:

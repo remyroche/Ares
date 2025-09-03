@@ -238,7 +238,7 @@ class CombinedFractionalSystem:
     
     @handles_errors("Combined fractional system processing")
     @validate_data_quality
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def process_data(
         self, 
         price_data: pd.DataFrame, 

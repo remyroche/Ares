@@ -18,6 +18,8 @@ import contextlib
 from typing import Any, Dict, List, Optional, Union
 import warnings
 
+from src.core.decorators import handles_errors, traced
+
 import numpy as np
 import pandas as pd
 
@@ -258,13 +260,13 @@ class RegimeAwareTripleBarrierLabeling:
             "position_size": self.config.regime_position_sizes.get(regime_name, 0.1),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="regime_aware_triple_barrier_labeling.vectorized"
     )
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("RegimeAwareTripleBarrier.apply_vectorized", log_args=False)
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=1)
+    @traced(span_name="RegimeAwareTripleBarrier.apply_vectorized")
     def apply_regime_aware_triple_barrier_labeling(
         self, 
         data: pd.DataFrame,

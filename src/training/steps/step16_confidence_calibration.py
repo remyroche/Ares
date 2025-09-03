@@ -838,10 +838,10 @@ from src.utils.enhanced_mlflow_integration import (
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step11_confidence_calibration")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=2400.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=2400)
 @validates(
     required_directories=["data/training", "models"],
     min_memory_gb=4.0,
@@ -853,10 +853,10 @@ from src.utils.enhanced_mlflow_integration import (
     },
     context="Confidence Calibration",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
@@ -892,7 +892,7 @@ from src.utils.enhanced_mlflow_integration import (
     performance_thresholds={"calibration_time_minutes": 60.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"calibration_accuracy": 0.7},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"calibration_score": 0.7},

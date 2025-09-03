@@ -4,6 +4,8 @@
 This module validates the labeling step outputs.
 """
 from src.core.domain import (
+
+from src.core.decorators import validates
     smart_validation_cache,
     validate_step5_comprehensive
 )
@@ -29,7 +31,7 @@ class Step5LabelingValidator(BaseValidator):
         super().__init__("step5_labeling", config)
         self.logger = system_logger.getChild("Validator.Step5")
 
-    @validate_step5_comprehensive
+    @validates()
     async def validate_step5_labeling(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:

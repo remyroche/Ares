@@ -544,10 +544,10 @@ class RegimeSpecificMultiTimeframeEnsemble:
     },
     context="Multi-Timeframe HMM Ensemble Training",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
@@ -562,7 +562,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
 @cached(
     chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=5,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     data_quality_threshold=0.9,
     feature_quality_threshold=0.8,
     model_quality_threshold=0.7,

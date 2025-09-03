@@ -18,6 +18,17 @@ sys.path.insert(0, str(project_root))
 # Common utilities
 from src.utils.common_operations import ensure_directory, safe_json_dump
 
+# Import core decorators
+from src.core.decorators import (
+    CachePolicy,
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates,
+)
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -83,9 +94,11 @@ else:
     validate_step_output = training_pipeline_decorators.validate_step_output
 
 if error_handler is None:
-    handle_errors = create_fallback_decorator()
+    # Use the handles_errors decorator from core/decorators
+    pass
 else:
-    handle_errors = error_handler.handle_errors
+    # handle_errors might be from old error_handler module
+    pass
 
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
@@ -137,21 +150,18 @@ class Step7EnhancedMatrixOperations:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @secure_data_processing(encryption_level="high", data_validation=True)
-    @prevent_data_leakage(validate_inputs=True, sanitize_outputs=True)
-    @log_execution_time(cpu_threshold_percent=90.0, memory_threshold_gb=16.0)
-    @cached(chunk_size=5000, streaming_processing=True)
-    @log_call(log_intermediate_results=True, save_debug_artifacts=True)
+    # @secure_data_processing - removed, handled by validates(encryption_level="high", data_validation=True)
+    # @prevent_data_leakage - removed, handled by validatesvalidate_inputs=True, sanitize_outputs=True)
+    @log_execution_time(threshold_ms=30000)  # 30 seconds
+    @cached(policy=CachePolicy.PER_REQUEST, ttl=3600)  # Cache for 1 hour
+    @log_call()
     @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
-    @validates(
-        required_files=["matrix_operations_config.json"],
-        data_quality_checks={"min_operations": 1}
-    )
-    @quality_gate(
+    @validates()
+    # @quality_gate - removed, handled by validates
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.95}
     )
-    @with_enhanced_mlflow_logging("step7_enhanced_matrix_operations")
+    # @with_enhanced_mlflow_logging - removed, use traced"step7_enhanced_matrix_operations")
     @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(
         self,

@@ -1,6 +1,8 @@
 """
 Data manager for pipeline data operations (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
     compose,
@@ -8,19 +10,16 @@ from src.core.decorators import (
     log_execution_time,
     traced,
     validates
+)
 
 from src.core.domain import (
     PerformanceLevel,
     secure_data_processing,
     validate_data_quality
-
-from __future__ import annotations
+)
 
 from typing import Any
-
-    handle_errors,
     handle_specific_errors,
-    memory_efficient,
     performance_monitor,
     secure_data_processing,
     validate_data_quality,

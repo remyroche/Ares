@@ -16,18 +16,16 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-
-    handle_specific_errors,
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     invalid,
-    missing,
+    missing
+)
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
-
 
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods
@@ -336,7 +334,6 @@ class Strategist:
             }
             # Do not use handcrafted feature weights for direction/confidence
             # Direction and confidence will be set by ML/HMM via _integrate_analysis_results
-
 
         except Exception as e:  # TODO: Consider more specific exception types
             self.logger.exception(f"Error generating base strategy: {e}")

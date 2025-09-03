@@ -1,19 +1,19 @@
 """
 Base pipeline framework for Ares trading bot (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
     handles_errors,
     log_execution_time
+)
 
 from src.core.domain import PerformanceLevel
-
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-
 
 from src.utils.logger import system_logger
 
@@ -81,29 +81,23 @@ class BasePipeline:
         self.metrics = PipelineMetrics()
         self.is_running: bool = False
 
-    @log_execution_time(level=PerformanceLevel.DETAILED)
     @log_execution_time()
     @cached()
-    @pipeline_checkpoint(checkpoint_name="base_pipeline.initialize")
     @handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid base pipeline configuration"),
-            AttributeError: (False, "Missing required pipeline parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="base_pipeline.initialize",
+        ValueError,
+        AttributeError,
+        KeyError,
+        fallback=False
+    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing BasePipeline ...")
         self.is_running = True
         self.metrics.start_time = datetime.now()
         return True
 
-    @log_execution_time(level=PerformanceLevel.DETAILED)
     @log_execution_time()
     @cached()
-    @pipeline_checkpoint(checkpoint_name="base_pipeline.shutdown")
-    @handles_errors(Exception,, fallback=False, context="base_pipeline.shutdown")
+    @handles_errors(Exception, fallback=False)
     async def shutdown(self) -> bool:
         self.logger.info("Shutting down BasePipeline ...")
         self.is_running = False

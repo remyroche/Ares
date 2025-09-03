@@ -8,12 +8,11 @@ from src.core.decorators import handles_errors, retry, timeout
 
 from datetime import datetime
 from typing import Any
-
-    handle_specific_errors,
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    invalid,
+    invalid
+)
 
 class CheckpointManager:
     """Checkpoint manager with comprehensive error handling and type safety."""

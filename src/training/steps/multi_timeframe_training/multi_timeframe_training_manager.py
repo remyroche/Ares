@@ -34,12 +34,12 @@ class MultiTimeframeTrainingManager:
     """Multi-timeframe training manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize multi-timeframe training manager with enhanced type safety.
+        """Initialize multi-timeframe training manager with enhanced type safety."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("MultiTimeframeTrainingManager")
 
@@ -94,12 +94,12 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize multi-timeframe training manager with enhanced error handling.
+        """Initialize multi-timeframe training manager with enhanced error handling."
 
         Returns:
             bool: True if initialization successful = False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Multi-Timeframe Training Manager...")
 
@@ -181,12 +181,12 @@ class MultiTimeframeTrainingManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate multi-timeframe training configuration.
+        """Validate multi-timeframe training configuration."
 
         Returns:
             bool: True if configuration is valid = False otherwise
 
-        """
+        """"
         try:
             # Validate multi-timeframe interval
             if self.multi_timeframe_interval <= 0:
@@ -398,7 +398,7 @@ class MultiTimeframeTrainingManager:
 
     async def generate_multi_timeframe_features_for_training(
         self, data_dict: dict[str, Any], symbol: str, ) -> dict[str, Any]:
-        """Generate multi-timeframe features for training data.
+        """Generate multi-timeframe features for training data."
 
         Args:
             data_dict: Dictionary with timeframe -> DataFrame mapping
@@ -407,7 +407,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             Dictionary with timeframe -> features DataFrame mapping
 
-        """
+        """"
         try:
             self.logger.info(f"🎯 Generating multi-timeframe features for {symbol}")
 
@@ -465,7 +465,7 @@ class MultiTimeframeTrainingManager:
     )
     async def execute_multi_timeframe_training(
         self, multi_timeframe_training_input: dict[str, Any], ) -> bool:
-        """Execute multi-timeframe training operations.
+        """Execute multi-timeframe training operations."
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
@@ -473,7 +473,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if successful = False otherwise
 
-        """
+        """"
         try:
             if not self._validate_multi_timeframe_training_inputs(
                 multi_timeframe_training_input,
@@ -541,7 +541,7 @@ class MultiTimeframeTrainingManager:
     )
     def _validate_multi_timeframe_training_inputs(
         self, multi_timeframe_training_input: dict[str, Any], ) -> bool:
-        """Validate multi-timeframe training inputs.
+        """Validate multi-timeframe training inputs."
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
@@ -549,7 +549,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if valid = False otherwise
 
-        """
+        """"
         try:
             # Check required multi-timeframe training input fields
             required_fields = [
@@ -591,14 +591,14 @@ class MultiTimeframeTrainingManager:
     )
     async def _perform_timeframe_analysis(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
-        """Perform timeframe analysis.
+        """Perform timeframe analysis."
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns: Dict[str, Any]: Timeframe analysis results
 
-        """
+        """"
         try:
             results = {}
 
@@ -640,14 +640,14 @@ class MultiTimeframeTrainingManager:
     )
     async def _perform_cross_timeframe_features(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
-        """Perform cross timeframe features.
+        """Perform cross timeframe features."
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns: Dict[str, Any]: Cross timeframe features results
 
-        """
+        """"
         try:
             results = {}
 
@@ -698,14 +698,14 @@ class MultiTimeframeTrainingManager:
     )
     async def _perform_timeframe_ensemble(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
-        """Perform timeframe ensemble.
+        """Perform timeframe ensemble."
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns: Dict[str, Any]: Timeframe ensemble results
 
-        """
+        """"
         try:
             results = {}
 
@@ -747,14 +747,14 @@ class MultiTimeframeTrainingManager:
     )
     async def _perform_timeframe_optimization(
         self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
-        """Perform timeframe optimization.
+        """Perform timeframe optimization."
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns: Dict[str, Any]: Timeframe optimization results
 
-        """
+        """"
         try:
             results = {}
 
@@ -1088,14 +1088,14 @@ class MultiTimeframeTrainingManager:
     def get_multi_timeframe_training_results(
         self, multi_timeframe_training_type: str | None = None
     ) -> dict[str, Any]:
-        """Get multi-timeframe training results.
+        """Get multi-timeframe training results."
 
         Args:
             multi_timeframe_training_type: Optional multi-timeframe training type filter
 
         Returns: Dict[str, Any]: Multi-timeframe training results
 
-        """
+        """"
         try:
             if multi_timeframe_training_type:
                 return self.multi_timeframe_training_results.get(
@@ -1118,14 +1118,14 @@ class MultiTimeframeTrainingManager:
     def get_multi_timeframe_training_history(
         self, limit: int | None = None
     ) -> list[dict[str, Any]]:
-        """Get multi-timeframe training history.
+        """Get multi-timeframe training history."
 
         Args:
             limit: Optional limit on number of records
 
         Returns: List[Dict[str, Any]]: Multi-timeframe training history
 
-        """
+        """"
         try:
             history = self.multi_timeframe_training_history.copy()
 
@@ -1141,11 +1141,11 @@ class MultiTimeframeTrainingManager:
             return []
 
     def get_multi_timeframe_training_status(self) -> dict[str, Any]:
-        """Get multi-timeframe training status information.
+        """Get multi-timeframe training status information."
 
         Returns: Dict[str, Any]: Multi-timeframe training status
 
-        """
+        """"
         return {
             "is_training": self.is_training,
             "multi_timeframe_interval": self.multi_timeframe_interval,
@@ -1193,7 +1193,7 @@ class MultiTimeframeTrainingManager:
 
     async def _validate_step_dependencies(
         self, step_name: str, pipeline_state: dict[str, Any], ) -> bool:
-        """Validate that all prerequisites for a step are met using StepDependencyValidator.
+        """Validate that all prerequisites for a step are met using StepDependencyValidator."
 
         Args:
             step_name: Name of the step to validate
@@ -1202,7 +1202,7 @@ class MultiTimeframeTrainingManager:
         Returns:
             bool: True if all dependencies are met = False otherwise
 
-        """
+        """"
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
@@ -1239,7 +1239,7 @@ multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
     context="multi-timeframe training manager setup",
 )
 async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None = None) -> MultiTimeframeTrainingManager | None:
-    """Setup global multi-timeframe training manager.
+    """Setup global multi-timeframe training manager."
 
     Args:
         config: Optional configuration dictionary
@@ -1247,7 +1247,7 @@ async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None =
     Returns:
         Optional[MultiTimeframeTrainingManager]: Global multi-timeframe training manager instance
 
-    """
+    """"
     try:
         global multi_timeframe_training_manager
 

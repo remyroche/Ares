@@ -1,0 +1,28 @@
+{
+  "fixed": 14,
+  "failed": 398,
+  "fixed_files": [
+    "/workspace/src/supervisor/enhanced_prediction_service.py",
+    "/workspace/src/tactician/tactician.py",
+    "/workspace/src/core/decorators/errors.py",
+    "/workspace/src/core/decorators/logging.py",
+    "/workspace/src/core/decorators/trace.py",
+    "/workspace/src/core/decorators/validate.py",
+    "/workspace/src/core/decorators/auth.py",
+    "/workspace/src/core/examples/decorator_usage.py",
+    "/workspace/src/core/errors/handlers/http.py",
+    "/workspace/src/training/steps/step1_data_collection_refactored.py"
+  ],
+  "failed_files": [
+    "/workspace/src/tasks.py",
+    "/workspace/src/ares_pipeline.py",
+    "/workspace/src/config.py",
+    "/workspace/src/paper_trader.py",
+    "/workspace/src/monitoring/error_detection_system.py",
+    "/workspace/src/monitoring/tracking_system.py",
+    "/workspace/src/monitoring/correlation_manager.py",
+    "/workspace/src/monitoring/report_scheduler.py",
+    "/workspace/src/monitoring/fractional_system_monitor.py",
+    "/workspace/src/monitoring/enhanced_ml_tracker.py"
+  ]
+}

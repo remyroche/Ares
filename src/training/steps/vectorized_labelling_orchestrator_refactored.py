@@ -12,6 +12,7 @@ import numpy as np
 from dataclasses import dataclass
 from enum import Enum
 import time
+from copy import copy
 
 
 class PipelineStage(Enum):

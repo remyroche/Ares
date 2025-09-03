@@ -148,7 +148,7 @@ class OptimizedTrainingFactory:
 
 
 def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
-    """Convenience function to create a complete optimized training system.
+    """Convenience function to create a complete optimized training system."
 
     Args:
         config: Training configuration
@@ -156,13 +156,13 @@ def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary containing all optimized training components
 
-    """
+    """"
     factory = OptimizedTrainingFactory(config)
     return factory.create_training_pipeline()
 
 
 def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
-    """Get optimization recommendations based on system resources and configuration.
+    """Get optimization recommendations based on system resources and configuration."
 
     Args:
         config: Current configuration
@@ -170,7 +170,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary containing optimization recommendations
 
-    """
+    """"
     recommendations = {
         "memory_optimizations": [],
         "parallelization_optimizations": [],

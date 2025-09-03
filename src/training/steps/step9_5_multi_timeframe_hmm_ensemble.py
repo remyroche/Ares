@@ -1,6 +1,6 @@
 # src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
 
-"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
+"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic."
 
 This step trains a multi-timeframe HMM cluster ensemble system that combines
 predictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)
@@ -8,7 +8,7 @@ to improve regime forecasting accuracy and reduce MAPE, with regime-specific opt
 
 The ensemble predicts REGIME TRANSITIONS only, not price direction.
 Price direction predictions are made in other components.
-"""
+""""
 
 import asyncio
 import json
@@ -21,10 +21,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from src.training.steps.multi_timeframe_hmm_ensemble import (
+from copy import copy
+
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
+from src.training.steps.multi_timeframe_hmm_ensemble import (
 )
 from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
@@ -594,7 +596,7 @@ async def run_step(
     lookback_days: int = 365,
     **kwargs,
 ) -> Dict[str, Any]:
-    """
+    """"
     Run multi-timeframe HMM ensemble training step.
 
     Args:
@@ -607,7 +609,7 @@ async def run_step(
 
     Returns:
         Dict containing step results
-    """
+    """"
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsemble")
     
     try:
@@ -771,7 +773,7 @@ async def validate_step(
     data_dir: str,
     **kwargs,
 ) -> Dict[str, Any]:
-    """
+    """"
     Validate multi-timeframe HMM ensemble training step.
 
     Args:
@@ -782,7 +784,7 @@ async def validate_step(
 
     Returns:
         Dict containing validation results
-    """
+    """"
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
     
     try:

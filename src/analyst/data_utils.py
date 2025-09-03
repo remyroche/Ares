@@ -29,17 +29,17 @@ import copy
 
 
 class DataUtils:
-    """
+    """"
     Data utilities with comprehensive error handling and type safety.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize data utils with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("DataUtils")
@@ -78,12 +78,12 @@ class DataUtils:
         context="data utils initialization",
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize data utils with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         try:
             self.logger.info("Initializing Data Utils...")
 
@@ -147,12 +147,12 @@ class DataUtils:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate data utils configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """
+        """"
         try:
             # Validate processing interval
             if self.processing_interval <= 0:
@@ -323,7 +323,7 @@ class DataUtils:
         context="data processing execution",
     )
     async def execute_data_processing(self, processing_input: dict[str, Any]) -> bool:
-        """
+        """"
         Execute data processing operations.
 
         Args:
@@ -331,7 +331,7 @@ class DataUtils:
 
         Returns:
             bool: True if successful, False otherwise
-        """
+        """"
         try:
             if not self._validate_processing_inputs(processing_input):
                 return False
@@ -385,7 +385,7 @@ class DataUtils:
         context="processing inputs validation",
     )
     def _validate_processing_inputs(self, processing_input: dict[str, Any]) -> bool:
-        """
+        """"
         Validate processing inputs.
 
         Args:
@@ -393,7 +393,7 @@ class DataUtils:
 
         Returns:
             bool: True if valid, False otherwise
-        """
+        """"
         try:
             # Check required processing input fields
             required_fields = ["processing_type", "data_source", "timestamp"]
@@ -432,7 +432,7 @@ class DataUtils:
         self,
         processing_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform data cleaning.
 
         Args:
@@ -440,7 +440,7 @@ class DataUtils:
 
         Returns:
             dict[str, Any]: Data cleaning results
-        """
+        """"
         try:
             results = {}
 
@@ -486,7 +486,7 @@ class DataUtils:
         self,
         processing_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform data validation.
 
         Args:
@@ -494,7 +494,7 @@ class DataUtils:
 
         Returns:
             dict[str, Any]: Data validation results
-        """
+        """"
         try:
             results = {}
 
@@ -540,7 +540,7 @@ class DataUtils:
         self,
         processing_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform data transformation.
 
         Args:
@@ -548,7 +548,7 @@ class DataUtils:
 
         Returns:
             dict[str, Any]: Data transformation results
-        """
+        """"
         try:
             results = {}
 
@@ -597,7 +597,7 @@ class DataUtils:
         self,
         processing_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Perform data aggregation.
 
         Args:
@@ -605,7 +605,7 @@ class DataUtils:
 
         Returns:
             dict[str, Any]: Data aggregation results
-        """
+        """"
         try:
             results = {}
 
@@ -1000,7 +1000,7 @@ class DataUtils:
         self,
         processing_type: str | None = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Get processing results.
 
         Args:
@@ -1008,7 +1008,7 @@ class DataUtils:
 
         Returns:
             dict[str, Any]: Processing results
-        """
+        """"
         try:
             if processing_type:
                 return self.processing_results.get(processing_type, {})
@@ -1026,7 +1026,7 @@ class DataUtils:
         context="processing history getting",
     )
     def get_processing_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
+        """"
         Get processing history.
 
         Args:
@@ -1034,7 +1034,7 @@ class DataUtils:
 
         Returns:
             list[dict[str, Any]]: Processing history
-        """
+        """"
         try:
             history = self.processing_history.copy()
 
@@ -1050,12 +1050,12 @@ class DataUtils:
             return []
 
     def get_processing_status(self) -> dict[str, Any]:
-        """
+        """"
         Get processing status information.
 
         Returns:
             dict[str, Any]: Processing status
-        """
+        """"
         return {
             "is_processing": self.is_processing,
             "processing_interval": self.processing_interval,
@@ -1110,7 +1110,7 @@ data_utils: DataUtils | None = None
     context="data utils setup",
 )
 async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | None:
-    """
+    """"
     Setup global data utils.
 
     Args:
@@ -1118,7 +1118,7 @@ async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | 
 
     Returns:
         DataUtils | None: Global data utils instance
-    """
+    """"
     try:
         global data_utils
 
@@ -1230,7 +1230,7 @@ def load_klines_data(filename):
         numeric_cols = ["open", "high", "low", "close", "volume"]
         for col in numeric_cols:
             if col in df.columns:
-                # Convert to numeric, but don't fill NaN values
+                # Convert to numeric, but don't fill NaN values'
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         # Check for NaN values - FAIL FAST if found
@@ -1348,7 +1348,7 @@ def _calculate_price_range(
     # Add padding to the range (10% on each side)
     price_range = max_price - min_price
     padding = price_range * 0.1
-    min_price = max(100.0, min_price - padding)  # Don't go below $100
+    min_price = max(100.0, min_price - padding)  # Don't go below $100'
     max_price = max_price + padding
 
     # Handle extreme outliers using percentiles
@@ -1397,7 +1397,7 @@ def _create_volume_profile(
     actual_bins = min(num_bins, 100)
     bins = np.linspace(min_price, max_price, actual_bins + 1)
 
-    # Assign each candle's midpoint to a bin and sum its volume
+    # Assign each candle's midpoint to a bin and sum its volume'
     mid_prices = (klines_df[high_col] + klines_df[low_col]) / 2
     price_bins_categorized = pd.cut(mid_prices, bins, include_lowest=True)
 
@@ -1656,13 +1656,13 @@ def create_ethusdt_1h_csv():
             print(missing("Missing required columns: {missing_columns}"))
             return False
 
-        # Convert timestamp to datetime if it's not already
+        # Convert timestamp to datetime if it's not already'
         if "timestamp" in df.columns:
             # Check if timestamp is already datetime
             if df["timestamp"].dtype == "object":
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
             else:
-                # Assume it's milliseconds
+                # Assume it's milliseconds'
                 df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         # Rename timestamp to open_time to match expected format
@@ -1693,7 +1693,7 @@ def create_ethusdt_1h_csv():
         print(f"📊 Original 1-minute data: {len(df)} records")
         print(f"📊 Resampled 1-hour data: {len(df_1h)} records")
 
-        # Create the data directory if it doesn't exist
+        # Create the data directory if it doesn't exist'
         os.makedirs("data", exist_ok=True)
 
         # Save to the expected location

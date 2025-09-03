@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic.
+"""Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic."
 
 This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
-"""
+""""
 
 import json
 import os
@@ -63,12 +63,12 @@ from src.utils.common_operations import ensure_directory, safe_json_dump
 warnings.filterwarnings("ignore")
 
 class EnhancedHMMBasedTrainingStep:
-    """Enhanced HMM-Based Model Training with Multi-Output Support and Regime-Specific Logic.
+    """Enhanced HMM-Based Model Training with Multi-Output Support and Regime-Specific Logic."
 
     Extends the existing HMM-based training to support intelligent multi-output
     prediction for both direction and profit using the triple barrier method
     and profit-based feature engineering, with regime-specific optimization.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -542,7 +542,7 @@ class EnhancedHMMBasedTrainingStep:
         timeframe: str,
         regime_key: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Prepare data for enhanced training with multi-output support.
+        """Prepare data for enhanced training with multi-output support."
         
         Args:
             data: Input DataFrame with features and targets
@@ -551,7 +551,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Dictionary containing prepared data for both single and multi-output training
-        """
+        """"
         self.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
         if regime_key:
             self.logger.info(f"   - Regime: {regime_key}")
@@ -654,7 +654,7 @@ class EnhancedHMMBasedTrainingStep:
         prepared_data: Dict[str, Any],
         model_name: str = "enhanced_model"
     ) -> Dict[str, Any]:
-        """Train enhanced model with multi-output support.
+        """Train enhanced model with multi-output support."
         
         Args:
             prepared_data: Prepared data dictionary
@@ -662,7 +662,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Dictionary containing training results and model artifacts
-        """
+        """"
         self.logger.info(f"🚀 Training enhanced model: {model_name}")
         
         results = {
@@ -745,7 +745,7 @@ class EnhancedHMMBasedTrainingStep:
         timeframe: str,
         regime_key: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Train single-output model (backward compatibility).
+        """Train single-output model (backward compatibility)."
         
         Args:
             features: Feature DataFrame
@@ -755,7 +755,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Training results dictionary
-        """
+        """"
         try:
             architecture = self.model_architectures.get(timeframe, "LightGBM")
             self.logger.info(f"   🌳 Training {architecture} single-output model")
@@ -867,7 +867,7 @@ class EnhancedHMMBasedTrainingStep:
         timeframe: str,
         regime_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Train enhanced regime-specific models with multi-output support.
+        """Train enhanced regime-specific models with multi-output support."
         
         Args:
             timeframe: Timeframe for training
@@ -875,7 +875,7 @@ class EnhancedHMMBasedTrainingStep:
             
         Returns:
             Dictionary containing regime-specific training results
-        """
+        """"
         self.logger.info(f"🎯 Training enhanced regime-specific models for {timeframe}")
         
         regime_results = {}
@@ -920,7 +920,7 @@ class EnhancedHMMBasedTrainingStep:
         model_name: str = "enhanced_model",
         prediction_type: str = "multi_output"  # "multi_output" or "single_output"
     ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
-        """Make predictions using enhanced model.
+        """Make predictions using enhanced model."
         
         Args:
             features: Feature DataFrame
@@ -930,7 +930,7 @@ class EnhancedHMMBasedTrainingStep:
         Returns:
             For multi_output: Tuple of (direction_predictions, profit_predictions)
             For single_output: Array of predictions
-        """
+        """"
         if prediction_type == "multi_output" and self.multi_output_trainer:
             try:
                 # Create market data for prediction
@@ -962,12 +962,12 @@ class EnhancedHMMBasedTrainingStep:
         results: Dict[str, Any],
         save_path: str
     ) -> None:
-        """Save enhanced models to disk.
+        """Save enhanced models to disk."
         
         Args:
             results: Training results dictionary
             save_path: Path to save models
-        """
+        """"
         try:
             ensure_directory(save_path)
             
@@ -1017,12 +1017,12 @@ class EnhancedHMMBasedTrainingStep:
         model_name: str,
         load_path: str
     ) -> None:
-        """Load enhanced models from disk.
+        """Load enhanced models from disk."
         
         Args:
             model_name: Name of the model to load
             load_path: Path to load models from
-        """
+        """"
         try:
             # Load multi-output models
             multi_output_dir = os.path.join(load_path, "multi_output_models")
@@ -1041,10 +1041,12 @@ class EnhancedHMMBasedTrainingStep:
                 
                 if os.path.exists(model_path) and os.path.exists(scaler_path):
                     import joblib
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
 
-                    model = joblib.load(model_path)
+model = joblib.load(model_path)
                     scaler = joblib.load(scaler_path)
                     
                     # Store in models dict
@@ -1062,10 +1064,10 @@ import os.path
     async def _apply_regime_specific_feature_selection(
         self, features_df: pd.DataFrame, regime: str
     ) -> pd.DataFrame:
-        """Apply simple regime-aware feature selection placeholder.
+        """Apply simple regime-aware feature selection placeholder."
 
         Drops all-zero columns and ensures numeric dtype; keeps columns with variance.
-        """
+        """"
         try:
             df = features_df.copy()
             # Keep numeric columns only
@@ -1087,7 +1089,7 @@ async def run_enhanced_step(
     method_a_mixture_of_experts: Optional[Dict] = None,
     enable_multi_output: bool = True
 ) -> bool:
-    """Run enhanced HMM-based training step with multi-output support.
+    """Run enhanced HMM-based training step with multi-output support."
     
     Args:
         symbol: Trading symbol
@@ -1097,7 +1099,7 @@ async def run_enhanced_step(
         
     Returns:
         True if successful, False otherwise
-    """
+    """"
     try:
         logger = system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM-Based Training for {symbol}")

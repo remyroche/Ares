@@ -1,10 +1,10 @@
 # src/training/steps/sr_outcome_model_trainer.py
 
-"""S/R Outcome Model Trainer.
+"""S/R Outcome Model Trainer."
 
 Trains ML models to predict S/R outcomes (breakout/rebounce/consolidation)
 using LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.
-"""
+""""
 
 import json
 import os

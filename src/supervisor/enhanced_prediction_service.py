@@ -20,6 +20,7 @@ from src.utils.logging_config import get_logger
 from src.utils.performance import performance_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
+import asyncio
 
 
 def _safe_load_model(filepath: Path, logger) -> Any:

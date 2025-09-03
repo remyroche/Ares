@@ -1,9 +1,9 @@
-"""
+""""
 Quality Alert System for Data Quality Monitoring
 
 This module provides an alert system that can send notifications when data quality
 issues are detected, supporting multiple channels like Slack, email, and webhooks.
-"""
+""""
 
 import json
 import logging
@@ -244,7 +244,9 @@ class QualityAlertManager:
             # Create email message
             subject = f"Data Quality Alert: {alert.level}"
 
-            body = f"""
+            body = f""""
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 Data Quality Alert
 
 Level: {alert.level}
@@ -253,9 +255,9 @@ Timestamp: {alert.timestamp.strftime("%Y-%m-%d %H:%M:%S")}
 Action Required: {"Yes" if alert.action_required else "No"}
 
 Details:
-"""
+""""
 
-            if alert.details:
+if alert.details:
                 for key, value in alert.details.items():
                     body += f"• {key}: {value}\n"
 
@@ -277,7 +279,7 @@ Details:
                 from email.mime.text import MIMEText
 import os.path
 
-                msg = MIMEMultipart()
+msg = MIMEMultipart()
                 msg["From"] = email_config.get("from_email", "noreply@example.com")
                 msg["To"] = email_config.get("to_email", "admin@example.com")
                 msg["Subject"] = subject

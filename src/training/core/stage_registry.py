@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 
 class StageRegistry:

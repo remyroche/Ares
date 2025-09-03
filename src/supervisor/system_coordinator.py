@@ -10,11 +10,11 @@ from __future__ import annotations
 # Import all the components from the new structure
 from .coordinator import (
     CircuitBreaker,
-    OnlineLearningManager,
-    SystemCoordinator,
     ComponentMonitor,
     HealthMonitor,
+    OnlineLearningManager,
     RecoveryManager,
+    SystemCoordinator,
 )
 
 # Re-export everything for backward compatibility

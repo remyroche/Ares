@@ -9,13 +9,13 @@ from src.core.decorators import handles_errors as handles_errors_src_core_decora
 from src.paper_trader import PaperTrader
 from src.sentinel.sentinel import Sentinel
 from src.supervisor.ab_tester import ABTester
+from src.supervisor.dependency_container import ComponentBuilder, DependencyContainer
 from src.supervisor.monitoring import Monitoring
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.supervisor.risk_allocator import RiskAllocator as RiskAllocator_src_supervisor_risk_allocator
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
-from src.supervisor.dependency_container import DependencyContainer, ComponentBuilder
 
 # src/supervisor/main.py
 

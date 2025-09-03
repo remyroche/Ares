@@ -45,9 +45,7 @@ from .comprehensive_parameter_integration import (
 from .efficiency_optimizer import EfficiencyOptimizer
 from .evaluation_engine import AdvancedEvaluationEngine as EvaluationEngine
 from .hyperparameter_optimization_config import HyperparameterOptimizationConfig
-from .optimized_optuna_optimization import (
-    AdvancedOptunaManager as OptimizedOptunaOptimization,
-)
+from .optimized_optuna_optimization import AdvancedOptunaManager as OptimizedOptunaOptimization
 from .optimized_step17_implementation import (
     AdaptiveTrialAllocator,
     HierarchicalOptimizer,

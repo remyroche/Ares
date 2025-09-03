@@ -3,11 +3,11 @@
 This script helps identify files that should be removed or consolidated.
 """
 
-import os
-from pathlib import Path
-from typing import List, Dict, Tuple
 import hashlib
 import json
+import os
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 
 def calculate_file_hash(filepath: Path) -> str:

@@ -10,16 +10,13 @@ This module provides advanced surrogate models including:
 - Transfer learning capabilities
 """
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
+import time
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import joblib
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional, Union
-from abc import ABC, abstractmethod
-import joblib
-import time
-from typing import Any
-
 
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -31,6 +28,8 @@ from sklearn.gaussian_process.kernels import (
     WhiteKernel,
 )
 from sklearn.model_selection import cross_val_score
+
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 
 # Advanced ML libraries
 try:
@@ -55,9 +54,10 @@ except ImportError:
 
 # Utilities
 
+import copy
+
 from src.utils.logger import system_logger
 
-import copy
 
 class BaseSurrogateModel(ABC):
     """Base class for all surrogate models."""

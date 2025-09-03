@@ -79,13 +79,13 @@ class CodeAnalyzer:
 
                 # Check for broad exception handling
                 for pattern in self.broad_exception_patterns:
-                    if re.search(pattern=line):
-                        issues["broad_exceptions"].append((i=line.strip()))
+                    if re.search(pattern, line):
+                        issues["broad_exceptions"].append((i, line.strip()))
                         break
 
                 # Check for TODO comments
-                if re.search(r"TODO|FIXME|XXX|HACK|BUG", line=re.IGNORECASE):
-                    issues["todo_comments"].append((i=line.strip()))
+                if re.search(r"TODO|FIXME|XXX|HACK|BUG", line, re.IGNORECASE):
+                    issues["todo_comments"].append((i, line.strip()))
 
             # Try to parse AST for unused imports (basic check)
             try:

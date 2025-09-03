@@ -5,13 +5,12 @@ Protocol definitions for better interface typing and dependency injection.
 """
 
 from abc import abstractmethod
-from typing import Any, Protocol , TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-from .base_types import Symbol , Timestamp
+from .base_types import Symbol, Timestamp
 from .data_types import OrderInfo
-from .ml_types import ModelInput, ModelOutput , PredictionResult
-from .trading_types import OrderRequest , RiskParameters, TradeDecision
-import asyncio
+from .ml_types import ModelInput, ModelOutput, PredictionResult
+from .trading_types import OrderRequest, RiskParameters, TradeDecision
 
 # Generic type variables
 T = TypeVar("T")

@@ -5,16 +5,10 @@ from src.core.domain import (
     validate_file_operation,
     validate_step2_operation
 )
-
-import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import pandas as pd
-
-from src.utils.logger import system_logger
+from typing import Any
 from src.utils.common_operations import safe_json_load
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step9_5HMMLMGeneralistTrainingValidator")
 
@@ -28,7 +22,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
     @validate_step2_operation
     def validate_step9_5_hmm_lm_generalist_training(
-        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
+        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:
         """Validate Step 9.5: HMM LM Generalist Training.
 
@@ -48,7 +42,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             hmm_lm_models_dir = Path(data_dir) / "training" / "hmm_lm_generalist_models"
             if not hmm_lm_models_dir.exists():
                 self.logger.warning(
-                    f"⚠️ HMM LM generalist models directory not found: {hmm_lm_models_dir}"
+                    f"⚠️ HMM LM generalist models directory not found: {hmm_lm_models_dir}",
                 )
                 return False
 
@@ -99,7 +93,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
                     return False
-                
+
                 self.logger.info(f"✅ HMM LM model file validated: {model_file.name} ({file_size} bytes)")
                 return True
             except Exception as e:
@@ -129,7 +123,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             missing_fields = [field for field in required_fields if field not in metadata]
             if missing_fields:
                 self.logger.warning(
-                    f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
+                    f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}",
                 )
                 return False
 
@@ -137,7 +131,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             model_count = metadata.get("model_count", 0)
             if model_count < 1:
                 self.logger.warning(
-                    f"⚠️ Invalid model count in {metadata_file.name}: {model_count}"
+                    f"⚠️ Invalid model count in {metadata_file.name}: {model_count}",
                 )
                 return False
 
@@ -145,7 +139,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             training_metrics = metadata.get("training_metrics", {})
             if not isinstance(training_metrics, dict):
                 self.logger.warning(
-                    f"⚠️ Invalid training metrics format in {metadata_file.name}"
+                    f"⚠️ Invalid training metrics format in {metadata_file.name}",
                 )
                 return False
 
@@ -154,9 +148,9 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             for metric in basic_metrics:
                 if metric in training_metrics:
                     value = training_metrics[metric]
-                    if isinstance(value, (int, float)) and value < 0:
+                    if isinstance(value, int | float) and value < 0:
                         self.logger.warning(
-                            f"⚠️ Invalid {metric} value in {metadata_file.name}: {value}"
+                            f"⚠️ Invalid {metric} value in {metadata_file.name}: {value}",
                         )
 
             self.logger.info(f"✅ Metadata file validated: {model_count} models, {len(training_metrics)} metrics")
@@ -169,7 +163,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
 @validate_step2_operation
 def step9_5_hmm_lm_generalist_training_validator(
-    symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]
+    symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any],
 ) -> bool:
     """Step 9.5: HMM LM Generalist Training Validator.
 
@@ -188,15 +182,14 @@ def step9_5_hmm_lm_generalist_training_validator(
     try:
         validator = Step9_5HMMLMGeneralistTrainingValidator(config)
         result = validator.validate_step9_5_hmm_lm_generalist_training(
-            symbol, exchange, data_dir, training_input
+            symbol, exchange, data_dir, training_input,
         )
 
         if result:
             logger.info("✅ Step 9.5: HMM LM Generalist Training validation passed")
             return True
-        else:
-            logger.warning("⚠️ Step 9.5: HMM LM Generalist Training validation failed")
-            return False
+        logger.warning("⚠️ Step 9.5: HMM LM Generalist Training validation failed")
+        return False
 
     except Exception as e:
         logger.exception(f"❌ Step 9.5 validation failed: {e}")

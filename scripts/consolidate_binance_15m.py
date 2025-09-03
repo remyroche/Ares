@@ -4,22 +4,22 @@ Script to consolidate all Binance 15m klines data into a single file.
 This will create a proper consolidated file for regime training.
 """
 
-from pathlib import Path
-from typing import List
-from src.utils.logger import setup_logging, system_logger
 import glob
 import os
 import sys
+from pathlib import Path
 
-from src.utils.warning_symbols import error, invalid, missing, warning
 import pandas as pd
+
+from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import error, invalid, missing, warning
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 
-def _list_source_files(pattern: str) -> List[str]:
+def _list_source_files(pattern: str) -> list[str]:
 	"""List files matching the provided glob pattern, sorted for determinism."""
 	return sorted(glob.glob(pattern))
 

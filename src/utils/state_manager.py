@@ -9,20 +9,16 @@ management.
 import asyncio
 import contextlib
 import json
-import shutil
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
     error,
     invalid,
-    missing,
-    warning,
 )
+
 
 class StateManager:
     """Enhanced state manager with comprehensive error handling and type safety."""
@@ -122,7 +118,7 @@ class StateManager:
         """Load existing state from file."""
         try:
             if Path(self.state_file).exists():
-                with open(self.state_file, "r") as f:
+                with open(self.state_file) as f:
                     self.state = json.load(f)
                 self.logger.info("Existing state loaded successfully")
             else:
@@ -223,10 +219,8 @@ class StateManager:
             self.is_running = False
             if self.auto_save_task:
                 self.auto_save_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.auto_save_task
-            except asyncio.CancelledError:
-                pass
 
             # Save final state
             await self.save_state()

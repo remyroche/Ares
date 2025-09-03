@@ -11,11 +11,11 @@ Usage:
     python scripts/setup_challenger_model.py --clear
 """
 
-from pathlib import Path
-from typing import Optional
-from src.utils.logger import setup_logging, system_logger
 import argparse
 import sys
+from pathlib import Path
+
+from src.utils.logger import setup_logging, system_logger
 
 # Ensure project root on path
 project_root=Path(__file__).parent.parent
@@ -173,7 +173,7 @@ def main() -> None:
 	parser=build_parser()
 	args=parser.parse_args()
 
-	success: Optional[bool] = None
+	success: bool | None = None
 	if args.list_models:
 		success=list_available_models()
 	elif args.clear:

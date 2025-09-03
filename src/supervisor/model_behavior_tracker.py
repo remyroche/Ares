@@ -15,10 +15,11 @@ from typing import Any
 
 import numpy as np
 
-from src.supervisor.performance_monitor import PerformanceMonitor
 from src.core.decorators import handles_errors
+from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error
+
 
 class BehaviorMetricType(Enum):
     """Model behavior metric types."""

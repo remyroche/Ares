@@ -16,13 +16,13 @@ def verify_structure():
     tests_dir = code_quality_dir / "tests"
     test_file = tests_dir / "test_common_operations.py"
     runner_file = code_quality_dir / "run_common_operations_tests.py"
-    
+
     print("🔍 Verifying test structure...")
     print(f"   Code quality dir: {code_quality_dir}")
     print(f"   Tests dir exists: {tests_dir.exists()}")
     print(f"   Test file exists: {test_file.exists()}")
     print(f"   Runner file exists: {runner_file.exists()}")
-    
+
     # Try to import common_operations
     try:
         from src.utils import common_operations
@@ -31,26 +31,26 @@ def verify_structure():
     except ImportError as e:
         print(f"❌ Failed to import common_operations: {e}")
         return False
-    
+
     # Try to import the test module
     try:
         sys.path.insert(0, str(code_quality_dir))
         from tests import test_common_operations
         print("✅ Successfully imported test module")
-        
+
         # Count test classes and methods
-        test_classes = [obj for obj in dir(test_common_operations) 
-                       if obj.startswith('Test')]
+        test_classes = [obj for obj in dir(test_common_operations)
+                       if obj.startswith("Test")]
         print(f"   Found {len(test_classes)} test classes")
     except ImportError as e:
         print(f"❌ Failed to import test module: {e}")
         return False
-    
+
     print("\n✅ Test setup verified successfully!")
     print("\nTo run tests:")
     print("  python code_quality/run_common_operations_tests.py")
     print("  python code_quality/run_common_operations_tests.py --coverage")
-    
+
     return True
 
 if __name__ == "__main__":

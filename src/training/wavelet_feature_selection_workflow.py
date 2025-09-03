@@ -30,9 +30,7 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import cross_val_score
 
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
-import asyncio
 from src.training.steps.vectorized_advanced_feature_engineering import (
-
     VectorizedAdvancedFeatureEngineering,
 )
 

@@ -14,19 +14,14 @@ import functools
 import logging
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from collections.abc import Callable as TypingCallable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable
-from typing import Callable as TypingCallable
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import pandas as pd
-
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
-import os.path
 
 # Type variables
 T = TypeVar("T")
@@ -296,7 +291,7 @@ def training_step_error_handler(
             try:
                 # Execute the function
                 start_time = time.time()
-                result = await cast(Awaitable[T | None], func)(*args, **kwargs)  # type: ignore[misc]
+                result = await cast("Awaitable[T | None]", func)(*args, **kwargs)  # type: ignore[misc]
                 execution_time = time.time() - start_time
 
                 # Log performance metrics
@@ -330,7 +325,7 @@ def training_step_error_handler(
                 if enable_recovery and context.recovery_attempts < max_recovery_attempts:
                     recovery_result = await _attempt_recovery(
                         step_name,
-                        cast(Callable[..., Awaitable[T | None]], func),
+                        cast("Callable[..., Awaitable[T | None]]", func),
                         args,
                         kwargs,
                         e,
@@ -361,7 +356,7 @@ def training_step_error_handler(
             try:
                 # Execute the function
                 start_time = time.time()
-                result = cast(T | None, func(*args, **kwargs))
+                result = cast("T | None", func(*args, **kwargs))
                 execution_time = time.time() - start_time
 
                 # Log performance metrics
@@ -395,7 +390,7 @@ def training_step_error_handler(
                     try:
                         recovery_result = _attempt_sync_recovery(
                             step_name,
-                            cast(Callable[..., T | None], func),
+                            cast("Callable[..., T | None]", func),
                             args,
                             kwargs,
                             e,
@@ -408,7 +403,7 @@ def training_step_error_handler(
 
                 return default_return
 
-        return cast(F, async_wrapper) if asyncio.iscoroutinefunction(func) else cast(F, sync_wrapper)
+        return cast("F", async_wrapper) if asyncio.iscoroutinefunction(func) else cast("F", sync_wrapper)
 
     return decorator
 
@@ -543,7 +538,7 @@ def log_step_data_info(step_name: str, data: Any, data_name: str = "data") -> No
     elif isinstance(data, dict):
         info_msg = f"{data_name}: {len(data)} keys, types = {list(data.keys())}"
         handler.log_step_progress(step_name, info_msg)
-    elif isinstance(data, (list, tuple)):
+    elif isinstance(data, list | tuple):
         info_msg = f"{data_name}: length={len(data)}, type={type(data).__name__}"
         handler.log_step_progress(step_name, info_msg)
     else:

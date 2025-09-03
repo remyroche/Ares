@@ -12,7 +12,6 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -21,8 +20,8 @@ if str(project_root) not in sys.path:
 
 import pandas as pd
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.validation_decorators import validate_dataframe_operation
 
 logger=system_logger.getChild("TimeframeRegenerator")
@@ -58,7 +57,8 @@ class TimeframeRegenerator:
         }
 
         if timeframe not in timeframe_mapping:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
+            msg = f"Unsupported timeframe: {timeframe}"
+            raise ValueError(msg)
 
         resampled=(
             df.resample(timeframe_mapping[timeframe])
@@ -75,7 +75,7 @@ class TimeframeRegenerator:
         return resampled.reset_index()
 
     @handle_errors(default_return=None, context="save_resampled_data")
-    def save_resampled_data(self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[Path]:
+    def save_resampled_data(self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Path | None:
         """Save resampled data to parquet file."""
         if len(df) == 0:
             return None
@@ -87,14 +87,14 @@ class TimeframeRegenerator:
         return output_path
 
     @handle_errors(default_return={"success": False, "errors": ["Unhandled error"]}, context="regenerate_timeframes")
-    def regenerate_timeframes(self, symbol: str, exchange: str, timeframes: Optional[List[str]]) -> Dict[str, object]:
+    def regenerate_timeframes(self, symbol: str, exchange: str, timeframes: list[str] | None) -> dict[str, object]:
         """Regenerate all timeframe files from 1m data."""
         if timeframes is None:
             timeframes=self.SUPPORTED_TIMEFRAMES
 
         logger.info(f"🔄 Regenerating timeframe files for {exchange}_{symbol}: {timeframes}")
 
-        results: Dict[str, object] = {
+        results: dict[str, object] = {
             "symbol": symbol,
             "exchange": exchange,
             "timeframes": timeframes,
@@ -113,7 +113,7 @@ class TimeframeRegenerator:
             return results
 
         # Load and combine all 1m data
-        all_1m_data: List[pd.DataFrame] = []
+        all_1m_data: list[pd.DataFrame] = []
         for file_path in klines_files:
             try:
                 df=pd.read_parquet(file_path)

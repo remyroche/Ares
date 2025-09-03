@@ -13,6 +13,7 @@ The system ensures that indicators are calculated with appropriate parameters
 for each timeframe's characteristics and trading style.
 """
 
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,9 +27,6 @@ from src.config import CONFIG
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
-import logging
-import copy
-import asyncio
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

@@ -6,8 +6,8 @@ This module contains the components for triple barrier labeling and feature engi
 used in the analyst training pipeline.
 """
 
-from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
+from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
 # Import regime-specific triple barrier optimizer
 from .regime_specific_triple_barrier_optimizer import (

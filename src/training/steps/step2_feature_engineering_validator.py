@@ -403,7 +403,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     # Check for high correlation features
                     numeric_cols = feature_data.select_dtypes(
-                        include=[np.number]
+                        include=[np.number],
                     ).columns
                     if len(numeric_cols) > 1:
                         corr_matrix = feature_data[numeric_cols].corr().abs()

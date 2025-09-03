@@ -7,8 +7,8 @@ Show Timeframe Configuration
 This script displays the current timeframe configuration in a user-friendly format.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from src.config import CONFIG
 from src.utils.warning_symbols import missing
@@ -121,6 +121,7 @@ def show_timeframe_details(timeframe: str):
     print(f"Optimization Trials: {info.get('optimization_trials', 'Unknown')}")
     print(f"Ensemble Weight: {info.get('ensemble_weight', 'Unknown')}")
     print(f"Description: {info.get('description', 'No description')}")
+    return None
 
 
 def main():

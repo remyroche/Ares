@@ -8,14 +8,16 @@ Automated report scheduling scaffolding.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import asyncio
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
 
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"
@@ -38,7 +40,7 @@ class ReportConfig:
     report_type: ReportType
     schedule: ReportSchedule
     format: ReportFormat
-    recipients: List[str]
+    recipients: list[str]
     enabled: bool = True
 
 @dataclass
@@ -47,19 +49,19 @@ class ReportHistory:
     report_type: ReportType
     generated_at: datetime
     schedule_type: ReportSchedule
-    recipients: List[str]
+    recipients: list[str]
     file_path: str
     status: str
 
 class ReportScheduler:
     """Automated report scheduler."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("ReportScheduler")
         self.scheduler_config = config.get("report_scheduler", {})
-        self.report_configs: Dict[str, ReportConfig] = {}
-        self.report_history: List[ReportHistory] = []
+        self.report_configs: dict[str, ReportConfig] = {}
+        self.report_history: list[ReportHistory] = []
         self.reports_dir = Path("reports")
         self.reports_dir.mkdir(exist_ok=True)
 

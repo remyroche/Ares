@@ -3,13 +3,15 @@
 Debug script to trace the exact flow of interaction features through the system
 """
 
-from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering)
 import asyncio
 import os
 import sys
 
-import numpy as np
 import pandas as pd
+
+from src.training.steps.vectorized_advanced_feature_engineering import (
+    VectorizedAdvancedFeatureEngineering,
+)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -52,7 +54,7 @@ async def debug_interaction_flow():
             "low": [95, 96, 97, 98, 99],
             "close": [102, 103, 104, 105, 106],
             "volume": [1000, 1100, 1200, 1300, 1400],
-        }
+        },
     )
 
     # Create mock features
@@ -113,7 +115,7 @@ async def debug_interaction_flow():
             "price_momentum": pd.Series([0.1, 0.2, 0.3, 0.4, 0.5]),
             "macd": pd.Series([0.05, 0.15, 0.25, 0.35, 0.45]),
             "volatility": pd.Series([0.02, 0.03, 0.04, 0.05, 0.06]),
-        }
+        },
     )
 
     print(f"Large features set: {len(large_features)}")
@@ -126,9 +128,9 @@ async def debug_interaction_flow():
     print(f"\n📊 Final result: {len(result)}")
 
     # Check for interaction features in the result
-    interaction_features_in_result=[f for f in result.keys() if "_x_" in f]
+    interaction_features_in_result=[f for f in result if "_x_" in f]
     print(
-        f"Interaction features in final result: {len(interaction_features_in_result)}"
+        f"Interaction features in final result: {len(interaction_features_in_result)}",
     )
     print("Interaction feature names in result:", interaction_features_in_result)
 

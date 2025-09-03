@@ -4,15 +4,15 @@ Feature Calculation Verification Script
 Verifies feature calculations and investigates specific issues from the logs.
 """
 
-from pathlib import Path
-from src.utils.logger import system_logger
-from typing import Any
 import sys
-import traceback
 import warnings
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
@@ -340,7 +340,7 @@ class FeatureCalculationVerifier:
                     high_corr_pairs.append({
                         "feature1": corr_matrix.columns[i],
                         "feature2": corr_matrix.columns[j],
-                        "correlation": corr_value
+                        "correlation": corr_value,
                     })
 
         return {
@@ -414,7 +414,7 @@ def main():
     import argparse
 
     parser=argparse.ArgumentParser(
-        description="Feature Calculation Verification Tool"
+        description="Feature Calculation Verification Tool",
     )
     parser.add_argument(
         "--data_path",
@@ -465,13 +465,13 @@ def main():
 
     # Print summary
     summary=results["summary"]
-    print(f"\n📊 Feature Verification Summary:")
+    print("\n📊 Feature Verification Summary:")
     print(f"Total features: {summary['total_features']}")
     print(f"Total issues: {summary['total_issues']}")
     print(f"Verification score: {summary['verification_score']}/100")
 
     # Print category breakdown
-    print(f"\n📋 Feature Categories:")
+    print("\n📋 Feature Categories:")
     for category, stats in summary["feature_categories"].items():
         print(f"  {category.title()}:")
         print(f"    Available: {stats['available']}")
@@ -480,7 +480,7 @@ def main():
 
     # Print critical issues
     if summary["total_issues"] > 0:
-        print(f"\n🚨 Critical Issues Found:")
+        print("\n🚨 Critical Issues Found:")
         for category, category_results in results.items():
             if category== "summary":
                 continue

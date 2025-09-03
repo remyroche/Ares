@@ -17,9 +17,8 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any
 
-import asyncio
 
 from src.utils.logger import system_logger
 
@@ -49,7 +48,7 @@ class PerformanceMetrics:
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("PerformanceMonitor")
 
@@ -64,8 +63,8 @@ class PerformanceMonitor:
         )
 
         # Metrics storage
-        self.metrics_history: Deque[PerformanceMetrics] = deque(
-            maxlen=int(self.monitoring_config.get("metrics_history_size", 1000))
+        self.metrics_history: deque[PerformanceMetrics] = deque(
+            maxlen=int(self.monitoring_config.get("metrics_history_size", 1000)),
         )
 
     @log_execution_time(level=PerformanceLevel.DETAILED)
@@ -81,5 +80,5 @@ class PerformanceMonitor:
     def record_metrics(self, metrics: PerformanceMetrics) -> None:
         self.metrics_history.append(metrics)
 
-    def latest_metrics(self) -> Optional[PerformanceMetrics]:
+    def latest_metrics(self) -> PerformanceMetrics | None:
         return self.metrics_history[-1] if self.metrics_history else None

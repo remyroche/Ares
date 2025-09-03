@@ -7,8 +7,8 @@ Configuration settings for the multi-timeframe HMM cluster ensemble system
 that combines predictions from HMM clusters across multiple timeframes.
 """
 
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass

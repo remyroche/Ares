@@ -6,19 +6,21 @@ This module contains the updated training functions that use the optimized train
 
 import asyncio
 import os
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any
 
 from src.config.computational_optimization_config import get_optimization_config
+from src.core.decorators import handles_errors
 from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )
 from src.training.factory import OptimizedTrainingFactory
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
 )
+
 
 class OptimizedAresLauncherMixin:
     """Mixin class that provides optimized training methods for AresLauncher.
@@ -28,9 +30,9 @@ class OptimizedAresLauncherMixin:
     def __init__(self) -> None:
         # Initialize optimization components
         self.optimization_enabled: bool = True
-        self.memory_profiler: Optional[Any] = None
-        self.leak_detector: Optional[Any] = None
-        self.optimization_factory: Optional[OptimizedTrainingFactory] = None
+        self.memory_profiler: Any | None = None
+        self.leak_detector: Any | None = None
+        self.optimization_factory: OptimizedTrainingFactory | None = None
 
     def _setup_optimization_components(self, config: dict[str, Any]) -> None:
         """Setup optimization components if enabled."""
@@ -372,7 +374,7 @@ def create_optimized_launcher_patch() -> Callable[[Any], Any]:
     return patch_launcher
 
 # Quick integration function for immediate use
-def enable_optimizations_in_launcher() -> Optional[Callable[[Any], Any]]:
+def enable_optimizations_in_launcher() -> Callable[[Any], Any] | None:
     """Quick function to enable optimizations in the current launcher.
     This can be called from ares_launcher.py to enable the new features.
     """

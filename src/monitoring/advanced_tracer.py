@@ -12,18 +12,16 @@ from src.core.domain import PerformanceLevel
 
 from __future__ import annotations
 
-import asyncio
-import json
-import time
 import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.core.decorators import handles_errors
 
 from src.utils.logger import system_logger
+
 
 class TraceLevel(Enum):
     """Trace levels for different types of tracing."""
@@ -55,13 +53,13 @@ class TraceSpan:
     component_type: ComponentType
     operation_name: str
     start_time: datetime
-    end_time: Optional[datetime] = None
-    duration_ms: Optional[float] = None
+    end_time: datetime | None = None
+    duration_ms: float | None = None
     status: str = "running"  # "running", "completed", "failed"
-    error_message: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    parent_span_id: Optional[str] = None
-    child_span_ids: List[str] = field(default_factory=list)
+    error_message: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    parent_span_id: str | None = None
+    child_span_ids: list[str] = field(default_factory=list)
 
 @dataclass
 class TraceRequest:
@@ -69,21 +67,21 @@ class TraceRequest:
 
     correlation_id: str
     request_timestamp: datetime
-    component_path: List[ComponentType]
-    spans: List[TraceSpan]
-    response_timestamp: Optional[datetime] = None
-    total_duration_ms: Optional[float] = None
+    component_path: list[ComponentType]
+    spans: list[TraceSpan]
+    response_timestamp: datetime | None = None
+    total_duration_ms: float | None = None
     status: str = "running"  # "running", "completed", "failed"
-    error_info: Optional[Dict[str, Any]] = None
-    performance_metrics: Dict[str, float] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    error_info: dict[str, Any] | None = None
+    performance_metrics: dict[str, float] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for tracing."""
 
     total_duration_ms: float
-    component_durations: Dict[str, float]
+    component_durations: dict[str, float]
     bottleneck_component: str
     throughput_ops_per_sec: float
     error_rate: float
@@ -95,7 +93,7 @@ class AdvancedTracer:
     request/response tracking across all components.
     """
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("AdvancedTracer")
 
@@ -108,12 +106,12 @@ class AdvancedTracer:
         self.trace_sampling_rate: float = float(self.tracer_config.get("trace_sampling_rate", 1.0))
         self.max_trace_history: int = int(self.tracer_config.get("max_trace_history", 10000))
         self.enable_performance_tracing: bool = bool(
-            self.tracer_config.get("enable_performance_tracing", True)
+            self.tracer_config.get("enable_performance_tracing", True),
         )
         self.enable_error_tracing: bool = bool(self.tracer_config.get("enable_error_tracing", True))
 
         # Storage
-        self._traces: Dict[str, TraceRequest] = {}
+        self._traces: dict[str, TraceRequest] = {}
 
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @handles_errors(
@@ -144,10 +142,10 @@ class AdvancedTracer:
         correlation_id: str,
         component_type: ComponentType,
         operation_name: str,
-        parent_span_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        parent_span_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> TraceSpan | None:
-        span = TraceSpan(
+        return TraceSpan(
             span_id=str(uuid.uuid4()),
             correlation_id=correlation_id,
             component_type=component_type,
@@ -156,10 +154,9 @@ class AdvancedTracer:
             metadata=dict(metadata or {}),
             parent_span_id=parent_span_id,
         )
-        return span
 
     @handles_errors(fallback=None)
-    def finish_span(self, span: TraceSpan, status: str = "completed", error_message: Optional[str] = None) -> TraceSpan | None:
+    def finish_span(self, span: TraceSpan, status: str = "completed", error_message: str | None = None) -> TraceSpan | None:
         span.end_time = datetime.now()
         if span.end_time and span.start_time:
             span.duration_ms = (span.end_time - span.start_time).total_seconds() * 1000.0
@@ -177,7 +174,7 @@ class AdvancedTracer:
             oldest_key = next(iter(self._traces.keys()))
             self._traces.pop(oldest_key, None)
 
-    def get_trace(self, correlation_id: str) -> Optional[TraceRequest]:
+    def get_trace(self, correlation_id: str) -> TraceRequest | None:
         return self._traces.get(correlation_id)
 
     def get_traces_count(self) -> int:

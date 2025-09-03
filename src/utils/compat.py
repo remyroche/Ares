@@ -4,14 +4,15 @@ This module allows gradual migration by re-exporting adapter functions
 that map old decorator signatures to the new core decorators.
 """
 
-from typing import Any, Callable, Dict, Optional, Tuple, Type
+from collections.abc import Callable
+from typing import Any
 
 from src.core.decorators import handles_errors as _handles_errors
 
 
 def handle_errors(
 	*,
-	exceptions: Tuple[Type[Exception], ...] = (Exception,),
+	exceptions: tuple[type[Exception], ...] = (Exception,),
 	default_return: Any = None,
 	**kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -25,7 +26,7 @@ def handle_errors(
 
 def handle_specific_errors(
 	*,
-	error_handlers: Optional[Dict[Type[Exception], Tuple[Any, str]]] = None,
+	error_handlers: dict[type[Exception], tuple[Any, str]] | None = None,
 	default_return: Any = None,
 	**kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -55,21 +56,20 @@ def handle_specific_errors(
 					return default_return
 
 			return async_wrapper
-		else:
-			@wraps(func)
-			def sync_wrapper(*args: Any, **kw: Any) -> Any:
-				try:
-					return func(*args, **kw)
-				except Exception as exc:  # noqa: BLE001
-					if error_handlers:
-						for exc_type, (return_value, _msg) in error_handlers.items():
-							if isinstance(exc, exc_type):
-								return return_value
-					if kwargs.get("reraise"):
-						raise
-					return default_return
+		@wraps(func)
+		def sync_wrapper(*args: Any, **kw: Any) -> Any:
+			try:
+				return func(*args, **kw)
+			except Exception as exc:  # noqa: BLE001
+				if error_handlers:
+					for exc_type, (return_value, _msg) in error_handlers.items():
+						if isinstance(exc, exc_type):
+							return return_value
+				if kwargs.get("reraise"):
+					raise
+				return default_return
 
-			return sync_wrapper
+		return sync_wrapper
 
 	return decorator
 

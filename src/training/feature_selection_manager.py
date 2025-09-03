@@ -12,6 +12,7 @@ from sklearn.feature_selection import RFE, mutual_info_classif
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class FeatureSelectionManager:
     """Feature Selection Manager for Step 2 - Reduces features from ~220 to 100
     with intelligent selection based on multiple criteria.
@@ -59,7 +60,7 @@ class FeatureSelectionManager:
         """
         try:
             self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
-            
+
             # Stage 0: Add autoencoder features if enabled
             if use_autoencoder_features:
                 features_df, stage0_metadata = self._stage0_autoencoder_features(features_df, target)
@@ -433,90 +434,92 @@ class FeatureSelectionManager:
         """Stage 0: Add autoencoder features from the autoencoder feature generator."""
         try:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
-            
+
             # Import autoencoder feature generator
-            from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
-            
+            from src.analyst.autoencoder_feature_generator import (
+                AutoencoderFeatureGenerator,
+            )
+
             # Create autoencoder generator
             autoencoder_generator = AutoencoderFeatureGenerator()
-            
+
             # Generate autoencoder features
             autoencoder_features = autoencoder_generator.generate_features(
                 features_df=features_df,
                 regime_name="default",
                 labels=target.values,
-                enable_analysis=True
+                enable_analysis=True,
             )
-            
+
             # If autoencoder features were generated, add them
             if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
                 # Add autoencoder features with prefix
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
                 features_df = pd.concat([features_df, autoencoder_features], axis=1)
-                
+
                 self.logger.info(f"✅ Added {len(autoencoder_features.columns)} autoencoder features")
                 stage_metadata = {
                     "autoencoder_features_added": len(autoencoder_features.columns),
-                    "total_features_after_ae": len(features_df.columns)
+                    "total_features_after_ae": len(features_df.columns),
                 }
             else:
                 self.logger.info("📊 No autoencoder features generated, continuing with base features")
                 stage_metadata = {"autoencoder_features_added": 0}
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Autoencoder feature generation failed: {e}")
             self.logger.info("📊 Continuing without autoencoder features")
             stage_metadata = {"autoencoder_features_added": 0, "error": str(e)}
-        
+
         return features_df, stage_metadata
 
     def _stage6_regularization_aware_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 6: Regularization-aware feature selection using pipeline regularization."""
         try:
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
-            
+
             # Load regularization configuration from pipeline
             from src.training.regularization import RegularizationManager
             reg_manager = RegularizationManager()
             regularization_config = reg_manager.regularization_config
-            
+
             # Apply regularization-aware feature selection
             if regularization_config:
                 # Get regularization parameters
-                l1_alpha = regularization_config.get('l1_alpha', 0.01)
-                l2_alpha = regularization_config.get('l2_alpha', 0.001)
-                
+                l1_alpha = regularization_config.get("l1_alpha", 0.01)
+                l2_alpha = regularization_config.get("l2_alpha", 0.001)
+
                 # Calculate feature stability scores
-                stability_scores = self._calculate_feature_stability(features_df, target)
-                
+                self._calculate_feature_stability(features_df, target)
+
                 # Apply regularization penalty to feature importance
                 if "mutual_info" in self.feature_importance_cache:
                     mi_scores = self.feature_importance_cache["mutual_info"]
-                    
+
                     # Apply regularization penalty
                     regularization_penalty = 1.0 / (1.0 + l1_alpha + l2_alpha)
                     adjusted_scores = mi_scores * regularization_penalty
-                    
+
                     # Select top features based on adjusted scores
                     top_features = adjusted_scores.nlargest(self.target_features).index.tolist()
                     features_df = features_df[top_features]
-                    
+
                     stage_metadata = {
                         "regularization_applied": True,
                         "l1_alpha": l1_alpha,
                         "l2_alpha": l2_alpha,
                         "regularization_penalty": regularization_penalty,
-                        "features_after_stage": len(features_df.columns)
+                        "features_after_stage": len(features_df.columns),
                     }
                 else:
                     stage_metadata = {"regularization_applied": False, "reason": "No mutual info scores available"}
             else:
                 stage_metadata = {"regularization_applied": False, "reason": "No regularization config available"}
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Regularization-aware selection failed: {e}")
             stage_metadata = {"regularization_applied": False, "error": str(e)}
-        
+
         return features_df, stage_metadata
 
     def _stage7_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -527,31 +530,31 @@ class FeatureSelectionManager:
     def _calculate_feature_stability(self, features_df: pd.DataFrame, target: pd.Series) -> dict[str, float]:
         """Calculate feature stability scores using cross-validation."""
         stability_scores = {}
-        
+
         try:
-            from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
-            
+            from sklearn.model_selection import cross_val_score
+
             for feature in features_df.columns:
                 try:
                     # Use single feature for prediction
                     X_single = features_df[[feature]]
-                    
+
                     # Calculate cross-validation score
                     cv_scores = cross_val_score(
                         LogisticRegression(random_state=42),
                         X_single,
                         target,
                         cv=3,
-                        scoring='accuracy'
+                        scoring="accuracy",
                     )
-                    
+
                     # Stability score is the mean CV score
                     stability_scores[feature] = np.mean(cv_scores)
                 except Exception:
                     stability_scores[feature] = 0.0
-                    
+
         except Exception as e:
             self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
-        
+
         return stability_scores

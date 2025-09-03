@@ -31,10 +31,10 @@ logger = system_logger.getChild("Step1Runner")
 def main() -> None:
     """Main function to run step01 processes."""
     start_time = datetime.now()
-    
+
     logger.info("🚀 STEP1 LAUNCHER STARTING")
     logger.info("=" * 80)
-    
+
     parser = argparse.ArgumentParser(description="Step 1 Data Collection and Validation")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
@@ -45,7 +45,7 @@ def main() -> None:
     default="complete", help="Operation mode")
 
     args = parser.parse_args()
-    
+
     logger.info(f"🎯 TARGET: {args.exchange}_{args.symbol}")
     logger.info(f"📅 Date range: {args.start_date} to {args.end_date}")
     logger.info(f"🔧 Auto-fix: {'Disabled' if args.no_auto_fix else 'Enabled'}")
@@ -70,7 +70,7 @@ def main() -> None:
             exchange=args.exchange,
             start_date=start_date,
             end_date=end_date,
-            auto_fix=not args.no_auto_fix
+            auto_fix=not args.no_auto_fix,
         ))
 
         # Print report
@@ -80,13 +80,13 @@ def main() -> None:
         # Print summary
         end_time = datetime.now()
         execution_time = end_time - start_time
-        
+
         logger.info("=" * 80)
         logger.info("📊 STEP1 LAUNCHER SUMMARY")
         logger.info(f"⏱️  Total execution time: {execution_time}")
         logger.info(f"🎯 Target: {args.exchange}_{args.symbol}")
         logger.info(f"⚙️  Mode: {args.mode}")
-        
+
         if results["success"]:
             logger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
             print("✅ Step1 completed successfully!")
@@ -96,7 +96,7 @@ def main() -> None:
             for error in results["errors"]:
                 logger.error(f"  - {error}")
                 print(f"  - {error}")
-        
+
         logger.info("=" * 80)
 
     elif args.mode == "gap-detection":
@@ -104,7 +104,7 @@ def main() -> None:
         gap_detector = DataGapDetector()
 
         # Detect missing data
-        missing_data = gap_detector.detect_missing_data(args.symbol, args.exchange, start_date, end_date)
+        gap_detector.detect_missing_data(args.symbol, args.exchange, start_date, end_date)
 
         # Detect aggtrades gaps
         aggtrades_gaps = gap_detector.detect_aggtrades_gaps(args.symbol, args.exchange)
@@ -126,7 +126,7 @@ def main() -> None:
 
         # Validate all aggtrades
         validation_results = validator.validate_all_aggtrades(
-            args.symbol, args.exchange, auto_fix=not args.no_auto_fix
+            args.symbol, args.exchange, auto_fix=not args.no_auto_fix,
         )
 
         # Generate report

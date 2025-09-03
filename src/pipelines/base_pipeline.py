@@ -13,9 +13,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-import asyncio
+from typing import Any
 
+<<<<<<< HEAD
+=======
+from src.utils.centralized_decorators import (
+    PerformanceLevel,
+    handle_errors,
+    handle_specific_errors,
+    memory_efficient,
+    performance_monitor,
+    pipeline_checkpoint,
+    resource_monitor,
+)
+>>>>>>> origin/main
 from src.utils.logger import system_logger
 
 @dataclass
@@ -32,17 +43,17 @@ class PipelineConfig:
     max_retries: int = 3
     timeout_seconds: int = 3600
 
-    data_config: Dict[str, Any] = field(default_factory=dict)
-    model_config: Dict[str, Any] = field(default_factory=dict)
-    risk_config: Dict[str, Any] = field(default_factory=dict)
-    notification_config: Dict[str, Any] = field(default_factory=dict)
+    data_config: dict[str, Any] = field(default_factory=dict)
+    model_config: dict[str, Any] = field(default_factory=dict)
+    risk_config: dict[str, Any] = field(default_factory=dict)
+    notification_config: dict[str, Any] = field(default_factory=dict)
 
     parallel_execution: bool = False
     max_workers: int = 4
     continue_on_failure: bool = False
 
-    def validate(self) -> List[str]:
-        errors: List[str] = []
+    def validate(self) -> list[str]:
+        errors: list[str] = []
         if not self.name:
             errors.append("Pipeline name is required")
         if not self.symbol:
@@ -61,9 +72,9 @@ class PipelineConfig:
 
 @dataclass
 class PipelineMetrics:
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    duration_seconds: float | None = None
     stages_completed: int = 0
     stages_failed: int = 0
     total_operations: int = 0
@@ -75,10 +86,10 @@ class PipelineMetrics:
             self.duration_seconds = (self.end_time - self.start_time).total_seconds()
 
 class BasePipeline:
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("BasePipeline")
-        self.pipeline_config: Dict[str, Any] = self.config.get("base_pipeline", {})
+        self.pipeline_config: dict[str, Any] = self.config.get("base_pipeline", {})
         self.metrics = PipelineMetrics()
         self.is_running: bool = False
 

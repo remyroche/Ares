@@ -6,25 +6,23 @@ This validator ensures that the HMM regime discovery step has completed successf
 and generated all required artifacts for downstream steps.
 """
 
-import json
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 
 from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-import asyncio
 from src.utils.common_operations import safe_json_load
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
 @handles_errors(fallback=False)
 async def run_validator(
-	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	training_input: dict[str, Any],
+	pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
 	"""Validate Step 3: HMM Regime Discovery completion and artifacts.
 
 	Args:
@@ -72,7 +70,7 @@ async def run_validator(
 
 		# Check for required artifacts
 		missing_artifacts: list[str] = []
-		artifact_info: Dict[str, Any] = {}
+		artifact_info: dict[str, Any] = {}
 
 		for artifact in required_artifacts:
 			artifact_path = Path(data_dir) / artifact
@@ -182,8 +180,8 @@ async def run_validator(
 
 # Legacy function for backward compatibility
 async def run_step_validator(
-	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	training_input: dict[str, Any],
+	pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
 	"""Legacy function name for backward compatibility."""
 	return await run_validator(training_input, pipeline_state)

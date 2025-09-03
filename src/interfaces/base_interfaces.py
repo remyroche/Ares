@@ -1,11 +1,11 @@
 # src/interfaces/base_interfaces.py
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from dataclasses import dataclass
+
 import pandas as pd
-import asyncio
 
 
 @dataclass

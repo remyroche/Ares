@@ -6,12 +6,12 @@ This script uses the improved gap detection that fills gaps immediately when fou
 rather than detecting all gaps first and then trying to fill them.
 """
 import argparse
-from pathlib import Path
-from src.utils.logger import system_logger
 import asyncio
 import sys
+from pathlib import Path
 
 from src.training.steps.step01.data_gap_detector import DataGapDetector
+from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -19,19 +19,19 @@ sys.path.insert(0, str(project_root))
 
 logger=system_logger.getChild("DetectAndFillGapsImmediate")
 
-async def detect_and_fill_gaps_immediate(symbol: str="ETHUSDT", 
+async def detect_and_fill_gaps_immediate(symbol: str="ETHUSDT",
                                        exchange: str="BINANCE",
                                        min_gap_seconds: int=10,
                                        auto_fill: bool=True) -> dict:
     """
     Detect and fill gaps immediately when found
-    
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         min_gap_seconds: Minimum gap size to report
         auto_fill: Whether to automatically fill gaps
-        
+
     Returns:
         Dictionary with results
     """
@@ -42,10 +42,10 @@ async def detect_and_fill_gaps_immediate(symbol: str="ETHUSDT",
     logger.info(f"📊 Min gap threshold: {min_gap_seconds} seconds")
     logger.info(f"📊 Auto-fill: {auto_fill}")
     logger.info("=" * 60)
-    
+
     # Initialize gap detector
     gap_detector=DataGapDetector("data_cache")
-    
+
     # Run detection and filling
     results = await gap_detector.detect_and_fill_aggtrades_gaps(
         symbol=symbol,
@@ -53,54 +53,53 @@ async def detect_and_fill_gaps_immediate(symbol: str="ETHUSDT",
         min_gap_seconds=min_gap_seconds,
         auto_fill=auto_fill,
     )
-    
+
     # Print final summary
     logger.info("🎯 FINAL RESULTS SUMMARY")
     logger.info("=" * 60)
     logger.info(f"📊 Files processed: {results['files_processed']}")
     logger.info(f"📊 Files with gaps: {results['files_with_gaps']}")
     logger.info(f"📊 Total gaps found: {results['total_gaps']}")
-    
+
     if auto_fill:
         logger.info(f"📊 Gaps filled: {results['gaps_filled']}")
         logger.info(f"📊 Gaps failed: {results['gaps_failed']}")
-        
-        if results['total_gaps'] > 0:
-            success_rate=(results['gaps_filled'] / results['total_gaps']) * 100
+
+        if results["total_gaps"] > 0:
+            success_rate=(results["gaps_filled"] / results["total_gaps"]) * 100
             logger.info(f"📊 Success rate: {success_rate:.1f}%")
-    
+
     return results
 
 async def main():
     """Main function"""
-    
+
     parser=argparse.ArgumentParser(description="Detect and fill gaps immediately")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--min-gap-seconds", type=int, default=10, help="Minimum gap size in seconds")
     parser.add_argument("--detect-only", action="store_true", help="Only detect gaps = don't fill them")
-    
+
     args=parser.parse_args()
-    
+
     try:
         results=await detect_and_fill_gaps_immediate(
             symbol=args.symbol, exchange=args.exchange,
-            min_gap_seconds=args.min_gap_seconds, auto_fill=not args.detect_only
+            min_gap_seconds=args.min_gap_seconds, auto_fill=not args.detect_only,
         )
-        
+
         # Return success/failure based on results
-        if results['total_gaps'] == 0:
+        if results["total_gaps"] == 0:
             logger.info("✅ No gaps found - data quality is excellent!")
             return True
-        elif results.get('gaps_filled', 0) > 0:
+        if results.get("gaps_filled", 0) > 0:
             logger.info("✅ Gap detection and filling completed successfully!")
             return True
-        else:
-            logger.warning("⚠️ Gaps found but could not be filled")
-            return False
-            
+        logger.warning("⚠️ Gaps found but could not be filled")
+        return False
+
     except Exception as e:
-        logger.error(f"❌ Error during gap detection and filling: {e}")
+        logger.exception(f"❌ Error during gap detection and filling: {e}")
         return False
 
 if __name__== "__main__":

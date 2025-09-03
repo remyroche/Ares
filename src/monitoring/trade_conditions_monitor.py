@@ -8,11 +8,11 @@ Scaffolding for monitoring trade conditions and decisions.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import asyncio
+
 
 class TradeAction(Enum):
     ENTER_LONG = "enter_long"
@@ -25,7 +25,7 @@ class TradeAction(Enum):
 class TradeConditionsMonitor:
     """Trade conditions monitor scaffold."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("TradeConditionsMonitor")
 

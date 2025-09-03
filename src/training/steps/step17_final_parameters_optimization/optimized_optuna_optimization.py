@@ -14,9 +14,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from src.utils.logger import setup_logging
-from src.utils.warning_symbols import (
-    failed,
-)
 
 setup_logging()
 
@@ -121,11 +118,11 @@ class AdvancedOptunaManager:
         """Extracts key results from a completed study."""
         pruned_trials = study.get_trials(
             deepcopy=False,
-            states=[optuna.trial.TrialState.PRUNED]
+            states=[optuna.trial.TrialState.PRUNED],
         )
         complete_trials = study.get_trials(
             deepcopy=False,
-            states=[optuna.trial.TrialState.COMPLETE]
+            states=[optuna.trial.TrialState.COMPLETE],
         )
 
         summary = {
@@ -140,7 +137,7 @@ class AdvancedOptunaManager:
         return summary
 
     def optimize(
-        self, model_type: str, X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int | None = 15, subsample_fraction: float | None = None
+        self, model_type: str, X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int | None = 15, subsample_fraction: float | None = None,
     ) -> dict[str, Any]:
         """Runs a full hyperparameter optimization for a specified model.
 
@@ -169,10 +166,10 @@ class AdvancedOptunaManager:
             direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(
                 min_resource=1,
-                max_resource=n_trials
+                max_resource=n_trials,
             ),
             sampler=optuna.samplers.TPESampler(seed=42),
-            load_if_exists=True
+            load_if_exists=True,
         )
 
         def objective(trial: optuna.Trial) -> float:
@@ -205,7 +202,7 @@ class AdvancedOptunaManager:
                             X_sample,
                             y_sample,
                             cv=cv,
-                            scoring="accuracy"
+                            scoring="accuracy",
                         ).mean()
                         intermediate_scores.append(score)
                         trial.report(score, step=i)
@@ -219,7 +216,7 @@ class AdvancedOptunaManager:
                     X_sample,
                     y_sample,
                     cv=cv,
-                    scoring="accuracy"
+                    scoring="accuracy",
                 ).mean()
                 trial.report(score, step=0)  # Report final score
                 return score
@@ -227,7 +224,7 @@ class AdvancedOptunaManager:
             except optuna.TrialPruned:
                 raise
             except Exception as e:
-                self.logger.error(f"Trial {trial.number} failed with error: {e}")
+                self.logger.exception(f"Trial {trial.number} failed with error: {e}")
                 return 0.0  # Return a poor score to guide sampler away
 
         callbacks = []
@@ -287,5 +284,5 @@ if __name__ == "__main__":
     # 5. You can easily retrieve the full study from storage if needed
     loaded_study = optuna.load_study(
         study_name="production_models_lightgbm",
-        storage=optimizer.storage_url
+        storage=optimizer.storage_url,
     )

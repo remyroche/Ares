@@ -7,15 +7,17 @@ This script will:
 3. Regenerate the pickle files with corrected data
 """
 
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import setup_logging, system_logger
 import os
-import sys
-import pandas as pd
 import pickle
+import sys
+from datetime import datetime
 from functools import wraps
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from src.utils.logger import setup_logging, system_logger
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent
@@ -144,7 +146,7 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
         print("  Prices appear to be valid")
 
     # Create data structure for pickle
-    data: Dict[str, Any] = {
+    data: dict[str, Any] = {
         "klines": df,
         "agg_trades": pd.DataFrame(),  # Empty for now
         "futures": pd.DataFrame(),  # Empty for now

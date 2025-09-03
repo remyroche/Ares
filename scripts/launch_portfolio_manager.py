@@ -4,9 +4,9 @@ Launch portfolio manager with GUI automatically.
 Usage: python scripts/launch_portfolio_manager.py
 """
 
-from pathlib import Path
 import argparse
 import sys
+from pathlib import Path
 
 from scripts.gui_launcher import GUILauncher
 

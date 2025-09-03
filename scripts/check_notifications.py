@@ -3,16 +3,16 @@
 Check for ARES Bot notifications and alert AI Assistant
 """
 
-from pathlib import Path
 import json
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any
 
 from src.utils.warning_symbols import missing, warning
 
 
-def _safe_read_json(path: Path) -> Dict[str, Any] | None:
+def _safe_read_json(path: Path) -> dict[str, Any] | None:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:  # noqa: BLE001
         print(warning(f"Error reading JSON {path}: {e}"))
@@ -35,7 +35,7 @@ def check_notifications() -> None:
         print(f"   Time: {notification.get('timestamp', 'Unknown')}")
         print(f"   Message: {notification.get('message', 'Unknown issue')}")
 
-        issues: List[str] | List[Dict[str, Any]] = notification.get("issues", [])  # type: ignore[assignment]
+        issues: list[str] | list[dict[str, Any]] = notification.get("issues", [])  # type: ignore[assignment]
         if issues:
             print("\n📋 Issues detected:")
             for issue in issues:
@@ -85,10 +85,10 @@ def check_logs_for_errors() -> None:
 
     for log_file in log_dir.glob("*.log"):
         try:
-            with open(log_file, "r", encoding="utf-8") as f:
+            with open(log_file, encoding="utf-8") as f:
                 lines=f.readlines()
             # Check last 20 lines for errors
-            error_lines: List[str] = []
+            error_lines: list[str] = []
             for line in lines[-20:]:
                 if any(
                     error_keyword in line.lower()

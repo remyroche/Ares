@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-from datetime import datetime, UTC
 import os
+from datetime import UTC, datetime
 
 import pandas as pd
+
 
 def check_existing_data():
     unified_base="data_cache/unified/binance/ETHUSDT/1m"

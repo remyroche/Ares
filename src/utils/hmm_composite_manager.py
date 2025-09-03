@@ -12,19 +12,18 @@ This ensures consistent behavior and prevents infinite loops.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import os.path
 import time
 from typing import Any
 
 import pandas as pd
 
-from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.core.decorators import handles_errors
+from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import os.path
-import asyncio
 
 # Module-level sets to avoid duplicate logs across multiple instances
 # This prevents log spam when different components instantiate the manager separately
@@ -97,10 +96,8 @@ class HMMCompositeManager:
                 k for k, v in self._cache.items() if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
             ]
             for key in old_keys:
-                try:
+                with contextlib.suppress(Exception):
                     del self._cache[key]
-                except Exception:
-                    pass
 
             self._last_cleanup = current_time
             self.logger.debug(
@@ -621,10 +618,8 @@ class HMMCompositeManager:
                 keys_to_remove.append(key)
 
             for key in keys_to_remove:
-                try:
+                with contextlib.suppress(Exception):
                     del self._cache[key]
-                except Exception:
-                    pass
 
             self.logger.info(
                 f"🧹 Cleared {len(keys_to_remove)} cache entries for {exchange}_{symbol}_{timeframe}",

@@ -4,9 +4,9 @@ Analyze Impact of Strict Validation Thresholds
 Analyzes the impact of new thresholds: WARNING >0.1%, ERROR >1% missing values
 """
 
+import argparse
 from collections import defaultdict
 from typing import Any
-import argparse
 
 
 def analyze_threshold_impact(log_file_path: str) -> dict[str, Any]:
@@ -127,8 +127,7 @@ def main():
         # Recommendations
         f.write("RECOMMENDATIONS:\n")
         f.write("-" * 40 + "\n")
-        for rec in analysis["recommendations"]:
-            f.write(rec + "\n")
+        f.writelines(rec + "\n" for rec in analysis["recommendations"])
         f.write("\n")
 
         # Feature-specific thresholds
@@ -139,7 +138,7 @@ def main():
             f.write(f"  Warning threshold: {thresholds['missing_warning']:.1%}\n")
             f.write(f"  Error threshold: {thresholds['missing_error']:.1%}\n")
             f.write(f"  Reason: {thresholds['reason']}\n")
-            if 'variance_threshold' in thresholds:
+            if "variance_threshold" in thresholds:
                 f.write(f"  Variance threshold: {thresholds['variance_threshold']}\n")
 
     print(f"Analysis written to {args.output}")

@@ -15,12 +15,7 @@ from typing import Any
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid
-import copy
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid
-)
+
 
 class Monitoring:
     """

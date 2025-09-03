@@ -6,12 +6,9 @@ This script automatically adds warning symbols to error and warning messages
 throughout the entire Ares trading bot codebase to make issues more visible.
 """
 
-from pathlib import Path
 import re
 import sys
-from typing import Tuple, List
-
-from src.utils.warning_symbols import warning
+from pathlib import Path
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -184,7 +181,7 @@ def should_skip_file(file_path: str) -> bool:
     return False
 
 
-def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
+def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     """
     Update logging messages in a file with warning symbols.
 
@@ -361,7 +358,7 @@ def add_warning_symbols_import(file_path: str) -> bool:
         return False
 
 
-def find_python_files(directory: Path) -> List[Path]:
+def find_python_files(directory: Path) -> list[Path]:
     """
     Recursively find all Python files in a directory.
 
@@ -371,7 +368,7 @@ def find_python_files(directory: Path) -> List[Path]:
     Returns:
         List of Python file paths
     """
-    python_files: List[Path] = []
+    python_files: list[Path] = []
 
     try:
         for item in directory.rglob("*.py"):

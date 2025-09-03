@@ -4,41 +4,39 @@ Extract and run tests that don't require numpy/pandas dependencies.
 """
 
 import ast
-import sys
-import unittest
-import tempfile
 import shutil
+import sys
+import tempfile
+import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-import importlib.util
+
 
 def get_tests_without_pandas():
     """Identify test classes that don't use pandas/numpy."""
     test_file = Path(__file__).parent / "tests" / "test_common_operations.py"
-    
-    with open(test_file, 'r') as f:
+
+    with open(test_file) as f:
         content = f.read()
-    
-    tree = ast.parse(content)
-    
+
+    ast.parse(content)
+
     # Classes that likely don't need pandas/numpy
-    safe_classes = [
-        'TestDateTimeOperations',
-        'TestFileOperations', 
-        'TestHashingOperations',
-        'TestAsyncOperations',
-        'TestCollectionOperations',
-        'TestStringOperations',
-        'TestLoggingOperations',
-        'TestUtilityOperations',
-        'TestTypeConversions',
+    return [
+        "TestDateTimeOperations",
+        "TestFileOperations",
+        "TestHashingOperations",
+        "TestAsyncOperations",
+        "TestCollectionOperations",
+        "TestStringOperations",
+        "TestLoggingOperations",
+        "TestUtilityOperations",
+        "TestTypeConversions",
     ]
-    
-    return safe_classes
+
 
 def create_minimal_common_operations():
     """Create a minimal version of common_operations that doesn't need pandas/numpy."""
-    minimal_code = '''"""
+    return '''"""
 Minimal common_operations module for testing without numpy/pandas.
 """
 
@@ -100,12 +98,12 @@ def generate_hash(data: Any, algorithm: str = "md5") -> str:
     """Generate hash of data."""
     if algorithm not in ["md5", "sha256"]:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
-    
+
     if hasattr(data, 'to_json'):  # DataFrame-like
         data_str = data.to_json()
     else:
         data_str = str(data)
-    
+
     if algorithm == "md5":
         return hashlib.md5(data_str.encode()).hexdigest()
     else:
@@ -334,53 +332,53 @@ def list_parquet_files(directory, recursive=True):
         return list(path.rglob("*.parquet"))
     return list(path.glob("*.parquet"))
 '''
-    return minimal_code
 
 def run_minimal_tests():
     """Run tests with minimal common_operations."""
     print("=" * 80)
     print("Running Tests with Minimal Implementation")
     print("=" * 80)
-    
+
     # Create temporary directory
     temp_dir = tempfile.mkdtemp()
-    
+
     try:
         # Create minimal common_operations
         minimal_ops_file = Path(temp_dir) / "common_operations.py"
         minimal_ops_file.write_text(create_minimal_common_operations())
-        
+
         # Add paths
         sys.path.insert(0, temp_dir)
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        
+
         # Import test module with our minimal implementation
         import importlib
+
         import common_operations
-        
+
         # Replace the real module with our minimal one
-        sys.modules['src.utils.common_operations'] = common_operations
-        
+        sys.modules["src.utils.common_operations"] = common_operations
+
         # Import tests
-        test_module = importlib.import_module('code_quality.tests.test_common_operations')
-        
+        test_module = importlib.import_module("code_quality.tests.test_common_operations")
+
         # Get safe test classes
         safe_classes = get_tests_without_pandas()
-        
+
         # Create test suite with only safe tests
         loader = unittest.TestLoader()
         suite = unittest.TestSuite()
-        
+
         for class_name in safe_classes:
             if hasattr(test_module, class_name):
                 test_class = getattr(test_module, class_name)
                 tests = loader.loadTestsFromTestCase(test_class)
                 suite.addTests(tests)
-        
+
         # Run tests
         runner = unittest.TextTestRunner(verbosity=2)
         result = runner.run(suite)
-        
+
         # Print summary
         print("\n" + "=" * 80)
         print("Test Summary (Minimal Implementation)")
@@ -389,17 +387,17 @@ def run_minimal_tests():
         print(f"Failures: {len(result.failures)}")
         print(f"Errors: {len(result.errors)}")
         print(f"Skipped: {len(result.skipped)}")
-        
+
         if result.wasSuccessful():
             print("\n✅ All selected tests passed!")
         else:
             print("\n⚠️  Some tests failed (this is expected with minimal implementation)")
-        
-        print(f"\n📝 Note: Running subset of tests that don't require numpy/pandas")
+
+        print("\n📝 Note: Running subset of tests that don't require numpy/pandas")
         print(f"   Test classes run: {', '.join(safe_classes[:3])} ...")
-        
+
         return 0
-        
+
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback

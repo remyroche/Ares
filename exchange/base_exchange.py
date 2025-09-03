@@ -227,7 +227,7 @@ class BaseExchange(IExchangeClient, ABC):
 
     def _convert_timestamp(self, timestamp: Any) -> datetime:
         """Convert exchange timestamp to datetime."""
-        if isinstance(timestamp, (int, float)):
+        if isinstance(timestamp, int | float):
             # Assume milliseconds if timestamp is large
             if timestamp > 1e10:
                 timestamp = timestamp / 1000
@@ -311,7 +311,7 @@ class BaseExchange(IExchangeClient, ABC):
                 for position in risk:
                     inst = position.get("symbol") or position.get("info", {}).get("symbol")
                     if inst and inst.replace("-", "").replace("_", "").upper().startswith(
-                        symbol.upper().replace("USDT", "")
+                        symbol.upper().replace("USDT", ""),
                     ):
                         liq = (
                             position.get("liquidationPrice")

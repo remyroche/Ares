@@ -8,20 +8,21 @@ timeframes 5m, 15m, 30m, 1h to improve regime forecasting accuracy and reduce MA
 NOTE: 1m timeframe has been replaced with 1h for better signal quality and reduced noise.
 """
 
-from pathlib import Path
-from typing import Dict, List
-from src.training.steps.multi_timeframe_hmm_ensemble import (
-    MultiTimeframeHMMEnsemble,
-    EnsembleConfig,
-    TimeframeConfig,
-)
-from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.validation_decorators import validate_dataframe_operation
 import argparse
 import os
 import sys
+from pathlib import Path
+
 import pandas as pd
+
+from src.training.steps.multi_timeframe_hmm_ensemble import (
+    EnsembleConfig,
+    MultiTimeframeHMMEnsemble,
+    TimeframeConfig,
+)
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.validation_decorators import validate_dataframe_operation
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -95,7 +96,7 @@ def create_ensemble_config() -> EnsembleConfig:
 
 
 @handle_errors(default_return=False, context="validate_data_quality")
-def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
+def validate_data_quality(timeframe_data: dict[str, pd.DataFrame]) -> bool:
     """Validate data quality across all timeframes."""
     logger.info("🔍 Validating data quality...")
 
@@ -192,7 +193,7 @@ def main() -> bool:
     logger.info(f"📋 Processing timeframes: {timeframes}")
 
     # Load data for all timeframes
-    timeframe_data: Dict[str, pd.DataFrame] = {}
+    timeframe_data: dict[str, pd.DataFrame] = {}
     for timeframe in timeframes:
         logger.info(f"📂 Loading data for {timeframe}...")
         data=load_timeframe_data(
@@ -223,7 +224,7 @@ def main() -> bool:
     config.min_confidence_threshold = args.min_confidence
 
     # Update timeframe weights to match loaded data
-    available_timeframes: List[str] = list(timeframe_data.keys())
+    available_timeframes: list[str] = list(timeframe_data.keys())
     equal_weight=1.0 / len(available_timeframes)
     for tf_config in config.timeframes:
         if tf_config.timeframe in available_timeframes:
@@ -259,7 +260,7 @@ def main() -> bool:
 
         # Test ensemble prediction
         logger.info("🧪 Testing ensemble prediction...")
-        test_data: Dict[str, pd.DataFrame] = {}
+        test_data: dict[str, pd.DataFrame] = {}
         for tf, data in timeframe_data.items():
             if not data.empty:
                 test_data[tf] = data.tail(10)  # Use last 10 rows for testing

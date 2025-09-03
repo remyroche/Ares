@@ -6,9 +6,9 @@ This script analyzes the HMM regime discovery process to understand why
 0 distinct market archetypes are being found.
 """
 
-from pathlib import Path
 import os
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -20,7 +20,6 @@ sys.path.insert(0, str(project_root))
 def analyze_hmm_combinations(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"):
     """Analyze HMM combinations to understand the clustering issue."""
 
-    data_dir="data/training"
 
     # Check if HMM block states exist
     block_states_path = os.path.join(

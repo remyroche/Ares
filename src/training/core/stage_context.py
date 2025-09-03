@@ -2,19 +2,15 @@ from src.core.decorators import handles_errors
 
 from datetime import datetime
 from typing import Any
-import asyncio
 
-from src.utils.logger import system_logger
-import copy
-from src.utils.warning_symbols import (
-
-    error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    validation_error,
+<<<<<<< HEAD
+=======
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
 )
+>>>>>>> origin/main
+from src.utils.logger import system_logger
 
 class StageContext:
     """Stage context with comprehensive error handling and type safety."""
@@ -1019,5 +1015,5 @@ async def setup_stage_context(
             return stage_context
         return None
 
-    except Exception as e:
+    except Exception:
         return None

@@ -4,7 +4,6 @@ Direct execution of step2_feature_engineering without pipeline dependencies.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -16,23 +15,23 @@ async def main():
     try:
         # Import the step function
         from src.training.steps.step2_feature_engineering import run_step
-        
+
         print("🚀 Running step2_feature_engineering directly...")
-        
+
         # Run the step
         result=await run_step(
             symbol="ETHUSDT",
-            exchange="BINANCE", 
+            exchange="BINANCE",
             output_dir="data/training",
             timeframe="1m",
-            force_rerun=True
+            force_rerun=True,
         )
-        
+
         if result:
             print("✅ Step2 feature engineering completed successfully!")
         else:
             print("❌ Step2 feature engineering failed!")
-            
+
     except Exception as e:
         print(f"❌ Error running step02: {e}")
         import traceback

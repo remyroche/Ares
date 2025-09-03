@@ -25,7 +25,10 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 # --------------------------------------------------------------------------------------
 # Logging setup
@@ -44,7 +47,7 @@ class SyntaxErrorScanner:
     in a separate Python subprocess to detect syntax and indentation errors.
     """
 
-    DEFAULT_EXCLUDED_DIRS: Tuple[str, ...] = (
+    DEFAULT_EXCLUDED_DIRS: tuple[str, ...] = (
         ".git",
         "__pycache__",
         "node_modules",
@@ -70,8 +73,8 @@ class SyntaxErrorScanner:
         self,
         *,
         timeout_seconds: float=10.0,
-        excluded_dirs: Optional[Sequence[str]] = None,
-        excluded_globs: Optional[Sequence[str]] = None,
+        excluded_dirs: Sequence[str] | None = None,
+        excluded_globs: Sequence[str] | None = None,
         file_extensions: Sequence[str] = (".py",),
     ) -> None:
         self.timeout_seconds=timeout_seconds
@@ -80,7 +83,7 @@ class SyntaxErrorScanner:
         self.file_extensions=tuple(file_extensions)
 
         # Aggregates
-        self.error_files: Dict[str, List[str]] = defaultdict(list)
+        self.error_files: dict[str, list[str]] = defaultdict(list)
         self.error_types: Counter[str] = Counter()
         self.total_errors: int=0
         self.files_processed: int = 0
@@ -122,7 +125,7 @@ class SyntaxErrorScanner:
                 continue
         return False
 
-    def scan_file(self, file_path: Path) -> List[str]:
+    def scan_file(self, file_path: Path) -> list[str]:
         """Compile a single file, returning a list of error lines from stderr.
 
         Each returned string is a raw line of stderr that includes an error
@@ -131,7 +134,7 @@ class SyntaxErrorScanner:
         try:
             result=subprocess.run(
                 [sys.executable, "-m", "py_compile", str(file_path)],
-                capture_output=True,
+                check=False, capture_output=True,
                 text=True,
                 timeout=self.timeout_seconds,
             )
@@ -146,7 +149,7 @@ class SyntaxErrorScanner:
         stderr = result.stderr or ""
         lines = [line.strip() for line in stderr.splitlines() if line.strip()]
         # Keep only meaningful error-class lines when possible; if none, keep all
-        filtered: List[str] = [
+        filtered: list[str] = [
             ln
             for ln in lines
             if (
@@ -154,12 +157,12 @@ class SyntaxErrorScanner:
                 or "IndentationError" in ln
                 or "TabError" in ln
                 or "ImportError" in ln
-                or ln.startswith("File \"")
+                or ln.startswith('File "')
             )
         ]
         return filtered if filtered else lines
 
-    def parse_error_line(self, error_line: str) -> Tuple[str, str, str, Optional[int]]:
+    def parse_error_line(self, error_line: str) -> tuple[str, str, str, int | None]:
         """Parse an error line into (error_type, message, file, line_no).
 
         Attempts to extract file and line number when the line looks like a
@@ -183,7 +186,7 @@ class SyntaxErrorScanner:
                 message=parts[1].strip() or error_line
 
         file_info="Unknown file"
-        line_no: Optional[int] = None
+        line_no: int | None = None
         m = re.search(r'File "([^"]+)", line (\d+)', error_line)
         if m:
             file_info=m.group(1)
@@ -198,7 +201,7 @@ class SyntaxErrorScanner:
 
         return error_type, message, file_info, line_no
 
-    def scan_directory(self, directory: Path, *, jobs: int=1) -> Dict[str, object]:
+    def scan_directory(self, directory: Path, *, jobs: int=1) -> dict[str, object]:
         logger.info(f"🔍 Scanning directory: {directory}")
         python_files=list(self._iter_python_files(directory))
         logger.info(f"📁 Found {len(python_files)} Python files")
@@ -252,8 +255,8 @@ class SyntaxErrorScanner:
     # ----------------------------
     # Reporting helpers
     # ----------------------------
-    def generate_report(self, output_file: Optional[Path] = None) -> str:
-        report_lines: List[str] = []
+    def generate_report(self, output_file: Path | None = None) -> str:
+        report_lines: list[str] = []
         report_lines.append("=" * 80)
         report_lines.append("SYNTAX ERROR SCAN REPORT")
         report_lines.append("=" * 80)
@@ -323,8 +326,8 @@ class SyntaxErrorScanner:
             logger.info(f"📄 Report written to: {output_file}")
         return report
 
-    def get_files_by_error_count(self, min_errors: int=1) -> List[Tuple[str, str, int]]:
-        files: List[Tuple[str, str, int]] = []
+    def get_files_by_error_count(self, min_errors: int=1) -> list[tuple[str, str, int]]:
+        files: list[tuple[str, str, int]] = []
         for file_path, errors in self.error_files.items():
             if len(errors) >= min_errors:
                 rel=os.path.relpath(file_path, ".")
@@ -332,8 +335,8 @@ class SyntaxErrorScanner:
                 files.append((rel, abs_path, len(errors)))
         return sorted(files, key=lambda x: x[2], reverse=True)
 
-    def get_files_by_error_type(self, error_type: str) -> List[Tuple[str, int]]:
-        files: List[Tuple[str, int]] = []
+    def get_files_by_error_type(self, error_type: str) -> list[tuple[str, int]]:
+        files: list[tuple[str, int]] = []
         for file_path, errors in self.error_files.items():
             type_count=sum(1 for e in errors if self.parse_error_line(e)[0] == error_type)
             if type_count > 0:
@@ -345,7 +348,7 @@ class SyntaxErrorScanner:
 # --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
-def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser=argparse.ArgumentParser(description="Scan Python files for syntax errors and generate reports.")
     parser.add_argument("--root", type=str, default=".", help="Root directory to scan (default: .)")
     parser.add_argument("--output", type=str, default="reports/syntax_error_report.txt", help="Path to write text report")
@@ -369,7 +372,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     logger.info("🚀 Starting syntax error scanner")
     args=_parse_args(argv)
 

@@ -3,7 +3,6 @@
 Another test file with different characteristics.
 """
 
-import json
 import math
 from datetime import datetime
 
@@ -25,34 +24,34 @@ def process_data(data_list: list) -> dict:
     """Process a list of data and return statistics."""
     if not data_list:
         return {"error": "Empty data"}
-    
+
     try:
         total = sum(data_list)
         count = len(data_list)
         mean = total / count
-        
+
         # Calculate variance
         variance = sum((x - mean) ** 2 for x in data_list) / count
         std_dev = math.sqrt(variance)
-        
+
         return {
             "total": total,
             "count": count,
             "mean": mean,
             "variance": variance,
             "std_dev": std_dev,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         return {"error": str(e)}
 
 class DataProcessor:
     """A class for processing data."""
-    
+
     def __init__(self):
         self.processed_count = 0
         self.errors = []
-    
+
     def process_item(self, item):
         """Process a single item."""
         try:
@@ -62,26 +61,26 @@ class DataProcessor:
         except Exception as e:
             self.errors.append(str(e))
             return None
-    
+
     def get_summary(self):
         """Get processing summary."""
         return {
             "processed": self.processed_count,
             "errors": len(self.errors),
-            "error_details": self.errors
+            "error_details": self.errors,
         }
 
 # Main execution
 if __name__ == "__main__":
     processor = DataProcessor()
-    
+
     # Test data processing
     test_data = [1, 2, 3, 4, 5]
     results = [processor.process_item(x) for x in test_data]
-    
+
     print(f"Results: {results}")
     print(f"Summary: {processor.get_summary()}")
-    
+
     # Test other functions
     print(f"Area of circle with radius 5: {calculate_area(5)}")
     print(f"Fibonacci(10): {fibonacci(10)}")

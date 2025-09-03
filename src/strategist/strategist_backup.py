@@ -16,13 +16,17 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-import asyncio
 
+<<<<<<< HEAD
+=======
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
+)
+>>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
     failed,
-    initialization_error,
     invalid,
     missing,
 )
@@ -30,8 +34,6 @@ from src.utils.warning_symbols import (
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
-import copy
-import numpy as np
 
 
 class Strategist:
@@ -41,7 +43,7 @@ class Strategist:
     - Strategy Generation: Create trading strategies based on market analysis
     - Market Analysis Integration: Combine analyst and tactician inputs
     - Strategy History Management: Track and store strategy performance
-    
+
     Note: Position sizing is handled by the Tactician component
     """
     def __init__(self, config: dict[str, Any]) -> None:
@@ -127,7 +129,7 @@ class Strategist:
             return True
 
         except (ValueError, TypeError, KeyError) as e:
-            self.logger.error(failed(f"❌ Strategist initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Strategist initialization failed: {e}"))
             return False
 
     @handles_errors(
@@ -148,7 +150,7 @@ class Strategist:
             self.logger.info("✅ Strategy components initialized successfully")
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error initializing strategy components: {e}")
+            self.logger.exception(f"Error initializing strategy components: {e}")
             raise
 
     @handles_errors(
@@ -177,7 +179,7 @@ class Strategist:
             return True
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handle_specific_errors(
@@ -237,7 +239,7 @@ class Strategist:
             return base_strategy
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error generating strategy: {e}")
+            self.logger.exception(f"Error generating strategy: {e}")
             return None
 
     @handles_errors(
@@ -268,7 +270,7 @@ class Strategist:
             return True
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error validating market data: {e}")
+            self.logger.exception(f"Error validating market data: {e}")
             return False
 
     @handles_errors(
@@ -309,7 +311,7 @@ class Strategist:
             return indicators
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error extracting market indicators: {e}")
+            self.logger.exception(f"Error extracting market indicators: {e}")
             return {}
 
     @handles_errors(
@@ -328,7 +330,7 @@ class Strategist:
             return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50.0
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error calculating RSI: {e}")
+            self.logger.exception(f"Error calculating RSI: {e}")
             return 50.0
 
     @handles_errors(
@@ -339,7 +341,7 @@ class Strategist:
     async def _generate_base_strategy(self, indicators: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Generate base trading strategy from market indicators."""
         try:
-            strategy = {
+            return {
                 "timestamp": datetime.now().isoformat(),
                 "strategy_type": self.strategy_type,
                 "confidence": 0.0,  # To be set by ML/HMM via analysis integration
@@ -366,10 +368,9 @@ class Strategist:
             # Do not use handcrafted feature weights for direction/confidence
             # Direction and confidence will be set by ML/HMM via _integrate_analysis_results
 
-            return strategy
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error generating base strategy: {e}")
+            self.logger.exception(f"Error generating base strategy: {e}")
             return {}
 
     @handles_errors(
@@ -407,7 +408,7 @@ class Strategist:
             if trading_decision:
                 decision_confidence = trading_decision.get("final_confidence", 0.0)
                 decision_direction = trading_decision.get("direction", "HOLD")
-                
+
                 # Set strategy solely from ML/HMM decision
                 strategy["dual_model_direction"] = decision_direction
                 strategy["dual_model_confidence"] = decision_confidence
@@ -418,7 +419,7 @@ class Strategist:
             return strategy
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error integrating analysis results: {e}")
+            self.logger.exception(f"Error integrating analysis results: {e}")
             return strategy
 
     @handles_errors(
@@ -434,7 +435,7 @@ class Strategist:
 
             # Calculate stop loss and take profit levels
             volatility = strategy["indicators"]["price_volatility"]
-            
+
             if strategy["direction"] == "LONG":
                 # Stop loss: 2x volatility below current price
                 stop_loss_pct = volatility * 2
@@ -455,7 +456,7 @@ class Strategist:
             return strategy
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error applying risk management: {e}")
+            self.logger.exception(f"Error applying risk management: {e}")
             return strategy
 
     # Position sizing is handled by the Tactician component
@@ -487,7 +488,7 @@ class Strategist:
             }
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(f"Error storing strategy results: {e}")
+            self.logger.exception(f"Error storing strategy results: {e}")
 
     def get_strategy_results(self) -> dict[str, Any]:
         """
@@ -535,4 +536,4 @@ class Strategist:
             self.logger.info("✅ Strategist stopped successfully")
 
         except Exception as e:  # TODO: Consider more specific exception types
-            self.logger.error(failed(f"❌ Failed to stop Strategist: {e}"))
+            self.logger.exception(failed(f"❌ Failed to stop Strategist: {e}"))

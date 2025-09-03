@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import critical
 
 warnings.filterwarnings("ignore")
@@ -496,7 +495,7 @@ class FeatureOutputValidator:
 
             try:
                 # Handle different feature dict formats
-                if all(isinstance(v, (pd.Series, pd.DataFrame)) for v in features.values()):
+                if all(isinstance(v, pd.Series | pd.DataFrame) for v in features.values()):
                     # Features are Series/DataFrames
                     feature_series: list[pd.Series] = []
                     for name, series in features.items():
@@ -511,7 +510,7 @@ class FeatureOutputValidator:
                     if feature_series:
                         return pd.concat(feature_series, axis=1)
 
-                if all(isinstance(v, (int, float, np.generic)) for v in features.values()):
+                if all(isinstance(v, int | float | np.generic) for v in features.values()):
                     # Features are scalar values
                     return pd.DataFrame([features])
 
@@ -544,7 +543,7 @@ class FeatureOutputValidator:
                                 feature_series.append(
                                     value[col].rename(f"{name}_{col}"),
                                 )
-                        elif isinstance(value, (int, float, np.generic)):
+                        elif isinstance(value, int | float | np.generic):
                             feature_series.append(pd.Series([value], name=name))
 
                     if feature_series:

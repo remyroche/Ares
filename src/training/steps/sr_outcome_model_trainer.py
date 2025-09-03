@@ -9,6 +9,7 @@ using LightGBM + XGBoost ensemble with comprehensive feature engineering and tim
 """
 import json
 import os
+import os.path
 import pickle
 import warnings
 from datetime import datetime
@@ -26,11 +27,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-import asyncio
 from src.core.domain import validate_feature_engineering_with_lookahead_bias_detection
 from src.utils.logger import system_logger
-import copy
-import os.path
 
 warnings.filterwarnings("ignore")
 
@@ -157,7 +155,7 @@ class SROutcomeModelTrainer:
             return False
 
     async def _prepare_training_data(
-        self, training_data: dict[str, pd.DataFrame]
+        self, training_data: dict[str, pd.DataFrame],
     ) -> pd.DataFrame | None:
         """Prepare training data with S/R context and outcome labeling."""
         try:
@@ -192,7 +190,7 @@ class SROutcomeModelTrainer:
             return None
 
     async def _label_sr_outcomes(
-        self, data: pd.DataFrame, timeframe: str
+        self, data: pd.DataFrame, timeframe: str,
     ) -> pd.DataFrame | None:
         """Label S/R outcomes for training data."""
         try:
@@ -217,10 +215,10 @@ class SROutcomeModelTrainer:
 
                     # Get S/R context and outcome prediction using centralized logic
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_data=market_slice, current_price=current_price
+                        market_data=market_slice, current_price=current_price,
                     )
                     sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                        market_data=market_slice, current_price=current_price, sr_context=sr_context
+                        market_data=market_slice, current_price=current_price, sr_context=sr_context,
                     )
 
                     # Check if near S/R level
@@ -239,7 +237,7 @@ class SROutcomeModelTrainer:
                                 "records",
                             ),  # Last 20 bars
                             "features": await self._extract_features(
-                                market_data=market_slice, current_price=current_price, sr_context=sr_context
+                                market_data=market_slice, current_price=current_price, sr_context=sr_context,
                             ),
                         }
                         labeled_samples.append(sample)
@@ -263,7 +261,7 @@ class SROutcomeModelTrainer:
             return None
 
     async def _extract_features(
-        self, market_data: pd.DataFrame, current_price: float, sr_context: dict
+        self, market_data: pd.DataFrame, current_price: float, sr_context: dict,
     ) -> dict[str, float]:
         """Extract comprehensive features for S/R outcome prediction."""
         try:
@@ -364,10 +362,10 @@ class SROutcomeModelTrainer:
             # Temporal features
             if self.use_temporal_features:
                 features["time_since_sr_touch"] = self._calculate_time_since_sr_touch(
-                    market_data=market_data, sr_context=sr_context
+                    market_data=market_data, sr_context=sr_context,
                 )
                 features["sr_touch_frequency"] = self._calculate_sr_touch_frequency(
-                    market_data=market_data, sr_context=sr_context
+                    market_data=market_data, sr_context=sr_context,
                 )
 
             # Volatility regime features
@@ -397,7 +395,7 @@ class SROutcomeModelTrainer:
                 if len(outcome_data) > min_count:
                     # Sample down to min_count
                     balanced_samples.append(
-                        outcome_data.sample(n=min_count, random_state=42)
+                        outcome_data.sample(n=min_count, random_state=42),
                     )
                 else:
                     # Keep all samples if below min_count
@@ -415,7 +413,7 @@ class SROutcomeModelTrainer:
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def _engineer_features(
-        self, data: pd.DataFrame
+        self, data: pd.DataFrame,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Engineer features for model training."""
         try:
@@ -509,7 +507,7 @@ class SROutcomeModelTrainer:
 
             # Calculate class weights
             class_weights = compute_class_weight("balanced", classes=np.unique(y), y=y)
-            weight_dict = dict(zip(np.unique(y), class_weights))
+            weight_dict = dict(zip(np.unique(y), class_weights, strict=False))
 
             # Create sample weights
             sample_weights = np.array([weight_dict[label] for label in y])
@@ -519,7 +517,7 @@ class SROutcomeModelTrainer:
 
             # Hyperparameter optimization for LightGBM
             best_params = await self._optimize_lightgbm_hyperparameters(
-                X, y, sample_weights, tscv
+                X, y, sample_weights, tscv,
             )
 
             # Train final model with best parameters
@@ -549,7 +547,7 @@ class SROutcomeModelTrainer:
 
             # Calculate class weights
             class_weights = compute_class_weight("balanced", classes=np.unique(y), y=y)
-            weight_dict = dict(zip(np.unique(y), class_weights))
+            weight_dict = dict(zip(np.unique(y), class_weights, strict=False))
 
             # Create sample weights
             sample_weights = np.array([weight_dict[label] for label in y])
@@ -559,7 +557,7 @@ class SROutcomeModelTrainer:
 
             # Hyperparameter optimization for XGBoost
             best_params = await self._optimize_xgboost_hyperparameters(
-                X, y, sample_weights, tscv
+                X, y, sample_weights, tscv,
             )
 
             # Train final model with best parameters
@@ -631,7 +629,7 @@ class SROutcomeModelTrainer:
                     "boosting_type": "gbdt",
                     "metric": "multi_logloss",
                     "learning_rate": trial.suggest_float(
-                        "learning_rate", 0.01, 0.1, log=True
+                        "learning_rate", 0.01, 0.1, log=True,
                     ),
                     "num_leaves": trial.suggest_int("num_leaves", 15, 63),
                     "max_depth": trial.suggest_int("max_depth", 4, 12),
@@ -645,7 +643,7 @@ class SROutcomeModelTrainer:
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
                     "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 0.01, 0.3, log=True
+                        "reg_lambda", 0.01, 0.3, log=True,
                     ),
                     "random_state": 42,
                 }
@@ -658,7 +656,7 @@ class SROutcomeModelTrainer:
                     w_train = sample_weights[train_idx]
                     X_val = X[val_idx]
                     y_val = y[val_idx]
-                    w_val = sample_weights[val_idx]
+                    sample_weights[val_idx]
 
                     model = lgb.LGBMClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -670,7 +668,7 @@ class SROutcomeModelTrainer:
                 return float(np.mean(scores))
 
             # Get trials from training input or use default
-            sr_lightgbm_trials = getattr(self, 'training_input', {}).get("sr_lightgbm_trials", 30)
+            sr_lightgbm_trials = getattr(self, "training_input", {}).get("sr_lightgbm_trials", 30)
             # Run optimization
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=sr_lightgbm_trials)
@@ -720,7 +718,7 @@ class SROutcomeModelTrainer:
                     "num_class": 3,
                     "eval_metric": "mlogloss",
                     "learning_rate": trial.suggest_float(
-                        "learning_rate", 0.01, 0.1, log=True
+                        "learning_rate", 0.01, 0.1, log=True,
                     ),
                     "max_depth": trial.suggest_int("max_depth", 3, 10),
                     "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
@@ -731,7 +729,7 @@ class SROutcomeModelTrainer:
                     "gamma": trial.suggest_float("gamma", 0, 0.5),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
                     "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 0.01, 0.3, log=True
+                        "reg_lambda", 0.01, 0.3, log=True,
                     ),
                     "random_state": 42,
                 }
@@ -744,7 +742,7 @@ class SROutcomeModelTrainer:
                     w_train = sample_weights[train_idx]
                     X_val = X[val_idx]
                     y_val = y[val_idx]
-                    w_val = sample_weights[val_idx]
+                    sample_weights[val_idx]
 
                     model = xgb.XGBClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -756,7 +754,7 @@ class SROutcomeModelTrainer:
                 return float(np.mean(scores))
 
             # Get trials from training input or use default
-            sr_xgboost_trials = getattr(self, 'training_input', {}).get("sr_xgboost_trials", 30)
+            sr_xgboost_trials = getattr(self, "training_input", {}).get("sr_xgboost_trials", 30)
             # Run optimization
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=sr_xgboost_trials)
@@ -792,7 +790,7 @@ class SROutcomeModelTrainer:
             }
 
     async def _evaluate_model(
-        self, X: np.ndarray, y: np.ndarray, model_name: str = "Model"
+        self, X: np.ndarray, y: np.ndarray, model_name: str = "Model",
     ) -> None:
         """Evaluate the trained model."""
         try:
@@ -816,7 +814,7 @@ class SROutcomeModelTrainer:
 
             # Metrics
             report = classification_report(
-                y, y_pred, target_names=self.label_encoder.classes_
+                y, y_pred, target_names=self.label_encoder.classes_,
             )
             conf_matrix = confusion_matrix(y, y_pred)
             auc_score = roc_auc_score(y, y_pred_proba, multi_class="ovr")
@@ -1025,7 +1023,7 @@ class SROutcomeModelTrainer:
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
-        self, prices: pd.Series, fast: int = 12, slow: int = 26
+        self, prices: pd.Series, fast: int = 12, slow: int = 26,
     ) -> pd.Series:
         """Calculate MACD indicator."""
         ema_fast = prices.ewm(span=fast).mean()
@@ -1033,7 +1031,7 @@ class SROutcomeModelTrainer:
         return ema_fast - ema_slow
 
     def _calculate_bb_position(
-        self, prices: pd.Series, period: int = 20, std: int = 2
+        self, prices: pd.Series, period: int = 20, std: int = 2,
     ) -> pd.Series:
         """Calculate Bollinger Band position."""
         sma = prices.rolling(window=period).mean()
@@ -1088,14 +1086,14 @@ class SROutcomeModelTrainer:
             return 0.0
 
     def _calculate_time_since_sr_touch(
-        self, market_data: pd.DataFrame, sr_context: dict
+        self, market_data: pd.DataFrame, sr_context: dict,
     ) -> float:
         """Calculate time since last S/R level touch."""
         # Placeholder implementation
         return 0.5
 
     def _calculate_sr_touch_frequency(
-        self, market_data: pd.DataFrame, sr_context: dict
+        self, market_data: pd.DataFrame, sr_context: dict,
     ) -> float:
         """Calculate S/R level touch frequency."""
         # Placeholder implementation

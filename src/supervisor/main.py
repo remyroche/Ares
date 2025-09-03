@@ -5,17 +5,17 @@ from datetime import datetime
 from typing import Any
 
 from src.config import CONFIG, get_environment_settings
+from src.core.decorators import handles_errors
 from src.paper_trader import PaperTrader
 from src.sentinel.sentinel import Sentinel
 from src.supervisor.ab_tester import ABTester
 from src.supervisor.monitoring import Monitoring
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.supervisor.risk_allocator import RiskAllocator
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
-import copy
+
 
 class Supervisor:
     """
@@ -224,13 +224,13 @@ class Supervisor:
                             "current_position",
                             {},
                         ).get(
-                            "trade_id"
+                            "trade_id",
                         ),  # Attempt to recover trade_id
                         "entry_timestamp": self.state_manager.get_state(
                             "current_position",
                             {},
                         ).get(
-                            "entry_timestamp"
+                            "entry_timestamp",
                         ),  # Attempt to recover timestamp
                         "stop_loss": self.state_manager.get_state(
                             "current_position",
@@ -265,7 +265,7 @@ class Supervisor:
                     f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}",
                 )
                 self.state_manager.set_state(
-                    "current_position", active_position_on_exchange
+                    "current_position", active_position_on_exchange,
                 )  # Update 'current_position'
 
         except Exception as e:
@@ -305,7 +305,7 @@ class MainSupervisor:
             self.logger.info("✅ Main Supervisor initialization completed successfully")
             return True
         except Exception as e:
-            self.logger.error(f"❌ Main Supervisor initialization failed: {e}")
+            self.logger.exception(f"❌ Main Supervisor initialization failed: {e}")
             return False
 
     @handles_errors(fallback=None)
@@ -317,7 +317,7 @@ class MainSupervisor:
             self.max_history = self.supervisor_config["max_history"]
             self.logger.info("Main supervisor configuration loaded successfully")
         except Exception as e:
-            self.logger.error(f"Error loading supervisor configuration: {e}")
+            self.logger.exception(f"Error loading supervisor configuration: {e}")
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
@@ -331,7 +331,7 @@ class MainSupervisor:
             self.logger.info("Configuration validation successful")
             return True
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handles_errors(
@@ -350,7 +350,7 @@ class MainSupervisor:
                 await asyncio.sleep(self.run_interval)
             return True
         except Exception as e:
-            self.logger.error(f"Error in main supervisor run: {e}")
+            self.logger.exception(f"Error in main supervisor run: {e}")
             self.is_running = False
             return False
 
@@ -364,7 +364,7 @@ class MainSupervisor:
                 self.history.pop(0)
             self.logger.info(f"Main Supervisor tick at {now}")
         except Exception as e:
-            self.logger.error(f"Error in supervise step: {e}")
+            self.logger.exception(f"Error in supervise step: {e}")
 
     @handles_errors(fallback=None)
     async def stop(self) -> None:
@@ -374,7 +374,7 @@ class MainSupervisor:
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Main Supervisor stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error stopping main supervisor: {e}")
+            self.logger.exception(f"Error stopping main supervisor: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()

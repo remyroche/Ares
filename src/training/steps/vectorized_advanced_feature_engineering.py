@@ -20,8 +20,6 @@ and adaptive indicators for improved prediction accuracy with vectorized operati
 """
 
 import asyncio
-import copy
-import datetime
 import hashlib
 import json
 import os
@@ -32,15 +30,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.common_operations import (
-    generate_hash, generate_cache_key as common_generate_cache_key,
-    ensure_directory, safe_json_dump, safe_json_load,
-    safe_read_parquet, safe_to_parquet, list_parquet_files,
-    safe_copy
-)
+from src.core.decorators import handles_errors
 
 from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
-from src.core.domain import (
+from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
     ValidationLevel,
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
@@ -49,10 +42,17 @@ from src.core.domain import (
     validate_ohlcv_data_quality,
     validate_wavelet_data_quality
 )
+from src.utils.common_operations import (
+    generate_hash,
+    safe_json_dump,
+    safe_json_load,
+    safe_read_parquet,
+    safe_to_parquet,
+)
+from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
 
 # Import optimization utilities
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
-from src.core.decorators import handles_errors
 from src.utils.intelligent_feature_cache import cache_feature_engineering
 from src.utils.logger import system_logger
 from src.utils.lookahead_bias_detector import (
@@ -64,12 +64,6 @@ from src.utils.parallel_processing_optimizer import (
 )
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-
-# Import fractional differentiation
-from src.training.steps.fractional_differentiation import (
-    FractionalDifferentiation,
-    FractionalFeatureGenerator
-)
 
 # Feature Engineering Optimization Configuration
 FEATURE_OPTIMIZATION_CONFIG = {
@@ -99,8 +93,8 @@ FEATURE_OPTIMIZATION_CONFIG = {
         "exclude_columns": ["timestamp", "datetime", "date"],
         "enable_batch_processing": True,
         "enable_parallel_processing": True,
-        "max_parallel_workers": 4
-    }
+        "max_parallel_workers": 4,
+    },
 }
 
 class OptimizedResampler:
@@ -117,7 +111,7 @@ class OptimizedResampler:
         try:
             # Create a hashable representation of the data
             data_hash = hashlib.md5(
-                pd.util.hash_pandas_object(data, index=True).values
+                pd.util.hash_pandas_object(data, index=True).values,
             ).hexdigest()
             return f"{data_hash}_{timeframe}"
         except Exception:
@@ -171,11 +165,11 @@ class OptimizedResampler:
                     data = data.sort_index()
                 except Exception:
                     data.index = pd.date_range(
-                        start="1970-01-01", periods=len(data), freq="1min"
+                        start="1970-01-01", periods=len(data), freq="1min",
                     )
             else:
                 data.index = pd.date_range(
-                    start="1970-01-01", periods=len(data), freq="1min"
+                    start="1970-01-01", periods=len(data), freq="1min",
                 )
 
         # Resample OHLCV data
@@ -322,7 +316,7 @@ class WaveletFeatureCache:
         """
         try:
             cache_path = Path(self.cache_dir)
-            
+
             if self.cache_format == "parquet":
                 features_file = (
                     cache_path / "features" / f"{cache_key}_features.parquet"
@@ -468,7 +462,7 @@ class WaveletFeatureCache:
             # Save features based on format
             if self.cache_format == "parquet":
                 safe_to_parquet(
-                    features_df, features_file, compression=self.compression, index=True
+                    features_df, features_file, compression=self.compression, index=True,
                 )
             elif self.cache_format == "feather":
                 features_df.to_feather(features_file)
@@ -546,7 +540,7 @@ class WaveletFeatureCache:
             # Determine candidate array lengths for vector features
             lengths: list[int] = []
             for key, value in features.items():
-                if isinstance(value, (list, np.ndarray)):
+                if isinstance(value, list | np.ndarray):
                     try:
                         arr = np.asarray(value)
                         if arr.ndim >= 1:
@@ -563,7 +557,7 @@ class WaveletFeatureCache:
             feature_data: dict[str, Any] = {}
             for key, value in features.items():
                 # Skip non-informative scalars to avoid constant columns in cache
-                if isinstance(value, (int, float, np.number)):
+                if isinstance(value, int | float | np.number):
                     # Only include simple scalars in metadata, not in the features frame
                     continue
                 if isinstance(value, pd.Series):
@@ -571,7 +565,7 @@ class WaveletFeatureCache:
                     if target_len and series_vals.shape[0] > target_len:
                         series_vals = series_vals[-target_len:]
                     feature_data[key] = series_vals
-                elif isinstance(value, (list, np.ndarray)):
+                elif isinstance(value, list | np.ndarray):
                     arr = np.asarray(value)
                     if arr.ndim == 1:
                         vals = arr
@@ -1157,7 +1151,7 @@ class VectorizedSRDistanceCalculator:
 
     @validate_klines_data_quality
     async def calculate_sr_distances(
-        self, price_data: pd.DataFrame, sr_levels: dict[str, Any] | None = None
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Calculate distances to support/resistance levels."""
         try:
@@ -1218,7 +1212,7 @@ class VectorizedWaveletTransformAnalyzer:
             self.logger.info("🚀 Initializing VectorizedWaveletTransformAnalyzer...")
             self.is_initialized = True
             self.logger.info(
-                "✅ VectorizedWaveletTransformAnalyzer initialized successfully"
+                "✅ VectorizedWaveletTransformAnalyzer initialized successfully",
             )
             return True
         except Exception as e:
@@ -1228,7 +1222,7 @@ class VectorizedWaveletTransformAnalyzer:
         return False
 
     async def analyze_wavelet_transforms(
-        self, price_data: pd.DataFrame, wavelet_type: str = "db4"
+        self, price_data: pd.DataFrame, wavelet_type: str = "db4",
     ) -> dict[str, Any]:
         """Generate wavelet transform features with improved safety and performance."""
         try:
@@ -1311,7 +1305,7 @@ class VectorizedWaveletTransformAnalyzer:
                     lambda x: np.corrcoef(x, np.arange(len(x)))[0, 1]
                     if len(x) > 1
                     else 0,
-                    raw=True
+                    raw=True,
                 )
                 features["wavelet_trend_strength"] = trend_strength.fillna(0)
 
@@ -1427,13 +1421,13 @@ class VectorizedAdvancedFeatureEngineering:
         self.sr_distance_calculator = None
         self.wavelet_analyzer = None
         self.wavelet_cache = None
-        
+
         # Initialize profit-based feature engineering
         self.profit_feature_engineer = None
 
         # Initialize optimized resampler
         self.optimized_resampler = OptimizedResampler()
-        
+
         # Initialize fractional differentiation
         self.fractional_feature_generator = None
         self.enable_fractional_diff = FEATURE_OPTIMIZATION_CONFIG.get("enable_fractional_differentiation", True)
@@ -1601,14 +1595,14 @@ class VectorizedAdvancedFeatureEngineering:
             # Initialize profit-based feature engineering
             try:
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
-                    ProfitBasedFeatureEngineering
+                    ProfitBasedFeatureEngineering,
                 )
                 self.profit_feature_engineer = ProfitBasedFeatureEngineering(
                     profit_column="potential_profit_pct",
                     volume_column="volume",
                     price_column="close",
                     use_numba=True,
-                    memory_efficient=True
+                    memory_efficient=True,
                 )
                 self.logger.info("✅ Profit-based feature engineering initialized successfully")
             except Exception as e:
@@ -1633,7 +1627,7 @@ class VectorizedAdvancedFeatureEngineering:
             return False
 
     def _calculate_price_impact_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
     ) -> pd.Series:
         """Calculate price impact using vectorized operations with improved NaN handling."""
         try:
@@ -1678,7 +1672,7 @@ class VectorizedAdvancedFeatureEngineering:
             return pd.Series(0, index=price_data.index)
 
     def _calculate_volume_price_impact_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
     ) -> pd.Series:
         """Calculate volume-price impact using vectorized operations with improved NaN handling."""
         try:
@@ -1723,7 +1717,7 @@ class VectorizedAdvancedFeatureEngineering:
             return pd.Series(0, index=price_data.index)
 
     def _calculate_order_flow_imbalance_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None,
     ) -> pd.Series:
         """Calculate order flow imbalance using vectorized operations with improved NaN handling."""
         try:
@@ -1770,7 +1764,7 @@ class VectorizedAdvancedFeatureEngineering:
             return pd.Series(0, index=price_data.index)
 
     def _validate_and_transform_data(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Validate and transform input data to ensure proper structure."""
         try:
@@ -1787,7 +1781,7 @@ class VectorizedAdvancedFeatureEngineering:
                 if "timestamp" in price_data.columns:
                     price_data = price_data.copy()
                     price_data["timestamp"] = pd.to_datetime(
-                        price_data["timestamp"], errors="coerce"
+                        price_data["timestamp"], errors="coerce",
                     )
                     price_data = price_data.dropna(subset=["timestamp"]).set_index(
                         "timestamp",
@@ -1832,7 +1826,7 @@ class VectorizedAdvancedFeatureEngineering:
             cleaned_features = {}
             for feature_name, feature_value in features.items():
                 try:
-                    if isinstance(feature_value, (int, float, np.integer, np.floating)):
+                    if isinstance(feature_value, int | float | np.integer | np.floating):
                         # Scalar values - handle safely
                         if np.isnan(feature_value) or np.isinf(feature_value):
                             cleaned_features[feature_name] = 0.0
@@ -1847,7 +1841,7 @@ class VectorizedAdvancedFeatureEngineering:
                         )
                         cleaned_features[feature_name] = cleaned_series
 
-                    elif isinstance(feature_value, (np.ndarray, list)):
+                    elif isinstance(feature_value, np.ndarray | list):
                         # Numpy arrays and lists
                         arr = np.asarray(feature_value, dtype=np.float64)
                         arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
@@ -1908,7 +1902,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.warning(f"⚠️ Error logging multi-timeframe summary: {e}")
 
     def _generate_simple_timeframe_features(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str,
     ) -> dict[str, Any]:
         """Generate simple features for timeframes with limited data."""
         try:
@@ -1978,7 +1972,7 @@ class VectorizedAdvancedFeatureEngineering:
             for feature_name, feature_value in features.items():
                 try:
                     # Handle different data types
-                    if isinstance(feature_value, (int, float, np.integer, np.floating)):
+                    if isinstance(feature_value, int | float | np.integer | np.floating):
                         # Scalar values
                         if np.isnan(feature_value) or np.isinf(feature_value):
                             cleaned_features[feature_name] = 0.0
@@ -2008,7 +2002,7 @@ class VectorizedAdvancedFeatureEngineering:
 
                         cleaned_features[feature_name] = cleaned_series
 
-                    elif isinstance(feature_value, (np.ndarray, list)):
+                    elif isinstance(feature_value, np.ndarray | list):
                         # Numpy arrays and lists with safe boolean operations
                         arr = np.asarray(feature_value, dtype=np.float64)
 
@@ -2094,7 +2088,7 @@ class VectorizedAdvancedFeatureEngineering:
             for feature_name, feature_value in features.items():
                 try:
                     # Handle different data types
-                    if isinstance(feature_value, (int, float, np.integer, np.floating)):
+                    if isinstance(feature_value, int | float | np.integer | np.floating):
                         # Scalar values - handle safely
                         if np.isnan(feature_value):
                             cleaned_features[feature_name] = 0.0
@@ -2159,7 +2153,7 @@ class VectorizedAdvancedFeatureEngineering:
                             try:
                                 arr = np.asarray(feature_value, dtype=np.float64)
                                 arr = np.nan_to_num(
-                                    arr, nan=0.0, posinf=0.0, neginf=0.0
+                                    arr, nan=0.0, posinf=0.0, neginf=0.0,
                                 )
                                 cleaned_features[feature_name] = arr
                                 self.logger.info(
@@ -2171,7 +2165,7 @@ class VectorizedAdvancedFeatureEngineering:
                                 )
                                 cleaned_features[feature_name] = 0.0
 
-                    elif isinstance(feature_value, (np.ndarray, list)):
+                    elif isinstance(feature_value, np.ndarray | list):
                         # Numpy arrays and lists
                         arr = np.asarray(feature_value, dtype=np.float64)
 
@@ -2290,11 +2284,11 @@ class VectorizedAdvancedFeatureEngineering:
     #     context="vectorized advanced feature engineering",
     # )
     async def engineer_features(
-        self, 
-        price_data: pd.DataFrame, 
-        volume_data: pd.DataFrame, 
-        order_flow_data: pd.DataFrame | None = None, 
-        sr_levels: dict[str, Any] | None = None
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+        sr_levels: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Engineer advanced features for improved prediction accuracy using vectorized operations.
 
@@ -2754,16 +2748,16 @@ class VectorizedAdvancedFeatureEngineering:
                     for col in volume_data.columns:
                         if col not in combined_data.columns:
                             combined_data[col] = volume_data[col]
-                
+
                 # Generate fractional differentiation features
                 fractional_features = self.fractional_feature_generator.generate_features(combined_data)
-                
+
                 # Extract only the new fractional differentiation features
                 frac_diff_features = {}
                 for col in fractional_features.columns:
-                    if 'frac_diff' in col and col not in combined_data.columns:
+                    if "frac_diff" in col and col not in combined_data.columns:
                         frac_diff_features[col] = fractional_features[col].values
-                
+
                 self.logger.info(f"🔍 Generated {len(frac_diff_features)} fractional differentiation features")
                 if frac_diff_features:
                     self.logger.info(f"🔍 Fractional differentiation feature names: {list(frac_diff_features.keys())}")
@@ -2882,14 +2876,14 @@ class VectorizedAdvancedFeatureEngineering:
                 profit_data = price_data.copy()
                 if volume_data is not None and not volume_data.empty:
                     # Merge volume data if available
-                    profit_data = profit_data.join(volume_data, how='left')
-                
+                    profit_data = profit_data.join(volume_data, how="left")
+
                 profit_features = self.profit_feature_engineer.apply_all_features(profit_data)
-                
+
                 # Extract only the new profit-based features (excluding original columns)
                 original_columns = set(price_data.columns)
                 profit_feature_columns = [col for col in profit_features.columns if col not in original_columns]
-                
+
                 if profit_feature_columns:
                     profit_feature_dict = {col: profit_features[col] for col in profit_feature_columns}
                     self.logger.info(f"🔍 Generated {len(profit_feature_dict)} profit-based features")
@@ -3028,7 +3022,7 @@ class VectorizedAdvancedFeatureEngineering:
                 target_series=pd.Series(
                     [0] * len(features_df),
                 ),  # Dummy target for feature-only check
-                timestamp_col=None
+                timestamp_col=None,
             )
 
             if bias_results.get("lookahead_bias_detected", False):
@@ -3112,7 +3106,7 @@ class VectorizedAdvancedFeatureEngineering:
             if not self.wavelet_cache:
                 # Fallback to direct computation if cache is not available
                 return await self.wavelet_analyzer.analyze_wavelet_transforms(
-                    price_data  # Only pass price_data
+                    price_data,  # Only pass price_data
                 )
 
             # Generate cache key
@@ -3140,7 +3134,7 @@ class VectorizedAdvancedFeatureEngineering:
             # Compute wavelet features
             self.logger.info(f"🔧 Computing wavelet features (not cached): {cache_key}")
             wavelet_features = await self.wavelet_analyzer.analyze_wavelet_transforms(
-                price_data  # Only pass price_data
+                price_data,  # Only pass price_data
             )
 
             # Save to cache (only if non-empty)
@@ -3179,7 +3173,7 @@ class VectorizedAdvancedFeatureEngineering:
         return False
 
     async def _engineer_microstructure_features_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """Engineer market microstructure features using vectorized operations."""
         try:
@@ -3241,7 +3235,7 @@ class VectorizedAdvancedFeatureEngineering:
                     df = order_flow_data
                     if "mid" in df.columns:
                         mid = pd.Series(df["mid"].values, index=df.index).reindex(
-                            price_data.index, method="ffill"
+                            price_data.index, method="ffill",
                         )
                     else:
                         mid = price_data["close"].astype(float)
@@ -3251,7 +3245,7 @@ class VectorizedAdvancedFeatureEngineering:
                         scol = f"{side}_wall_size"
                         if pcol in df.columns:
                             wall_p = pd.Series(df[pcol].values, index=df.index).reindex(
-                                price_data.index, method="ffill"
+                                price_data.index, method="ffill",
                             )
                             with np.errstate(divide="ignore", invalid="ignore"):
                                 dist = (
@@ -3544,7 +3538,7 @@ class VectorizedAdvancedFeatureEngineering:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating bid-ask spread from aggtrades: {e}")
-            
+
             # Fallback to volatility-based proxy if aggtrades data not available
             self.logger.info(
                 "📊 Using volatility-based spread proxy (aggtrades data not available)",
@@ -3693,7 +3687,7 @@ class VectorizedAdvancedFeatureEngineering:
             low = price_data["low"].astype(float)
             open_price = price_data["open"].astype(float)
             volume = price_data.get(
-                "volume", pd.Series(1.0, index=price_data.index)
+                "volume", pd.Series(1.0, index=price_data.index),
             ).astype(float)
 
             # Basic price-based features
@@ -4046,21 +4040,21 @@ class VectorizedAdvancedFeatureEngineering:
             optimize_for_m1_mac()
 
             # Use enhanced multi-timeframe optimizer by default
-            from src.training.enhanced_multi_timeframe_optimizer import (
-                EnhancedMultiTimeframeOptimizer, 
-                OptimizedTimeframeConfig
-            )
             from src.training.comprehensive_feature_optimizer import (
+                ComprehensiveFeatureConfig,
                 ComprehensiveFeatureOptimizer,
-                ComprehensiveFeatureConfig
+            )
+            from src.training.enhanced_multi_timeframe_optimizer import (
+                EnhancedMultiTimeframeOptimizer,
+                OptimizedTimeframeConfig,
             )
 
             # Check if matrix optimization results are available
             matrix_results = self._get_matrix_optimization_results()
-            
+
             if matrix_results and self._should_use_optimized_features():
                 self.logger.info("🚀 Using enhanced multi-timeframe optimizer with optimized lookback periods")
-                
+
                 # Configure enhanced optimizer
                 config = OptimizedTimeframeConfig(
                     base_timeframes=["1m", "5m", "15m", "30m", "1h"],
@@ -4070,24 +4064,24 @@ class VectorizedAdvancedFeatureEngineering:
                         "min_correlation": 0.2,
                         "max_correlation": 0.8,
                         "min_information_score": 0.03,
-                        "min_diversity_score": 0.15
-                    }
+                        "min_diversity_score": 0.15,
+                    },
                 )
-                
+
                 # Initialize enhanced optimizer
                 enhanced_optimizer = EnhancedMultiTimeframeOptimizer(config, matrix_results)
-                
+
                 # Generate optimized multi-timeframe features
                 features = await enhanced_optimizer.generate_optimized_multi_timeframe_features(
                     data=price_data,
                     target=self._create_target_variable(price_data),
-                    regime_labels=self._get_regime_labels()
+                    regime_labels=self._get_regime_labels(),
                 )
-                
+
                 # Also generate comprehensive features if enabled
                 if self._should_generate_comprehensive_features():
                     self.logger.info("🔧 Generating comprehensive optimized features")
-                    
+
                     comprehensive_config = ComprehensiveFeatureConfig(
                         interaction_features=True,
                         difference_acceleration_features=True,
@@ -4098,87 +4092,83 @@ class VectorizedAdvancedFeatureEngineering:
                         liquidity_features=True,
                         candlestick_patterns=True,
                         ohlcv_price_features=True,
-                        parallel_processing=True
+                        parallel_processing=True,
                     )
-                    
+
                     comprehensive_optimizer = ComprehensiveFeatureOptimizer(
-                        comprehensive_config, 
-                        matrix_results
+                        comprehensive_config,
+                        matrix_results,
                     )
-                    
+
                     comprehensive_features = await comprehensive_optimizer.generate_comprehensive_features(
                         data=price_data,
                         target=self._create_target_variable(price_data),
-                        regime_labels=self._get_regime_labels()
+                        regime_labels=self._get_regime_labels(),
                     )
-                    
+
                     # Merge features
                     features.update(comprehensive_features)
                     self.logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive features")
-                
+
                 # Save optimization results
                 output_path = "data/optimization_results"
                 enhanced_optimizer.save_optimization_results(output_path)
-                
+
                 self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features using enhanced system")
-                
+
             else:
                 self.logger.info("⚠️ Using traditional multi-timeframe features (no matrix optimization results available)")
                 features = await self._generate_traditional_multi_timeframe_features(
-                    price_data, volume_data, order_flow_data
+                    price_data, volume_data, order_flow_data,
                 )
 
             # Validate and clean features
             features = self._validate_and_clean_features(features)
-            features = self._ensure_pickle_safe_features(features)
+            return self._ensure_pickle_safe_features(features)
 
-            return features
 
         except Exception as e:
-            self.logger.error(f"❌ Error in enhanced multi-timeframe feature engineering: {e}")
+            self.logger.exception(f"❌ Error in enhanced multi-timeframe feature engineering: {e}")
             # Fallback to traditional method
             return await self._generate_traditional_multi_timeframe_features(
-                price_data, volume_data, order_flow_data
+                price_data, volume_data, order_flow_data,
             )
-    
+
     def _get_matrix_optimization_results(self) -> Optional[Dict[str, Any]]:
         """Get matrix optimization results if available."""
         try:
             # Check for matrix optimization results in pipeline state or cache
             matrix_results_path = "data/optimization_results/matrix_diverse_lookback_optimization_results.json"
             if Path(matrix_results_path).exists():
-                with open(matrix_results_path, 'r') as f:
+                with open(matrix_results_path) as f:
                     return json.load(f)
-            
+
             # Check for comprehensive optimization results
             comprehensive_results_path = "data/optimization_results/comprehensive_feature_optimization_results.json"
             if Path(comprehensive_results_path).exists():
-                with open(comprehensive_results_path, 'r') as f:
+                with open(comprehensive_results_path) as f:
                     return json.load(f)
-            
+
             return None
         except Exception as e:
             self.logger.debug(f"⚠️ Could not load matrix optimization results: {e}")
             return None
-    
+
     def _should_use_optimized_features(self) -> bool:
         """Determine if optimized features should be used."""
         # Check environment variable or configuration
-        use_optimized = os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
-        return use_optimized
-    
+        return os.getenv("USE_OPTIMIZED_FEATURES", "true").lower() == "true"
+
     def _should_generate_comprehensive_features(self) -> bool:
         """Determine if comprehensive features should be generated."""
         # Check environment variable or configuration
-        generate_comprehensive = os.getenv('GENERATE_COMPREHENSIVE_FEATURES', 'true').lower() == 'true'
-        return generate_comprehensive
-    
+        return os.getenv("GENERATE_COMPREHENSIVE_FEATURES", "true").lower() == "true"
+
     def _create_target_variable(self, data: pd.DataFrame) -> pd.Series:
         """Create target variable for optimization."""
         # Use future returns as target
-        target = data['close'].pct_change(5).shift(-5).fillna(0)
-        return target
-    
+        return data["close"].pct_change(5).shift(-5).fillna(0)
+
     def _get_regime_labels(self) -> Optional[pd.Series]:
         """Get regime labels if available."""
         try:
@@ -4190,12 +4180,12 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.debug(f"⚠️ Could not load regime labels: {e}")
             return None
-    
+
     async def _generate_traditional_multi_timeframe_features(
-        self, 
-        price_data: pd.DataFrame, 
-        volume_data: pd.DataFrame, 
-        order_flow_data: pd.DataFrame | None = None
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
     ) -> Dict[str, Any]:
         """Generate traditional multi-timeframe features (fallback method)."""
         try:
@@ -4299,7 +4289,7 @@ class VectorizedAdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(f"❌ Error in traditional multi-timeframe feature engineering: {e}")
+            self.logger.exception(f"❌ Error in traditional multi-timeframe feature engineering: {e}")
             return {}
 
     def _remove_constant_features(self, features: dict[str, Any]) -> dict[str, Any]:
@@ -4571,7 +4561,7 @@ class VectorizedAdvancedFeatureEngineering:
             close = price_data["close"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
-            open_price = price_data["open"].astype(float)
+            price_data["open"].astype(float)
 
             # Validate input data
             if close.isna().all() or close.std() == 0:
@@ -4919,7 +4909,7 @@ class VectorizedAdvancedFeatureEngineering:
                         continue
 
                     # Check if the value contains any async objects
-                    if isinstance(feature_value, (list, tuple, dict)):
+                    if isinstance(feature_value, list | tuple | dict):
                         # For now, just skip complex objects that might contain async objects
                         if hasattr(feature_value, "__iter__") and any(hasattr(item, "__await__") for item in feature_value):
                             self.logger.warning(f"⚠️ Removing feature {feature_name} containing async objects")
@@ -5006,7 +4996,7 @@ class VectorizedAdvancedFeatureEngineering:
             return np.zeros(len(cluster_ids))
 
     async def _generate_meta_labels_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """Generate meta-labels for ensemble learning."""
         try:
@@ -5034,7 +5024,7 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
     async def _generate_explicit_meta_labels_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str = "1m"
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str = "1m",
     ) -> dict[str, Any]:
         """Generate explicit meta-labels for specific timeframes."""
         try:
@@ -5054,7 +5044,7 @@ class VectorizedAdvancedFeatureEngineering:
                 # Momentum strength
                 returns = close.pct_change().fillna(0)
                 features[f"momentum_strength_{timeframe}"] = returns.rolling(
-                    10, min_periods=1
+                    10, min_periods=1,
                 ).mean()
 
             return features
@@ -5072,44 +5062,44 @@ class VectorizedAdvancedFeatureEngineering:
             "min_rows": 100,
             "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
         },
-        context="Difference and Acceleration Feature Engineering"
+        context="Difference and Acceleration Feature Engineering",
     )
     @secure_data_processing(
         backup_before=True,
         integrity_checks=True,
         memory_cleanup=True,
-        data_validation=True
+        data_validation=True,
     )
     @prevent_data_leakage(
         temporal_validation=True,
         feature_leakage_detection=True,
         cross_validation_isolation=True,
-        lookahead_bias_prevention=True
+        lookahead_bias_prevention=True,
     )
     @log_execution_time(
         memory_threshold_gb=16.0,
         cpu_threshold_percent=90.0,
         disk_threshold_gb=10.0,
         monitor_interval=30.0,
-        auto_cleanup=True
+        auto_cleanup=True,
     )
     @cached(
         chunk_size=5000,
         streaming_processing=True,
         memory_pool=True,
-        cleanup_frequency=20
+        cleanup_frequency=20,
     )
     @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
-        error_context_preservation=True
+        error_context_preservation=True,
     )
     @circuit_breaker(
         failure_threshold=3,
         recovery_timeout=300.0,
         expected_exception=Exception,
-        monitor_interval=60.0
+        monitor_interval=60.0,
     )
     @validates(
         required_files=["data/feature_cache/*.parquet"],
@@ -5121,7 +5111,7 @@ class VectorizedAdvancedFeatureEngineering:
             "feature_engineering_time_minutes": 30.0,
             "memory_usage_gb": 8.0,
         },
-        format_validation=True
+        format_validation=True,
     )
     @quality_gate(
         model_performance_thresholds={
@@ -5131,7 +5121,7 @@ class VectorizedAdvancedFeatureEngineering:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         convergence_checks=True,
         overfitting_detection=True,
-        validation_score_requirements={"feature_engineering_score": 0.8}
+        validation_score_requirements={"feature_engineering_score": 0.8},
     )
     @handles_errors
     async def _engineer_difference_and_acceleration_features(
@@ -5234,11 +5224,11 @@ class VectorizedAdvancedFeatureEngineering:
                 if feature_name not in difference_candidates:
                     continue
 
-                if not isinstance(feature_value, (pd.Series, np.ndarray, list)):
+                if not isinstance(feature_value, pd.Series | np.ndarray | list):
                     continue
 
                 # Convert to pandas Series for processing
-                if isinstance(feature_value, (np.ndarray, list)):
+                if isinstance(feature_value, np.ndarray | list):
                     feature_series = pd.Series(feature_value, index=price_data.index)
                 else:
                     feature_series = feature_value
@@ -5246,7 +5236,7 @@ class VectorizedAdvancedFeatureEngineering:
                 # Get candidate info
                 candidate_info = difference_candidates[feature_name]
                 priority = candidate_info["priority"]
-                timeframes = candidate_info["timeframes"]
+                candidate_info["timeframes"]
 
                 # Select lookback periods based on priority (tightened to reduce feature count)
                 if priority == "high":
@@ -5429,7 +5419,7 @@ class VectorizedAdvancedFeatureEngineering:
                 post_total = len(capped_features)
                 self.logger.info(
                     f"🔧 Applied feature caps (pre={pre_total}, post={post_total}): "
-                    f"accel<=%d, diff<=%d, cross-time<=%d (priority-aware)" % (max_accel, max_diff, max_cross_time)
+                    f"accel<=%d, diff<=%d, cross-time<=%d (priority-aware)" % (max_accel, max_diff, max_cross_time),
                 )
             except Exception as cap_e:
                 self.logger.warning(f"⚠️ Failed to apply feature caps: {cap_e}")
@@ -5447,7 +5437,7 @@ class VectorizedAdvancedFeatureEngineering:
         chunk_size=1000,
         streaming_processing=False,
         memory_pool=True,
-        cleanup_frequency=10
+        cleanup_frequency=10,
     )
     def _normalize_with_rolling_zscore(self, series: pd.Series, window: int = 20) -> pd.Series:
         """Normalize series using rolling Z-score to ensure consistent scale.
@@ -5489,13 +5479,13 @@ class VectorizedAdvancedFeatureEngineering:
         chunk_size=2000,
         streaming_processing=True,
         memory_pool=True,
-        cleanup_frequency=15
+        cleanup_frequency=15,
     )
     @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=False,
         performance_profiling=True,
-        error_context_preservation=True
+        error_context_preservation=True,
     )
     async def _generate_interaction_features(
         self, enhanced_features: dict[str, Any], original_features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
@@ -5540,7 +5530,7 @@ class VectorizedAdvancedFeatureEngineering:
             macd_features = [f for f in all_feature_names if "macd" in f.lower()]
             bb_features = [f for f in all_feature_names if "bb" in f.lower() or "bollinger" in f.lower()]
             stoch_features = [f for f in all_feature_names if "stoch" in f.lower()]
-            price_features = [f for f in all_feature_names if "price" in f.lower()]
+            [f for f in all_feature_names if "price" in f.lower()]
             diff_features = [f for f in all_feature_names if "diff" in f.lower()]
             accel_features = [f for f in all_feature_names if "accel" in f.lower()]
 
@@ -5624,12 +5614,12 @@ class VectorizedAdvancedFeatureEngineering:
                         continue
 
                     # Convert to pandas Series if needed
-                    if isinstance(feat1, (np.ndarray, list)):
+                    if isinstance(feat1, np.ndarray | list):
                         feat1_series = pd.Series(feat1, index=price_data.index)
                     else:
                         feat1_series = feat1
 
-                    if isinstance(feat2, (np.ndarray, list)):
+                    if isinstance(feat2, np.ndarray | list):
                         feat2_series = pd.Series(feat2, index=price_data.index)
                     else:
                         feat2_series = feat2
@@ -5666,13 +5656,13 @@ class VectorizedAdvancedFeatureEngineering:
         chunk_size=2000,
         streaming_processing=True,
         memory_pool=True,
-        cleanup_frequency=15
+        cleanup_frequency=15,
     )
     @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=False,
         performance_profiling=True,
-        error_context_preservation=True
+        error_context_preservation=True,
     )
     async def _generate_cross_timeframe_features(
         self, features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
@@ -5748,11 +5738,11 @@ class VectorizedAdvancedFeatureEngineering:
                         self.logger.warning(f"⚠️ Skipping coroutine feature for cross-timeframe: {feature_name}")
                         continue
 
-                    if not isinstance(feature_value, (pd.Series, np.ndarray, list)):
+                    if not isinstance(feature_value, pd.Series | np.ndarray | list):
                         continue
 
                     # Convert to pandas Series
-                    if isinstance(feature_value, (np.ndarray, list)):
+                    if isinstance(feature_value, np.ndarray | list):
                         feature_series = pd.Series(feature_value, index=price_data.index)
                     else:
                         feature_series = feature_value
@@ -5830,7 +5820,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Validate feature types
             for feature_name, feature_value in features.items():
-                if not isinstance(feature_value, (pd.Series, np.ndarray, list)):
+                if not isinstance(feature_value, pd.Series | np.ndarray | list):
                     self.logger.warning(f"Feature {feature_name} is not a supported type: {type(feature_value)}")
 
             self.logger.info(f"✅ Validated {len(features)} features for difference engineering")
@@ -6057,7 +6047,7 @@ class VectorizedAdvancedFeatureEngineering:
                 "5m": pd.Timedelta(minutes=5),
                 "15m": pd.Timedelta(minutes=15),
                 "30m": pd.Timedelta(minutes=30),
-                "1h": pd.Timedelta(hours=1)
+                "1h": pd.Timedelta(hours=1),
             }
 
             expected_interval = timeframe_map.get(timeframe, pd.Timedelta(minutes=1))
@@ -6116,30 +6106,30 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             if data.empty:
                 return "Input data is empty"
-            
+
             if len(data) < min_records:
                 return f"Insufficient data: {len(data)} records (minimum: {min_records})"
-            
+
             # Check for required columns
             required_columns = ["open", "high", "low", "close"]
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 return f"Missing required columns: {missing_columns}"
-            
+
             # Check for price data quality
             price_data = data[required_columns].dropna()
             if len(price_data) < min_records:
                 return f"Insufficient price data: {len(price_data)} records (minimum: {min_records})"
-            
+
             # Check for volume data if available
             if "volume" in data.columns:
                 volume_data = data["volume"].dropna()
                 if len(volume_data) < min_records:
                     return f"Insufficient volume data: {len(volume_data)} records (minimum: {min_records})"
-            
+
             self.logger.info("✅ Input data validation passed")
             return None
-            
+
         except Exception as e:
             return f"Validation error: {e}"
 
@@ -6155,6 +6145,6 @@ class VectorizedAdvancedFeatureEngineering:
             "metadata": {
                 "generation_timestamp": pd.Timestamp.now(),
                 "total_features": 0,
-                "feature_types": []
-            }
+                "feature_types": [],
+            },
         }

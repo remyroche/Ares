@@ -7,17 +7,18 @@ This script demonstrates what the step formatter does by showing before/after ex
 
 import re
 
+
 def demonstrate_step_formatting():
     """Show examples of step formatting."""
-    
+
     print("🔍 STEP FORMATTER DEMONSTRATION")
     print("=" * 50)
     print()
-    
+
     # Examples of what gets formatted
     examples = [
         "step01",
-        "step02", 
+        "step02",
         "step03",
         "step04",
         "step05",
@@ -27,29 +28,29 @@ def demonstrate_step_formatting():
         "step09",
         "step10",  # This won't change (already double digit)
         "step11",  # This won't change (already double digit)
-        "step12"   # This won't change (already double digit)
+        "step12",   # This won't change (already double digit)
     ]
-    
+
     # Regex pattern used by the formatter
-    step_pattern = re.compile(r'\bstep([1-9])\b')
-    
+    step_pattern = re.compile(r"\bstep([1-9])\b")
+
     print("📝 EXAMPLES OF STEP FORMATTING:")
     print("-" * 40)
-    
+
     for example in examples:
         # Check if it matches the pattern
         if step_pattern.search(example):
             # Format it
-            formatted = step_pattern.sub(lambda m: f'step0{m.group(1)}', example)
+            formatted = step_pattern.sub(lambda m: f"step0{m.group(1)}", example)
             print(f"  {example:<25} → {formatted}")
         else:
             print(f"  {example:<25} → (no change)")
-    
+
     print()
     print("📋 WHAT GETS FORMATTED:")
     print("-" * 40)
     print("  ✅ step01  → step01")
-    print("  ✅ step02  → step02") 
+    print("  ✅ step02  → step02")
     print("  ✅ step03  → step03")
     print("  ✅ step04  → step04")
     print("  ✅ step05  → step05")
@@ -60,7 +61,7 @@ def demonstrate_step_formatting():
     print("  ❌ step10 → step10 (no change - already double digit)")
     print("  ❌ step11 → step11 (no change - already double digit)")
     print("  ❌ step12 → step12 (no change - already double digit)")
-    
+
     print()
     print("🎯 PATTERN EXPLANATION:")
     print("-" * 40)
@@ -74,7 +75,7 @@ def demonstrate_step_formatting():
     print("  • Word boundaries (\\b)")
     print()
     print("  So it only matches single-digit steps, not double-digit ones.")
-    
+
     print()
     print("🚀 HOW TO USE:")
     print("-" * 40)

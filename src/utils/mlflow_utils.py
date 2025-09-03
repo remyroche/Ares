@@ -7,7 +7,7 @@ from typing import Any, Optional
 import mlflow
 
 from src.config import ARES_VERSION
-from src.utils.error_handler import handle_errors
+from src.utils.compat import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.common_operations import (

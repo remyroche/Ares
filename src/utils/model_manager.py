@@ -23,16 +23,14 @@ from src.utils.common_operations import (
     safe_json_dump, safe_json_load, safe_copy
 )
 from src.utils.error_handler import (
-
     error,
     failed,
-    handle_errors,
     handle_file_operations,
-    handle_specific_errors,
     initialization_error,
     invalid,
     missing,
 )
+from src.utils.compat import handle_errors, handle_specific_errors
 from src.utils.error_handler import warning as eh_warning
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards

@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
 
-from src.core.decorators import handles_errors, traced
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    cached,
+    validates,
+    log_execution_time,
+)
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -99,6 +105,8 @@ else:
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
+import pandas as pd  # Ensure pd alias is available for type hints and usage
+
 logger = system_logger.getChild("Step2DataReading")
 
 
@@ -144,12 +152,7 @@ class DataReadingStep:
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @traced(span_name="read_unified_data")
-    # @quality_gate - removed, handled by validates
-        min_quality_score=0.8,
-        max_correlation=0.95,
-        required_grade="B"
-    )
-    @validates()
+    @validates(min_quality_score=0.8, max_correlation=0.95, required_grade="B")
     @cached
     async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Read unified data from step1_5 output with standardized validation."""
@@ -245,6 +248,22 @@ class DataReadingStep:
             self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
             self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
             
+            # Early gating thresholds
+            thresholds = self.config.get("step02_quality_thresholds", {
+                "min_rows": 100_000,
+                "max_null_ratio": 0.01,
+                "min_quality_score": 0.8,
+            })
+            rows = validation_results['data_info']['rows']
+            null_ratio = float(data.isnull().sum().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
+            quality_score = float(validation_results['quality_score'])
+
+            if rows < thresholds["min_rows"] or null_ratio > thresholds["max_null_ratio"] or quality_score < thresholds["min_quality_score"]:
+                self.logger.error(
+                    f"⛔ Early gating: rows={rows} (<{thresholds['min_rows']}), null_ratio={null_ratio:.4f} (>{thresholds['max_null_ratio']}), quality={quality_score:.2f} (<{thresholds['min_quality_score']})"
+                )
+                validation_results['passed'] = False
+
             self._log_step_timing("validate_data_quality", step_start)
             
         except Exception as e:
@@ -268,12 +287,9 @@ class DataReadingStep:
         try:
             import json
             from datetime import datetime
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import pandas as pd
-            
-# Create reports directory
-reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
+
+            # Create reports directory
+            reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             
             # Create report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -318,6 +334,13 @@ reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
                 self.logger.error("❌ Failed to read unified data")
                 return {"success": False, "error": "Failed to read unified data"}
             
+            # Early gating: validate and abort if thresholds not met
+            vres = await self.validate_data_quality(unified_data, symbol, exchange)
+            if not vres.get("passed", False):
+                await self.save_validation_report(vres, symbol, exchange, data_dir)
+                self.logger.error("⛔ Early gating failed; marking step as skipped")
+                return {"success": False, "status": "SKIPPED", "reason": "quality_thresholds"}
+
             # Validate data quality
             validation_results = await self.validate_data_quality(unified_data, symbol, exchange)
             

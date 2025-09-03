@@ -15,6 +15,7 @@ from src.supervisor.risk_allocator import RiskAllocator
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
+from src.supervisor.dependency_container import DependencyContainer, ComponentBuilder
 
 # src/supervisor/main.py
 
@@ -45,6 +46,10 @@ class Supervisor:
         )  # Use get_state() to load current state
         self.config = CONFIG  # Use the global CONFIG dictionary for general settings
         self.db_manager = db_manager  # Store the database manager
+
+        # Initialize dependency container and component builder
+        self.dependency_container = DependencyContainer(self.config)
+        self.component_builder = ComponentBuilder(self.dependency_container)
 
         # Initialize Supervisor sub-components, passing necessary dependencies
         self.risk_allocator = RiskAllocator(self.config)
@@ -87,51 +92,31 @@ class Supervisor:
             performance_reporter=self.performance_reporter,
         )
 
-        # Initialize the core real-time components, getting instances from ModelManager
+        # Register component factories in the dependency container
         if self.trader:
-            self.sentinel = Sentinel(
-                self.trader,
-                self.state_manager,
-            )  # Sentinel needs the real trader
-            self.analyst = (
-                self.model_manager.get_analyst()
-            )  # Get Analyst instance from ModelManager
-            self.strategist = (
-                self.model_manager.get_strategist()
-            )  # Get Strategist instance from ModelManager
-            # Tactician instance is already created by ModelManager with performance_reporter
-            self.tactician = self.model_manager.get_tactician()
-
-            # Ensure the Analyst, Strategist, Tactician instances from ModelManager
-            # have their exchange_client and state_manager set if they need it for live ops.
-            # This is a critical point for dependency injection.
-            # For the training pipeline, these are mostly placeholders.
-            if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
-                self.analyst.exchange = self.trader
-            if (
-                hasattr(self.analyst, "state_manager")
-                and self.analyst.state_manager is None
-            ):
-                self.analyst.state_manager = self.state_manager
-
-            if (
-                hasattr(self.strategist, "exchange")
-                and self.strategist.exchange is None
-            ):
-                self.strategist.exchange = self.trader
-            if (
-                hasattr(self.strategist, "state_manager")
-                and self.strategist.state_manager is None
-            ):
-                self.strategist.state_manager = self.state_manager
-
-            if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
-                self.tactician.exchange = self.trader
-            if (
-                hasattr(self.tactician, "state_manager")
-                and self.tactician.state_manager is None
-            ):
-                self.tactician.state_manager = self.state_manager
+            # Register component factories
+            self.dependency_container.register(
+                "sentinel", 
+                self.component_builder.build_sentinel(self.trader, self.state_manager)
+            )
+            self.dependency_container.register(
+                "analyst",
+                self.component_builder.build_analyst(self.trader, self.state_manager)
+            )
+            self.dependency_container.register(
+                "strategist",
+                self.component_builder.build_strategist(self.trader, self.state_manager)
+            )
+            self.dependency_container.register(
+                "tactician",
+                self.component_builder.build_tactician(self.trader, self.state_manager, self.performance_reporter)
+            )
+            
+            # Initialize components through dependency container
+            self.sentinel = self.dependency_container.get("sentinel")
+            self.analyst = self.dependency_container.get("analyst")
+            self.strategist = self.dependency_container.get("strategist")
+            self.tactician = self.dependency_container.get("tactician")
 
         else:
             self.sentinel = None
@@ -144,9 +129,42 @@ class Supervisor:
 
         self.running = False
 
+        # Initialize communication queues
         self.market_data_queue = asyncio.Queue(maxsize=100)
         self.analysis_queue = asyncio.Queue(maxsize=100)
         self.signal_queue = asyncio.Queue(maxsize=50)
+        
+        # Wire up queue connections between components
+        self._wire_component_queues()
+
+    def _wire_component_queues(self):
+        """
+        Explicitly wire up communication queues between components.
+        This makes the data flow between components clear and traceable.
+        """
+        if not (self.sentinel and self.analyst and self.strategist and self.tactician):
+            self.logger.warning("Cannot wire queues: Not all components are initialized")
+            return
+            
+        # Wire Sentinel -> Analyst (market data flow)
+        if hasattr(self.sentinel, 'output_queue'):
+            self.sentinel.output_queue = self.market_data_queue
+        if hasattr(self.analyst, 'input_queue'):
+            self.analyst.input_queue = self.market_data_queue
+            
+        # Wire Analyst -> Strategist (analysis results flow)
+        if hasattr(self.analyst, 'output_queue'):
+            self.analyst.output_queue = self.analysis_queue
+        if hasattr(self.strategist, 'input_queue'):
+            self.strategist.input_queue = self.analysis_queue
+            
+        # Wire Strategist -> Tactician (signals flow)
+        if hasattr(self.strategist, 'output_queue'):
+            self.strategist.output_queue = self.signal_queue
+        if hasattr(self.tactician, 'input_queue'):
+            self.tactician.input_queue = self.signal_queue
+            
+        self.logger.info("Component queues wired successfully")
 
     @handles_errors(fallback=None)
     async def start(self):

@@ -18,7 +18,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from src.core.decorators import (
-    as,
     traced,
     validates,
     with_tracing_span

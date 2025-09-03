@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 # Common utilities
-from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -1590,7 +1590,7 @@ class UnifiedRegimeIntelligenceStep:
             transition_pred = torch.argmax(transition_probs, dim=-1).item()
             tpsl_pred = torch.argmax(tpsl_probs, dim=-1).item()
 
-            return {
+            result = {
                 "regime": {
                     "prediction": regime_pred,
                     "probabilities": regime_probs.cpu().numpy()[0],
@@ -1611,6 +1611,29 @@ class UnifiedRegimeIntelligenceStep:
                 },
                 "confidence_score": confidence_score,
             }
+
+            # Thin adapter: map logits/softmax outputs to unified price action probability schema
+            try:
+                # direction_probability: probability of long (class 1) from TPSL head
+                direction_probability = float(tpsl_probs[0, 1].item()) if tpsl_probs.ndim == 2 else float(torch.max(tpsl_probs).item())
+                # triple_barrier_probability: proxy using regime confidence × long probability
+                triple_barrier_probability = float(torch.max(regime_probs).item()) * direction_probability
+                # magnitude_probability: use max regime probability as a stability proxy
+                magnitude_probability = float(torch.max(regime_probs).item())
+                # barrier_avoidance_probability: 1 - probability of short (class 0) from TPSL head
+                barrier_avoidance_probability = float(1.0 - float(tpsl_probs[0, 0].item())) if tpsl_probs.ndim == 2 else float(torch.sigmoid(outputs["confidence_logits"]).item())
+
+                result["price_action_probabilities"] = {
+                    "triple_barrier_probability": max(0.0, min(1.0, triple_barrier_probability)),
+                    "direction_probability": max(0.0, min(1.0, direction_probability)),
+                    "magnitude_probability": max(0.0, min(1.0, magnitude_probability)),
+                    "barrier_avoidance_probability": max(0.0, min(1.0, barrier_avoidance_probability)),
+                }
+                result["price_action_probabilities"] = standardize_price_action_probabilities(result["price_action_probabilities"])
+            except Exception:
+                pass
+
+            return result
 
         except Exception as e:
             self.logger.exception(f"🚨 Error making prediction: {e}")

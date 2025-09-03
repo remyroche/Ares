@@ -728,6 +728,8 @@ class EnhancedHMMBasedTrainingStep:
             price_action_probabilities = self.multi_output_trainer.predict_probabilities(
                 X_test, market_data.iloc[split_idx:]
             )
+            from src.utils.common_operations import standardize_price_action_probabilities
+            price_action_probabilities = standardize_price_action_probabilities(price_action_probabilities)
 
             # Compute PR-AUC for primary head if available
             pr_auc_scores = {}

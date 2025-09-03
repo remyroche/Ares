@@ -701,3 +701,30 @@ __all__ = [
     "safe_log_params",
     "safe_log_artifact",
 ]
+
+
+def standardize_price_action_probabilities(probabilities: dict) -> dict:
+    """Standardize various model probability outputs to the unified schema.
+
+    Ensures keys exist and values are clamped to [0, 1]. Missing keys are filled with 0.5.
+    """
+    if probabilities is None:
+        probabilities = {}
+    out = {}
+    for key in [
+        "triple_barrier_probability",
+        "direction_probability",
+        "magnitude_probability",
+        "barrier_avoidance_probability",
+    ]:
+        val = probabilities.get(key, 0.5)
+        try:
+            val_f = float(val)
+        except Exception:
+            val_f = 0.5
+        if val_f < 0.0:
+            val_f = 0.0
+        if val_f > 1.0:
+            val_f = 1.0
+        out[key] = val_f
+    return out

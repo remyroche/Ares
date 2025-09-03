@@ -326,7 +326,7 @@ import pandas as pd
 import copy
 import numpy as np
 import os.path
-                        from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (
+                        from src.training.steps.validation.step17_final_parameters_optimization.optimized_optuna_optimization import (
                             AdvancedOptunaManager,
                         )
                     except Exception as e:  # ImportError or dependency issues

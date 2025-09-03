@@ -19,6 +19,9 @@ from src.utils.logger import system_logger
 # Import Pydantic models and utilities
 from .config import MarketIndicators, StrategistConfig, StrategyResult
 from .utils import (
+from copy import copy
+import asyncio
+
     CalculationError,
     PerformanceOptimizer,
     StrategyComponentExtractor,

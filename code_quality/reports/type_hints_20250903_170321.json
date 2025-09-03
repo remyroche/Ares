@@ -1,0 +1,418 @@
+{
+  "fixed_files": [
+    {
+      "file": "/workspace/src/config.py",
+      "changes": [
+        "Added return type Any for get_environment_settings",
+        "Added return type None for __post_init__",
+        "Added return type Dict[str, Any] for get_config_service"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/integration_guide.py",
+      "changes": [
+        "Added return type None for demonstrate_integration"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "changes": [
+        "Added return type None for test"
+      ]
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step17_final_parameters_optimization.py",
+      "changes": [
+        "Added type hint Any for parameter obj",
+        "Added return type str for _summ",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective",
+        "Added type hint Any for parameter trial",
+        "Added return type None for objective"
+      ]
+    }
+  ],
+  "failed_files": [
+    {
+      "file": "/workspace/src/components/modular_analyst.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/components/modular_supervisor.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/interfaces/event_bus.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/supervisor/exchange_volume_adapter.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/sentinel/sentinel.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_updater.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "error": "invalid syntax (<unknown>, line 13)"
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "error": "invalid syntax (<unknown>, line 23)"
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_order_manager.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/tactician/step17_optimized_tactician.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_validator.py",
+      "error": "invalid syntax (<unknown>, line 15)"
+    },
+    {
+      "file": "/workspace/src/tactician/async_order_executor.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/training/simplified_training_manager.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "error": "invalid syntax (<unknown>, line 6)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_operations.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 29)"
+    },
+    {
+      "file": "/workspace/src/training/step_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/data_sharing_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/unified_data_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/comprehensive_sr_training_pipeline.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/training/dual_model_system.py",
+      "error": "invalid syntax (<unknown>, line 13)"
+    },
+    {
+      "file": "/workspace/src/training/performance_comparison.py",
+      "error": "invalid syntax (<unknown>, line 24)"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_feature_selection_demo.py",
+      "error": "invalid syntax (<unknown>, line 24)"
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/training/calibration_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/training_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_gpu_integration.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/ensemble_manager.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/training/model_training_integrator.py",
+      "error": "invalid syntax (<unknown>, line 26)"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_feature_selection_workflow.py",
+      "error": "invalid syntax (<unknown>, line 34)"
+    },
+    {
+      "file": "/workspace/src/training/data_efficiency_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 21)"
+    },
+    {
+      "file": "/workspace/src/training/optimization_manager.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/training/validator.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/training/vectorized_training_pipeline.py",
+      "error": "invalid syntax (<unknown>, line 19)"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_optimization_orchestrator.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/data_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_caching_workflow.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "error": "invalid syntax (<unknown>, line 520)"
+    },
+    {
+      "file": "/workspace/src/core/di_integration.py",
+      "error": "invalid syntax (<unknown>, line 19)"
+    },
+    {
+      "file": "/workspace/src/core/enhanced_factories.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/core/generic_base.py",
+      "error": "invalid syntax (<unknown>, line 10)"
+    },
+    {
+      "file": "/workspace/src/core/dependency_injection.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/config/config_manager.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/utils/vif_calculator.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_mlflow_integration.py",
+      "error": "invalid syntax (<unknown>, line 32)"
+    },
+    {
+      "file": "/workspace/src/utils/model_manager.py",
+      "error": "invalid syntax (<unknown>, line 234)"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist_backup.py",
+      "error": "invalid syntax (<unknown>, line 21)"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist.py",
+      "error": "invalid syntax (<unknown>, line 22)"
+    },
+    {
+      "file": "/workspace/src/validation/critical_path_validators.py",
+      "error": "invalid syntax (<unknown>, line 15)"
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_prediction_integrator.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles.py",
+      "error": "invalid syntax (<unknown>, line 10)"
+    },
+    {
+      "file": "/workspace/src/analyst/data_utils.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/analyst/ml_confidence_predictor.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/analyst/di_analyst.py",
+      "error": "invalid syntax (<unknown>, line 22)"
+    },
+    {
+      "file": "/workspace/src/analyst/unified_regime_classifier.py",
+      "error": "invalid syntax (<unknown>, line 26)"
+    },
+    {
+      "file": "/workspace/src/database/efficient_features_database.py",
+      "error": "invalid syntax (<unknown>, line 13)"
+    },
+    {
+      "file": "/workspace/src/database/influxdb_manager.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "error": "invalid syntax (<unknown>, line 27)"
+    },
+    {
+      "file": "/workspace/src/core/examples/decorator_usage.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/cached_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 20)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/progressive_optimizer.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/advanced_surrogate_models.py",
+      "error": "invalid syntax (<unknown>, line 23)"
+    },
+    {
+      "file": "/workspace/src/training/optimization/adaptive_trial_allocator.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_feature_selector.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+      "error": "invalid syntax (<unknown>, line 8)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization_new.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "error": "invalid syntax (<unknown>, line 120)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step21_saving.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/steps/combined_fractional_system.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/precompute_wavelet_features.py",
+      "error": "invalid syntax (<unknown>, line 17)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation.py",
+      "error": "invalid syntax (<unknown>, line 4)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step09_hmm_based_training.py",
+      "error": "invalid syntax (<unknown>, line 25)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step16_confidence_calibration_validator.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+      "error": "invalid syntax (<unknown>, line 6)"
+    },
+    {
+      "file": "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/training/core/checkpoint_manager.py",
+      "error": "invalid syntax (<unknown>, line 14)"
+    },
+    {
+      "file": "/workspace/src/training/steps/feature_engineering/step06_feature_engineering.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "error": "invalid syntax (<unknown>, line 11)"
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation/step02_data_reading.py",
+      "error": "invalid syntax (<unknown>, line 16)"
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step03_hmm_regime_discovery.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step07_enhanced_matrix_operations.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step09_hmm_based_training.py",
+      "error": "invalid syntax (<unknown>, line 18)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step11_analyst_creation.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step12_analyst_enhancement.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py",
+      "error": "invalid syntax (<unknown>, line 12)"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/monitoring_manager.py",
+      "error": "invalid syntax (<unknown>, line 9)"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/lifecycle_manager.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/data_manager.py",
+      "error": "invalid syntax (<unknown>, line 7)"
+    }
+  ],
+  "total_fixed": 4,
+  "total_failed": 92,
+  "execution_time": 1.6407618522644043
+}

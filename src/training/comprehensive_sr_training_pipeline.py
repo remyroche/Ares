@@ -19,6 +19,9 @@ import json
 import pandas as pd
 
 from src.core.decorators import (
+import asyncio
+import pandas as pd
+
     cached,
     handles_errors,
     log_execution_time,

@@ -1,4 +1,6 @@
 # src/analyst/liquidation_risk_model.py
+import asyncio
+
 from src.core.decorators import (
     handles_errors,
     retry,

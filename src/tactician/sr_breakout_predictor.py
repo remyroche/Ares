@@ -11,6 +11,7 @@ from src.utils.logger import system_logger
 
 # Import modular components
 from .sr_modules import SRFeatureExtractor, SRLevelDetector, SRMetricsCalculator
+import asyncio
 
 
 class SRBreakoutPredictor:

@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from src.utils.logger import system_logger
+from copy import copy
 
 
 class Optimizer:

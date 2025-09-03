@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from src.core.decorators import (
+from copy import copy
+
     cached,
     circuit_breaker,
     handles_errors,

@@ -1,18 +1,13 @@
+from typing import Dict, List, Optional, Union, Any, Tuple
 """
 PnL-Aware Loss Function for Keras Models.
 
 This module contains the factory function for creating custom Keras loss functions
 that combine standard classification loss with financial components.
 """
-
 from keras import backend as K
 
-
-def create_pnl_aware_loss(
-    pnl_multiplier=0.1,
-    liquidation_penalty=2.0,
-    reward_boost=1.5,
-):
+def create_pnl_aware_loss(pnl_multiplier: Any=0.1, liquidation_penalty: Any=2.0, reward_boost: Any=1.5) -> Any:
     """
     This is a factory function that creates a custom Keras loss function.
     It combines standard classification loss (cross-entropy) with a financial
@@ -20,7 +15,7 @@ def create_pnl_aware_loss(
     correct predictions, teaching the model to prioritize capital preservation.
     """
 
-    def pnl_aware_loss(y_true, y_pred):
+    def pnl_aware_loss(y_true: Any, y_pred: Any) -> None:
         """
         Calculates the combined loss.
 
@@ -29,35 +24,14 @@ def create_pnl_aware_loss(
                     It contains [one_hot_label, reward_potential, risk_potential].
             y_pred: Predicted probabilities with shape (batch_size, num_classes).
         """
-        # --- Unpack the ground truth tensor ---
         y_true_labels = y_true[:, :-2]
-
-        # The last two elements are the financial outcomes
         reward_potential = y_true[:, -2]
-        risk_potential = y_true[:, -1]  # This is the distance to liquidation
-
-        # --- 1. Standard Classification Loss ---
+        risk_potential = y_true[:, -1]
         ce_loss = K.categorical_crossentropy(y_true_labels, y_pred)
-
-        # --- 2. Financial (PnL) Loss Component ---
-        # Get the model's confidence in the correct prediction
         true_class_probs = K.sum(y_true_labels * y_pred, axis=-1)
-
-        # Calculate PnL loss based on financial outcomes
-        # Penalize mistakes on high-risk trades more heavily
-        # (where risk_potential is high)
         risk_adjusted_loss = (1 - true_class_probs) * K.exp(risk_potential * liquidation_penalty)
-
-        # Reward correct predictions on high-reward trades
-        # (where reward_potential is high)
         reward_adjusted_loss = -true_class_probs * reward_potential * reward_boost
-
-        # Combine risk and reward components
         pnl_loss = risk_adjusted_loss + reward_adjusted_loss
-
-        # --- 3. Combine Standard and Financial Loss ---
         combined_loss = ce_loss + pnl_multiplier * pnl_loss
-
         return combined_loss
-
     return pnl_aware_loss

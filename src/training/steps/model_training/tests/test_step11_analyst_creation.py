@@ -9,6 +9,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 
 from src.training.steps.model_training.step11_analyst_creation import (
+from copy import copy
+import asyncio
+
     AnalystCreationStep,
     AnalystModelBuilder,
     MultiOutputAnalystBuilder

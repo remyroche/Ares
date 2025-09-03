@@ -11,6 +11,7 @@ import inspect
 from typing import get_type_hints
 
 from .compose import P, R, uniform_wrapper
+import asyncio
 
 # Try to import optional validation libraries
 try:

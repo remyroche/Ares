@@ -4,6 +4,8 @@ Lifecycle manager for pipeline components (minimal scaffold).
 from __future__ import annotations
 
 from src.core.decorators import (
+import asyncio
+
     cached,
     compose,
     handles_errors,

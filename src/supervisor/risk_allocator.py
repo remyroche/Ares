@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from src.utils.logger import system_logger
+from copy import copy
 
 # src/supervisor/risk_allocator.py
 

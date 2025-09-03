@@ -16,6 +16,9 @@ import pandas as pd
 
 from src.training.matrix_enhancement_manager import MatrixEnhancementManager
 from src.training.steps.vectorized_advanced_feature_engineering import (
+from copy import copy
+import asyncio
+
     VectorizedAdvancedFeatureEngineering,
 )
 from src.utils.logger import system_logger

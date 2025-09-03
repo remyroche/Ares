@@ -1,19 +1,16 @@
 """Base validation step using BaseStep pattern."""
-
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
-
 import numpy as np
 import pandas as pd
-
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
-
+import datetime
 
 class BaseValidationStep(BaseStep):
     """Base class for all validation steps."""
-    
-    def __init__(self, config: Dict[str, Any], step_number: str, validation_type: str):
+
+    def __init__(self, config: Dict[str, Any], step_number: str, validation_type: str) -> None:
         """Initialize the validation step.
         
         Args:
@@ -22,21 +19,9 @@ class BaseValidationStep(BaseStep):
             validation_type: Type of validation (e.g., "confidence_calibration")
         """
         super().__init__(config, step_number, validation_type)
-        
-        # Common validation configuration
-        self.validation_config = {
-            "min_samples": config.get("min_validation_samples", 100),
-            "validation_split": config.get("validation_split", 0.2),
-            "random_state": config.get("random_state", 42),
-            "parallel_processing": config.get("parallel_processing", True),
-            "save_results": config.get("save_validation_results", True)
-        }
-    
-    def validate_inputs(
-        self, 
-        training_input: Dict[str, Any], 
-        pipeline_state: Dict[str, Any]
-    ) -> Tuple[bool, List[str]]:
+        self.validation_config = {'min_samples': config.get('min_validation_samples', 100), 'validation_split': config.get('validation_split', 0.2), 'random_state': config.get('random_state', 42), 'parallel_processing': config.get('parallel_processing', True), 'save_results': config.get('save_validation_results', True)}
+
+    def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate common inputs for validation steps.
         
         Args:
@@ -47,27 +32,16 @@ class BaseValidationStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        
-        # Check for trained models
-        if "tactician_specialist_models" not in pipeline_state:
-            errors.append("No trained models found for validation")
-        
-        # Check for data
-        if "features" not in pipeline_state and "market_data" not in pipeline_state:
-            errors.append("No data found for validation")
-        
-        # Step-specific validation
+        if 'tactician_specialist_models' not in pipeline_state:
+            errors.append('No trained models found for validation')
+        if 'features' not in pipeline_state and 'market_data' not in pipeline_state:
+            errors.append('No data found for validation')
         step_errors = self._validate_step_specific_inputs(training_input, pipeline_state)
         errors.extend(step_errors)
-        
-        return len(errors) == 0, errors
-    
+        return (len(errors) == 0, errors)
+
     @abstractmethod
-    def _validate_step_specific_inputs(
-        self,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> List[str]:
+    def _validate_step_specific_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific inputs.
         
         Args:
@@ -77,7 +51,7 @@ class BaseValidationStep(BaseStep):
         Returns:
             List of validation errors
         """
-    
+
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate common outputs for validation steps.
         
@@ -88,23 +62,15 @@ class BaseValidationStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        
-        # Check for validation results
-        validation_key = f"{self.full_step_name}_results"
+        validation_key = f'{self.full_step_name}_results'
         if validation_key not in pipeline_state:
-            errors.append(f"Missing validation results: {validation_key}")
-        
-        # Step-specific validation
+            errors.append(f'Missing validation results: {validation_key}')
         step_errors = self._validate_step_specific_outputs(pipeline_state)
         errors.extend(step_errors)
-        
-        return len(errors) == 0, errors
-    
+        return (len(errors) == 0, errors)
+
     @abstractmethod
-    def _validate_step_specific_outputs(
-        self,
-        pipeline_state: Dict[str, Any]
-    ) -> List[str]:
+    def _validate_step_specific_outputs(self, pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific outputs.
         
         Args:
@@ -113,11 +79,8 @@ class BaseValidationStep(BaseStep):
         Returns:
             List of validation errors
         """
-    
-    def _extract_validation_data(
-        self,
-        pipeline_state: Dict[str, Any]
-    ) -> Tuple[pd.DataFrame, pd.Series]:
+
+    def _extract_validation_data(self, pipeline_state: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.Series]:
         """Extract data for validation.
         
         Args:
@@ -165,39 +128,24 @@ class BaseValidationStep(BaseStep):
             Dictionary of models
         """
         models = {}
-        
-        # Get specialist models
-        if "tactician_specialist_models" in pipeline_state:
-            specialist_models = pipeline_state["tactician_specialist_models"]
-            
-            # Flatten the structure
+        if 'tactician_specialist_models' in pipeline_state:
+            specialist_models = pipeline_state['tactician_specialist_models']
             for regime_id, regime_models in specialist_models.items():
                 for tactic_name, tactic_models in regime_models.items():
-                    model_key = f"{regime_id}_{tactic_name}"
-                    
+                    model_key = f'{regime_id}_{tactic_name}'
                     if isinstance(tactic_models, dict):
-                        models.update({
-                            f"{model_key}_{model_name}": model
-                            for model_name, model in tactic_models.items()
-                        })
+                        models.update({f'{model_key}_{model_name}': model for model_name, model in tactic_models.items()})
                     else:
                         models[model_key] = tactic_models
-        
-        # Get analyst models if available
-        if "analyst_ensembles" in pipeline_state:
-            analyst_ensembles = pipeline_state["analyst_ensembles"]
-            
+        if 'analyst_ensembles' in pipeline_state:
+            analyst_ensembles = pipeline_state['analyst_ensembles']
             for regime_id, ensemble_data in analyst_ensembles.items():
-                if isinstance(ensemble_data, dict) and "ensemble" in ensemble_data:
-                    for ens_type, ens_model in ensemble_data["ensemble"].items():
-                        models[f"analyst_{regime_id}_{ens_type}"] = ens_model
-        
+                if isinstance(ensemble_data, dict) and 'ensemble' in ensemble_data:
+                    for ens_type, ens_model in ensemble_data['ensemble'].items():
+                        models[f'analyst_{regime_id}_{ens_type}'] = ens_model
         return models
-    
-    def _create_validation_summary(
-        self,
-        validation_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    def _create_validation_summary(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
         """Create a summary of validation results.
         
         Args:
@@ -206,35 +154,16 @@ class BaseValidationStep(BaseStep):
         Returns:
             Validation summary
         """
-        summary = {
-            "timestamp": pd.Timestamp.now().isoformat(),
-            "validation_type": self.step_name,
-            "models_validated": 0,
-            "overall_metrics": {},
-            "key_findings": [],
-            "warnings": [],
-            "recommendations": []
-        }
-        
-        # Count models
-        if "model_results" in validation_results:
-            summary["models_validated"] = len(validation_results["model_results"])
-        
-        # Calculate overall metrics
-        if "overall_metrics" in validation_results:
-            summary["overall_metrics"] = validation_results["overall_metrics"]
-        
-        # Add step-specific summary items
+        summary = {'timestamp': pd.Timestamp.now().isoformat(), 'validation_type': self.step_name, 'models_validated': 0, 'overall_metrics': {}, 'key_findings': [], 'warnings': [], 'recommendations': []}
+        if 'model_results' in validation_results:
+            summary['models_validated'] = len(validation_results['model_results'])
+        if 'overall_metrics' in validation_results:
+            summary['overall_metrics'] = validation_results['overall_metrics']
         self._add_step_specific_summary(summary, validation_results)
-        
         return summary
-    
+
     @abstractmethod
-    def _add_step_specific_summary(
-        self,
-        summary: Dict[str, Any],
-        validation_results: Dict[str, Any]
-    ) -> None:
+    def _add_step_specific_summary(self, summary: Dict[str, Any], validation_results: Dict[str, Any]) -> None:
         """Add step-specific items to summary.
         
         Args:

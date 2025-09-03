@@ -1,6 +1,6 @@
 # src/training/steps/precompute_wavelet_features.py
 
-"""Pre-computation script for wavelet features."
+"""Pre-computation script for wavelet features.
 Generates and caches expensive wavelet calculations once for the entire dataset,
 enabling fast loading during backtesting without recalculation.
 """
@@ -28,7 +28,7 @@ from src.utils.warning_symbols import (
 
 
 class WaveletFeaturePrecomputer:
-    """Pre-computation system for wavelet features."
+    """Pre-computation system for wavelet features.
     Processes entire datasets and caches results for fast backtesting.
     """
     def __init__(self, config: dict[str, Any]) -> None:
@@ -76,10 +76,8 @@ class WaveletFeaturePrecomputer:
             return True
 
         except Exception as e:
-            self.print(
-                initialization_error(
-                    f"❌ Error initializing pre-computation system: {e}",
-                ),
+            self.logger.error(
+                f"❌ Error initializing pre-computation system: {e}"
             )
             return False
 
@@ -102,23 +100,23 @@ class WaveletFeaturePrecomputer:
             self.logger.info(f"📊 Starting pre-computation for dataset: {data_path}")
 
             # Load dataset
-            dataset, await self._load_dataset(data_path, symbol, start_date, end_date)
+            dataset = await self._load_dataset(data_path, symbol, start_date, end_date)
             if dataset is None or dataset.empty:
-                self.print(error("No data to process"))
+                self.logger.error("No data to process")
                 return False
 
             # Process dataset
-            success, await self._process_dataset(dataset, output_path)
+            success = await self._process_dataset(dataset, output_path)
 
             if success:
                 self.logger.info("✅ Dataset pre-computation completed successfully")
             else:
-                self.print(failed("❌ Dataset pre-computation failed"))
+                self.logger.error("❌ Dataset pre-computation failed")
 
             return success
 
-        except Exception:
-            self.print(error("Error in dataset pre-computation: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error in dataset pre-computation: {e}")
             return False
 
     async def _load_dataset(
@@ -136,10 +134,10 @@ class WaveletFeaturePrecomputer:
                         ParquetDatasetManager,
                     )
 
-                    pdm, ParquetDatasetManager(logger=self.logger)
+                    pdm = ParquetDatasetManager(logger=self.logger)
                     columns = ohlcv_columns()
                     if file_path.is_dir():
-                        dataset, pdm.scan_dataset(
+                        dataset = pdm.scan_dataset(
                             str(file_path), columns=columns, to_pandas=True
                         )
                     else:
@@ -151,7 +149,7 @@ class WaveletFeaturePrecomputer:
                             data_path,
                             columns="ohlcv_columns"
                         ):
-                            dataset, pd.read_parquet(data_path, columns=columns)
+                            dataset = pd.read_parquet(data_path, columns=columns)
                 except Exception:
                     from src.utils.logger import log_io_operation
 
@@ -159,35 +157,32 @@ class WaveletFeaturePrecomputer:
                         dataset = pd.read_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
-        except Exception as e:
-            pass  # TODO: Handle exception
-import copy
-
-with log_io_operation(self.logger, "read_csv", data_path):
-    dataset, pd.read_csv(data_path, parse_dates=True)
+                
+                with log_io_operation(self.logger, "read_csv", data_path):
+                    dataset = pd.read_csv(data_path, parse_dates=True)
             elif file_path.suffix.lower() == ".h5":
                 dataset = pd.read_hdf(data_path)
             else:
-                self.print(error("Unsupported file format: {file_path.suffix}"))
+                self.logger.error(f"Unsupported file format: {file_path.suffix}")
                 return None
 
             # Apply filters
-            if symbol:
-                dataset, dataset[dataset.get("symbol", "") == symbol]
+            if symbol and "symbol" in dataset.columns:
+                dataset = dataset[dataset["symbol"] == symbol]
 
             if start_date:
-                dataset, dataset[dataset.index >= start_date]
+                dataset = dataset[dataset.index >= start_date]
 
             if end_date:
-                dataset, dataset[dataset.index <= end_date]
+                dataset = dataset[dataset.index <= end_date]
 
             self.logger.info(
                 f"📈 Loaded dataset: {len(dataset)} rows, {len(dataset.columns)} columns",
             )
             return dataset
 
-        except Exception:
-            self.print(error("Error loading dataset: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error loading dataset: {e}")
             return None
 
     @validate_wavelet_data_quality
@@ -211,7 +206,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
                 batch_data = dataset.iloc[start_idx:end_idx]
 
                 # Process batch
-                batch_success, await self._process_batch(
+                batch_success = await self._process_batch(
                     batch_data,
                     batch_idx,
                     total_batches,
@@ -232,8 +227,8 @@ with log_io_operation(self.logger, "read_csv", data_path):
 
             return True
 
-        except Exception:
-            self.print(error("Error processing dataset: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error processing dataset: {e}")
             return False
 
     @validate_wavelet_data_quality
@@ -246,7 +241,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
             volume_data = self._extract_volume_data(batch_data)
 
             if price_data.empty:
-                self.print(error("Empty price data in batch {batch_idx + 1}"))
+                self.logger.error(f"Empty price data in batch {batch_idx + 1}")
                 return True
 
             # Generate wavelet features
@@ -271,8 +266,8 @@ with log_io_operation(self.logger, "read_csv", data_path):
                 total_batches,
             )
 
-        except Exception:
-            self.print(error("Error processing batch {batch_idx + 1}: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error processing batch {batch_idx + 1}: {e}")
             return False
 
     def _extract_price_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -283,7 +278,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
             available_columns = [col for col in price_columns if col in data.columns]
 
             if len(available_columns) < 4:  # Need at least OHLC
-                self.print(error("Insufficient price columns: {available_columns}"))
+                self.logger.error(f"Insufficient price columns: {available_columns}")
                 return pd.DataFrame()
 
             price_data = data[available_columns].copy()
@@ -295,8 +290,8 @@ with log_io_operation(self.logger, "read_csv", data_path):
             # Remove rows with NaN values
             return price_data.dropna()
 
-        except Exception:
-            self.print(error("Error extracting price data: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error extracting price data: {e}")
             return pd.DataFrame()
 
     def _extract_volume_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -315,8 +310,8 @@ with log_io_operation(self.logger, "read_csv", data_path):
                 index=data.index
             )
 
-        except Exception:
-            self.print(error("Error extracting volume data: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error extracting volume data: {e}")
             return pd.DataFrame()
 
     async def _save_batch_results(
@@ -335,7 +330,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
                 "timestamp": time.time(),
             }
 
-            cache_success, self.wavelet_cache.save_to_cache(
+            cache_success = self.wavelet_cache.save_to_cache(
                 cache_key,
                 wavelet_features,
                 metadata,
@@ -350,19 +345,19 @@ with log_io_operation(self.logger, "read_csv", data_path):
 
             return cache_success
 
-        except Exception:
-            self.print(error("Error saving batch results: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error saving batch results: {e}")
             return False
 
     async def precompute_multiple_datasets(
-        self, dataset_configs: list[dict[str, Any]], ) -> bool:
-        """Pre-compute wavelet features for multiple datasets."
+        self, dataset_configs: list[dict[str, Any]]
+    ) -> bool:
+        """Pre-compute wavelet features for multiple datasets.
 
         Args:
             dataset_configs: List of dataset configurations
 
-        Returns: True if all successful = False otherwise
-
+        Returns: True if all successful, False otherwise
         """
         try:
             self.logger.info(
@@ -377,7 +372,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
                     f"📊 Processing dataset {i + 1}/{total_count}: {config.get('data_path', 'Unknown')}",
                 )
 
-                success, await self.precompute_dataset(
+                success = await self.precompute_dataset(
                     data_path=config["data_path"],
                     output_path=config.get("output_path"),
                     symbol=config.get("symbol"),
@@ -388,15 +383,15 @@ with log_io_operation(self.logger, "read_csv", data_path):
                 if success:
                     success_count += 1
                 else:
-                    self.print(failed("❌ Failed to process dataset {i + 1}"))
+                    self.logger.error(f"❌ Failed to process dataset {i + 1}")
 
             self.logger.info(
                 f"✅ Completed pre-computation: {success_count}/{total_count} datasets successful",
             )
             return success_count == total_count
 
-        except Exception:
-            self.print(error("Error in multiple dataset pre-computation: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error in multiple dataset pre-computation: {e}")
             return False
 
     def get_precomputation_stats(self) -> dict[str, Any]:
@@ -418,7 +413,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
             }
 
         except Exception as e:
-            self.print(error("Error getting pre-computation stats: {e}"))
+            self.logger.error(f"Error getting pre-computation stats: {e}")
             return {"error": str(e)}
 
     def clear_all_cache(self) -> bool:
@@ -428,8 +423,8 @@ with log_io_operation(self.logger, "read_csv", data_path):
                 return self.wavelet_cache.clear_cache()
             return False
 
-        except Exception:
-            self.print(error("Error clearing cache: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error clearing cache: {e}")
             return False
 
 
@@ -489,14 +484,14 @@ async def main() -> None:
         success = await precomputer.precompute_multiple_datasets(dataset_configs)
 
         if success:
-
             # Print statistics
-            precomputer.get_precomputation_stats()
+            stats = precomputer.get_precomputation_stats()
+            print(f"Pre-computation statistics: {stats}")
         else:
-            pass
+            print("Pre-computation failed")
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error in main: {e}")
 
 
 if __name__ == "__main__":

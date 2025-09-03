@@ -64,7 +64,7 @@ class ComprehensiveParameterIntegration:
         implemented separately.
         """
         return {
-            "step4_triple_barrier_method": {
+            "step4_5_triple_barrier_method": {
                 "barrier_settings": {
                     "upper_barrier_multiplier": (0.1, 5.0),
                     "lower_barrier_multiplier": (0.1, 5.0),

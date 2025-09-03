@@ -279,7 +279,7 @@ class EnhancedTrainingManager:
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
             ],
-            "step4_triple_barrier_method": [
+            "step4_5_triple_barrier_method": [
                 "data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json",
             ],
@@ -2223,12 +2223,12 @@ class EnhancedTrainingManager:
 
                     step_start_8 = time.time()
                     try:
-                        from src.training.steps import step9_hmm_based_training_enhanced
+                        from src.training.steps import step9_hmm_based_training
 
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
                         enable_multi_output = self.config.get("enable_multi_output", True)
                         
-                        step8_success = await step6_hmm_based_training_enhanced.run_enhanced_step(
+                        step8_success = await step9_hmm_based_training.run_enhanced_step(
                             symbol=symbol,
                             data_dir=data_dir,
                             method_a_mixture_of_experts=method_a_cfg,

@@ -301,6 +301,22 @@ def generate_standardized_artifact_name(
     return artifact_name
 
 
+def _hash_file(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+# Simple in-memory cache of logged hashes to avoid duplicates in single run
+_LOGGED_HASHES: set[str] = set()
+
+# Max sizes from config or defaults
+_DEF_MAX_ROWS = 100_000
+_DEF_MAX_BYTES = 50 * 1024 * 1024  # 50MB
+
+
 def log_step_dataframe(
     config: dict[str, Any],
     step_name: str,
@@ -309,30 +325,37 @@ def log_step_dataframe(
     run_id: str | None = None,
     additional_metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Log a DataFrame as an artifact for a specific step."
-
-    Args:
-        config: Configuration dictionary
-        step_name: Name of the pipeline step
-        df: DataFrame to log
-        artifact_name: Name for the artifact
-        run_id: Optional MLflow run ID
-        additional_metadata: Additional metadata to log
-    """
     try:
         metadata = extract_training_metadata(config)
 
+        # Gating: limit rows and columns for logging
+        max_rows = int(config.get('mlflow', {}).get('max_df_rows', _DEF_MAX_ROWS))
+        df_to_log = df
+        if len(df) > max_rows:
+            head_n = max_rows // 2
+            tail_n = max_rows - head_n
+            df_to_log = pd.concat([df.head(head_n), df.tail(tail_n)], ignore_index=True)
+
         # Create temporary file
         with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
-            df.to_parquet(tmp_file.name, index=False)
+            df_to_log.to_parquet(tmp_file.name, index=False)
             tmp_path = tmp_file.name
 
-        # Prepare additional metadata
+        # Dedupe by hash
+        file_hash = _hash_file(tmp_path)
+        if file_hash in _LOGGED_HASHES:
+            os.unlink(tmp_path)
+            system_logger.info(
+                f"⏭️ Skipping duplicate DataFrame artifact '{artifact_name}' (hash matched)"
+            )
+            return
+        _LOGGED_HASHES.add(file_hash)
+
+        # Prepare metadata
         extra_metadata = {
             "artifact_type": "dataframe",
-            "dataframe_shape": list(df.shape),
-            "dataframe_columns": list(df.columns),
-            "dataframe_dtypes": df.dtypes.to_dict(),
+            "dataframe_shape": list(df_to_log.shape),
+            "dataframe_columns": list(df_to_log.columns),
         }
         if additional_metadata:
             extra_metadata.update(additional_metadata)
@@ -349,11 +372,9 @@ def log_step_dataframe(
             additional_metadata=extra_metadata,
         )
 
-        # Clean up temporary file
         os.unlink(tmp_path)
-
         system_logger.info(
-            f"✅ Logged DataFrame '{artifact_name}' for step {step_name}"
+            f"✅ Logged DataFrame '{artifact_name}' for step {step_name} (rows={len(df_to_log)})"
         )
 
     except Exception as e:
@@ -536,56 +557,46 @@ def log_step_report(
     run_id: str | None = None,
     additional_metadata: dict[str, Any] | None = None,
 ) -> str:
-    """Log a step report with standardized naming pattern and folder structure."
-
-    Args:
-        config: Configuration dictionary
-        step_name: Name of the pipeline step
-        report_data: Report data to log
-        report_type: Type of report (e.g., "training_summary", "optimization_results")
-        run_id: Optional MLflow run ID
-        additional_metadata: Additional metadata to log
-
-    Returns:
-        Generated report name
-    """
     try:
         metadata = extract_training_metadata(config)
         exchange = metadata["exchange"]
         token = metadata["asset"]
 
-        # Generate standardized report name
         report_name = generate_standardized_artifact_name(
             exchange=exchange,
             token=token,
             step_number=step_name,
             artifact_type=report_type,
-            extension="json",
+            extension="json.gz",
         )
 
-        # Get standardized path
         get_standardized_artifact_path("report", step_name, report_name)
 
-        # Create temporary file
-        import json
+        import json, gzip
 
-        with tempfile.NamedTemporaryFile(
-            suffix=".json", delete=False, mode="w"
-        ) as tmp_file:
-            json.dump(report_data, tmp_file, indent=2, default=str)
+        with tempfile.NamedTemporaryFile(suffix=".json.gz", delete=False, mode="wb") as tmp_file:
+            with gzip.GzipFile(fileobj=tmp_file, mode="wb") as gz:
+                gz.write(json.dumps(report_data, indent=2, default=str).encode("utf-8"))
             tmp_path = tmp_file.name
 
-        # Prepare additional metadata
+        # Dedupe by hash
+        file_hash = _hash_file(tmp_path)
+        if file_hash in _LOGGED_HASHES:
+            os.unlink(tmp_path)
+            system_logger.info(
+                f"⏭️ Skipping duplicate report '{report_name}' (hash matched)"
+            )
+            return report_name
+        _LOGGED_HASHES.add(file_hash)
+
         extra_metadata = {
             "artifact_type": "report",
             "report_type": report_type,
             "report_keys": list(report_data.keys()),
-            "report_size": len(report_data),
         }
         if additional_metadata:
             extra_metadata.update(additional_metadata)
 
-        # Log artifact
         log_artifacts_with_metadata(
             local_path=tmp_path,
             artifact_path=f"artifacts/{step_name}/{report_name}",
@@ -597,9 +608,7 @@ def log_step_report(
             additional_metadata=extra_metadata,
         )
 
-        # Clean up temporary file
         os.unlink(tmp_path)
-
         system_logger.info(f"✅ Logged report '{report_name}' for step {step_name}")
         return report_name
 
@@ -1324,3 +1333,28 @@ def create_detailed_step_report(
             ),
         },
     }
+
+
+def cleanup_local_artifacts(base_dir: str = "artifacts", days: int = 30, dry_run: bool = True) -> list[str]:
+    """List (and optionally delete) artifacts older than N days.
+    Returns list of paths affected. Deletion disabled by default (dry_run).
+    """
+    import time
+    affected: list[str] = []
+    try:
+        cutoff = time.time() - days * 86400
+        for root, _dirs, files in os.walk(base_dir):
+            for name in files:
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                    if mtime < cutoff:
+                        affected.append(path)
+                        if not dry_run:
+                            with contextlib.suppress(Exception):
+                                os.remove(path)
+                except Exception:
+                    continue
+    except Exception as e:
+        system_logger.warning(f"Artifact cleanup scan failed: {e}")
+    return affected

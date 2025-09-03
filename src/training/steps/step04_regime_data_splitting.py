@@ -138,12 +138,7 @@ class RegimeDataSplittingStep:
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @traced(span_name="split_data_by_regimes")
-    # @quality_gate - removed, handled by validates
-        min_quality_score=0.8,
-        max_correlation=0.95,
-        required_grade="B"
-    )
-    @validates()
+    @validates(min_quality_score=0.8, max_correlation=0.95, required_grade="B")
     @cached
     async def split_data_by_regimes(
         self, 

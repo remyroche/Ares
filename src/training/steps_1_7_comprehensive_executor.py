@@ -47,6 +47,7 @@ from src.training.steps.step07_enhanced_matrix_operations_validator import run_v
 from src.utils.enhanced_mlflow_integration import (
     log_step_report,
 )
+from src.utils.step_dependency_validator import validate_step_dependencies
 from src.utils.logger import system_logger
 
 
@@ -353,6 +354,18 @@ class Steps1To7ComprehensiveExecutor:
             quality_result["issues"].append(f"Quality assessment error: {str(e)}")
 
         return quality_result
+
+    async def _guard_step_dependencies(self, current_step: str) -> bool:
+        try:
+            state = self._build_pipeline_state(current_step)
+            ok = await validate_step_dependencies(current_step, state)
+            if not ok:
+                self.logger.error(f"❌ Dependency check failed for {current_step}")
+                return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Dependency validation error for {current_step}: {e}")
+            return True
 
     def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
         """Calculate consistency score for the data."""

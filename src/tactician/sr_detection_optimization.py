@@ -262,8 +262,6 @@ class SRDetectionOptimizer:
         elif target_timeframe == '30m':
             params['dbscan_eps'] = trial.suggest_float('dbscan_eps', 0.01, 0.025)
             params['dbscan_min_samples'] = trial.suggest_int('dbscan_min_samples', 4, 6)
-        params['tf_1m_weight'] = trial.suggest_float('tf_1m_weight', 0.05, 0.2)
-        params['tf_5m_weight'] = trial.suggest_float('tf_5m_weight', 0.1, 0.25)
         params['tf_15m_weight'] = trial.suggest_float('tf_15m_weight', 0.15, 0.3)
         params['tf_1h_weight'] = trial.suggest_float('tf_1h_weight', 0.2, 0.35)
         params['tf_4h_weight'] = trial.suggest_float('tf_4h_weight', 0.15, 0.3)
@@ -484,7 +482,7 @@ class SRDetectionOptimizer:
 
     def _extract_timeframe_weights(self, params: dict[str, Any]) -> dict[str, float]:
         """Extract timeframe weights from parameters."""
-        return {'1m': params.get('tf_1m_weight', 0.1), '5m': params.get('tf_5m_weight', 0.15), '15m': params.get('tf_15m_weight', 0.2), '1h': params.get('tf_1h_weight', 0.25), '4h': params.get('tf_4h_weight', 0.2), '1d': params.get('tf_1d_weight', 0.1)}
+        return {'15m': params.get('tf_15m_weight', 0.2), '1h': params.get('tf_1h_weight', 0.25), '4h': params.get('tf_4h_weight', 0.2), '1d': params.get('tf_1d_weight', 0.1)}
 
     def _extract_advanced_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """Extract advanced parameters from parameters."""

@@ -1,6 +1,4 @@
 """
-import yaml
-import shutil
 Configuration Security Module
 
 This module provides secure configuration management including:
@@ -14,12 +12,14 @@ import configparser
 import json
 import logging
 import os
+import shutil
+import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 
-from .error_handler import handle_errors
+from .error_handler import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -99,7 +99,7 @@ class ConfigurationSecurityManager:
         self.backup_dir = Path("data_cache/config_backups")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
-    @handles_errors(Exception,, fallback=None, context="configuration loading")
+    @handles_errors(Exception, fallback=None, context="configuration loading")
     def load_secure_configuration(self, file_path: str, config_format: str = "auto") -> Optional[Dict[str, Any]]:
         """Load configuration from file with security validation."
 
@@ -310,7 +310,7 @@ class ConfigurationSecurityManager:
                     encrypt_dict(value)
                 elif isinstance(value, str) and self._is_sensitive_key(key):
                     # In a real implementation, you would encrypt this value
-                    # For now, we'll just mark it as encrypted'
+                    # For now, we'll just mark it as encrypted
                     d[key] = f"[ENCRYPTED]{value[:4]}..."
 
         encrypt_dict(encrypted_config)
@@ -355,13 +355,9 @@ class ConfigurationSecurityManager:
                     json.dump(config, f, indent=2)
             else:
                 # For other formats, just copy the file
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
+                shutil.copy2(file_path, backup_file)
 
-shutil.copy2(file_path, backup_file)
-
-# Set secure permissions on backup
+            # Set secure permissions on backup
             backup_file.chmod(self.security_policies["config_file_permissions"])
 
             self.logger.info(f"Configuration backup created: {backup_file}")
@@ -369,7 +365,7 @@ shutil.copy2(file_path, backup_file)
         except Exception as e:
             self.logger.error(f"Failed to create configuration backup: {e}")
 
-    @handles_errors(Exception,, fallback=None, context="configuration value access")
+    @handles_errors(Exception, fallback=None, context="configuration value access")
     def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
         """Get configuration value by dot-notation path."
 
@@ -402,7 +398,7 @@ shutil.copy2(file_path, backup_file)
             self.logger.error(f"Failed to get config value for {key_path}: {e}")
             return default
 
-    @handles_errors(Exception,, fallback=None, context="configuration value setting")
+    @handles_errors(Exception, fallback=None, context="configuration value setting")
     def set_config_value(self, config: Dict[str, Any], key_path: str, value: Any) -> Optional[Dict[str, Any]]:
         """Set configuration value by dot-notation path."
 

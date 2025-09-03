@@ -4,14 +4,10 @@ from datetime import datetime
 from typing import Any
 
 from src.core.decorators import handles_errors
-from src.utils.error_handler import (
-    asyncio,
-    handle_errors,
-    handle_specific_errors,
-    import,
-)
+from src.utils.error_handler import asyncio, handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import copy, error, failed, import, invalid
+from src.utils.warning_symbols import copy, error, failed, invalid
+
 
 class OptimizationManager:
     """Optimization manager responsible for hyperparameter optimization and model tuning."
@@ -455,18 +451,18 @@ class OptimizationManager:
 
             # Optimize analyst ensembles
             if model_results.get("analyst_models"):
-                ensemble_optimization_results["optimized_ensembles"][
-                    "analyst"
-                ] = await self._optimize_analyst_ensembles(
-                    model_results["analyst_models"],
+                ensemble_optimization_results["optimized_ensembles"]["analyst"] = (
+                    await self._optimize_analyst_ensembles(
+                        model_results["analyst_models"],
+                    )
                 )
 
             # Optimize tactician ensembles
             if model_results.get("tactician_models"):
-                ensemble_optimization_results["optimized_ensembles"][
-                    "tactician"
-                ] = await self._optimize_tactician_ensembles(
-                    model_results["tactician_models"],
+                ensemble_optimization_results["optimized_ensembles"]["tactician"] = (
+                    await self._optimize_tactician_ensembles(
+                        model_results["tactician_models"],
+                    )
                 )
 
             self.logger.info("✅ Ensemble optimization completed")
@@ -605,6 +601,7 @@ class OptimizationManager:
             self.logger.info("✅ Optimization Manager stopped successfully")
         except Exception as e:
             self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
+
 
 @handles_errors(fallback=None)
 async def setup_optimization_manager(

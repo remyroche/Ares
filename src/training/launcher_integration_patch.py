@@ -11,13 +11,14 @@ from datetime import datetime
 from typing import Any, Callable, Optional
 
 from src.config.computational_optimization_config import get_optimization_config
+from src.core.decorators import handles_errors
 from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )
 from src.training.factory import OptimizedTrainingFactory
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed
+
 
 class OptimizedAresLauncherMixin:
     """Mixin class that provides optimized training methods for AresLauncher.
@@ -328,6 +329,7 @@ class OptimizedAresLauncherMixin:
             "optimization_factory_ready": self.optimization_factory is not None,
         }
 
+
 def create_optimized_launcher_patch() -> Callable[[Any], Any]:
     """Create a patch that can be applied to the existing AresLauncher."""
 
@@ -371,6 +373,7 @@ def create_optimized_launcher_patch() -> Callable[[Any], Any]:
         return launcher_instance
 
     return patch_launcher
+
 
 # Quick integration function for immediate use
 def enable_optimizations_in_launcher() -> Optional[Callable[[Any], Any]]:

@@ -21,6 +21,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
+
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
     """Extract required metadata from enhanced training manager configuration.
 
@@ -53,6 +54,7 @@ def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
         "lookback_period": lookback_period,
         "project_version": project_version,
     }
+
 
 def with_enhanced_metadata(func):
     """Decorator to automatically add enhanced metadata to MLflow operations.
@@ -87,6 +89,7 @@ def with_enhanced_metadata(func):
         return func(config, *args, **kwargs)
 
     return wrapper
+
 
 @handles_errors(fallback=None)
 def log_bot_version_to_mlflow(run_id: str | None = None) -> None:
@@ -219,6 +222,7 @@ def log_enhanced_training_metadata(
             mlflow.set_tag(key, value)
         system_logger.info("✅ Logged enhanced training metadata to active MLFlow run")
 
+
 @handles_errors(fallback=None)
 def log_model_with_metadata(
     model,
@@ -291,6 +295,7 @@ def log_model_with_metadata(
             f"✅ Logged model '{model_name}' with metadata to active MLFlow run"
         )
 
+
 @handles_errors(fallback=None)
 def log_artifacts_with_metadata(
     local_path: str,
@@ -362,6 +367,7 @@ def log_artifacts_with_metadata(
         system_logger.info(
             f"✅ Logged artifact '{artifact_path}' with metadata to active MLFlow run"
         )
+
 
 @handles_errors(fallback=None)
 def log_metrics_with_metadata(
@@ -442,6 +448,7 @@ def log_metrics_with_metadata(
             f"✅ Logged {len(metrics)} metrics with metadata to active MLFlow run"
         )
 
+
 @handles_errors(fallback=None)
 def log_params_with_metadata(
     params: dict[str, Any],
@@ -513,6 +520,7 @@ def log_params_with_metadata(
             f"✅ Logged {len(params)} parameters with metadata to active MLFlow run"
         )
 
+
 @handles_errors(fallback=dict)
 def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
     """Get MLFlow run information including bot version.
@@ -542,6 +550,7 @@ def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
         "lookback_period": run.data.tags.get("lookback_period", "Unknown"),
         "project_version": run.data.tags.get("project_version", "Unknown"),
     }
+
 
 @handles_errors(fallback=dict)
 def get_enhanced_run_metadata(run_id: str) -> dict[str, Any] | None:
@@ -576,6 +585,7 @@ def get_enhanced_run_metadata(run_id: str) -> dict[str, Any] | None:
         "parameters": run.data.params,
         "metrics": run.data.metrics,
     }
+
 
 @handles_errors(fallback=None)
 def validate_run_metadata(run_id: str) -> bool:
@@ -613,6 +623,7 @@ def validate_run_metadata(run_id: str) -> bool:
     except Exception as e:
         system_logger.error(f"Error validating run metadata for {run_id}: {e}")
         return False
+
 
 @handles_errors(fallback=None)
 def ensure_enhanced_mlflow_run(

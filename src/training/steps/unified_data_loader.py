@@ -27,7 +27,6 @@ from src.utils.common_operations import (
 
 try:
     from src.core.decorators import handles_errors
-    from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
         sanitize_string,

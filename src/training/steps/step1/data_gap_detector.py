@@ -35,8 +35,10 @@ class DataGapDetector:
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
-from src.core.decorators import handles_errors
                 MissingDataDownloaderAndGapFiller,
+                e.decorators,
+                handles_errors,
+                import,
             )
 
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)

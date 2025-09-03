@@ -20,6 +20,7 @@ import logging
 import time
 import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -35,16 +36,14 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import TimeSeriesSplit
 
 from src.utils.logger import setup_logging
-from pathlib import Path
+
 SROptimizationParameters,
     HyperparameterOptimizationConfig,
     get_parameter_search_space
 from src.config.config_optuna import (
     Path,
     SROptimizationParameters,
-    from,
     get_parameter_search_space,
-    import,
     pathlib,
 )
 from src.utils.logger import setup_logging
@@ -461,11 +460,15 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
             # Import the optimized triple barrier labeling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-OptimizedTripleBarrierLabeling
+                Exception as e:,
+            )
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+                pass,  # TODO: Handle exception properly
+            )
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling,
+                pleBarrierLabeling,
+                pt,
             )
 
             # Create labeler with regime-specific parameters

@@ -15,7 +15,6 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 from ..errors.base import AuthenticationError, AuthorizationError
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
-import asyncio
 
 # Context variable for current user
 current_user_var: ContextVar[Optional["User"]] = ContextVar(

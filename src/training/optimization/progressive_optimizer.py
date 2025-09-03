@@ -14,7 +14,8 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import asyncio, copy
 from src.utils.warning_symbols import datetime as datetime
-from src.utils.warning_symbols import error, failed, import, warning
+from src.utils.warning_symbols import error, failed, warning
+
 
 class OptimizationTier(Enum):
     """Enum for optimization tiers."""
@@ -22,6 +23,7 @@ class OptimizationTier(Enum):
     TIER_1_CRITICAL = "tier_1_critical"
     TIER_2_IMPORTANT = "tier_2_important"
     TIER_3_ADVANCED = "tier_3_advanced"
+
 
 @dataclass
 class ProgressiveConfig:
@@ -41,6 +43,7 @@ class ProgressiveConfig:
     use_previous_results: bool = True
     adaptive_timeout: bool = True
     convergence_threshold: float = 0.01
+
 
 class ProgressiveOptimizer:
     """Implements progressive optimization strategy for efficiency."""

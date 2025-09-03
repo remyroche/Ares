@@ -43,10 +43,6 @@ sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
-    error,
-    warning,
-)
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
@@ -55,6 +51,7 @@ from src.utils.centralized_decorators_simple import (
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning
+
 
 class AutoencoderConfig:
     """Configuration manager for autoencoder feature generator."""

@@ -51,6 +51,7 @@ from src.utils.centralized_decorators import (
     validate_step_output,
 )
 
+
 @dataclass
 class MatrixOperationsConfig:
     """Configuration for enhanced matrix operations."""
@@ -1520,11 +1521,12 @@ class EnhancedMatrixOperations:
         stability_scores = {}
         
         try:
-            from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+            from sklearn.model_selection import cross_val_score
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
+
 for feature in features_df.columns:
             for feature in features_df.columns:
                 try:

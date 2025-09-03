@@ -15,7 +15,6 @@ from src.config.constants import (
     DEFAULT_MAX_POSITION_SIZE,
     DEFAULT_SLIPPAGE_RATE,
     asyncio,
-    import,
 )
 from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -28,11 +27,11 @@ from src.utils.trading_decorators import (
 from src.utils.warning_symbols import (
     copy,
     execution_error,
-    import,
     initialization_error,
     invalid,
     validation_error,
 )
+
 
 class PaperTrader:
     """

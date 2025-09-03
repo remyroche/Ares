@@ -45,6 +45,7 @@ import os.path
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
 
+
 @dataclass
 class TimeframeConfig:
     """Configuration for each timeframe in the ensemble."""
@@ -56,6 +57,7 @@ class TimeframeConfig:
     enable_price_prediction: bool = (
         False  # Hazard models are for regime transitions only
     )
+
 
 @dataclass
 class EnsembleConfig:
@@ -69,6 +71,7 @@ class EnsembleConfig:
     ensemble_method: str = (
         "weighted_average"  # "weighted_average", "meta_learner", "stacking"
     )
+
 
 class MultiTimeframeHMMEnsemble:
     """Multi-timeframe HMM cluster ensemble that combines predictions from HMM clusters

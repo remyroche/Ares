@@ -728,7 +728,9 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
+
 from src.core.decorators import handles_errors
+
     # Load test configuration
     test_config = {
         "SYMBOL": "ETHUSDT",

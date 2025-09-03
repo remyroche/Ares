@@ -20,6 +20,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
 )
 
+
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
 

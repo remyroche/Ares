@@ -9,13 +9,7 @@ import pandas as pd
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.tracing import with_tracing_span
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    import,
-    initialization_error,
-    invalid,
-)
+from src.utils.warning_symbols import error, failed, initialization_error, invalid
 from src.utils.warning_symbols import pandas as pd
 
 DEFAULT_SUPERVISOR_CONFIG = {

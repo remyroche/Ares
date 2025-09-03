@@ -14,6 +14,7 @@ import logging
 import os
 import time
 import warnings
+from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -24,33 +25,31 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from copy import copy
+
 get_current_datetime, format_datetime, ensure_directory,
     safe_copy, safe_fillna, safe_read_parquet, safe_to_parquet
-from src.utils.common_operations import (
-)
-from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
-from src.utils.common_operations import ensure_directory
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+
+from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (  # -----------------------------------------------------------------------------; Warnings logging setup
+    "default",
     apply_regime_aware_triple_barrier_labeling_with_barriers,
     copy,
     ensure_directory,
     format_datetime,
     from,
     get_current_datetime,
+    handle_errors,
     import,
     safe_copy,
     safe_fillna,
     safe_read_parquet,
     safe_to_parquet,
-from src.utils.error_handler import handle_errors
+    src.utils.error_handler,
+    warnings.simplefilter,
+)
+from src.utils.common_operations import ensure_directory
 
-# -----------------------------------------------------------------------------
-# Warnings logging setup
-# -----------------------------------------------------------------------------
-warnings.simplefilter("default")
 _warning_logger = logging.getLogger("Ares.Warnings")
 if not _warning_logger.handlers:
     try:

@@ -12,10 +12,9 @@ from typing import Any
 
 from src.config_optuna import get_parameter_value
 from src.core.decorators import handles_errors
-import copy
-import asyncio
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+
 
 class LeverageSizer:
     """Simplified leverage sizer that uses ML confidence scores and liquidation risk
@@ -531,6 +530,7 @@ class LeverageSizer:
             self.logger.info("✅ Leverage sizer cleanup completed")
         except Exception as e:
             self.logger.error(f"Error cleaning up leverage sizer: {e}")
+
 
 @handles_errors(fallback=None)
 async def setup_leverage_sizer(

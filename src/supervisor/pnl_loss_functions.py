@@ -67,6 +67,7 @@ def create_pnl_aware_loss(
 
     return pnl_aware_loss
 
+
 class PnLLossFunctions:
     """PnL Loss Functions with comprehensive error handling and type safety."""
 
@@ -1094,8 +1095,10 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error stopping PnL loss functions: {e}")
 
+
 # Global PnL loss functions instance
 pnl_loss_functions: PnLLossFunctions | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_pnl_loss_functions(

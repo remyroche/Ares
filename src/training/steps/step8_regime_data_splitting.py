@@ -4,14 +4,15 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 import pandas as pd
 
 project_root = Path(__file__).parent.parent.parent
 import sys
+
 sys.path.insert(0, str(project_root))
 
 # Common utilities
@@ -149,16 +150,15 @@ class RegimeDataSplittingStep:
         try:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
+            from src.config.constants import pass  # TODO: Handle exception properly
+            from src.config.constants import NG_LOOKBACK_DAYS
+            from src.config.constants import Exception as e:
             from src.config.constants import (
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-              
-             
-import numpy as np
-import os.path
-from src.core.decorators import handles_errors
-
-BLANK_TRAINING_LOOKBACK_DAYS,
+                e.decorators,
+                handles_errors,
+                import,
+                pt,
+                th,
             )
 
             # Use lookback_days from config (should be passed from enhanced training manager)

@@ -5137,6 +5137,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 
+
 @deterministic_seed(42)
 @idempotent_step(step_key="step6_hmm_based_training")
 @artifact_write_lock()
@@ -5256,10 +5257,12 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
 
 import copy
 import os.path
-from src.core.decorators import handles_errors
 
 # Create configuration
 import numpy as np
+
+from src.core.decorators import handles_errors
+
         # Create configuration
         config = {
             "symbol": symbol,

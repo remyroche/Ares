@@ -11,13 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-)
 from src.utils.centralized_decorators import PerformanceLevel, performance_monitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+
 
 @dataclass
 class MonitoringComponents:
@@ -27,6 +24,7 @@ class MonitoringComponents:
     ml_monitor: Optional["MLMonitor"] = None
     report_scheduler: Optional["ReportScheduler"] = None
     tracking_system: Optional["TrackingSystem"] = None
+
 
 class MonitoringIntegrationManager:
     """Unified monitoring integration manager."""

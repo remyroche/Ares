@@ -14,9 +14,10 @@ from typing import Any
 
 from dataclasses_json import dataclass_json
 
-from src.supervisor.performance_monitor import PerformanceMonitor
 from src.core.decorators import handles_errors
+from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.logger import system_logger
+
 
 class ModelDriftType(Enum):
     """Model drift types."""
@@ -25,6 +26,7 @@ class ModelDriftType(Enum):
     DATA_DRIFT = "data_drift"
     LABEL_DRIFT = "label_drift"
     FEATURE_DRIFT = "feature_drift"
+
 
 @dataclass_json
 @dataclass
@@ -41,6 +43,7 @@ class ModelDriftAlert:
     severity: str  # "low", "medium", "high", "critical"
     description: str
 
+
 @dataclass_json
 @dataclass
 class FeatureDriftMetrics:
@@ -53,6 +56,7 @@ class FeatureDriftMetrics:
     ks_statistic: float
     p_value: float
     is_drifted: bool
+
 
 @dataclass_json
 @dataclass
@@ -72,6 +76,7 @@ class ModelPerformanceSnapshot:
     concept_drift_score: float
     data_drift_score: float
 
+
 @dataclass_json
 @dataclass
 class EnsemblePerformanceMetrics:
@@ -85,6 +90,7 @@ class EnsemblePerformanceMetrics:
     diversity_score: float
     agreement_score: float
     meta_learner_performance: float | None = None
+
 
 class EnhancedModelMonitor:
     """Enhanced model monitor that integrates with existing performance monitoring to

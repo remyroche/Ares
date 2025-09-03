@@ -20,6 +20,7 @@ from src.utils.centralized_decorators import (
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
+
 @dataclass
 class DashboardMetrics:
     """Dashboard metrics data structure."""
@@ -31,6 +32,7 @@ class DashboardMetrics:
     confidence_metrics: Dict[str, float]
     alerts: List[Dict[str, Any]]
     optimization_opportunities: List[Dict[str, Any]]
+
 
 class PerformanceDashboard:
     """Real-time performance dashboard."""

@@ -18,6 +18,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.core.decorators import handles_errors
+
 # Import fractional differentiation
 from src.training.steps.fractional_differentiation import (
     FractionalDifferentiation,
@@ -47,7 +49,6 @@ from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
 
 # Import optimization utilities
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
-from src.core.decorators import handles_errors
 from src.utils.intelligent_feature_cache import cache_feature_engineering
 from src.utils.logger import system_logger
 from src.utils.lookahead_bias_detector import (
@@ -100,6 +101,7 @@ FEATURE_OPTIMIZATION_CONFIG = {
         "max_parallel_workers": 4,
     },
 }
+
 
 class OptimizedResampler:
     """Optimized resampling with caching for improved performance."""
@@ -212,6 +214,7 @@ class OptimizedResampler:
             "hit_rate": hit_rate,
             "cache_size": len(self.resampling_cache),
         }
+
 
 class WaveletFeatureCache:
     """Comprehensive caching system for wavelet features with pre-computation support.
@@ -693,6 +696,7 @@ class WaveletFeatureCache:
             self.logger.exception(f"🚨 Error getting cache stats: {e}")
             return {}
 
+
 class VectorizedVolatilityRegimeModel:
     """Vectorized volatility regime modeling for advanced feature engineering."""
 
@@ -816,6 +820,7 @@ class VectorizedVolatilityRegimeModel:
             self.logger.exception(f"❌ Error in volatility modeling: {e}")
             return {}
 
+
 class VectorizedCorrelationAnalyzer:
     """Vectorized correlation analysis for market microstructure."""
 
@@ -874,6 +879,7 @@ class VectorizedCorrelationAnalyzer:
         except Exception as e:
             self.logger.exception(f"❌ Error in correlation analysis: {e}")
             return {}
+
 
 class VectorizedMomentumAnalyzer:
     """Vectorized momentum analysis for trend detection."""
@@ -966,6 +972,7 @@ class VectorizedMomentumAnalyzer:
         except Exception as e:
             self.logger.exception(f"❌ Error in momentum analysis: {e}")
             return {}
+
 
 class VectorizedLiquidityAnalyzer:
     """Vectorized liquidity analysis for market microstructure."""
@@ -1060,6 +1067,7 @@ class VectorizedLiquidityAnalyzer:
             self.logger.exception(f"❌ Error in liquidity analysis: {e}")
             return {}
 
+
 class VectorizedCandlestickPatternAnalyzer:
     """Vectorized candlestick pattern analysis."""
 
@@ -1150,6 +1158,7 @@ class VectorizedCandlestickPatternAnalyzer:
             self.logger.exception(f"❌ Error in candlestick pattern analysis: {e}")
             return {}
 
+
 class VectorizedSRDistanceCalculator:
     """Vectorized support/resistance distance calculator."""
 
@@ -1224,6 +1233,7 @@ class VectorizedSRDistanceCalculator:
         except Exception as e:
             self.logger.exception(f"❌ Error in S/R distance calculation: {e}")
             return {}
+
 
 class VectorizedWaveletTransformAnalyzer:
     """Vectorized wavelet transform analyzer."""
@@ -1393,6 +1403,7 @@ class VectorizedWaveletTransformAnalyzer:
         except Exception as e:
             self.logger.exception(f"❌ Error removing constant features: {e}")
             return features
+
 
 class VectorizedAdvancedFeatureEngineering:
     """Comprehensive vectorized advanced feature engineering system.

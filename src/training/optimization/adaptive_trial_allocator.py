@@ -13,7 +13,8 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import asyncio, copy
 from src.utils.warning_symbols import datetime as datetime
-from src.utils.warning_symbols import error, import, warning
+from src.utils.warning_symbols import error, warning
+
 
 @dataclass
 class TrialAllocationConfig:
@@ -26,6 +27,7 @@ class TrialAllocationConfig:
     performance_weight: float = 0.4
     dynamic_allocation: bool = True
     reallocation_threshold: float = 0.1
+
 
 class AdaptiveTrialAllocator:
     """Allocates trials based on parameter importance and performance."""
@@ -298,9 +300,7 @@ class AdaptiveTrialAllocator:
             # Calculate performance-based weights
             performance_weights = {}
             for param in parameters:
-                if (
-                    self.parameter_performance.get(param)
-                ):
+                if self.parameter_performance.get(param):
                     # Higher variance = more trials needed
                     variance = np.var(self.parameter_performance[param])
                     performance_weights[param] = min(variance * 5, 1.0)

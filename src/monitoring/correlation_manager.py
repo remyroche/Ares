@@ -16,12 +16,14 @@ from typing import Any, Dict, List, Optional
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
 
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
+
 
 @dataclass
 class CorrelationRequest:
@@ -37,6 +39,7 @@ class CorrelationRequest:
     error_info: Optional[Dict[str, Any]] = None
     performance_metrics: Dict[str, float] = None
     metadata: Dict[str, Any] = None
+
 
 class CorrelationManager:
     """Centralized correlation ID management and request/response correlation

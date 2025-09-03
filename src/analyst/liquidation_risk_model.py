@@ -1,17 +1,18 @@
 # src/analyst/liquidation_risk_model.py
-from typing import Any
-from src.core.decorators import handles_errors
-import pandas as pd
-import logging
-import datetime as datetime
 import asyncio
+import datetime as datetime
+import logging
+from typing import Any
+
+import pandas as pd
+
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators_simple import (
     asyncio,
     comprehensive_data_validation,
 )
 from src.utils.centralized_decorators_simple import datetime as datetime
 from src.utils.centralized_decorators_simple import (
-    import,
     logging,
     validate_data_quality,
     with_tracing_span,
@@ -153,7 +154,10 @@ class LiquidationRiskModel:
         context="liquidation risk calculation",
     )
     async def calculate_liquidation_risk(
-        self, ml_predictions: dict[str, Any], current_price: float, target_direction: str = "long"
+        self,
+        ml_predictions: dict[str, Any],
+        current_price: float,
+        target_direction: str = "long",
     ) -> dict[str, Any]:
         """
         Calculate liquidation risk and safe leverage levels.
@@ -179,24 +183,34 @@ class LiquidationRiskModel:
             adverse_risk = self._extract_adverse_risk(ml_predictions, target_direction)
 
             # Calculate safe leverage levels
-            safe_leverage = self._calculate_safe_leverage(adverse_risk, target_direction)
+            safe_leverage = self._calculate_safe_leverage(
+                adverse_risk, target_direction
+            )
 
             # Calculate liquidation prices for different leverage levels
-            liquidation_prices = self._calculate_liquidation_prices(current_price, target_direction)
+            liquidation_prices = self._calculate_liquidation_prices(
+                current_price, target_direction
+            )
 
             # Generate risk assessment
             risk_assessment = {
-                "adverse_risk": adverse_risk, "safe_leverage": safe_leverage,
+                "adverse_risk": adverse_risk,
+                "safe_leverage": safe_leverage,
                 "max_safe_leverage": self._get_max_safe_leverage(adverse_risk),
                 "risk_level": self._classify_risk_level(adverse_risk),
-                "recommendation": self._generate_risk_recommendation(adverse_risk, safe_leverage),
-                "liquidation_prices": liquidation_prices, "target_direction": target_direction,
+                "recommendation": self._generate_risk_recommendation(
+                    adverse_risk, safe_leverage
+                ),
+                "liquidation_prices": liquidation_prices,
+                "target_direction": target_direction,
                 "current_price": current_price,
                 "timestamp": pd.Timestamp.now().isoformat(),
             }
 
             self.risk_assessments = risk_assessment
-            self.logger.info(f"Risk assessment completed: safe leverage = {safe_leverage}x, adverse risk = {adverse_risk:.3f}")
+            self.logger.info(
+                f"Risk assessment completed: safe leverage = {safe_leverage}x, adverse risk = {adverse_risk:.3f}"
+            )
 
             return risk_assessment
 
@@ -281,9 +295,7 @@ class LiquidationRiskModel:
             safe_leverage = int(safe_leverage * self.safe_leverage_multiplier)
 
             # Ensure within bounds
-            return max(
-                self.min_leverage, min(self.max_leverage, safe_leverage)
-            )
+            return max(self.min_leverage, min(self.max_leverage, safe_leverage))
 
         except Exception:
             self.logger.error(f"Error calculating safe leverage: {e}")
@@ -405,8 +417,10 @@ class LiquidationRiskModel:
     def get_model_status(self) -> dict[str, Any]:
         """Get model status."""
         return {
-            "is_initialized": self.is_initialized, "max_leverage": self.max_leverage,
-            "min_leverage": self.min_leverage, "safe_leverage_multiplier": self.safe_leverage_multiplier,
+            "is_initialized": self.is_initialized,
+            "max_leverage": self.max_leverage,
+            "min_leverage": self.min_leverage,
+            "safe_leverage_multiplier": self.safe_leverage_multiplier,
             "max_adverse_risk": self.max_adverse_risk,
         }
 

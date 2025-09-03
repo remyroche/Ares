@@ -6,9 +6,10 @@ from typing import Any, Dict, Optional, Tuple
 import pandas as pd
 import yaml
 
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import handle_errors, with_tracing_span
 from src.utils.logger import get_logger
-from src.core.decorators import handles_errors
+
 
 class DynamicBarrierCalculator:
     """Dynamic barrier calculator for Tactician based on Analyst triple barrier values.

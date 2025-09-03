@@ -356,6 +356,7 @@ class AdvancedReportingEngine:
         except Exception as e:
             self.logger.error(f"Error caching report: {e}")
 
+
 class PerformanceReporter:
     """Enhanced Performance Reporter component with DI, type hints, robust error
     handling, and advanced reporting capabilities."""
@@ -995,7 +996,9 @@ class PerformanceReporter:
             self.logger.error(f"Error calculating tail risk: {e}")
             return 0.0
 
+
 performance_reporter: PerformanceReporter | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_performance_reporter(

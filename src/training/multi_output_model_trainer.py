@@ -79,6 +79,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
     
@@ -1753,6 +1754,7 @@ class MultiOutputModelTrainer:
             from sklearn.utils.class_weight import compute_class_weight
 
 import copy
+
 from src.core.decorators import handles_errors
 
 class_weights = compute_class_weight(

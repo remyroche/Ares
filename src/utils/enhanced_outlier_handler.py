@@ -18,8 +18,10 @@ import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class OutlierSeverity(Enum):
     """Outlier severity levels."""
@@ -28,6 +30,7 @@ class OutlierSeverity(Enum):
     MEDIUM = "medium"  # Moderate outliers, log error
     HIGH = "high"  # Major outliers, raise exception
     CRITICAL = "critical"  # Critical outliers, raise exception and stop processing
+
 
 class DataSchema:
     """Defines expected data schema for file operations."""
@@ -146,6 +149,7 @@ class DataSchema:
 
         return results
 
+
 class OutlierInfo:
     """Information about detected outliers."""
 
@@ -182,6 +186,7 @@ class OutlierInfo:
 
     def __repr__(self):
         return self.__str__()
+
 
 class EnhancedOutlierHandler:
     """Enhanced outlier detection and handling with multiple methods and severity
@@ -779,6 +784,7 @@ class EnhancedOutlierHandler:
         }
 
         return report
+
 
 # Global enhanced outlier handler instance
 enhanced_outlier_handler = EnhancedOutlierHandler()

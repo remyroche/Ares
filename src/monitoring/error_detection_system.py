@@ -13,12 +13,14 @@ from typing import Any, Dict
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class AlertSeverity(Enum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
     EMERGENCY = "emergency"
+
 
 class ErrorCategory(Enum):
     SYSTEM = "system"
@@ -29,6 +31,7 @@ class ErrorCategory(Enum):
     PERFORMANCE = "performance"
     SECURITY = "security"
     CONFIGURATION = "configuration"
+
 
 class AnomalyType(Enum):
     PREDICTION_DRIFT = "prediction_drift"
@@ -41,6 +44,7 @@ class AnomalyType(Enum):
     NETWORK_ISSUES = "network_issues"
     DATA_QUALITY = "data_quality"
     FEATURE_DRIFT = "feature_drift"
+
 
 class ErrorDetectionSystem:
     """Error detection system scaffold."""

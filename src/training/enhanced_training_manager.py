@@ -43,6 +43,9 @@ from contextlib import contextmanager
 # Import computational optimization components
 from src.config.computational_optimization import get_computational_optimization_config
 
+# Import the auto-fix decorator for data quality issues
+from src.core.decorators import handles_errors
+
 # Import optimized tools from enhanced_training_manager_optimized
 from src.training.enhanced_training_manager_optimized import (
     AdaptiveSampler,
@@ -68,13 +71,12 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
 )
 
 # Import enhanced validation modules
+# Import enhanced validation modules
 from src.utils.cross_step_validation import CrossStepValidator
-
-# Import the auto-fix decorator for data quality issues
-from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 from src.utils.logger import system_logger
+
 # Import model performance monitor
 from src.utils.model_performance_monitor import ModelPerformanceMonitor
 from src.utils.statistical_distribution_validation import StatisticalValidator
@@ -94,10 +96,6 @@ from src.utils.training_pipeline_decorators import (
 )
 from src.utils.validator_orchestrator import validator_orchestrator
 
-# Import enhanced validation modules
-from src.utils.cross_step_validation import CrossStepValidator
-from src.utils.statistical_distribution_validation import StatisticalValidator
-from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 
 # ==== Helpers for robust data path and JSON formatting ====
 def _is_relative_to(path: Path, base: Path) -> bool:
@@ -2449,7 +2447,6 @@ class EnhancedTrainingManager:
                     self._heartbeat("Step 9.5: Multi-Timeframe HMM Ensemble Training")
                     step_start_9_5 = time.time()
                     try:
-                        from src.training.steps import step9_5_multi_timeframe_hmm_ensemble
                         from src.training.steps import (
                             step9_5_multi_timeframe_hmm_ensemble,
                         )

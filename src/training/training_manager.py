@@ -20,6 +20,7 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 
+
 class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
 

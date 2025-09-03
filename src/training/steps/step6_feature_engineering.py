@@ -1036,7 +1036,9 @@ import copy
 
 import numpy as np
 import pandas as pd
+
 from src.core.decorators import handles_errors
+
 # Initialize SR detection optimizer
 optimizer = await setup_sr_detection_optimizer(config)
         # Initialize SR detection optimizer

@@ -13,6 +13,7 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, missing
 
+
 @dataclass
 class RollbackPoint:
     """Rollback point for parameter configuration."""
@@ -25,6 +26,7 @@ class RollbackPoint:
     optimization_results: dict[str, Any] | None = None
     notes: str | None = None
 
+
 @dataclass
 class RollbackOperation:
     """Rollback operation details."""
@@ -35,6 +37,7 @@ class RollbackOperation:
     parameters_changed: list[str]
     success: bool
     error_message: str | None = None
+
 
 class RollbackManager:
     """Manages rollback points and allows manual reversion to previous parameter
@@ -527,6 +530,7 @@ class RollbackManager:
         except Exception as e:
             self.print(error("Error getting rollback summary: {e}"))
             return {"error": str(e)}
+
 
 @handles_errors(fallback=None)
 def setup_rollback_manager(

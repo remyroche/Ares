@@ -11,8 +11,6 @@ from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 from ..errors.base import AppError
 from ..errors.mapping import error_mapper
-from .compose import uniform_wrapper, P, R
-import asyncio
 from .compose import P, R, uniform_wrapper
 
 logger = logging.getLogger(__name__)

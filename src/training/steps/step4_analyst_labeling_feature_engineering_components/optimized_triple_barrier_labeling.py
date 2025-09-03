@@ -445,8 +445,10 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
 if __name__ == "__main__":
     # Example usage
     import numpy as np
+
 import asyncio
 import copy
+
 from src.core.decorators import handles_errors
 
     # Create sample data

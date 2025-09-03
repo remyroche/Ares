@@ -11,12 +11,13 @@ from datetime import datetime
 from typing import Any
 
 from kelly_criterion_fix import calculate_correct_kelly_position_size
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import validate_data_quality
 from src.utils.confidence import normalize_dual_confidence
-from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, missing
+
 
 class PositionSizer:
     """
@@ -640,6 +641,7 @@ class PositionSizer:
         except Exception as e:
             self.logger.error(f"Error cleaning up position sizer: {e}")
             raise
+
 
 @handles_errors(fallback=None)
 async def setup_position_sizer(

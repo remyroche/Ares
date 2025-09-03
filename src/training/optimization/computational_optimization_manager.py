@@ -29,17 +29,17 @@ from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 
+from src.core.decorators import handles_errors
 from src.utils.decorators import (
     asyncio,
     enforce_ndarray,
     guard_array_nan_inf,
     guard_dataframe_nulls,
-    import,
     with_tracing_span,
 )
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed
+
 
 @dataclass
 class ComputationalOptimizationConfig:

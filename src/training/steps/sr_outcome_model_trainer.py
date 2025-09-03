@@ -26,18 +26,16 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
+from src.core.decorators import handles_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.centralized_decorators import (
     asyncio,
-    import,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
-import os
 
 warnings.filterwarnings("ignore")
+
 
 class SROutcomeModelTrainer:
     """Trainer for S/R outcome prediction models using LightGBM + XGBoost ensemble."""
@@ -49,7 +47,8 @@ class SROutcomeModelTrainer:
         # Model configuration
         self.model_config = config.get("sr_outcome_model", {})
         self.model_type = self.model_config.get(
-            "model_type", "ensemble",
+            "model_type",
+            "ensemble",
         )  # ensemble, lightgbm, xgboost
         self.feature_config = self.model_config.get("features", {})
 
@@ -58,23 +57,27 @@ class SROutcomeModelTrainer:
         self.validation_months = self.training_config.get("validation_months", 1)
         self.training_months = self.training_config.get("training_months", 3)
         self.min_samples_per_class = self.training_config.get(
-            "min_samples_per_class", 1000,
+            "min_samples_per_class",
+            1000,
         )
 
         # Ensemble configuration
         self.ensemble_config = self.model_config.get("ensemble", {})
         self.use_ensemble = self.ensemble_config.get("use_ensemble", True)
         self.ensemble_weights = self.ensemble_config.get(
-            "weights", [0.6, 0.4],
+            "weights",
+            [0.6, 0.4],
         )  # LightGBM, XGBoost
         self.voting_method = self.ensemble_config.get("voting", "soft")  # soft, hard
 
         # Feature engineering configuration
         self.use_temporal_features = self.feature_config.get(
-            "use_temporal_features", True,
+            "use_temporal_features",
+            True,
         )
         self.use_volatility_regime = self.feature_config.get(
-            "use_volatility_regime", True,
+            "use_volatility_regime",
+            True,
         )
         self.use_order_flow = self.feature_config.get("use_order_flow", False)
 
@@ -112,7 +115,9 @@ class SROutcomeModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
+            self.logger.exception(
+                f"Failed to initialize S/R Outcome Model Trainer: {e}"
+            )
             return False
 
     @handles_errors(fallback=False)
@@ -175,7 +180,9 @@ class SROutcomeModelTrainer:
                 # Add S/R context and outcome labels
                 labeled_data = await self._label_sr_outcomes(data_copy, timeframe)
                 if labeled_data is not None:
-                    combined_data = pd.concat([combined_data, labeled_data], ignore_index=True)
+                    combined_data = pd.concat(
+                        [combined_data, labeled_data], ignore_index=True
+                    )
 
             if combined_data.empty:
                 self.logger.error("No valid training data found")
@@ -196,7 +203,9 @@ class SROutcomeModelTrainer:
                 return None
 
             # Sample data for efficiency (process every 10th row for large datasets)
-            sample_interval = max(1, len(data) // 5000)  # Sample up to 5000 points per timeframe
+            sample_interval = max(
+                1, len(data) // 5000
+            )  # Sample up to 5000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
             labeled_samples: list[dict[str, Any]] = []
@@ -216,7 +225,9 @@ class SROutcomeModelTrainer:
                         market_data=market_slice, current_price=current_price
                     )
                     sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                        market_data=market_slice, current_price=current_price, sr_context=sr_context
+                        market_data=market_slice,
+                        current_price=current_price,
+                        sr_context=sr_context,
                     )
 
                     # Check if near S/R level
@@ -235,7 +246,9 @@ class SROutcomeModelTrainer:
                                 "records",
                             ),  # Last 20 bars
                             "features": await self._extract_features(
-                                market_data=market_slice, current_price=current_price, sr_context=sr_context
+                                market_data=market_slice,
+                                current_price=current_price,
+                                sr_context=sr_context,
                             ),
                         }
                         labeled_samples.append(sample)
@@ -337,14 +350,16 @@ class SROutcomeModelTrainer:
                 ) / current_price
                 features["support_strength"] = sr_context.get("support_strength", 0.5)
                 features["resistance_strength"] = sr_context.get(
-                    "resistance_strength", 0.5,
+                    "resistance_strength",
+                    0.5,
                 )
 
                 # Pivot level features
                 pivot_levels = sr_context.get("pivot_levels", {})
                 if pivot_levels:
                     features["nearest_pivot_strength"] = pivot_levels.get(
-                        "nearest_strength", 0.5,
+                        "nearest_strength",
+                        0.5,
                     )
                     features["pivot_touches"] = pivot_levels.get("nearest_touches", 0)
                 else:
@@ -615,7 +630,11 @@ class SROutcomeModelTrainer:
             return False
 
     async def _optimize_lightgbm_hyperparameters(
-        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit,
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weights: np.ndarray,
+        tscv: TimeSeriesSplit,
     ) -> dict:
         """Optimize LightGBM hyperparameters using Optuna."""
         try:
@@ -633,10 +652,14 @@ class SROutcomeModelTrainer:
                     "max_depth": trial.suggest_int("max_depth", 4, 12),
                     "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50),
                     "feature_fraction": trial.suggest_float(
-                        "feature_fraction", 0.6, 0.9,
+                        "feature_fraction",
+                        0.6,
+                        0.9,
                     ),
                     "bagging_fraction": trial.suggest_float(
-                        "bagging_fraction", 0.6, 0.9,
+                        "bagging_fraction",
+                        0.6,
+                        0.9,
                     ),
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
@@ -666,7 +689,9 @@ class SROutcomeModelTrainer:
                 return float(np.mean(scores))
 
             # Get trials from training input or use default
-            sr_lightgbm_trials = getattr(self, 'training_input', {}).get("sr_lightgbm_trials", 30)
+            sr_lightgbm_trials = getattr(self, "training_input", {}).get(
+                "sr_lightgbm_trials", 30
+            )
             # Run optimization
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=sr_lightgbm_trials)
@@ -705,7 +730,11 @@ class SROutcomeModelTrainer:
             }
 
     async def _optimize_xgboost_hyperparameters(
-        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit,
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weights: np.ndarray,
+        tscv: TimeSeriesSplit,
     ) -> dict:
         """Optimize XGBoost hyperparameters using Optuna."""
         try:
@@ -722,7 +751,9 @@ class SROutcomeModelTrainer:
                     "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
                     "subsample": trial.suggest_float("subsample", 0.6, 0.9),
                     "colsample_bytree": trial.suggest_float(
-                        "colsample_bytree", 0.6, 0.9,
+                        "colsample_bytree",
+                        0.6,
+                        0.9,
                     ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
@@ -752,7 +783,9 @@ class SROutcomeModelTrainer:
                 return float(np.mean(scores))
 
             # Get trials from training input or use default
-            sr_xgboost_trials = getattr(self, 'training_input', {}).get("sr_xgboost_trials", 30)
+            sr_xgboost_trials = getattr(self, "training_input", {}).get(
+                "sr_xgboost_trials", 30
+            )
             # Run optimization
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=sr_xgboost_trials)
@@ -865,14 +898,18 @@ class SROutcomeModelTrainer:
                 "auc_score": float(auc_score),
                 "classification_report": report,
                 "confusion_matrix": conf_matrix.tolist(),
-                "feature_importance": feature_importance.to_dict("records")
-                if feature_importance is not None
-                else None,
+                "feature_importance": (
+                    feature_importance.to_dict("records")
+                    if feature_importance is not None
+                    else None
+                ),
                 "timestamp": datetime.now().isoformat(),
             }
 
             with open(
-                os.path.join(self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json"),
+                os.path.join(
+                    self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json"
+                ),
                 "w",
             ) as f:
                 json.dump(evaluation_results, f, indent=2)
@@ -969,12 +1006,16 @@ class SROutcomeModelTrainer:
             # Make prediction
             if self.use_ensemble and self.ensemble_model is not None:
                 # Use ensemble prediction
-                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[0]
+                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[
+                    0
+                ]
                 y_pred = self.ensemble_model.predict(feature_vector_scaled)[0]
                 model_type = "ensemble"
             else:
                 # Use individual model prediction
-                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[0]
+                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[
+                    0
+                ]
                 y_pred = self.ensemble_model.predict(feature_vector_scaled)[0]
                 model_type = self.model_type
 

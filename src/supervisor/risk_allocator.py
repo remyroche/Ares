@@ -397,7 +397,9 @@ class RiskAllocator:
             self.logger.error(f"Error calculating risk summary: {e}")
             return {}
 
+
 risk_allocator: RiskAllocator | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_risk_allocator(

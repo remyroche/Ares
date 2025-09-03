@@ -17,13 +17,10 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-)
 from src.utils.centralized_decorators import PerformanceLevel, performance_monitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+
 
 class TraceLevel(Enum):
     """Trace levels for different types of tracing."""
@@ -33,6 +30,7 @@ class TraceLevel(Enum):
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
+
 
 class ComponentType(Enum):
     """Component types for tracing."""
@@ -45,6 +43,7 @@ class ComponentType(Enum):
     DATABASE = "database"
     GUI = "gui"
     MONITORING = "monitoring"
+
 
 @dataclass
 class TraceSpan:
@@ -63,6 +62,7 @@ class TraceSpan:
     parent_span_id: Optional[str] = None
     child_span_ids: List[str] = field(default_factory=list)
 
+
 @dataclass
 class TraceRequest:
     """Complete trace request with all spans."""
@@ -78,6 +78,7 @@ class TraceRequest:
     performance_metrics: Dict[str, float] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for tracing."""
@@ -88,6 +89,7 @@ class PerformanceMetrics:
     throughput_ops_per_sec: float
     error_rate: float
     success_rate: float
+
 
 class AdvancedTracer:
     """Advanced tracing system with correlation IDs for comprehensive request/response

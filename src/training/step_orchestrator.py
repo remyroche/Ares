@@ -12,13 +12,15 @@ from typing import Any
 
 from src.training.progress_manager import ProgressManager
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import asyncio, error, failed, import
+from src.utils.warning_symbols import asyncio, error, failed
 
 
 class StepOrchestrator:
     """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
+    def __init__(
+        self, symbol: str, exchange: str, data_dir: str = "data/training"
+    ) -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -29,7 +31,8 @@ class StepOrchestrator:
 
         # Define available steps in order (for reference)
         self.available_steps = [
-            "step01_data_collection", "step01_5_data_converter",
+            "step01_data_collection",
+            "step01_5_data_converter",
             "step02_feature_engineering",
             "step02_5_sr_optimization",
             "step03_hmm_regime_discovery",
@@ -177,14 +180,16 @@ class StepOrchestrator:
                     return False
 
             # Determine training mode and apply mode-specific parameters
-            training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
-            
+            training_mode = (
+                "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
+            )
+
             # Apply mode-specific parameters to the configuration
             config = apply_mode_parameters_to_config(config, training_mode, step_name)
-            
+
             # Get step-specific parameters
             step_params = get_step_specific_parameters(training_mode, step_name)
-            
+
             # Prepare training input for enhanced training manager
             training_input = {
                 "symbol": self.symbol,
@@ -300,22 +305,23 @@ class StepOrchestrator:
             FULL_TRAINING_LOOKBACK_DAYS,
         )
         from src.config.training_modes import (
-import copy
-get_step_specific_parameters,
+            _specific_parameters,
             apply_mode_parameters_to_config,
             get_step_specific_parameters,
             opy,
         )
 
         # Determine training mode and apply mode-specific parameters
-        training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
-        
+        training_mode = (
+            "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
+        )
+
         # Apply mode-specific parameters to the configuration
         config = apply_mode_parameters_to_config(config, training_mode, start_step)
-        
+
         # Get step-specific parameters
         step_params = get_step_specific_parameters(training_mode, start_step)
-        
+
         training_input = {
             "symbol": self.symbol,
             "exchange": self.exchange,

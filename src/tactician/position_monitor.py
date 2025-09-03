@@ -16,10 +16,10 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from src.core.decorators import handles_errors
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, missing, warning
 

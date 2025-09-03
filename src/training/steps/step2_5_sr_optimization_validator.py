@@ -388,7 +388,9 @@ async def run_validation(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
+
 from src.core.decorators import handles_errors
+
     # Test configuration
     test_config = {
         "sr_breakout_predictor": {

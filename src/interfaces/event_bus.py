@@ -10,15 +10,10 @@ from enum import Enum
 from typing import Any
 
 from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-    invalid,
-)
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid
+
 
 class EventType(Enum):
     """Event types for the trading system."""
@@ -35,6 +30,7 @@ class EventType(Enum):
     COMPONENT_STARTED = "component_started"
     COMPONENT_STOPPED = "component_stopped"
 
+
 @dataclass
 class Event:
     """Event structure."""
@@ -44,6 +40,7 @@ class Event:
     timestamp: datetime
     source: str
     correlation_id: str | None = None
+
 
 class EventBus:
     """Enhanced Event Bus component with DI, type hints, and robust error handling."""
@@ -287,8 +284,10 @@ class EventBus:
     def get_subscribers(self) -> dict[str, list[Callable]]:
         return dict(self.subscribers)
 
+
 # Global instance
 event_bus: EventBus | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:

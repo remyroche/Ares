@@ -12,7 +12,7 @@ from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import copy, error, failed, import, invalid
+from src.utils.warning_symbols import copy, error, failed, invalid
 
 
 class Monitoring:
@@ -164,7 +164,9 @@ class Monitoring:
     def get_alerts(self) -> list[dict[str, Any]]:
         return self.alerts.copy()
 
+
 monitoring: Monitoring | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_monitoring(

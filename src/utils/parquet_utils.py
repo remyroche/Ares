@@ -7,13 +7,14 @@ from typing import Any
 
 import pandas as pd
 
+from src.core.decorators import handles_errors
 from src.utils.error_handler import (
     handle_data_processing_errors,
     handle_file_operations,
 )
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.core.decorators import handles_errors
+
 
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error
@@ -158,6 +159,7 @@ class ParquetUtils:
 
         self.logger.error(f"❌ Could not read file for repair: {file_path}")
         return False
+
 
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""

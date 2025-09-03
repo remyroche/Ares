@@ -646,6 +646,7 @@ class MultiOutputProbabilityTrainer:
     This class coordinates the entire multi-output training process,
     from target generation to model training and prediction.
 from src.core.decorators import handles_errors
+
     """
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}

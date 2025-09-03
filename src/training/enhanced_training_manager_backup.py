@@ -31,6 +31,9 @@ from contextlib import contextmanager
 # Import computational optimization components
 from src.config.computational_optimization import get_computational_optimization_config
 
+# Import the auto-fix decorator for data quality issues
+from src.core.decorators import handles_errors
+
 # Import optimized tools from enhanced_training_manager_optimized
 from src.training.enhanced_training_manager_optimized import (
     AdaptiveSampler,
@@ -61,8 +64,6 @@ from src.utils.logger import system_logger
 
 # Import model performance monitor
 from src.utils.model_performance_monitor import ModelPerformanceMonitor
-# Import the auto-fix decorator for data quality issues
-from src.core.decorators import handles_errors
 from src.utils.step_dependency_validator import step_dependency_validator
 
 # Import new QA decorators
@@ -78,6 +79,7 @@ from src.utils.training_pipeline_decorators import (
     validate_pipeline_step,
 )
 from src.utils.validator_orchestrator import validator_orchestrator
+
 
 # ==== Helpers for robust data path and JSON formatting ====
 def _is_relative_to(path: Path, base: Path) -> bool:

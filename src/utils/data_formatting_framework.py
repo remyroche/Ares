@@ -21,8 +21,10 @@ import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class DataFormat(Enum):
     """Standard data formats."""
@@ -388,6 +390,7 @@ class DataFormattingFramework:
         if strategy == "intelligent":
             # Use enhanced missing value handler for intelligent gap filling
             from .enhanced_missing_value_handler import enhanced_missing_value_handler
+
 import copy
 import os.path
 

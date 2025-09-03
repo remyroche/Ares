@@ -26,23 +26,25 @@ from src.utils.common_operations import ensure_directory, safe_json_dump
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
-    "pandas",
-    "src.utils.logger"
-]
+REQUIRED_MODULES = ["pandas", "src.utils.logger"]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(
+    REQUIRED_MODULES
+)
 
 # Safe imports with fallbacks
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 pandas = PipelineStandards.safe_import("pandas", None)
 
+
 # Fallback functions if imports fail
 def create_fallback_logger():
     import logging
+
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
+
 
 # Initialize fallbacks
 if system_logger is None:
@@ -56,15 +58,17 @@ class SavingStep:
         self.config = config
         self.logger = system_logger
         self.standards = pipeline_standards
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
-        missing_modules = [module for module, available in dependency_status.items() if not available]
+
+        missing_modules = [
+            module for module, available in dependency_status.items() if not available
+        ]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
             self.logger.info("📝 Pipeline will continue with fallback implementations")
@@ -77,7 +81,9 @@ class SavingStep:
         self.logger.info("✅ Saving Step initialized successfully")
 
     async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute saving of all training results."
 
@@ -111,10 +117,12 @@ class SavingStep:
             exchange,
         )
         try:
-            summary_keys = list(summary_results.keys()) if isinstance(summary_results, dict) else []
-            self.logger.info(
-                f"Summary artifacts saved: keys={summary_keys}"
+            summary_keys = (
+                list(summary_results.keys())
+                if isinstance(summary_results, dict)
+                else []
             )
+            self.logger.info(f"Summary artifacts saved: keys={summary_keys}")
         except Exception:
             pass
 
@@ -130,10 +138,10 @@ class SavingStep:
             data_dir,
         )
         try:
-            report_keys = list(report_results.keys()) if isinstance(report_results, dict) else []
-            self.logger.info(
-                f"Training report generated: keys={report_keys}"
+            report_keys = (
+                list(report_results.keys()) if isinstance(report_results, dict) else []
             )
+            self.logger.info(f"Training report generated: keys={report_keys}")
         except Exception:
             pass
 
@@ -147,7 +155,10 @@ class SavingStep:
         }
 
     async def _create_training_summary(
-        self, pipeline_state: dict[str, Any], symbol: str, exchange: str,
+        self,
+        pipeline_state: dict[str, Any],
+        symbol: str,
+        exchange: str,
     ) -> dict[str, Any]:
         """Create comprehensive training summary."""
         try:
@@ -176,7 +187,11 @@ class SavingStep:
             raise
 
     async def _save_comprehensive_results(
-        self, training_summary: dict[str, Any], data_dir: str, symbol: str, exchange: str,
+        self,
+        training_summary: dict[str, Any],
+        data_dir: str,
+        symbol: str,
+        exchange: str,
     ) -> dict[str, Any]:
         """Save comprehensive results in multiple formats."""
         try:
@@ -224,7 +239,10 @@ class SavingStep:
             raise
 
     async def _save_to_mlflow(
-        self, training_summary: dict[str, Any], symbol: str, exchange: str,
+        self,
+        training_summary: dict[str, Any],
+        symbol: str,
+        exchange: str,
     ) -> None:
         """Save training results to MLflow with enhanced metadata associations."""
         try:
@@ -267,7 +285,7 @@ class SavingStep:
                 run_name=f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             ) as run:
                 run_id = run.info.run_id
-                
+
                 # Log enhanced training metadata with all required associations
                 log_enhanced_training_metadata(
                     asset=symbol,
@@ -277,7 +295,7 @@ class SavingStep:
                     additional_metadata={
                         "pipeline_step": "step21_saving",
                         "training_summary_keys": list(training_summary.keys()),
-                    }
+                    },
                 )
 
                 # Log parameters with metadata
@@ -298,10 +316,12 @@ class SavingStep:
                 # Log metrics with metadata
                 if "metrics" in training_summary:
                     metrics = {}
-                    for metric_name, metric_value in training_summary["metrics"].items():
+                    for metric_name, metric_value in training_summary[
+                        "metrics"
+                    ].items():
                         if isinstance(metric_value, (int, float)):
                             metrics[metric_name] = float(metric_value)
-                    
+
                     if metrics:
                         log_metrics_with_metadata(
                             metrics=metrics,
@@ -321,7 +341,7 @@ class SavingStep:
                 ) as f:
                     json.dump(training_summary, f, indent=2, default=str)
                     temp_path = f.name
-                
+
                 # Log training summary with standardized naming
                 summary_artifact_name = log_step_artifact_with_standardized_name(
                     config=self.config,
@@ -330,10 +350,10 @@ class SavingStep:
                     artifact_type="training_summary",
                     additional_metadata={
                         "summary_size": len(training_summary),
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
-                
+
                 # Log comprehensive final report
                 final_report_data = {
                     "training_summary": training_summary,
@@ -347,29 +367,37 @@ class SavingStep:
                     "execution_timestamp": datetime.now().isoformat(),
                     "pipeline_completion": True,
                 }
-                
+
                 report_name = log_step_report(
                     config=self.config,
                     step_name="step21_saving",
                     report_data=final_report_data,
                     report_type="final_training_report",
                     additional_metadata={
-                        "pipeline_steps_completed": len([k for k, v in pipeline_state.items() if v]),
+                        "pipeline_steps_completed": len(
+                            [k for k, v in pipeline_state.items() if v]
+                        ),
                         "pipeline_status": "completed",
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged final training report: {report_name}")
-                
+
                 os.unlink(temp_path)
 
-            self.logger.info(f"✅ Training results saved to MLflow successfully with enhanced metadata (Run ID: {run_id})")
+            self.logger.info(
+                f"✅ Training results saved to MLflow successfully with enhanced metadata (Run ID: {run_id})"
+            )
 
         except Exception:
             self.logger.exception("🚨 MLflow saving failed")
             raise
 
     async def _create_training_report(
-        self, pipeline_state: dict[str, Any], symbol: str, exchange: str, data_dir: str,
+        self,
+        pipeline_state: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> dict[str, Any]:
         """Create detailed training report."""
         try:
@@ -380,7 +408,9 @@ class SavingStep:
                 "pipeline_overview": {
                     "total_steps": 16,
                     "completed_steps": completed_steps,
-                    "failed_steps": len([k for k, v in pipeline_state.items() if not v]),
+                    "failed_steps": len(
+                        [k for k, v in pipeline_state.items() if not v]
+                    ),
                     "success_rate": (completed_steps / 16) * 100,
                 },
                 "step_details": {},
@@ -434,7 +464,6 @@ from src.utils.training_pipeline_decorators import (
     debug_training_step,
     deterministic_seed,
     idempotent_step,
-    import,
     memory_efficient,
     nan_inf_and_constant_guard,
 )
@@ -469,7 +498,10 @@ from src.utils.training_pipeline_decorators import (
     context="Saving Results",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -484,7 +516,10 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
+    chunk_size=20000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=40,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -513,7 +548,10 @@ from src.utils.training_pipeline_decorators import (
     validation_score_requirements={"saving_score": 0.8},
 )
 async def run_step(
-    symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
+    symbol: str,
+    exchange: str = "BINANCE",
+    data_dir: str = "data/training",
+    force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
     """Run the saving step."

@@ -26,9 +26,10 @@ from sklearn.metrics import accuracy_score, mean_squared_error
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+
 
 class FeatureEngineeringOptimizer:
     """Optimizes feature engineering parameters using advanced ML techniques.

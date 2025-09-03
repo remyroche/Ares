@@ -1,4 +1,5 @@
 # src/analyst/data_utils.py
+import copy
 import os
 from datetime import datetime
 from typing import Any
@@ -9,20 +10,20 @@ from scipy.signal import find_peaks  # For volume profile peaks
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
 from src.utils.warning_symbols import (
-from src.utils.error_handler import (
     asyncio,
+    from,
     handle_errors,
     handle_specific_errors,
     import,
     logging,
+    src.utils.error_handler,
 )
+
     copy,
     critical,
     error,
     failed,
-    import,
     initialization_error,
     invalid,
     missing,

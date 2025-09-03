@@ -22,6 +22,7 @@ from sklearn.preprocessing import StandardScaler
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class OptimizedFeatureSelectionManager:
     """Optimized Feature Selection Manager for ML Training Steps."
 
@@ -294,6 +295,7 @@ class OptimizedFeatureSelectionManager:
     def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
+
 import copy
 
 vif_scores = []

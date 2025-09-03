@@ -20,8 +20,8 @@ from typing import Any
 
 import pandas as pd
 
-from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.core.decorators import handles_errors
+from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -29,6 +29,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 # This prevents log spam when different components instantiate the manager separately
 _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
+
 
 class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
@@ -648,8 +649,10 @@ class HMMCompositeManager:
             "last_cleanup": self._last_cleanup,
         }
 
+
 # Global instance for easy access
 _hmm_composite_manager: HMMCompositeManager | None = None
+
 
 def get_hmm_composite_manager() -> HMMCompositeManager:
     """Get the global HMM composite manager instance."""

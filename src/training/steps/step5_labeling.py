@@ -734,16 +734,20 @@ class LabelingStep:
             try:
                 # Use the regime-aware triple barrier labeling
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
-            except Exception as e:
-                pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-import pandas as pd
-from src.core.decorators import handles_errors
-RegimeAwareTripleBarrierLabeling
+                    Exception as e:,
+                )
+                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+                    pass,  # TODO: Handle exception properly
+                )
+                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
                     RegimeAwareTripleBarrierLabeling,
+                    corators,
+                    eBarrierLabeling,
+                    handles_errors,
+                    import,
                     np,
                     pd,
+                    pt,
                 )
 
                 regime_labeler = RegimeAwareTripleBarrierLabeling(

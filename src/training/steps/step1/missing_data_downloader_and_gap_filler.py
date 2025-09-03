@@ -100,7 +100,9 @@ except ImportError as e:
 
     # Fallback logger
     import logging
+
 from src.core.decorators import handles_errors
+
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
 

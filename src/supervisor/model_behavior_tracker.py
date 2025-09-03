@@ -14,10 +14,11 @@ from typing import Any
 
 import numpy as np
 
-from src.supervisor.performance_monitor import PerformanceMonitor
 from src.core.decorators import handles_errors
+from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error
+
 
 class BehaviorMetricType(Enum):
     """Model behavior metric types."""
@@ -30,6 +31,7 @@ class BehaviorMetricType(Enum):
     DECISION_PATH_STABILITY = "decision_path_stability"
     CONFIDENCE_CALIBRATION = "confidence_calibration"
     THEORY_VS_REALITY = "theory_vs_reality"
+
 
 @dataclass
 class ModelBehaviorSnapshot:
@@ -48,6 +50,7 @@ class ModelBehaviorSnapshot:
     theory_vs_reality_score: float | None = None
     metadata: dict[str, Any] = None
 
+
 @dataclass
 class FeatureImportanceTracking:
     """Feature importance tracking data."""
@@ -60,6 +63,7 @@ class FeatureImportanceTracking:
     stability_score: float
     drift_score: float
 
+
 @dataclass
 class DecisionPathAnalysis:
     """Decision path analysis data."""
@@ -71,6 +75,7 @@ class DecisionPathAnalysis:
     path_stability: float
     path_complexity: float
     confidence_distribution: list[float]
+
 
 class ModelBehaviorTracker:
     """Enhanced model behavior tracker that integrates with existing performance
@@ -683,6 +688,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(error("Error exporting behavior data: {e}"))
             return ""
+
 
 # Factory function for creating model behavior tracker
 @handles_errors(fallback=None)

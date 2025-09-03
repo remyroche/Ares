@@ -1481,8 +1481,10 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.error(f"Error stopping dynamic weighter: {e}")
 
+
 # Global dynamic weighter instance
 dynamic_weighter: DynamicWeighter | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_dynamic_weighter(

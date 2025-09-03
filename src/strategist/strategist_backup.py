@@ -15,12 +15,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from src.core.decorators import handles_errors
-from src.utils.error_handler import (
-    asyncio,
-    handle_errors,
-    handle_specific_errors,
-    import,
-)
+from src.utils.error_handler import asyncio, handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -38,6 +33,7 @@ import copy
 
 import numpy as np
 
+
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods
     """
@@ -45,7 +41,7 @@ class Strategist:
     - Strategy Generation: Create trading strategies based on market analysis
     - Market Analysis Integration: Combine analyst and tactician inputs
     - Strategy History Management: Track and store strategy performance
-    
+
     Note: Position sizing is handled by the Tactician component
     """
 
@@ -67,20 +63,20 @@ class Strategist:
 
         # Configuration
         self.strategist_config: dict[str, Any] = self.config.get("strategist", {})
-        self.strategy_interval: int = (
-            self.strategist_config.get("strategy_interval", 1800)
+        self.strategy_interval: int = self.strategist_config.get(
+            "strategy_interval", 1800
         )
-        self.max_strategy_history: int = (
-            self.strategist_config.get("max_strategy_history", 50)
+        self.max_strategy_history: int = self.strategist_config.get(
+            "max_strategy_history", 50
         )
         # Risk management (excluding position sizing which is handled by Tactician)
-        self.enable_risk_management: bool = (
-            self.strategist_config.get("enable_risk_management", True)
+        self.enable_risk_management: bool = self.strategist_config.get(
+            "enable_risk_management", True
         )
 
         # Strategy parameters (position sizing handled by Tactician)
-        self.min_confidence_threshold: float = (
-            self.strategist_config.get("min_confidence_threshold", 0.6)
+        self.min_confidence_threshold: float = self.strategist_config.get(
+            "min_confidence_threshold", 0.6
         )
 
         # Technical indicator thresholds and strategy type (for profile/reference only)
@@ -93,8 +89,8 @@ class Strategist:
         self.volume_ratio_low: float = tech_cfg.get("volume_ratio_low", 0.5)
         self.price_volatility_window: int = tech_cfg.get("price_volatility_window", 20)
 
-        self.strategy_type: str = (
-            self.strategist_config.get("strategy_type", "technical_analysis")
+        self.strategy_type: str = self.strategist_config.get(
+            "strategy_type", "technical_analysis"
         )
 
         # Component references (will be set during initialization)
@@ -161,7 +157,9 @@ class Strategist:
             required_keys = ["strategy_interval", "max_strategy_history"]
             for key in required_keys:
                 if key not in self.strategist_config:
-                    self.logger.error(missing(f"Missing required configuration key: {key}"))
+                    self.logger.error(
+                        missing(f"Missing required configuration key: {key}")
+                    )
                     return False
 
             # Position sizing parameters are handled by the Tactician component
@@ -211,18 +209,26 @@ class Strategist:
             self.logger.info("🎯 Generating trading strategy...")
 
             # Extract key market indicators
-            market_indicators = self._extract_market_indicators(market_data, current_price)
+            market_indicators = self._extract_market_indicators(
+                market_data, current_price
+            )
 
             # Generate base strategy
-            base_strategy = await self._generate_base_strategy(market_indicators, current_price)
+            base_strategy = await self._generate_base_strategy(
+                market_indicators, current_price
+            )
 
             # Integrate analysis results if available
             if analysis_results:
-                base_strategy = await self._integrate_analysis_results(base_strategy, analysis_results)
+                base_strategy = await self._integrate_analysis_results(
+                    base_strategy, analysis_results
+                )
 
             # Apply risk management
             if self.enable_risk_management:
-                base_strategy = await self._apply_risk_management(base_strategy, current_price)
+                base_strategy = await self._apply_risk_management(
+                    base_strategy, current_price
+                )
 
             # Position sizing is handled by the Tactician component
             # No position sizing applied in Strategist
@@ -248,14 +254,18 @@ class Strategist:
                 return False
 
             required_columns = ["open", "high", "low", "close", "volume"]
-            missing_columns = [col for col in required_columns if col not in market_data.columns]
+            missing_columns = [
+                col for col in required_columns if col not in market_data.columns
+            ]
             if missing_columns:
                 self.logger.error(f"Missing required columns: {missing_columns}")
                 return False
 
             # Check for sufficient data points
             if len(market_data) < 20:
-                self.logger.error("Insufficient market data points for strategy generation")
+                self.logger.error(
+                    "Insufficient market data points for strategy generation"
+                )
                 return False
 
             return True
@@ -265,35 +275,55 @@ class Strategist:
             return False
 
     @handles_errors
-    def _extract_market_indicators(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
+    def _extract_market_indicators(
+        self, market_data: pd.DataFrame, current_price: float
+    ) -> dict[str, Any]:
         """Extract key market indicators from market data."""
         try:
             indicators = {}
 
             # Price indicators
             indicators["current_price"] = current_price
-            indicators["price_change"] = (current_price - market_data["close"].iloc[-2]) / market_data["close"].iloc[-2]
+            indicators["price_change"] = (
+                current_price - market_data["close"].iloc[-2]
+            ) / market_data["close"].iloc[-2]
 
             # Price volatility with configurable window
             volatility_window = max(2, int(self.price_volatility_window))
             indicators["price_volatility"] = (
-                market_data["close"].pct_change().rolling(window=volatility_window).std().iloc[-1]
+                market_data["close"]
+                .pct_change()
+                .rolling(window=volatility_window)
+                .std()
+                .iloc[-1]
             )
 
             # Volume indicators
-            indicators["volume_ma"] = market_data["volume"].rolling(window=20).mean().iloc[-1]
-            indicators["volume_ratio"] = market_data["volume"].iloc[-1] / indicators["volume_ma"]
+            indicators["volume_ma"] = (
+                market_data["volume"].rolling(window=20).mean().iloc[-1]
+            )
+            indicators["volume_ratio"] = (
+                market_data["volume"].iloc[-1] / indicators["volume_ma"]
+            )
 
             # Technical indicators
             sma_fast = max(2, int(self.sma_fast_window))
             sma_slow = max(sma_fast + 1, int(self.sma_slow_window))
-            indicators["sma_20"] = market_data["close"].rolling(window=sma_fast).mean().iloc[-1]
-            indicators["sma_50"] = market_data["close"].rolling(window=sma_slow).mean().iloc[-1]
+            indicators["sma_20"] = (
+                market_data["close"].rolling(window=sma_fast).mean().iloc[-1]
+            )
+            indicators["sma_50"] = (
+                market_data["close"].rolling(window=sma_slow).mean().iloc[-1]
+            )
             indicators["rsi"] = self._calculate_rsi(market_data["close"])
 
             # Trend indicators
-            indicators["trend"] = "BULLISH" if indicators["sma_20"] > indicators["sma_50"] else "BEARISH"
-            indicators["momentum"] = "POSITIVE" if indicators["price_change"] > 0 else "NEGATIVE"
+            indicators["trend"] = (
+                "BULLISH" if indicators["sma_20"] > indicators["sma_50"] else "BEARISH"
+            )
+            indicators["momentum"] = (
+                "POSITIVE" if indicators["price_change"] > 0 else "NEGATIVE"
+            )
 
             return indicators
 
@@ -317,7 +347,9 @@ class Strategist:
             return 50.0
 
     @handles_errors
-    async def _generate_base_strategy(self, indicators: dict[str, Any], current_price: float) -> dict[str, Any]:
+    async def _generate_base_strategy(
+        self, indicators: dict[str, Any], current_price: float
+    ) -> dict[str, Any]:
         """Generate base trading strategy from market indicators."""
         try:
             strategy = {
@@ -356,7 +388,9 @@ class Strategist:
     @handles_errors
     # TODO: Refactor to reduce complexity (current: 7)
 
-    async def _integrate_analysis_results(self, strategy: dict[str, Any], analysis_results: dict[str, Any]) -> dict[str, Any]:
+    async def _integrate_analysis_results(
+        self, strategy: dict[str, Any], analysis_results: dict[str, Any]
+    ) -> dict[str, Any]:
         """Integrate analysis results from Step 1 into strategy."""
         try:
             if not analysis_results:
@@ -377,20 +411,24 @@ class Strategist:
                 strategy["liquidation_risk"] = risk_level
                 if risk_level == "HIGH":
                     strategy["confidence"] *= 0.8  # Reduce confidence for high risk
-                    strategy["reasoning"].append("High liquidation risk - reduced confidence")
+                    strategy["reasoning"].append(
+                        "High liquidation risk - reduced confidence"
+                    )
 
             # Integrate trading decision from dual model system (ML/HMM-driven)
             trading_decision = analysis_results.get("trading_decision", {})
             if trading_decision:
                 decision_confidence = trading_decision.get("final_confidence", 0.0)
                 decision_direction = trading_decision.get("direction", "HOLD")
-                
+
                 # Set strategy solely from ML/HMM decision
                 strategy["dual_model_direction"] = decision_direction
                 strategy["dual_model_confidence"] = decision_confidence
                 strategy["direction"] = decision_direction
                 strategy["confidence"] = decision_confidence
-                strategy["reasoning"].append("Direction and confidence set by DualModelSystem")
+                strategy["reasoning"].append(
+                    "Direction and confidence set by DualModelSystem"
+                )
 
             return strategy
 
@@ -399,7 +437,9 @@ class Strategist:
             return strategy
 
     @handles_errors
-    async def _apply_risk_management(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
+    async def _apply_risk_management(
+        self, strategy: dict[str, Any], current_price: float
+    ) -> dict[str, Any]:
         """Apply risk management to strategy."""
         try:
             if strategy["direction"] == "HOLD":
@@ -407,23 +447,29 @@ class Strategist:
 
             # Calculate stop loss and take profit levels
             volatility = strategy["indicators"]["price_volatility"]
-            
+
             if strategy["direction"] == "LONG":
                 # Stop loss: 2x volatility below current price
                 stop_loss_pct = volatility * 2
                 strategy["stop_loss"] = current_price * (1 - stop_loss_pct)
-                strategy["take_profit"] = current_price * (1 + stop_loss_pct * 2)  # 2:1 risk-reward
+                strategy["take_profit"] = current_price * (
+                    1 + stop_loss_pct * 2
+                )  # 2:1 risk-reward
             else:  # SHORT
                 # Stop loss: 2x volatility above current price
                 stop_loss_pct = volatility * 2
                 strategy["stop_loss"] = current_price * (1 + stop_loss_pct)
-                strategy["take_profit"] = current_price * (1 - stop_loss_pct * 2)  # 2:1 risk-reward
+                strategy["take_profit"] = current_price * (
+                    1 - stop_loss_pct * 2
+                )  # 2:1 risk-reward
 
             # Adjust confidence based on risk-reward ratio
             risk_reward_ratio = 2.0  # 2:1 risk-reward ratio
             if risk_reward_ratio >= 2.0:
                 strategy["confidence"] *= 1.1  # Boost confidence for good risk-reward
-                strategy["reasoning"].append(f"Good risk-reward ratio: {risk_reward_ratio:.1f}")
+                strategy["reasoning"].append(
+                    f"Good risk-reward ratio: {risk_reward_ratio:.1f}"
+                )
 
             return strategy
 
@@ -446,7 +492,9 @@ class Strategist:
 
             # Limit history size
             if len(self.strategy_history) > self.max_strategy_history:
-                self.strategy_history = self.strategy_history[-self.max_strategy_history:]
+                self.strategy_history = self.strategy_history[
+                    -self.max_strategy_history :
+                ]
 
             # Update strategy results
             self.strategy_results = {

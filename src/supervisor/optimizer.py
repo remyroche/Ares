@@ -255,7 +255,9 @@ class Optimizer:
             self.logger.error(f"Error calculating SR levels: {e}")
             return []
 
+
 optimizer: Optimizer | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:

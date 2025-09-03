@@ -15,11 +15,8 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 
-from src.training.gpu_acceleration_m1 import M1GPUAcceleration
-from src.training.steps.step7_enhanced_matrix_operations import (
-    EnhancedMatrixOperations,
-)
 from src.core.decorators import handles_errors
+from src.training.gpu_acceleration_m1 import M1GPUAcceleration
 from src.training.steps.step7_enhanced_matrix_operations import EnhancedMatrixOperations
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -27,7 +24,6 @@ from src.utils.training_pipeline_decorators import (
     circuit_breaker_protection,
     copy,
     debug_training_step,
-    import,
     memory_efficient,
     prevent_data_leakage,
     quality_gate,
@@ -35,6 +31,7 @@ from src.utils.training_pipeline_decorators import (
     secure_data_processing,
     validate_step_output,
 )
+
 
 class EnhancedMatrixGPUIntegration:
     """
@@ -102,14 +99,17 @@ class EnhancedMatrixGPUIntegration:
 
                 # GPU SVD decomposition
                 U, S, Vt, svd_metadata = self.gpu_accel.gpu_svd_decomposition(
-                    features_array, k=50,
+                    features_array,
+                    k=50,
                 )
                 svd_features = U[:, :20]  # Use top 20 components
                 svd_feature_names = [
                     f"gpu_svd_component_{i+1}" for i in range(svd_features.shape[1])
                 ]
                 svd_df = pd.DataFrame(
-                    svd_features, columns=svd_feature_names, index=features_df.index,
+                    svd_features,
+                    columns=svd_feature_names,
+                    index=features_df.index,
                 )
                 enhanced_df = pd.concat([enhanced_df, svd_df], axis=1)
                 all_metadata["gpu_svd"] = svd_metadata
@@ -127,7 +127,9 @@ class EnhancedMatrixGPUIntegration:
                     f"gpu_eigen_component_{i+1}" for i in range(eigen_features.shape[1])
                 ]
                 eigen_df = pd.DataFrame(
-                    eigen_features, columns=eigen_feature_names, index=features_df.index,
+                    eigen_features,
+                    columns=eigen_feature_names,
+                    index=features_df.index,
                 )
                 enhanced_df = pd.concat([enhanced_df, eigen_df], axis=1)
                 all_metadata["gpu_eigenvalue"] = eigen_metadata
@@ -136,12 +138,15 @@ class EnhancedMatrixGPUIntegration:
                 if target is not None:
                     nn_predictions, nn_metadata = (
                         self.gpu_accel.gpu_neural_network_operations(
-                            features_array, target.values,
+                            features_array,
+                            target.values,
                             hidden_layers=[100, 50],
                         )
                     )
                     nn_df = pd.DataFrame(
-                        nn_predictions, columns=["gpu_nn_prediction"], index=features_df.index,
+                        nn_predictions,
+                        columns=["gpu_nn_prediction"],
+                        index=features_df.index,
                     )
                     enhanced_df = pd.concat([enhanced_df, nn_df], axis=1)
                     all_metadata["gpu_neural_network"] = nn_metadata
@@ -233,8 +238,8 @@ class EnhancedMatrixGPUIntegration:
                 target = training_data.get("target")
 
                 # Apply enhanced GPU matrix operations
-                enhanced_features, enhancement_metadata = await self.enhanced_gpu_matrix_operations(
-                    features_df, target
+                enhanced_features, enhancement_metadata = (
+                    await self.enhanced_gpu_matrix_operations(features_df, target)
                 )
                 enhanced_data["features"] = enhanced_features
                 pipeline_metadata["enhancement"] = enhancement_metadata
@@ -251,7 +256,8 @@ class EnhancedMatrixGPUIntegration:
 
                     # GPU batch operations
                     batch_results, batch_metadata = self.gpu_accel.gpu_batch_operations(
-                        feature_matrices, operation="multiply",
+                        feature_matrices,
+                        operation="multiply",
                     )
                     pipeline_metadata["gpu_batch_operations"] = batch_metadata
 
@@ -262,7 +268,9 @@ class EnhancedMatrixGPUIntegration:
                         for i in range(batch_features.shape[1])
                     ]
                     batch_df = pd.DataFrame(
-                        batch_features, columns=batch_feature_names, index=features_df.index,
+                        batch_features,
+                        columns=batch_feature_names,
+                        index=features_df.index,
                     )
                     enhanced_data["features"] = pd.concat(
                         [enhanced_features, batch_df],
@@ -341,7 +349,8 @@ class EnhancedMatrixGPUIntegration:
             # GPU benchmark
             if self.gpu_accel.mps_available:
                 gpu_result, gpu_metadata = self.gpu_accel.gpu_matrix_multiplication(
-                    A, B,
+                    A,
+                    B,
                 )
                 gpu_time = gpu_metadata["processing_time"]
 
@@ -372,7 +381,9 @@ class EnhancedMatrixGPUIntegration:
                 gpu_svd_time = gpu_metadata["processing_time"]
 
                 # Verify results
-                s_diff = float(np.abs(S_cpu[: min(len(S_cpu), len(S_gpu))] - S_gpu).max())
+                s_diff = float(
+                    np.abs(S_cpu[: min(len(S_cpu), len(S_gpu))] - S_gpu).max()
+                )
 
                 benchmark_results["benchmarks"]["svd_decomposition"] = {
                     "cpu_time": cpu_svd_time,
@@ -384,7 +395,9 @@ class EnhancedMatrixGPUIntegration:
 
             # Test neural network operations
             if target is not None:
-                sample_features = features_df.values[:1000, : min(20, features_df.shape[1])]
+                sample_features = features_df.values[
+                    :1000, : min(20, features_df.shape[1])
+                ]
                 sample_target = target.values[:1000]
 
                 # CPU neural network (simple linear regression)
@@ -398,7 +411,8 @@ class EnhancedMatrixGPUIntegration:
                 if self.gpu_accel.mps_available:
                     gpu_predictions, gpu_metadata = (
                         self.gpu_accel.gpu_neural_network_operations(
-                            sample_features, sample_target,
+                            sample_features,
+                            sample_target,
                             hidden_layers=[50, 25],
                         )
                     )
@@ -445,6 +459,7 @@ class EnhancedMatrixGPUIntegration:
     def clear_gpu_memory(self) -> None:
         """Clear GPU memory cache."""
         self.gpu_accel.clear_gpu_memory()
+
 
 async def demonstrate_gpu_integration() -> None:
     """Demonstrate GPU integration with enhanced matrix operations."""
@@ -514,8 +529,8 @@ async def demonstrate_gpu_integration() -> None:
 
     # Apply enhanced GPU matrix operations
     print("\n🔧 Applying Enhanced GPU Matrix Operations...")
-    enhanced_features, enhancement_metadata = await integration.enhanced_gpu_matrix_operations(
-        features_df, target
+    enhanced_features, enhancement_metadata = (
+        await integration.enhanced_gpu_matrix_operations(features_df, target)
     )
 
     print(
@@ -543,6 +558,7 @@ async def demonstrate_gpu_integration() -> None:
     print("✅ Enhanced matrix operations with M1 GPU acceleration")
     print("🔒 All operations secured with decorators")
     print("📊 Performance benchmarks completed")
+
 
 if __name__ == "__main__":
     # Run GPU integration demonstration

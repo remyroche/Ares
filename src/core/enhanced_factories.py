@@ -22,7 +22,6 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
     asyncio,
-    import,
 )
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.utils.logger import system_logger
@@ -191,7 +190,9 @@ class PerformanceReporterFactory:
         self.container = container
         self.logger = system_logger.getChild("PerformanceReporterFactory")
 
-    def create_performance_reporter(self, config: dict[str, Any]) -> IPerformanceReporter:
+    def create_performance_reporter(
+        self, config: dict[str, Any]
+    ) -> IPerformanceReporter:
         """Create a performance reporter instance."""
         try:
             reporter = PerformanceReporter(config)

@@ -7,8 +7,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.core.decorators import handles_errors
+from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
@@ -16,7 +16,6 @@ from src.utils.training_pipeline_decorators import (
     asyncio,
     circuit_breaker_protection,
     debug_training_step,
-    import,
     memory_efficient,
     prevent_data_leakage,
     quality_gate,
@@ -25,6 +24,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+
 
 class DataSharingManager:
     """Manages data sharing between training steps to eliminate redundant data loading."
@@ -46,7 +46,8 @@ class DataSharingManager:
         self.max_cache_size_gb = self.cache_config.get("max_cache_size_gb", 8.0)
         self.cache_ttl_hours = self.cache_config.get("cache_ttl_hours", 24)
         self.enable_memory_optimization = self.cache_config.get(
-            "enable_memory_optimization", True,
+            "enable_memory_optimization",
+            True,
         )
 
         # Unified data loader
@@ -363,7 +364,11 @@ class DataSharingManager:
 
         """
         cache_key = self._generate_cache_key(
-            symbol, exchange, timeframe, lookback_days, data_type,
+            symbol,
+            exchange,
+            timeframe,
+            lookback_days,
+            data_type,
         )
 
         # Calculate data size and check if we need to evict
@@ -432,8 +437,10 @@ class DataSharingManager:
         self.logger.info(f"   Memory saved: {stats['memory_saved_gb']:.2f}GB")
         self.logger.info(f"   Cached entries: {stats['cached_entries']}")
 
+
 # Global instance for easy access
 _data_sharing_manager: DataSharingManager | None = None
+
 
 def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     """Get or create the global data sharing manager instance."""
@@ -441,6 +448,7 @@ def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager(config)
     return _data_sharing_manager
+
 
 def reset_data_sharing_manager() -> None:
     """Reset the global data sharing manager instance."""

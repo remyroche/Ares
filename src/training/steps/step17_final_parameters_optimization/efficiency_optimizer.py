@@ -20,6 +20,7 @@ import numpy as np
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 @dataclass
 class EfficiencyConfig:
     """Configuration for efficiency optimizations."""
@@ -762,7 +763,9 @@ if __name__ == "__main__":
 
     # Run optimization
     import asyncio
+
 import os.path
+
 
 async def test() -> None:
         await optimizer.initialize()

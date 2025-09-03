@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import get_logger
 from src.core.decorators import handles_errors
 from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
+
 # Import fractional components
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
     FractionalTripleBarrierLabeling,
@@ -25,6 +25,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import get_logger
+
 
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""

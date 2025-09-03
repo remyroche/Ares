@@ -1,19 +1,11 @@
 # src/core/dependency_injection.py
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from dataclasses import dataclass
-import asyncio
-from src.interfaces import (
-    IAnalyst,
-    IStrategist,
-    ISupervisor,
-    ITactician,
-    asyncio,
-    import,
-)
+from src.interfaces import IAnalyst, IStrategist, ISupervisor, ITactician, asyncio
 from src.utils.logger import system_logger
 
 T = TypeVar("T")
@@ -102,9 +94,9 @@ class DependencyContainer:
         self._factories[service_name] = factory_func
         # Also create a registration placeholder so resolve() can work
         self._services[service_name] = ServiceRegistration(
-            service_type=service_name
-            if isinstance(service_name, type)
-            else type(factory_func),
+            service_type=(
+                service_name if isinstance(service_name, type) else type(factory_func)
+            ),
             implementation=None,
             singleton=(lifetime == ServiceLifetime.SINGLETON),
             config=config,
@@ -172,7 +164,8 @@ class DependencyContainer:
 
             # Scoped instances
             if self._current_scope and service_name in self._scoped_instances.get(
-                self._current_scope, {},
+                self._current_scope,
+                {},
             ):
                 return self._scoped_instances[self._current_scope][service_name]
 
@@ -246,7 +239,9 @@ class DependencyContainer:
             )
             raise
 
-    def _get_constructor_params(self, service_reg: ServiceRegistration) -> dict[str, Any]:
+    def _get_constructor_params(
+        self, service_reg: ServiceRegistration
+    ) -> dict[str, Any]:
         """Get constructor parameters for service creation."""
         params = {}
 

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class ModelType(Enum):
     XGBOOST = "xgboost"
     CATBOOST = "catboost"
@@ -26,10 +27,12 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
 
+
 class PredictionType(Enum):
     REGRESSION = "regression"
     CLASSIFICATION = "classification"
     PROBABILITY = "probability"
+
 
 class EnhancedMLTracker:
     """Minimal Enhanced ML Tracker placeholder."""

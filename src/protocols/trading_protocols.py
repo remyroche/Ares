@@ -21,7 +21,6 @@ from src.custom_types.trading_types import (
     TradeDecision,
     TradingSignal,
     asyncio,
-    import,
 )
 
 
@@ -30,24 +29,21 @@ class TradingDataProvider(Protocol):
     """Protocol for trading data providers."""
 
     @abstractmethod
-    async def get_market_data(self, symbol: Symbol, start_time: Timestamp, end_time: Timestamp) -> dict:
-        ...
+    async def get_market_data(
+        self, symbol: Symbol, start_time: Timestamp, end_time: Timestamp
+    ) -> dict: ...
 
     @abstractmethod
-    async def get_live_data(self, symbol: Symbol) -> dict:
-        ...
+    async def get_live_data(self, symbol: Symbol) -> dict: ...
 
     @abstractmethod
-    async def get_account_info(self) -> dict:
-        ...
+    async def get_account_info(self) -> dict: ...
 
     @abstractmethod
-    async def get_positions(self) -> list[PositionInfo]:
-        ...
+    async def get_positions(self) -> list[PositionInfo]: ...
 
     @abstractmethod
-    def is_connected(self) -> bool:
-        ...
+    def is_connected(self) -> bool: ...
 
 
 @runtime_checkable
@@ -55,24 +51,21 @@ class TradingMLPredictor(Protocol):
     """Protocol for ML trading predictors."""
 
     @abstractmethod
-    async def predict_market_direction(self, input_data: ModelInput) -> PredictionResult:
-        ...
+    async def predict_market_direction(
+        self, input_data: ModelInput
+    ) -> PredictionResult: ...
 
     @abstractmethod
-    async def classify_regime(self, input_data: ModelInput) -> RegimeClassification:
-        ...
+    async def classify_regime(self, input_data: ModelInput) -> RegimeClassification: ...
 
     @abstractmethod
-    async def generate_signals(self, input_data: ModelInput) -> list[TradingSignal]:
-        ...
+    async def generate_signals(self, input_data: ModelInput) -> list[TradingSignal]: ...
 
     @abstractmethod
-    def get_model_confidence(self) -> float:
-        ...
+    def get_model_confidence(self) -> float: ...
 
     @abstractmethod
-    def is_model_ready(self) -> bool:
-        ...
+    def is_model_ready(self) -> bool: ...
 
 
 @runtime_checkable
@@ -80,19 +73,19 @@ class TradingRiskManager(Protocol):
     """Protocol for trading risk management."""
 
     @abstractmethod
-    async def validate_trade(self, trade_decision: TradeDecision) -> bool:
-        ...
+    async def validate_trade(self, trade_decision: TradeDecision) -> bool: ...
 
     @abstractmethod
     async def calculate_position_size(
         self, symbol: Symbol, account_info: dict, risk_parameters: RiskParameters
-    ) -> float:
-        ...
+    ) -> float: ...
 
     @abstractmethod
-    async def assess_portfolio_risk(self, positions: list[PositionInfo]) -> dict[str, float]:
-        ...
+    async def assess_portfolio_risk(
+        self, positions: list[PositionInfo]
+    ) -> dict[str, float]: ...
 
     @abstractmethod
-    async def get_stop_loss_price(self, symbol: Symbol, entry_price: float, position_side: str) -> float:
-        ...
+    async def get_stop_loss_price(
+        self, symbol: Symbol, entry_price: float, position_side: str
+    ) -> float: ...

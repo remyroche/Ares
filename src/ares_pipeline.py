@@ -18,6 +18,7 @@ from src.analyst.analyst import Analyst
 from src.config import get_dual_model_config
 from src.config.environment import get_exchange_name
 from src.core.config_service import ConfigurationService
+from src.core.decorators import handles_errors
 from src.core.dependency_injection import DependencyContainer, ServiceLocator
 from src.database.sqlite_manager import SQLiteManager
 from src.interfaces.base_interfaces import (
@@ -38,17 +39,6 @@ from src.monitoring.performance_monitor import (
     PerformanceMonitor,
     setup_performance_monitor,
 )
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
-    critical,
-    error,
-    failed,
-    warning,
-)
-from src.utils.logger import system_logger, setup_logging
-from src.core.dependency_injection import DependencyContainer, ServiceLocator
-from src.monitoring.dual_model_system import DualModelSystem, setup_dual_model_system
-from src.core.config_service import ConfigurationService
 from src.strategist.strategist import Strategist
 from src.supervisor.supervisor import Supervisor
 from src.tactician.tactician import Tactician
@@ -1117,6 +1107,7 @@ class AresPipeline:
                     "enable_ensemble_analysis": True,
                 },
             }
+
 
 async def main():
     """Main entry point for the Ares Pipeline."""

@@ -12,8 +12,6 @@ import uuid
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
-from .compose import uniform_wrapper, P, R
-import asyncio
 from .compose import P, R, uniform_wrapper
 
 # Context variable for correlation ID

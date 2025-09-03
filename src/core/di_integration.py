@@ -21,7 +21,6 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
     asyncio,
-    import,
 )
 from src.training.di_training_manager import DITrainingManager
 from src.utils.logger import system_logger
@@ -199,7 +198,9 @@ class DIIntegration:
 
 
 # Convenience function for quick integration demonstration
-async def demonstrate_di_integration(config: dict[str, Any] | None = None) -> dict[str, Any]:
+async def demonstrate_di_integration(
+    config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Quick demonstration of DI integration."""
     integration = DIIntegration(config)
     return await integration.demonstrate_full_di_integration()

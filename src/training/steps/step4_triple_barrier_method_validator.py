@@ -89,7 +89,9 @@ async def run_validator(
         # Try to read the file to validate structure
         try:
             import pandas as pd
+
 from src.core.decorators import handles_errors
+
             data = pd.read_parquet(triple_barrier_path)
 
             # Check required columns (expect 'triple_barrier_label')

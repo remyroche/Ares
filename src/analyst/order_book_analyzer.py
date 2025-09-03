@@ -1,13 +1,13 @@
+import copy
+import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import logging
-import copy
+
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     copy,
-    import,
     logging,
     validate_data_quality,
     with_tracing_span,
@@ -82,7 +82,8 @@ class OrderBookAnalyzer:
                     ]
                     features["nearest_bid_wall_size"] = float(nearest_bid["size"])
                     features["nearest_bid_wall_dist_pct"] = float(
-                        (mid_price - nearest_bid["price"]) / mid_price)
+                        (mid_price - nearest_bid["price"]) / mid_price
+                    )
             if ask_walls is not None and not ask_walls.empty:
                 above = ask_walls[ask_walls["price"] >= mid_price]
                 if not above.empty:
@@ -91,7 +92,8 @@ class OrderBookAnalyzer:
                     ]
                     features["nearest_ask_wall_size"] = float(nearest_ask["size"])
                     features["nearest_ask_wall_dist_pct"] = float(
-                        (nearest_ask["price"] - mid_price) / mid_price)
+                        (nearest_ask["price"] - mid_price) / mid_price
+                    )
 
             total_bid = (
                 float(bid_walls["size"].sum())

@@ -8,17 +8,16 @@ import joblib
 import pandas as pd
 
 from src.core.decorators import handles_errors
+from src.utils.enhanced_mlflow_integration import (
+    create_detailed_step_report,
+    log_step_artifact_with_standardized_name,
+    log_step_dataframe_with_standardized_name,
+    log_step_metrics,
+    log_step_report,
+    with_enhanced_mlflow_logging,
+)
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 logger = system_logger
 
@@ -150,13 +149,14 @@ class AnalystEnsembleCreationStep:
             # Apply optimized feature selection for ensemble creation
             try:
                 from src.training.optimized_feature_selection_manager import (
-            except Exception as e:
-                pass  # TODO: Handle exception properly
-import copy
-import datetime as datetime
-import os
-
-OptimizedFeatureSelectionManager,
+                    Exception as e:,
+                )
+                from src.training.optimized_feature_selection_manager import (
+                    pass,  # TODO: Handle exception properly
+                )
+                from src.training.optimized_feature_selection_manager import (
+                    SelectionManager,
+                    pt,
                 )
 
                 optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)

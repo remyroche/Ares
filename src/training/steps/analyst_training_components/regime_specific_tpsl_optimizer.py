@@ -30,6 +30,7 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, warning
 
+
 class RegimeSpecificTPSLOptimizer:
     """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes."
 

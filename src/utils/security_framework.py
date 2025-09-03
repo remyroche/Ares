@@ -28,8 +28,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class SecurityLevel(Enum):
     """Security levels for different operations."""
@@ -39,10 +41,12 @@ class SecurityLevel(Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
+
 class SecurityViolation(Exception):
     """Custom exception for security violations."""
 
     pass
+
 
 class CredentialManager:
     """Manages API credentials and sensitive data securely."""
@@ -207,6 +211,7 @@ class CredentialManager:
             self.logger.error(f"Error rotating credential {service}:{key}: {e}")
             return False
 
+
 class DataEncryption:
     """Handles data encryption and decryption."""
 
@@ -339,6 +344,7 @@ class DataEncryption:
             self.logger.error(f"Error decrypting file {file_path}: {e}")
             raise SecurityViolation(f"File decryption failed: {e}")
 
+
 class AccessControl:
     """Manages access control and authentication."""
 
@@ -431,6 +437,7 @@ class AccessControl:
             return True
         return False
 
+
 class AuditLogger:
     """Handles security audit logging."""
 
@@ -507,6 +514,7 @@ class AuditLogger:
     def _get_user_agent(self) -> str:
         """Get user agent (placeholder for web applications)."""
         return "unknown"
+
 
 class SecurityFramework:
     """Comprehensive security framework."""
@@ -686,6 +694,7 @@ class SecurityFramework:
         }
 
         return report
+
 
 # Global security framework instance
 security_framework = SecurityFramework()

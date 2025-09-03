@@ -8,11 +8,13 @@ import os
 import os.path
 import time
 from dataclasses import asdict, dataclass
-from src.core.decorators import handles_errors
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
 import yaml
+
+from src.core.decorators import handles_errors
 from src.utils.error_handler import (
     handle_errors,
     handle_file_operations,
@@ -35,6 +37,7 @@ except Exception:
     Observer = None
     FileSystemEventHandler = None
 
+
 @dataclass
 class DatabaseConfig:
     """Database configuration dataclass."""
@@ -47,6 +50,7 @@ class DatabaseConfig:
     journal_mode: str = "WAL"
     max_recovery_attempts: int = 3
     recovery_cooldown: int = 60
+
 
 @dataclass
 class ExchangeConfig:
@@ -61,6 +65,7 @@ class ExchangeConfig:
     retry_attempts: int = 3
     retry_delay: int = 1
 
+
 @dataclass
 class ModelTrainingConfig:
     """Model training configuration dataclass."""
@@ -74,6 +79,7 @@ class ModelTrainingConfig:
     lookback_days: int = 730
     min_data_points: int = 100000
 
+
 @dataclass
 class RiskConfig:
     """Risk management configuration dataclass."""
@@ -84,6 +90,7 @@ class RiskConfig:
     take_profit_percentage: float = 0.15
     max_drawdown: float = 0.20
     risk_free_rate: float = 0.02
+
 
 if WATCHDOG_AVAILABLE:
     pass  # TODO: Add proper implementation
@@ -124,6 +131,7 @@ else:
         def on_modified(self, event):
             """Handle file modification events."""
             # No-op when watchdog is not available
+
 
 class ConfigurationService:
     """Enhanced Configuration Service with hot-reload, environment-specific configs, and
@@ -592,8 +600,10 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f"Error during shutdown: {e}")
 
+
 # Global configuration service instance
 config_service: ConfigurationService | None = None
+
 
 def get_config_service() -> ConfigurationService:
     """Get the global configuration service instance."""

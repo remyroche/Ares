@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import asyncio, copy, failed, import, invalid
+from src.utils.warning_symbols import asyncio, copy, failed, invalid
 
 
 class PositionCloser:
@@ -31,21 +31,27 @@ class PositionCloser:
 
         # Configuration from step17 optimization results
         self.position_config = config.get("position_closing", {})
-        
+
         # Load step17 optimized parameters
         step17_config = config.get("step17_optimization", {})
         tpsl_optimization = step17_config.get("tpsl", {})
-        
+
         # Load optimized position closing parameters
         self.atr_multiplier = tpsl_optimization.get("atr_multiplier", 2.0)
         self.confidence_threshold = tpsl_optimization.get("confidence_threshold", 0.7)
         self.min_hold_time = tpsl_optimization.get("min_hold_time", 300)  # 5 minutes
-        
+
         # Load additional optimized parameters
         self.stop_loss_multiplier = tpsl_optimization.get("stop_loss_multiplier", 1.5)
-        self.take_profit_multiplier = tpsl_optimization.get("take_profit_multiplier", 2.0)
-        self.trailing_stop_enabled = tpsl_optimization.get("trailing_stop_enabled", True)
-        self.trailing_stop_distance = tpsl_optimization.get("trailing_stop_distance", 0.02)
+        self.take_profit_multiplier = tpsl_optimization.get(
+            "take_profit_multiplier", 2.0
+        )
+        self.trailing_stop_enabled = tpsl_optimization.get(
+            "trailing_stop_enabled", True
+        )
+        self.trailing_stop_distance = tpsl_optimization.get(
+            "trailing_stop_distance", 0.02
+        )
         self.max_hold_time = tpsl_optimization.get("max_hold_time", 3600)  # 1 hour
 
         # State tracking
@@ -88,7 +94,9 @@ class PositionCloser:
                 return False
 
             if not 0 <= self.confidence_threshold <= 1:
-                self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
+                self.logger.error(
+                    invalid("Confidence threshold must be between 0 and 1")
+                )
                 return False
 
             if self.min_hold_time < 0:
@@ -105,28 +113,46 @@ class PositionCloser:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "tpsl" in step17_results:
                 tpsl_optimization = step17_results["tpsl"]
-                
+
                 # Update position closing parameters
-                self.atr_multiplier = tpsl_optimization.get("atr_multiplier", self.atr_multiplier)
-                self.confidence_threshold = tpsl_optimization.get("confidence_threshold", self.confidence_threshold)
-                self.min_hold_time = tpsl_optimization.get("min_hold_time", self.min_hold_time)
-                
+                self.atr_multiplier = tpsl_optimization.get(
+                    "atr_multiplier", self.atr_multiplier
+                )
+                self.confidence_threshold = tpsl_optimization.get(
+                    "confidence_threshold", self.confidence_threshold
+                )
+                self.min_hold_time = tpsl_optimization.get(
+                    "min_hold_time", self.min_hold_time
+                )
+
                 # Update additional parameters
-                self.stop_loss_multiplier = tpsl_optimization.get("stop_loss_multiplier", self.stop_loss_multiplier)
-                self.take_profit_multiplier = tpsl_optimization.get("take_profit_multiplier", self.take_profit_multiplier)
-                self.trailing_stop_enabled = tpsl_optimization.get("trailing_stop_enabled", self.trailing_stop_enabled)
-                self.trailing_stop_distance = tpsl_optimization.get("trailing_stop_distance", self.trailing_stop_distance)
-                self.max_hold_time = tpsl_optimization.get("max_hold_time", self.max_hold_time)
-                
-                self.logger.info("✅ Position closer configuration refreshed from step17 results")
-                
+                self.stop_loss_multiplier = tpsl_optimization.get(
+                    "stop_loss_multiplier", self.stop_loss_multiplier
+                )
+                self.take_profit_multiplier = tpsl_optimization.get(
+                    "take_profit_multiplier", self.take_profit_multiplier
+                )
+                self.trailing_stop_enabled = tpsl_optimization.get(
+                    "trailing_stop_enabled", self.trailing_stop_enabled
+                )
+                self.trailing_stop_distance = tpsl_optimization.get(
+                    "trailing_stop_distance", self.trailing_stop_distance
+                )
+                self.max_hold_time = tpsl_optimization.get(
+                    "max_hold_time", self.max_hold_time
+                )
+
+                self.logger.info(
+                    "✅ Position closer configuration refreshed from step17 results"
+                )
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -136,7 +162,7 @@ class PositionCloser:
         position_data: Dict[str, Any],
         model_confidence: float,
         atr_value: float,
-        current_price: float
+        current_price: float,
     ) -> bool:
         """
         Determine if a position should be closed based on model confidence and ATR.
@@ -153,7 +179,9 @@ class PositionCloser:
         try:
             # Check confidence threshold
             if model_confidence < self.confidence_threshold:
-                self.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")
+                self.logger.info(
+                    f"Closing position due to low confidence: {model_confidence:.3f}"
+                )
                 return True
 
             # Check ATR-based exit
@@ -173,10 +201,7 @@ class PositionCloser:
             return False
 
     def _should_close_by_atr(
-        self,
-        position_data: Dict[str, Any],
-        atr_value: float,
-        current_price: float
+        self, position_data: Dict[str, Any], atr_value: float, current_price: float
     ) -> bool:
         """
         Check if position should be closed based on ATR.
@@ -229,7 +254,7 @@ class PositionCloser:
                 return False
 
             if isinstance(entry_time, str):
-                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                entry_time = datetime.fromisoformat(entry_time.replace("Z", "+00:00"))
 
             hold_time = (datetime.now() - entry_time).total_seconds()
             return hold_time >= self.min_hold_time
@@ -240,9 +265,7 @@ class PositionCloser:
 
     @handles_errors(fallback=None)
     async def close_position(
-        self,
-        position_data: Dict[str, Any],
-        close_reason: str
+        self, position_data: Dict[str, Any], close_reason: str
     ) -> Optional[Dict[str, Any]]:
         """
         Execute position closure.
@@ -267,13 +290,15 @@ class PositionCloser:
                 "quantity": position_data.get("quantity"),
                 "close_reason": close_reason,
                 "close_time": datetime.now().isoformat(),
-                "pnl": self._calculate_pnl(position_data)
+                "pnl": self._calculate_pnl(position_data),
             }
 
             self.closed_positions.append(closure_record)
             self.position_history.append(closure_record)
 
-            self.logger.info(f"✅ Position closed successfully: {closure_record['pnl']:.4f} PnL")
+            self.logger.info(
+                f"✅ Position closed successfully: {closure_record['pnl']:.4f} PnL"
+            )
             return closure_record
 
         except Exception as e:
@@ -343,21 +368,29 @@ class PositionCloser:
                     "losing_positions": 0,
                     "win_rate": 0.0,
                     "total_pnl": 0.0,
-                    "average_pnl": 0.0
+                    "average_pnl": 0.0,
                 }
 
             total_positions = len(self.closed_positions)
-            winning_positions = len([p for p in self.closed_positions if p.get("pnl", 0) > 0])
-            losing_positions = len([p for p in self.closed_positions if p.get("pnl", 0) < 0])
+            winning_positions = len(
+                [p for p in self.closed_positions if p.get("pnl", 0) > 0]
+            )
+            losing_positions = len(
+                [p for p in self.closed_positions if p.get("pnl", 0) < 0]
+            )
             total_pnl = sum(p.get("pnl", 0) for p in self.closed_positions)
 
             return {
                 "total_positions": total_positions,
                 "winning_positions": winning_positions,
                 "losing_positions": losing_positions,
-                "win_rate": winning_positions / total_positions if total_positions > 0 else 0.0,
+                "win_rate": (
+                    winning_positions / total_positions if total_positions > 0 else 0.0
+                ),
                 "total_pnl": total_pnl,
-                "average_pnl": total_pnl / total_positions if total_positions > 0 else 0.0
+                "average_pnl": (
+                    total_pnl / total_positions if total_positions > 0 else 0.0
+                ),
             }
 
         except Exception as e:
@@ -373,7 +406,9 @@ class PositionCloser:
 
             # Save position history if needed
             if self.position_history:
-                self.logger.info(f"Saving {len(self.position_history)} position records")
+                self.logger.info(
+                    f"Saving {len(self.position_history)} position records"
+                )
 
             self.logger.info("✅ Position Closer cleanup completed")
 

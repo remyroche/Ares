@@ -11,11 +11,6 @@ from src.config import CONFIG
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-import copy
-import os
-import asyncio
-    error,
-    warning,
     asyncio,
     connection_error,
     copy,
@@ -27,12 +22,14 @@ import asyncio
     initialization_error,
     invalid,
     missing,
+    os,
     os.path,
     problem,
     timeout,
     validation_error,
     warning,
 )
+
 
 class EfficientFeaturesDatabase:
     """

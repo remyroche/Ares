@@ -13,6 +13,7 @@ from typing import Any, Dict
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class TradeAction(Enum):
     ENTER_LONG = "enter_long"
     ENTER_SHORT = "enter_short"
@@ -20,6 +21,7 @@ class TradeAction(Enum):
     EXIT_SHORT = "exit_short"
     HOLD = "hold"
     CANCEL_ORDER = "cancel_order"
+
 
 class TradeConditionsMonitor:
     """Trade conditions monitor scaffold."""

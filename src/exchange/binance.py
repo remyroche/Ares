@@ -12,10 +12,10 @@ from src.utils.error_handler import (
     handle_errors,
     handle_network_operations,
     handle_specific_errors,
-    import,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import connection_error, error, failed, invalid, missing
+
 
 class BinanceExchange:
     """
@@ -858,8 +858,10 @@ class BinanceExchange:
         except Exception:
             self.print(error("Error stopping Binance exchange: {e}"))
 
+
 # Global Binance exchange instance
 binance_exchange: BinanceExchange | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_binance_exchange(

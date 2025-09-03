@@ -14,10 +14,11 @@ import pyarrow.parquet as pq
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from src.database.sqlite_manager import SQLiteManager
 from src.core.decorators import handles_errors
+from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, validation_error, warning
+
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."

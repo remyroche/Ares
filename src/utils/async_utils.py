@@ -13,6 +13,7 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
+
 class AsyncFileManager:
     """Enhanced async file manager with comprehensive error handling and type safety."""
 
@@ -258,6 +259,7 @@ class AsyncFileManager:
         self.clear_cache()
         self.logger.info("✅ Async File Manager stopped successfully")
 
+
 class AsyncTaskManager:
     """Enhanced async task manager with comprehensive error handling and type safety."""
 
@@ -457,9 +459,11 @@ class AsyncTaskManager:
         self.task_results.clear()
         self.logger.info("✅ Async Task Manager stopped successfully")
 
+
 # Global instances
 async_file_manager: AsyncFileManager | None = None
 async_task_manager: AsyncTaskManager | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_async_utils(
@@ -504,6 +508,7 @@ async def setup_async_utils(
     if file_success and task_success:
         return async_file_manager, async_task_manager
     return None, None
+
 
 class AsyncProcessesManager:
     """Manager for async processes with comprehensive error handling."""
@@ -578,6 +583,7 @@ class AsyncProcessesManager:
                 for name, proc in self.processes.items()
             },
         }
+
 
 # Create a global instance for backward compatibility
 async_processes_manager = AsyncProcessesManager()

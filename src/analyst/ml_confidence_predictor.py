@@ -1,4 +1,8 @@
+import asyncio
 import contextlib
+
+# Import enhanced order manager for tactician order management
+import logging
 import os
 from datetime import datetime
 from typing import Any
@@ -7,28 +11,26 @@ import joblib
 import numpy as np
 import pandas as pd
 
-# Import enhanced order manager for tactician order management
-import logging
-import asyncio
-from src.tactician.enhanced_order_manager import (
-    OrderSide,
-)
 from src.core.decorators import handles_errors
-from src.tactician.enhanced_order_manager import OrderSide, asyncio, import, logging
+from src.tactician.enhanced_order_manager import OrderSide, asyncio, logging
 from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
     error,
     execution_error,
     failed,
+    from,
+    handle_errors,
+    handle_file_operations,
+    handle_specific_errors,
+    import,
     initialization_error,
     missing,
+    src.utils.logger,
+    src.utils.warning_symbols,
+    system_logger,
     validation_error,
     warning,
 )
+
 
 class MLConfidencePredictor:
     """
@@ -2317,20 +2319,16 @@ class MLConfidencePredictor:
 
             # Import required components
             import copy
+
 import os.path
-from src.tactician.async_order_executor import  (
+
+from src.tactician.async_order_executor import (
     ExecutionRequest,
     ExecutionStrategy,
     OrderSide,
-    OrderType
+    OrderType,
+    th,
 )
-            from src.tactician.async_order_executor import (
-                ExecutionRequest,
-                ExecutionStrategy,
-                OrderSide,
-                OrderType,
-                th,
-            )
 
             # Convert side string to OrderSide enum
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL

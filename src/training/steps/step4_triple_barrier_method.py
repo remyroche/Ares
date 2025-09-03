@@ -375,12 +375,18 @@ class TripleBarrierMethodStep:
 
             # Create triple barrier labeler with configuration
             from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-from src.core.decorators import handles_errors
-OptimizedTripleBarrierLabeling
+                Exception as e:,
+            )
+            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+                pass,  # TODO: Handle exception properly
+            )
+            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling,
+                e.decorators,
+                handles_errors,
+                import,
+                pleBarrierLabeling,
+                pt,
             )
 
             labeler = OptimizedTripleBarrierLabeling(

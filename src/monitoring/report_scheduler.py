@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"
     MODEL_ANALYSIS = "model_analysis"
@@ -23,14 +24,17 @@ class ReportType(Enum):
     EXECUTIVE_SUMMARY = "executive_summary"
     CONTINUOUS_IMPROVEMENT = "continuous_improvement"
 
+
 class ReportSchedule(Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 
+
 class ReportFormat(Enum):
     JSON = "json"
     HTML = "html"
+
 
 @dataclass
 class ReportConfig:
@@ -39,6 +43,7 @@ class ReportConfig:
     format: ReportFormat
     recipients: List[str]
     enabled: bool = True
+
 
 @dataclass
 class ReportHistory:
@@ -49,6 +54,7 @@ class ReportHistory:
     recipients: List[str]
     file_path: str
     status: str
+
 
 class ReportScheduler:
     """Automated report scheduler."""

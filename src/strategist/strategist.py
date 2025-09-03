@@ -33,7 +33,6 @@ from .utils import (
     ValidationError,
     asyncio,
     create_strategy_validator,
-    import,
     log_error,
     validate_data_sufficiency,
     validate_required_columns,
@@ -45,13 +44,14 @@ if TYPE_CHECKING:
 
 import copy
 
+
 class Strategist:
     """
     Strategy-Level Strategist component responsible for:
     - Strategy Generation: Create trading strategies based on market analysis
     - Market Analysis Integration: Combine analyst and tactician inputs
     - Strategy History Management: Track and store strategy performance
-    
+
     Note: Position sizing is handled by the Tactician component
     """
 
@@ -73,7 +73,7 @@ class Strategist:
         self.optimizer = PerformanceOptimizer(
             use_vectorized=self.strategist_config.use_vectorized_calculations,
             use_parallel=self.strategist_config.parallel_indicator_calculation,
-            cache_ttl=self.strategist_config.cache_ttl
+            cache_ttl=self.strategist_config.cache_ttl,
         )
 
         # Component extractor for reducing complexity
@@ -205,7 +205,7 @@ class Strategist:
     def _validate_market_data(self, market_data: pd.DataFrame) -> None:
         """
         Validate market data for strategy generation.
-        
+
         Raises:
             ValidationError: If validation fails
         """
@@ -218,11 +218,11 @@ class Strategist:
     ) -> MarketIndicators:
         """
         Extract market indicators with performance optimization.
-        
+
         Args:
             market_data: Market data DataFrame
             current_price: Current price
-            
+
         Returns:
             MarketIndicators object with calculated values
         """
@@ -230,29 +230,32 @@ class Strategist:
             # Use performance optimizer for parallel calculation
             config_dict = self.strategist_config.technical_indicator_thresholds.dict()
             indicators = await self.optimizer.calculate_indicators_parallel(
-                market_data["close"],
-                market_data["volume"],
-                config_dict
+                market_data["close"], market_data["volume"], config_dict
             )
-            
+
             # Calculate additional indicators
             price_change_percent = (
-                (current_price - market_data["close"].iloc[-2]) / 
-                market_data["close"].iloc[-2] * 100
+                (current_price - market_data["close"].iloc[-2])
+                / market_data["close"].iloc[-2]
+                * 100
             )
-            
-            sma_trend = "BULLISH" if indicators.get('sma_fast', 0) > indicators.get('sma_slow', 0) else "BEARISH"
-            
+
+            sma_trend = (
+                "BULLISH"
+                if indicators.get("sma_fast", 0) > indicators.get("sma_slow", 0)
+                else "BEARISH"
+            )
+
             return MarketIndicators(
-                rsi=indicators.get('rsi'),
-                sma_fast=indicators.get('sma_fast'),
-                sma_slow=indicators.get('sma_slow'),
-                volume_ratio=indicators.get('volume_ratio'),
-                volatility=indicators.get('volatility'),
+                rsi=indicators.get("rsi"),
+                sma_fast=indicators.get("sma_fast"),
+                sma_slow=indicators.get("sma_slow"),
+                volume_ratio=indicators.get("volume_ratio"),
+                volatility=indicators.get("volatility"),
                 price_change_percent=price_change_percent,
-                sma_trend=sma_trend
+                sma_trend=sma_trend,
             )
-            
+
         except Exception as e:
             raise CalculationError(f"Failed to extract market indicators: {e}")
 
@@ -261,11 +264,11 @@ class Strategist:
     ) -> Dict[str, Any]:
         """
         Generate base strategy with simplified logic.
-        
+
         Args:
             indicators: Calculated market indicators
             current_price: Current price
-            
+
         Returns:
             Base strategy dictionary
         """
@@ -273,20 +276,26 @@ class Strategist:
             direction="HOLD",
             confidence=0.5,
             reasoning=[],
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
         ).dict()
-        
+
         # RSI-based signals
         if indicators.rsi is not None:
-            if indicators.rsi < self.strategist_config.technical_indicator_thresholds.rsi_oversold:
+            if (
+                indicators.rsi
+                < self.strategist_config.technical_indicator_thresholds.rsi_oversold
+            ):
                 strategy["direction"] = "BUY"
                 strategy["confidence"] += 0.2
                 strategy["reasoning"].append(f"RSI oversold ({indicators.rsi:.2f})")
-            elif indicators.rsi > self.strategist_config.technical_indicator_thresholds.rsi_overbought:
+            elif (
+                indicators.rsi
+                > self.strategist_config.technical_indicator_thresholds.rsi_overbought
+            ):
                 strategy["direction"] = "SELL"
                 strategy["confidence"] += 0.2
                 strategy["reasoning"].append(f"RSI overbought ({indicators.rsi:.2f})")
-        
+
         # SMA crossover signals
         if indicators.sma_trend == "BULLISH" and strategy["direction"] != "SELL":
             strategy["direction"] = "BUY"
@@ -296,16 +305,19 @@ class Strategist:
             strategy["direction"] = "SELL"
             strategy["confidence"] += 0.15
             strategy["reasoning"].append("Bearish SMA crossover")
-        
+
         # Volume confirmation
         if indicators.volume_ratio is not None:
-            if indicators.volume_ratio > self.strategist_config.technical_indicator_thresholds.volume_ratio_high:
+            if (
+                indicators.volume_ratio
+                > self.strategist_config.technical_indicator_thresholds.volume_ratio_high
+            ):
                 strategy["confidence"] += 0.1
                 strategy["reasoning"].append("High volume confirmation")
-        
+
         # Normalize confidence
         strategy["confidence"] = min(strategy["confidence"], 1.0)
-        
+
         return strategy
 
     def _integrate_analysis_results_simplified(
@@ -313,43 +325,61 @@ class Strategist:
     ) -> Dict[str, Any]:
         """
         Integrate analysis results with simplified, modular approach.
-        
+
         Args:
             strategy: Base strategy
             analysis_results: Analysis results to integrate
-            
+
         Returns:
             Updated strategy
         """
         # Extract market health component
-        health_component = self.component_extractor.extract_market_health(analysis_results)
+        health_component = self.component_extractor.extract_market_health(
+            analysis_results
+        )
         if health_component:
-            strategy["market_health_score"] = health_component.get('health_score')
-            if 'health_impact' in health_component:
-                strategy["confidence"] = (strategy["confidence"] + health_component['health_impact']) / 2
-            if health_component.get('reasoning'):
-                strategy["reasoning"].append(health_component['reasoning'])
-        
+            strategy["market_health_score"] = health_component.get("health_score")
+            if "health_impact" in health_component:
+                strategy["confidence"] = (
+                    strategy["confidence"] + health_component["health_impact"]
+                ) / 2
+            if health_component.get("reasoning"):
+                strategy["reasoning"].append(health_component["reasoning"])
+
         # Extract liquidation risk component
-        risk_component = self.component_extractor.extract_liquidation_risk(analysis_results)
+        risk_component = self.component_extractor.extract_liquidation_risk(
+            analysis_results
+        )
         if risk_component:
-            strategy["liquidation_risk"] = risk_component.get('risk_level')
-            strategy["confidence"] *= risk_component.get('confidence_multiplier', 1.0)
-            if risk_component.get('reasoning'):
-                strategy["reasoning"].append(risk_component['reasoning'])
-        
+            strategy["liquidation_risk"] = risk_component.get("risk_level")
+            strategy["confidence"] *= risk_component.get("confidence_multiplier", 1.0)
+            if risk_component.get("reasoning"):
+                strategy["reasoning"].append(risk_component["reasoning"])
+
         # Extract trading decision component
-        decision_component = self.component_extractor.extract_trading_decision(analysis_results)
+        decision_component = self.component_extractor.extract_trading_decision(
+            analysis_results
+        )
         if decision_component:
-            strategy.update({
-                "dual_model_direction": decision_component.get('dual_model_direction'),
-                "dual_model_confidence": decision_component.get('dual_model_confidence'),
-                "direction": decision_component.get('direction', strategy['direction']),
-                "confidence": decision_component.get('confidence', strategy['confidence'])
-            })
-            if decision_component.get('reasoning'):
-                strategy["reasoning"].append(decision_component['reasoning'])
-        
+            strategy.update(
+                {
+                    "dual_model_direction": decision_component.get(
+                        "dual_model_direction"
+                    ),
+                    "dual_model_confidence": decision_component.get(
+                        "dual_model_confidence"
+                    ),
+                    "direction": decision_component.get(
+                        "direction", strategy["direction"]
+                    ),
+                    "confidence": decision_component.get(
+                        "confidence", strategy["confidence"]
+                    ),
+                }
+            )
+            if decision_component.get("reasoning"):
+                strategy["reasoning"].append(decision_component["reasoning"])
+
         return strategy
 
     def _apply_risk_management_simplified(
@@ -357,35 +387,45 @@ class Strategist:
     ) -> Dict[str, Any]:
         """
         Apply risk management with simplified logic.
-        
+
         Args:
             strategy: Strategy to apply risk management to
             current_price: Current price
-            
+
         Returns:
             Strategy with risk management applied
         """
         if strategy["direction"] == "HOLD":
             return strategy
-        
+
         # Calculate stop loss and take profit based on direction
         risk_reward_ratio = 2.0  # 1:2 risk-reward ratio
-        risk_percentage = 0.02   # 2% risk per trade
-        
+        risk_percentage = 0.02  # 2% risk per trade
+
         if strategy["direction"] == "BUY":
             strategy["stop_loss"] = current_price * (1 - risk_percentage)
-            strategy["take_profit"] = current_price * (1 + risk_percentage * risk_reward_ratio)
-            strategy["reasoning"].append(f"Risk management: SL={strategy['stop_loss']:.2f}, TP={strategy['take_profit']:.2f}")
+            strategy["take_profit"] = current_price * (
+                1 + risk_percentage * risk_reward_ratio
+            )
+            strategy["reasoning"].append(
+                f"Risk management: SL={strategy['stop_loss']:.2f}, TP={strategy['take_profit']:.2f}"
+            )
         elif strategy["direction"] == "SELL":
             strategy["stop_loss"] = current_price * (1 + risk_percentage)
-            strategy["take_profit"] = current_price * (1 - risk_percentage * risk_reward_ratio)
-            strategy["reasoning"].append(f"Risk management: SL={strategy['stop_loss']:.2f}, TP={strategy['take_profit']:.2f}")
-        
+            strategy["take_profit"] = current_price * (
+                1 - risk_percentage * risk_reward_ratio
+            )
+            strategy["reasoning"].append(
+                f"Risk management: SL={strategy['stop_loss']:.2f}, TP={strategy['take_profit']:.2f}"
+            )
+
         # Reduce confidence if it's below threshold'
         if strategy["confidence"] < self.strategist_config.min_confidence_threshold:
             strategy["direction"] = "HOLD"
-            strategy["reasoning"].append(f"Confidence below threshold ({self.strategist_config.min_confidence_threshold})")
-        
+            strategy["reasoning"].append(
+                f"Confidence below threshold ({self.strategist_config.min_confidence_threshold})"
+            )
+
         return strategy
 
     def _store_strategy_results(self, strategy: Dict[str, Any]) -> None:
@@ -394,16 +434,18 @@ class Strategist:
             # Update current strategy
             self.current_strategy = strategy.copy()
             self.strategy_results = strategy.copy()
-            
+
             # Add to history
             self.strategy_history.append(strategy.copy())
-            
+
             # Maintain history size limit
             if len(self.strategy_history) > self.strategist_config.max_strategy_history:
                 self.strategy_history.pop(0)
-            
-            self.logger.info(f"Strategy stored: {strategy['direction']} with confidence {strategy['confidence']:.3f}")
-            
+
+            self.logger.info(
+                f"Strategy stored: {strategy['direction']} with confidence {strategy['confidence']:.3f}"
+            )
+
         except Exception as e:
             log_error(self.logger, "Error storing strategy results", e)
 
@@ -425,11 +467,11 @@ class Strategist:
         try:
             self.logger.info("Stopping Strategist...")
             self.is_running = False
-            
+
             # Cleanup optimizer resources
-            if hasattr(self, 'optimizer') and self.optimizer._executor:
+            if hasattr(self, "optimizer") and self.optimizer._executor:
                 self.optimizer._executor.shutdown(wait=True)
-            
+
             self.logger.info("✅ Strategist stopped successfully")
             return True
 

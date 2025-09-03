@@ -11,15 +11,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.config_optuna import (
-    get_optimizable_parameters,
-    get_optuna_config,
-)
-from src.core.decorators import handles_errors
 from src.config_optuna import get_optimizable_parameters, get_optuna_config
+from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing
+
 
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
@@ -1813,6 +1810,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_report,
     with_enhanced_mlflow_logging,
 )
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -1831,6 +1829,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)

@@ -17,11 +17,11 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import talib
-import asyncio
-from src.core.decorators import handles_errors
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
+
+from src.core.decorators import handles_errors
 
 # Simple logger setup
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ def handle_errors(func):
             return None
 
     return wrapper
+
 
 class EnhancedScenarioBasedPredictor:
     """Enhanced scenario-based predictor with fractal scenarios and comprehensive

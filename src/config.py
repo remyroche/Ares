@@ -171,10 +171,11 @@ class RiskConfig:
     take_profit_pct: float = 0.1
     max_leverage: int = 10
 
+
+import copy
+
 # Legacy ConfigurationManager class for backward compatibility
 from src.core.decorators import handles_errors
-from src.utils.warning_symbols import invalid, warning, failed
-import copy
 
 # Legacy ConfigurationManager class for backward compatibility
 from src.utils.error_handler import handle_errors, handle_specific_errors

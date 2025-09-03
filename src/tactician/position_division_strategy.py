@@ -9,9 +9,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.core.decorators import handles_errors
-from src.utils.error_handler import asyncio, handle_errors, import
+from src.utils.error_handler import asyncio, handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import copy, failed, import, warning
+from src.utils.warning_symbols import copy, failed, warning
 
 
 class PositionDivisionStrategy:
@@ -38,7 +38,9 @@ class PositionDivisionStrategy:
         # Configuration
         self.strategy_config = config.get("position_division_strategy", {})
         self.max_positions = self.strategy_config.get("max_positions", 5)
-        self.position_size_limit = self.strategy_config.get("position_size_limit", 0.2)  # 20% per position
+        self.position_size_limit = self.strategy_config.get(
+            "position_size_limit", 0.2
+        )  # 20% per position
         self.take_profit_pct = self.strategy_config.get("take_profit_pct", 0.02)  # 2%
         self.stop_loss_pct = self.strategy_config.get("stop_loss_pct", 0.01)  # 1%
 
@@ -60,7 +62,9 @@ class PositionDivisionStrategy:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid position division strategy configuration"))
+                self.logger.error(
+                    invalid("Invalid position division strategy configuration")
+                )
                 return False
 
             # Clear state
@@ -72,7 +76,9 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position Division Strategy initialization failed: {e}"))
+            self.logger.error(
+                failed(f"❌ Position Division Strategy initialization failed: {e}")
+            )
             return False
 
     def _validate_configuration(self) -> bool:
@@ -88,7 +94,9 @@ class PositionDivisionStrategy:
                 return False
 
             if not 0 < self.position_size_limit <= 1:
-                self.logger.error(invalid("Position size limit must be between 0 and 1"))
+                self.logger.error(
+                    invalid("Position size limit must be between 0 and 1")
+                )
                 return False
 
             if self.take_profit_pct <= 0:
@@ -110,7 +118,7 @@ class PositionDivisionStrategy:
         self,
         total_capital: float,
         confidence_score: float,
-        market_conditions: Dict[str, Any]
+        market_conditions: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         """
         Calculate position division strategy.
@@ -130,7 +138,9 @@ class PositionDivisionStrategy:
             num_positions = self._calculate_num_positions(confidence_score)
 
             # Calculate position sizes
-            position_sizes = self._calculate_position_sizes(total_capital, num_positions, confidence_score)
+            position_sizes = self._calculate_position_sizes(
+                total_capital, num_positions, confidence_score
+            )
 
             # Calculate take profit and stop loss levels
             tp_sl_levels = self._calculate_tp_sl_levels(market_conditions)
@@ -143,10 +153,12 @@ class PositionDivisionStrategy:
                 "stop_loss_levels": tp_sl_levels["stop_loss"],
                 "confidence_score": confidence_score,
                 "total_capital": total_capital,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
-            self.logger.info(f"✅ Position division strategy calculated: {num_positions} positions")
+            self.logger.info(
+                f"✅ Position division strategy calculated: {num_positions} positions"
+            )
             return strategy
 
         except Exception as e:
@@ -183,10 +195,7 @@ class PositionDivisionStrategy:
             return 1
 
     def _calculate_position_sizes(
-        self,
-        total_capital: float,
-        num_positions: int,
-        confidence_score: float
+        self, total_capital: float, num_positions: int, confidence_score: float
     ) -> List[float]:
         """
         Calculate position sizes for each position.
@@ -210,7 +219,9 @@ class PositionDivisionStrategy:
                 base_size = total_capital * self.position_size_limit / num_positions
 
                 # Adjust based on confidence (higher confidence = larger first position)
-                confidence_multiplier = 1 + (confidence_score - 0.5) * 0.5  # 0.75 to 1.25
+                confidence_multiplier = (
+                    1 + (confidence_score - 0.5) * 0.5
+                )  # 0.75 to 1.25
 
                 for i in range(num_positions):
                     if i == 0:
@@ -228,7 +239,9 @@ class PositionDivisionStrategy:
             self.logger.error(failed(f"❌ Error calculating position sizes: {e}"))
             return [total_capital * 0.1]  # Fallback to 10%
 
-    def _calculate_tp_sl_levels(self, market_conditions: Dict[str, Any]) -> Dict[str, List[float]]:
+    def _calculate_tp_sl_levels(
+        self, market_conditions: Dict[str, Any]
+    ) -> Dict[str, List[float]]:
         """
         Calculate take profit and stop loss levels.
 
@@ -252,29 +265,28 @@ class PositionDivisionStrategy:
             # Calculate levels for each position
             for i in range(self.max_positions):
                 # Progressive TP/SL levels
-                tp_level = self.take_profit_pct + (i * 0.005) + tp_adjustment  # Increase by 0.5% per position
-                sl_level = self.stop_loss_pct + (i * 0.002) + sl_adjustment  # Increase by 0.2% per position
+                tp_level = (
+                    self.take_profit_pct + (i * 0.005) + tp_adjustment
+                )  # Increase by 0.5% per position
+                sl_level = (
+                    self.stop_loss_pct + (i * 0.002) + sl_adjustment
+                )  # Increase by 0.2% per position
 
                 take_profit_levels.append(tp_level)
                 stop_loss_levels.append(sl_level)
 
-            return {
-                "take_profit": take_profit_levels,
-                "stop_loss": stop_loss_levels
-            }
+            return {"take_profit": take_profit_levels, "stop_loss": stop_loss_levels}
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error calculating TP/SL levels: {e}"))
             return {
                 "take_profit": [self.take_profit_pct] * self.max_positions,
-                "stop_loss": [self.stop_loss_pct] * self.max_positions
+                "stop_loss": [self.stop_loss_pct] * self.max_positions,
             }
 
     @handles_errors(fallback=False)
     async def add_position(
-        self,
-        position_id: str,
-        position_data: Dict[str, Any]
+        self, position_id: str, position_data: Dict[str, Any]
     ) -> bool:
         """
         Add a new position to the strategy.
@@ -289,14 +301,16 @@ class PositionDivisionStrategy:
         try:
             # Check if we can add more positions
             if len(self.active_positions) >= self.max_positions:
-                self.logger.warning(warning(f"Cannot add position {position_id}: max positions reached"))
+                self.logger.warning(
+                    warning(f"Cannot add position {position_id}: max positions reached")
+                )
                 return False
 
             # Add position
             self.active_positions[position_id] = {
                 **position_data,
                 "added_at": datetime.now().isoformat(),
-                "status": "active"
+                "status": "active",
             }
 
             self.logger.info(f"Added position {position_id} to strategy")
@@ -308,10 +322,7 @@ class PositionDivisionStrategy:
 
     @handles_errors(fallback=False)
     async def close_position(
-        self,
-        position_id: str,
-        close_reason: str,
-        pnl: float
+        self, position_id: str, close_reason: str, pnl: float
     ) -> bool:
         """
         Close a position and record its performance.
@@ -344,7 +355,7 @@ class PositionDivisionStrategy:
                 "close_reason": close_reason,
                 "entry_time": position_data.get("added_at"),
                 "exit_time": datetime.now().isoformat(),
-                "hold_time": self._calculate_hold_time(position_data.get("added_at"))
+                "hold_time": self._calculate_hold_time(position_data.get("added_at")),
             }
 
             # Add to history
@@ -356,7 +367,9 @@ class PositionDivisionStrategy:
             # Update performance metrics
             self._update_performance_metrics(closure_record)
 
-            self.logger.info(f"Closed position {position_id}: {pnl:.4f} PnL ({close_reason})")
+            self.logger.info(
+                f"Closed position {position_id}: {pnl:.4f} PnL ({close_reason})"
+            )
             return True
 
         except Exception as e:
@@ -377,7 +390,7 @@ class PositionDivisionStrategy:
             if not entry_time:
                 return 0.0
 
-            entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+            entry_dt = datetime.fromisoformat(entry_time.replace("Z", "+00:00"))
             hold_time = (datetime.now() - entry_dt).total_seconds()
             return hold_time
 
@@ -396,17 +409,27 @@ class PositionDivisionStrategy:
             # Update basic metrics
             total_positions = len(self.position_history)
             total_pnl = sum(pos.get("pnl", 0) for pos in self.position_history)
-            winning_positions = sum(1 for pos in self.position_history if pos.get("pnl", 0) > 0)
+            winning_positions = sum(
+                1 for pos in self.position_history if pos.get("pnl", 0) > 0
+            )
 
-            self.strategy_performance.update({
-                "total_positions": total_positions,
-                "total_pnl": total_pnl,
-                "winning_positions": winning_positions,
-                "losing_positions": total_positions - winning_positions,
-                "win_rate": winning_positions / total_positions if total_positions > 0 else 0.0,
-                "average_pnl": total_pnl / total_positions if total_positions > 0 else 0.0,
-                "last_updated": datetime.now().isoformat()
-            })
+            self.strategy_performance.update(
+                {
+                    "total_positions": total_positions,
+                    "total_pnl": total_pnl,
+                    "winning_positions": winning_positions,
+                    "losing_positions": total_positions - winning_positions,
+                    "win_rate": (
+                        winning_positions / total_positions
+                        if total_positions > 0
+                        else 0.0
+                    ),
+                    "average_pnl": (
+                        total_pnl / total_positions if total_positions > 0 else 0.0
+                    ),
+                    "last_updated": datetime.now().isoformat(),
+                }
+            )
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error updating performance metrics: {e}"))
@@ -463,7 +486,7 @@ class PositionDivisionStrategy:
                 "take_profit_pct": self.take_profit_pct,
                 "stop_loss_pct": self.stop_loss_pct,
                 "performance": self.strategy_performance,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         except Exception as e:
@@ -479,7 +502,9 @@ class PositionDivisionStrategy:
 
             # Save position history if needed
             if self.position_history:
-                self.logger.info(f"Saving {len(self.position_history)} position records")
+                self.logger.info(
+                    f"Saving {len(self.position_history)} position records"
+                )
 
             # Clear data
             self.active_positions.clear()
@@ -489,4 +514,6 @@ class PositionDivisionStrategy:
             self.logger.info("✅ Position Division Strategy cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Position Division Strategy cleanup failed: {e}"))
+            self.logger.error(
+                failed(f"❌ Position Division Strategy cleanup failed: {e}")
+            )

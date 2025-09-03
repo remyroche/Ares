@@ -1674,11 +1674,11 @@ async def run_step(
         from src.config.training import get_training_config
     except Exception as e:
         pass  # TODO: Handle exception properly
-import numpy as np
 import os.path
 
 import numpy as np
 import pandas as pd
+
 from src.core.decorators import handles_errors
 
 config = get_training_config()

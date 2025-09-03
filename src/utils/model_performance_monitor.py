@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from src.core.decorators import traced as with_tracing_span
 from src.utils.centralized_decorators import (
     ensure_data_integrity,
     monitor_step_execution,
@@ -25,9 +26,9 @@ from src.utils.centralized_decorators import (
     validate_pipeline_step,
 )
 from src.utils.compat import handle_errors
-from src.core.decorators import traced as with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
@@ -476,6 +477,7 @@ class ModelPerformanceMonitor:
         """
         try:
             from scipy import stats
+
 from src.core.decorators import handles_errors
 
             # Calculate prediction errors

@@ -16,11 +16,11 @@ from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     PerformanceLevel,
     asyncio,
-    import,
     performance_monitor,
 )
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+
 
 class DriftType(Enum):
     """Drift types for model monitoring."""
@@ -30,6 +30,7 @@ class DriftType(Enum):
     LABEL_DRIFT = "label_drift"
     FEATURE_DRIFT = "feature_drift"
 
+
 class ModelStatus(Enum):
     """Model status enumeration."""
 
@@ -37,6 +38,7 @@ class ModelStatus(Enum):
     WARNING = "warning"
     CRITICAL = "critical"
     RETRAINING = "retraining"
+
 
 @dataclass
 class ModelDriftAlert:
@@ -51,6 +53,7 @@ class ModelDriftAlert:
     features_affected: List[str]
     severity: str  # "low", "medium", "high", "critical"
     description: str
+
 
 @dataclass
 class ModelPerformance:
@@ -69,6 +72,7 @@ class ModelPerformance:
     concept_drift_score: float = 0.0
     data_drift_score: float = 0.0
 
+
 class MLMonitor:
     """
     ML Monitor with drift detection scaffolding and performance tracking.
@@ -79,12 +83,18 @@ class MLMonitor:
         self.logger = system_logger.getChild("MLMonitor")
 
         self.ml_config = config.get("ml_monitor", {})
-        self.enable_online_learning: bool = bool(self.ml_config.get("enable_online_learning", True))
-        self.drift_detection_enabled: bool = bool(self.ml_config.get("drift_detection_enabled", True))
+        self.enable_online_learning: bool = bool(
+            self.ml_config.get("enable_online_learning", True)
+        )
+        self.drift_detection_enabled: bool = bool(
+            self.ml_config.get("drift_detection_enabled", True)
+        )
         self.feature_importance_tracking: bool = bool(
             self.ml_config.get("feature_importance_tracking", True)
         )
-        self.auto_retraining_enabled: bool = bool(self.ml_config.get("auto_retraining_enabled", True))
+        self.auto_retraining_enabled: bool = bool(
+            self.ml_config.get("auto_retraining_enabled", True)
+        )
 
         self.performances: List[ModelPerformance] = []
         self.alerts: List[ModelDriftAlert] = []

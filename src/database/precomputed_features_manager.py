@@ -9,9 +9,9 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, warning
 
 try:

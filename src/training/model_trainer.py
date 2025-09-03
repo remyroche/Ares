@@ -18,6 +18,9 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
 
+# Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
+# Import HPO manager lazily inside the method when HPO is actually used.
+from src.core.decorators import handles_errors
 from src.training.data_cleaning import handle_missing_data
 from src.training.feature_engineering import FeatureGenerator
 from src.training.multi_output_model_trainer import (
@@ -29,10 +32,6 @@ from src.utils.decorators import (
     validate_call_or_runtime_types,
     with_tracing_span,
 )
-
-# Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
-# Import HPO manager lazily inside the method when HPO is actually used.
-from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import log_training_metadata_to_mlflow
@@ -510,6 +509,7 @@ import os.path
 
 if os.path.exists(labeled_path):
 import numpy as np
+
             if os.path.exists(labeled_path):
                 try:
                     feat_cols = training_input.get(

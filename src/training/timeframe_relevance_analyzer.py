@@ -19,9 +19,10 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import cross_val_score
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+
 
 class TimeframeRelevanceAnalyzer:
     """Analyzes timeframe relevance for high leverage trading and optimizes ensemble

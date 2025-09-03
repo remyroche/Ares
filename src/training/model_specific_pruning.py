@@ -12,6 +12,7 @@ from sklearn.linear_model import Lasso
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class ModelSpecificPruning:
     """Model-specific feature pruning for different ML architectures.
 

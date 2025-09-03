@@ -272,7 +272,9 @@ class DataReadingStep:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import pandas as pd
+
 from src.core.decorators import handles_errors
+
 # Create reports directory
 reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
             # Create reports directory

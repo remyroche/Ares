@@ -21,6 +21,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 
+
 class SignalHandler:
     """Enhanced signal handler with comprehensive error handling and type safety."""
 
@@ -403,8 +404,10 @@ class SignalHandler:
         except Exception:
             self.print(error("Error stopping signal handler: {e}"))
 
+
 # Global signal handler instance
 signal_handler: SignalHandler | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_signal_handler(
@@ -436,6 +439,7 @@ async def setup_signal_handler(
         print(failed("Signal handler setup failed: {e}"))
         return None
 
+
 class GracefulShutdown:
     """Context manager for graceful shutdown handling."""
 
@@ -462,6 +466,7 @@ class GracefulShutdown:
             # Restore original handlers
             for sig, handler in self.original_handlers.items():
                 signal.signal(sig, handler)
+
 
 def setup_signal_handlers() -> SignalHandler:
     """Setup signal handlers for backward compatibility.

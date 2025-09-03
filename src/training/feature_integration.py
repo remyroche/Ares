@@ -14,7 +14,8 @@ from sklearn.preprocessing import StandardScaler
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import asyncio, error, import, initialization_error
+from src.utils.warning_symbols import asyncio, error, initialization_error
+
 
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
@@ -56,11 +57,11 @@ class FeatureIntegrationManager:
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
                 from src.analyst.advanced_feature_engineering import (
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-AdvancedFeatureEngineering,
                     AdvancedFeatureEngineering,
+                    ngineering,
+                )
+                from src.analyst.advanced_feature_engineering import (
+                    xception as e:,  # TODO: Handle exception properly
                 )
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(

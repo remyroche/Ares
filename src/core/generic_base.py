@@ -12,17 +12,10 @@ from typing import (
     Protocol,
     TypeVar,
     asyncio,
-    import,
     runtime_checkable,
 )
 
-from src.custom_types import (
-    ConfigDict,
-    PerformanceMetrics,
-    TradingComponent,
-    copy,
-    import,
-)
+from src.custom_types import ConfigDict, PerformanceMetrics, TradingComponent, copy
 
 # Type variables with constraints
 ConfigT = TypeVar("ConfigT", bound=ConfigDict)
@@ -30,6 +23,7 @@ DataT = TypeVar("DataT")
 ResultT = TypeVar("ResultT")
 ErrorT = TypeVar("ErrorT", bound=Exception)
 ComponentT = TypeVar("ComponentT", bound=TradingComponent)
+
 
 # Protocol constraints for data processing
 @runtime_checkable

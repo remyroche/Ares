@@ -411,6 +411,7 @@ class RegimeDataSplittingStep:
             pass  # TODO: Handle exception properly
 import numpy as np
 import pandas as pd
+
 from src.core.decorators import handles_errors
 
 safe_json_dump(metadata, metadata_file, indent=2)

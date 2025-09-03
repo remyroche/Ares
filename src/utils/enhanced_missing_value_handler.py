@@ -19,8 +19,10 @@ import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class GapType(Enum):
     """Types of data gaps."""

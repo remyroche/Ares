@@ -11,6 +11,7 @@ import os
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from src.core.decorators import handles_errors
 from src.paper_trader import PaperTrader, setup_paper_trader
 from src.utils.advanced_decorators import (
     PerformanceLevel,
@@ -19,14 +20,12 @@ from src.utils.advanced_decorators import (
 )
 from src.utils.centralized_decorators_simple import secure_data_processing
 from src.utils.comprehensive_logger import get_comprehensive_logger
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     asyncio,
     error,
     failed,
-    import,
     initialization_error,
     invalid,
     warning,
@@ -98,11 +97,15 @@ class PaperTradingIntegration:
             # Initialize detailed reporter
             if self.enable_detailed_reporting:
                 try:
+                    from src.reports.paper_trading_reporter import Exception as e:
                     from src.reports.paper_trading_reporter import (
-                except Exception as e:
-                    pass  # TODO: Handle exception properly
-import os
-setup_paper_trading_reporter as _setup_reporter,
+                        pass,  # TODO: Handle exception properly
+                    )
+                    from src.reports.paper_trading_reporter import pt
+                    from src.reports.paper_trading_reporter import (
+                        reporter as _setup_reporter,
+                    )
+                    from src.reports.paper_trading_reporter import (
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class MetricType(Enum):
     """Metric types for categorization."""
 
@@ -24,6 +25,7 @@ class MetricType(Enum):
     TRADING_ANALYTICS = "trading_analytics"
     RISK_METRICS = "risk_metrics"
     ENSEMBLE_METRICS = "ensemble_metrics"
+
 
 @dataclass
 class DashboardMetric:
@@ -36,6 +38,7 @@ class DashboardMetric:
     last_updated: datetime
     metadata: Dict[str, Any]
     unit: Optional[str]
+
 
 class MetricsDashboard:
     """Real-time metrics dashboard."""

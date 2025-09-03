@@ -11,6 +11,7 @@ import pandas as pd
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class MarketRegime:
     """Represents a market regime with specific characteristics."""
 
@@ -28,6 +29,7 @@ class MarketRegime:
         self.regime_type = regime_type
         self.optimal_params = optimal_params
         self.confidence = 0.0
+
 
 class AdaptiveOptimizer:
     """Adaptive hyperparameter optimizer that adjusts parameters based on market regime
@@ -273,6 +275,7 @@ class AdaptiveOptimizer:
             insights["optimal_regime_params"][regime_name] = regime.optimal_params
 
         return insights
+
 
 class RegimeSpecificOptimizer:
     """Optimizer specialized for a specific market regime."""

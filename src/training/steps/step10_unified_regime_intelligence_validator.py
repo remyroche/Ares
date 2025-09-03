@@ -525,7 +525,7 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Check if SRBreakoutPredictor is available
 			try:
-				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
+				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor# noqa: F401
 
 import os.path
 

@@ -12,18 +12,33 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
 from src.utils.warning_symbols import (
-import copy
-import asyncio
-from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import asyncio, copy, failed, import, missing
-
-
-class OrderType(Enum):
-    """Order types supported by the enhanced order manager."""
+    Enum,
+    OrderType,
+    """Order,
+    :,
+    asyncio,
+    by,
+    class,
+    copy,
+    enhanced,
+    failed,
+    from,
+    handle_errors,
+    import,
+    manager.""",
+    missing,
+    order,
+    src.utils.error_handler,
+    src.utils.warning_symbols,
+    supported,
+    the,
+    types,
+)
 
     MARKET = "market"
     LIMIT = "limit"

@@ -88,12 +88,15 @@ async def run_validator(
         
         # Try to read the files to validate structure
         try:
-            import pandas as pd
             import json
+
+            import pandas as pd
         except Exception as e:
             pass  # TODO: Handle exception properly
 import numpy as np
+
 from src.core.decorators import handles_errors
+
 # Read the most recent data file
             # Read the most recent data file
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)

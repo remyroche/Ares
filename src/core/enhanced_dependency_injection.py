@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 
 from src.core.dependency_injection import DependencyContainer as _DependencyContainer
 from src.core.dependency_injection import ServiceLifetime as _ServiceLifetime
-from src.core.dependency_injection import asyncio, import
+from src.core.dependency_injection import asyncio
 
 T = TypeVar("T")
 

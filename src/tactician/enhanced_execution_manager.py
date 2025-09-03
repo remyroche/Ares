@@ -14,6 +14,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import get_logger
 
+
 class EnhancedExecutionManager:
     """Enhanced execution manager for Tactician with high precision triple barrier
     completion.
@@ -41,7 +42,9 @@ class EnhancedExecutionManager:
         """Load configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+
 from src.core.decorators import handles_errors
+
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
 

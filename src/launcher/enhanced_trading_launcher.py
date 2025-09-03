@@ -20,13 +20,13 @@ except Exception:  # Fallback for environments without pandas
 
     pd = _PD()  # type: ignore
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.integration.paper_trading_integration import (
     PaperTradingIntegration,
     setup_paper_trading_integration,
 )
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     execution_error,
@@ -37,7 +37,7 @@ from src.utils.warning_symbols import (
 )
 
 if TYPE_CHECKING:
-    from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
+    from src.backtesting.enhanced_backtester import EnhancedBacktester# type: ignore
 
 from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
 
@@ -155,11 +155,15 @@ class EnhancedTradingLauncher:
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
+                    from src.backtesting.enhanced_backtester import Exception as e:
                     from src.backtesting.enhanced_backtester import (
-                except Exception as e:
-                    pass  # TODO: Handle exception properly
-import os
-setup_enhanced_backtester as _setup_backtester,
+                        ester as _setup_backtester,
+                    )
+                    from src.backtesting.enhanced_backtester import (
+                        pass,  # TODO: Handle exception properly
+                    )
+                    from src.backtesting.enhanced_backtester import pt
+                    from src.backtesting.enhanced_backtester import (
                         setup_enhanced_backtester as _setup_backtester,
                     )
 

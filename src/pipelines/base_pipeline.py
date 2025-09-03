@@ -8,19 +8,19 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     PerformanceLevel,
     asyncio,
     handle_errors,
     handle_specific_errors,
-    import,
     memory_efficient,
     performance_monitor,
     pipeline_checkpoint,
     resource_monitor,
 )
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+
 
 @dataclass
 class PipelineConfig:
@@ -63,6 +63,7 @@ class PipelineConfig:
             errors.append("Timeout must be positive")
         return errors
 
+
 @dataclass
 class PipelineMetrics:
     start_time: Optional[datetime] = None
@@ -77,6 +78,7 @@ class PipelineMetrics:
     def update_duration(self) -> None:
         if self.start_time and self.end_time:
             self.duration_seconds = (self.end_time - self.start_time).total_seconds()
+
 
 class BasePipeline:
     def __init__(self, config: Dict[str, Any]) -> None:

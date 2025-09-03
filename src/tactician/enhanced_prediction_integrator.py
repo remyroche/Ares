@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from src.core.decorators import handles_errors
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 from src.utils.centralized_decorators import (
     guard_dataframe_nulls,
@@ -17,8 +18,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import get_logger
 from src.utils.warning_symbols import error, warning
-from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-from src.core.decorators import handles_errors
+
 
 class TacticianEnhancedPredictionIntegrator:
     """Enhanced Prediction Integrator for Tactician that delivers multi-outcome

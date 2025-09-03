@@ -11,8 +11,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from src.core.decorators import handles_errors
+from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed

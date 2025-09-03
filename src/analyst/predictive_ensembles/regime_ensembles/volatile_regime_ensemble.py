@@ -1,19 +1,6 @@
-import numpy as np
 import logging
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+
+import numpy as np
 import pandas as pd
 from arch import arch_model
 from keras.layers import (
@@ -35,7 +22,6 @@ from src.utils.warning_symbols import (
     error,
     execution_error,
     failed,
-    import,
     initialization_error,
     invalid,
     logging,
@@ -135,7 +121,6 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
         except Exception as e:
             self.logger.error(failed(f"GARCH training failed: {e}"))
-
 
         self.logger.info("✅ VolatileRegime base models training completed")
 

@@ -5,6 +5,7 @@ from typing import Any
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 class StageRegistry:
     """Stage registry with comprehensive error handling and type safety."""
 

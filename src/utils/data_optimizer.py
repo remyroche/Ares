@@ -15,12 +15,13 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.centralized_decorators import guard_dataframe_nulls
-from src.core.decorators import traced as with_tracing_span
-from src.utils.comprehensive_logger import get_component_logger
 from src.core.decorators import handles_errors
+from src.core.decorators import traced as with_tracing_span
+from src.utils.centralized_decorators import guard_dataframe_nulls
+from src.utils.comprehensive_logger import get_component_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, initialization_error, missing
+
 
 class DataOptimizer:
     """Data Optimizer for enhancing data processing efficiency and memory usage."""

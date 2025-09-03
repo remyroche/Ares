@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import optuna
 
+from src.core.decorators import handles_errors
 from src.supervisor.performance_reporter import (
     PerformanceReporter,
     setup_performance_reporter,
@@ -24,9 +25,8 @@ from src.tactician.enhanced_order_manager import (
     OrderSide,
     OrderType,
 )
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import copy, failed, import
+from src.utils.warning_symbols import copy, failed
 
 
 class ExecutionStrategy(Enum):
@@ -38,6 +38,7 @@ class ExecutionStrategy(Enum):
     ICEBERG = "iceberg"
     ADAPTIVE = "adaptive"
 
+
 class ExecutionStatus(Enum):
     """Execution status enumeration."""
 
@@ -46,6 +47,7 @@ class ExecutionStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
 
 @dataclass
 class ExecutionRequest:
@@ -63,6 +65,7 @@ class ExecutionRequest:
     client_order_id: str | None = None
     strategy_id: str | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class ExecutionResult:
@@ -82,6 +85,7 @@ class ExecutionResult:
     orders_placed: List[str]
     fills: List[Dict[str, Any]]
     metadata: Dict[str, Any] = field(default_factory=dict)
+
 
 class AsyncOrderExecutor:
     """
@@ -107,8 +111,12 @@ class AsyncOrderExecutor:
 
         # Configuration
         self.executor_config = config.get("async_order_executor", {})
-        self.default_strategy = ExecutionStrategy(self.executor_config.get("default_strategy", "immediate"))
-        self.max_concurrent_orders = self.executor_config.get("max_concurrent_orders", 10)
+        self.default_strategy = ExecutionStrategy(
+            self.executor_config.get("default_strategy", "immediate")
+        )
+        self.max_concurrent_orders = self.executor_config.get(
+            "max_concurrent_orders", 10
+        )
         self.execution_timeout = self.executor_config.get("execution_timeout", 300)
 
         # Component managers
@@ -154,7 +162,9 @@ class AsyncOrderExecutor:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Async Order Executor initialization failed: {e}"))
+            self.logger.error(
+                failed(f"❌ Async Order Executor initialization failed: {e}")
+            )
             return False
 
     def _validate_configuration(self) -> bool:
@@ -180,7 +190,9 @@ class AsyncOrderExecutor:
             return False
 
     @handles_errors(fallback=None)
-    async def execute_order(self, request: ExecutionRequest) -> Optional[ExecutionResult]:
+    async def execute_order(
+        self, request: ExecutionRequest
+    ) -> Optional[ExecutionResult]:
         """
         Execute an order using the specified strategy.
 
@@ -192,7 +204,9 @@ class AsyncOrderExecutor:
         """
         try:
             execution_id = str(uuid4())
-            self.logger.info(f"Starting order execution {execution_id} for {request.symbol}")
+            self.logger.info(
+                f"Starting order execution {execution_id} for {request.symbol}"
+            )
 
             # Create execution result
             result = ExecutionResult(
@@ -208,7 +222,7 @@ class AsyncOrderExecutor:
                 execution_time=0.0,
                 status=ExecutionStatus.PENDING,
                 orders_placed=[],
-                fills=[]
+                fills=[],
             )
 
             # Add to active executions
@@ -228,7 +242,9 @@ class AsyncOrderExecutor:
             elif request.strategy == ExecutionStrategy.ADAPTIVE:
                 success = await self._execute_adaptive(request, result)
             else:
-                self.logger.error(invalid(f"Unknown execution strategy: {request.strategy}"))
+                self.logger.error(
+                    invalid(f"Unknown execution strategy: {request.strategy}")
+                )
                 success = False
 
             # Update execution result
@@ -238,7 +254,9 @@ class AsyncOrderExecutor:
                 result.status = ExecutionStatus.COMPLETED
                 self.successful_executions += 1
                 self.total_volume_executed += result.executed_quantity
-                self.logger.info(f"✅ Order execution {execution_id} completed successfully")
+                self.logger.info(
+                    f"✅ Order execution {execution_id} completed successfully"
+                )
             else:
                 result.status = ExecutionStatus.FAILED
                 self.failed_executions += 1
@@ -260,7 +278,9 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ Order execution failed: {e}"))
             return None
 
-    async def _execute_immediate(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
+    async def _execute_immediate(
+        self, request: ExecutionRequest, result: ExecutionResult
+    ) -> bool:
         """
         Execute order immediately.
 
@@ -279,7 +299,7 @@ class AsyncOrderExecutor:
                 order_type=OrderType.MARKET,
                 quantity=request.quantity,
                 strategy_id=request.strategy_id,
-                order_link_id=request.client_order_id or str(uuid4())
+                order_link_id=request.client_order_id or str(uuid4()),
             )
 
             # Place order
@@ -298,7 +318,9 @@ class AsyncOrderExecutor:
 
                 # Calculate slippage
                 if request.price:
-                    result.slippage = abs(result.average_price - request.price) / request.price
+                    result.slippage = (
+                        abs(result.average_price - request.price) / request.price
+                    )
                     self.total_slippage += result.slippage
 
             return True
@@ -307,7 +329,9 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ Immediate execution failed: {e}"))
             return False
 
-    async def _execute_twap(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
+    async def _execute_twap(
+        self, request: ExecutionRequest, result: ExecutionResult
+    ) -> bool:
         """
         Execute order using Time-Weighted Average Price (TWAP) strategy.
 
@@ -324,10 +348,15 @@ class AsyncOrderExecutor:
             slice_quantity = request.quantity / num_slices
             slice_interval = request.time_limit / num_slices
 
-            self.logger.info(f"TWAP execution: {num_slices} slices of {slice_quantity:.6f} every {slice_interval:.1f}s")
+            self.logger.info(
+                f"TWAP execution: {num_slices} slices of {slice_quantity:.6f} every {slice_interval:.1f}s"
+            )
 
             for i in range(num_slices):
-                if result.executed_quantity >= request.quantity * request.min_fill_ratio:
+                if (
+                    result.executed_quantity
+                    >= request.quantity * request.min_fill_ratio
+                ):
                     break
 
                 # Create order request for this slice
@@ -340,7 +369,11 @@ class AsyncOrderExecutor:
                     order_type=OrderType.MARKET,
                     quantity=slice_qty,
                     strategy_id=request.strategy_id,
-                    order_link_id=f"{request.client_order_id}_slice_{i}" if request.client_order_id else str(uuid4())
+                    order_link_id=(
+                        f"{request.client_order_id}_slice_{i}"
+                        if request.client_order_id
+                        else str(uuid4())
+                    ),
                 )
 
                 # Place order
@@ -359,7 +392,9 @@ class AsyncOrderExecutor:
                 result.total_cost = result.executed_quantity * result.average_price
 
                 if request.price:
-                    result.slippage = abs(result.average_price - request.price) / request.price
+                    result.slippage = (
+                        abs(result.average_price - request.price) / request.price
+                    )
                     self.total_slippage += result.slippage
 
             return result.executed_quantity >= request.quantity * request.min_fill_ratio
@@ -368,7 +403,9 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ TWAP execution failed: {e}"))
             return False
 
-    async def _execute_vwap(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
+    async def _execute_vwap(
+        self, request: ExecutionRequest, result: ExecutionResult
+    ) -> bool:
         """
         Execute order using Volume-Weighted Average Price (VWAP) strategy.
 
@@ -390,7 +427,9 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ VWAP execution failed: {e}"))
             return False
 
-    async def _execute_iceberg(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
+    async def _execute_iceberg(
+        self, request: ExecutionRequest, result: ExecutionResult
+    ) -> bool:
         """
         Execute order using Iceberg strategy.
 
@@ -406,10 +445,15 @@ class AsyncOrderExecutor:
             visible_quantity = request.quantity * 0.1  # 10% visible
             total_slices = int(request.quantity / visible_quantity)
 
-            self.logger.info(f"Iceberg execution: {total_slices} slices of {visible_quantity:.6f}")
+            self.logger.info(
+                f"Iceberg execution: {total_slices} slices of {visible_quantity:.6f}"
+            )
 
             for i in range(total_slices):
-                if result.executed_quantity >= request.quantity * request.min_fill_ratio:
+                if (
+                    result.executed_quantity
+                    >= request.quantity * request.min_fill_ratio
+                ):
                     break
 
                 # Create order request for this slice
@@ -424,7 +468,11 @@ class AsyncOrderExecutor:
                     price=request.price,
                     iceberg_qty=slice_qty,
                     strategy_id=request.strategy_id,
-                    order_link_id=f"{request.client_order_id}_iceberg_{i}" if request.client_order_id else str(uuid4())
+                    order_link_id=(
+                        f"{request.client_order_id}_iceberg_{i}"
+                        if request.client_order_id
+                        else str(uuid4())
+                    ),
                 )
 
                 # Place order
@@ -442,7 +490,9 @@ class AsyncOrderExecutor:
                 result.total_cost = result.executed_quantity * result.average_price
 
                 if request.price:
-                    result.slippage = abs(result.average_price - request.price) / request.price
+                    result.slippage = (
+                        abs(result.average_price - request.price) / request.price
+                    )
                     self.total_slippage += result.slippage
 
             return result.executed_quantity >= request.quantity * request.min_fill_ratio
@@ -451,7 +501,9 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ Iceberg execution failed: {e}"))
             return False
 
-    async def _execute_adaptive(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
+    async def _execute_adaptive(
+        self, request: ExecutionRequest, result: ExecutionResult
+    ) -> bool:
         """
         Execute order using Adaptive strategy with dynamic parameter optimization.
 
@@ -516,11 +568,19 @@ class AsyncOrderExecutor:
                 "total_executions": self.total_executions,
                 "successful_executions": self.successful_executions,
                 "failed_executions": self.failed_executions,
-                "success_rate": self.successful_executions / self.total_executions if self.total_executions > 0 else 0.0,
+                "success_rate": (
+                    self.successful_executions / self.total_executions
+                    if self.total_executions > 0
+                    else 0.0
+                ),
                 "total_volume_executed": self.total_volume_executed,
-                "average_slippage": self.total_slippage / self.total_executions if self.total_executions > 0 else 0.0,
+                "average_slippage": (
+                    self.total_slippage / self.total_executions
+                    if self.total_executions > 0
+                    else 0.0
+                ),
                 "active_executions": len(self.active_executions),
-                "execution_history_size": len(self.execution_history)
+                "execution_history_size": len(self.execution_history),
             }
 
         except Exception as e:

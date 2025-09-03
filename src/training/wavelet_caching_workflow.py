@@ -12,13 +12,14 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from src.core.decorators import handles_errors
 from src.training.steps.backtesting_with_cached_features import (
     BacktestingWithCachedFeatures,
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
 
 @handles_errors
 async def load_config(config_path: str) -> dict:
@@ -226,12 +227,16 @@ async def step4_cache_management(config: dict) -> bool | None:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
-    except Exception as e:
-        pass  # TODO: Handle exception properly
-import copy
-WaveletFeatureCache,
+            Exception as e:,
+        )
+        from src.training.steps.vectorized_advanced_feature_engineering import (
+            pass,  # TODO: Handle exception properly
+        )
+        from src.training.steps.vectorized_advanced_feature_engineering import (
             WaveletFeatureCache,
+            eatureCache,
             opy,
+            pt,
         )
 
         cache = WaveletFeatureCache(config)

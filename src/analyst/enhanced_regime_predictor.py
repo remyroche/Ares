@@ -19,10 +19,10 @@ from sklearn.cluster import DBSCAN
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.centralized_decorators import handle_errors, with_tracing_span
-import logging
 from src.core.decorators import handles_errors
+from src.utils.centralized_decorators import handle_errors, with_tracing_span
 from src.utils.logger import system_logger
+
 
 class EnhancedRegimePredictor:
     """Enhanced regime predictor with advanced change detection capabilities."""

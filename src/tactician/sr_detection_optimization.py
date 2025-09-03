@@ -47,7 +47,6 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     print("Warning: sklearn not available, clustering optimization disabled")
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import (
@@ -56,6 +55,7 @@ from src.tactician.sr_data_integration_simple import (
 )
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+
 
 @dataclass
 class OptimizationResult:
@@ -134,6 +134,7 @@ class OptimizationResult:
                 "timestamp": datetime.now().isoformat(),
             },
         }
+
 
 class SRDetectionOptimizer:
     """Enhanced S/R Detection Optimizer for 1-30m timeframes.
@@ -1190,6 +1191,7 @@ class SRDetectionOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to load optimization results: {e}")
             return False
+
 
 # Setup function for easy integration
 async def setup_sr_detection_optimizer(

@@ -87,7 +87,9 @@ async def run_validator(
             import pickle
 
             import numpy as np
+
 from src.core.decorators import handles_errors
+
             # Load the models
             with open(hmm_models_path, "rb") as f:
                 models_data = pickle.load(f)

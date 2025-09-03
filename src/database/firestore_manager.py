@@ -11,27 +11,58 @@ from firebase_admin import auth, credentials, firestore
 
 from src.config import CONFIG, get_environment_settings  # Import CONFIG
 from src.core.decorators import handles_errors
-from src.utils.warning_symbols import (
-    error,
-    missing,
-    warning,
-)
+from src.utils.error_handler import pass  # TODO: Add proper implementation
 from src.utils.error_handler import (
+    SDK,
+    TYPE_CHECKING:,
+    Cloud,
     ErrorRecoveryStrategies,
+    Firestore.,
+    FirestoreManager:,
+    Google,
+    Its,
+    This,
+    """Manages,
+    a,
+    adapts,
+    all,
+    an,
+    and,
+    application,
+    asyncio,
+    blocking,
+    by,
+    calls,
+    class,
+    error,
     error_context,
+    firebase-admin,
+    for,
+    from,
+    functionality,
     handle_errors,
-from src.utils.logger import system_logger
+    if,
+    import,
+    in,
+    interactions,
+    is,
+    it,
+    missing,
+    pool.,
+    running,
+    src.utils.logger,
+    src.utils.warning_symbols,
+    synchronous,
+    system_logger,
+    the,
+    thread,
+    uses,
+    version,
+    warning,
+    which,
+    with,
+)
 from src.utils.warning_symbols import error, missing, warning
-
-if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
-
-
-class FirestoreManager:
-    """Manages all interactions with Google Cloud Firestore.
-
-    This version uses the firebase-admin SDK (which is synchronous) and adapts it for an
-    asyncio application by running blocking calls in a thread pool. Its functionality
     can be conditionally disabled based on CONFIG['DATABASE_TYPE'].
     """
 

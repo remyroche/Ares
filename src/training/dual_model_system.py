@@ -9,14 +9,9 @@ import pandas as pd
 
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
-from src.utils.confidence import aggregate_directional_confidences
 from src.core.decorators import handles_errors
-from src.utils.error_handler import (
-    asyncio,
-    handle_errors,
-    handle_specific_errors,
-    import,
-)
+from src.utils.confidence import aggregate_directional_confidences
+from src.utils.error_handler import asyncio, handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
@@ -32,6 +27,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 from src.utils.warning_symbols import error, execution_error, initialization_error
+
 
 class DualModelSystem:
     """Dual Model System for trading decisions."
@@ -54,6 +50,7 @@ class DualModelSystem:
         # Backward-compatibility shim for legacy self.print calls
         # to avoid AttributeError during transitional cleanup.
         if not hasattr(self, "print"):
+
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
@@ -378,7 +375,9 @@ class DualModelSystem:
 
         except Exception as e:
             self.print(
-                initialization_error(f"Error initializing ML Confidence Predictor: {e}"),
+                initialization_error(
+                    f"Error initializing ML Confidence Predictor: {e}"
+                ),
             )
 
     @handles_errors(fallback=None)
@@ -590,7 +589,8 @@ class DualModelSystem:
             )
             final_confidence = float(final_conf_agg.get("confidence", 0.0))
             final_direction = final_conf_agg.get(
-                "direction", analyst_decision.get("direction", "HOLD"),
+                "direction",
+                analyst_decision.get("direction", "HOLD"),
             )
 
             # Determine if we should execute the trade
@@ -1555,9 +1555,12 @@ class DualModelSystem:
 
             # Add dual model system specific training info
             training_status["dual_model_system"] = {
-                "last_training_update": self.last_training_update.isoformat()
-                if hasattr(self, "last_training_update") and self.last_training_update
-                else None,
+                "last_training_update": (
+                    self.last_training_update.isoformat()
+                    if hasattr(self, "last_training_update")
+                    and self.last_training_update
+                    else None
+                ),
                 "analyst_models_loaded": self.analyst_model is not None,
                 "tactician_models_loaded": self.tactician_model is not None,
                 "ml_confidence_predictor_loaded": self.ml_confidence_predictor
@@ -1657,8 +1660,10 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
+
 # Global dual model system instance
 dual_model_system: DualModelSystem | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_dual_model_system(

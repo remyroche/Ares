@@ -786,6 +786,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
         import logging
 
 import copy
+
 from src.core.decorators import handles_errors
 
 logger = logging.getLogger(__name__)

@@ -19,19 +19,19 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import cross_val_score
 
+from src.core.decorators import handles_errors
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
-from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
-import os
-import asyncio
     asyncio,
     error,
     failed,
     import,
     initialization_error,
+    os,
     os.path,
 )
+
 
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""

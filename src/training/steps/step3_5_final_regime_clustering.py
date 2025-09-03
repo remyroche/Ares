@@ -809,7 +809,9 @@ if __name__ == "__main__":
     import asyncio
 
 import copy
+
 from src.core.decorators import handles_errors
+
     # Load test configuration
 test_config = {
         "SYMBOL": "ETHUSDT",

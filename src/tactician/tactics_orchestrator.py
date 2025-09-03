@@ -27,6 +27,9 @@ class TradeDecision:
     leverage: float = 1.0
     price: float = None
     metadata: dict = None
+
+
+from src.core.decorators import handles_errors
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.leverage_sizer import LeverageSizer
 from src.tactician.ml_tactics_manager import MLTacticsManager
@@ -39,9 +42,8 @@ from src.tactician.position_monitor import (
 )
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import copy, failed, import, invalid
+from src.utils.warning_symbols import copy, failed, invalid
 
 
 class DecisionPolicy:
@@ -101,7 +103,7 @@ class DecisionPolicy:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
@@ -109,21 +111,27 @@ class DecisionPolicy:
             # Update decision policy configuration
             if "decision_policy" in step17_results:
                 policy_optimization = step17_results["decision_policy"]
-                self.confidence_threshold = policy_optimization.get("confidence_threshold", self.confidence_threshold)
-                self.risk_threshold = policy_optimization.get("risk_threshold", self.risk_threshold)
-            
+                self.confidence_threshold = policy_optimization.get(
+                    "confidence_threshold", self.confidence_threshold
+                )
+                self.risk_threshold = policy_optimization.get(
+                    "risk_threshold", self.risk_threshold
+                )
+
             # Refresh all component managers
             if self.position_sizer:
                 self.position_sizer.refresh_step17_configuration(step17_results)
-            
+
             if self.leverage_sizer:
                 self.leverage_sizer.refresh_step17_configuration(step17_results)
-            
+
             if self.ml_tactics:
                 self.ml_tactics.refresh_step17_configuration(step17_results)
-            
-            self.logger.info("✅ Decision policy configuration refreshed from step17 results")
-            
+
+            self.logger.info(
+                "✅ Decision policy configuration refreshed from step17 results"
+            )
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -140,7 +148,9 @@ class DecisionPolicy:
 
             # Initialize SR breakout predictor with optimized parameters
             sr_config = self.config.copy()
-            sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+            sr_config["sr_breakout_predictor"] = sr_config.get(
+                "sr_breakout_predictor", {}
+            )
             sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
             self.sr_predictor = SRBreakoutPredictor(sr_config)
             await self.sr_predictor.initialize()
@@ -161,7 +171,9 @@ class DecisionPolicy:
         """
         try:
             if not 0 <= self.confidence_threshold <= 1:
-                self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
+                self.logger.error(
+                    invalid("Confidence threshold must be between 0 and 1")
+                )
                 return False
 
             if not 0 <= self.risk_threshold <= 1:
@@ -180,7 +192,7 @@ class DecisionPolicy:
         market_data: pd.DataFrame,
         analyst_confidence: float,
         tactician_confidence: float,
-        position_data: Optional[Dict[str, Any]] = None
+        position_data: Optional[Dict[str, Any]] = None,
     ) -> Optional[TradeDecision]:
         """
         Generate a trade decision based on all available signals.
@@ -198,10 +210,16 @@ class DecisionPolicy:
             self.logger.info("Generating trade decision...")
 
             # Get component decisions
-            sizing_decision = await self._get_sizing_decision(analyst_confidence, tactician_confidence)
-            leverage_decision = await self._get_leverage_decision(analyst_confidence, tactician_confidence)
+            sizing_decision = await self._get_sizing_decision(
+                analyst_confidence, tactician_confidence
+            )
+            leverage_decision = await self._get_leverage_decision(
+                analyst_confidence, tactician_confidence
+            )
             sr_decision = await self._get_sr_decision(market_data)
-            ml_decision = await self._get_ml_decision(market_data, analyst_confidence, tactician_confidence)
+            ml_decision = await self._get_ml_decision(
+                market_data, analyst_confidence, tactician_confidence
+            )
 
             # Aggregate decisions
             decision = self._aggregate_decisions(
@@ -210,7 +228,7 @@ class DecisionPolicy:
                 sr_decision,
                 ml_decision,
                 analyst_confidence,
-                tactician_confidence
+                tactician_confidence,
             )
 
             if decision:
@@ -223,9 +241,7 @@ class DecisionPolicy:
             return None
 
     async def _get_sizing_decision(
-        self,
-        analyst_confidence: float,
-        tactician_confidence: float
+        self, analyst_confidence: float, tactician_confidence: float
     ) -> Optional[Dict[str, Any]]:
         """
         Get position sizing decision.
@@ -248,13 +264,13 @@ class DecisionPolicy:
             position_size = await self.position_sizer.calculate_position_size(
                 ml_predictions={},  # Placeholder for ML predictions
                 analyst_confidence=analyst_confidence,
-                tactician_confidence=tactician_confidence
+                tactician_confidence=tactician_confidence,
             )
 
             return {
                 "position_size": position_size,
                 "confidence": combined_confidence,
-                "source": "position_sizer"
+                "source": "position_sizer",
             }
 
         except Exception as e:
@@ -262,9 +278,7 @@ class DecisionPolicy:
             return None
 
     async def _get_leverage_decision(
-        self,
-        analyst_confidence: float,
-        tactician_confidence: float
+        self, analyst_confidence: float, tactician_confidence: float
     ) -> Optional[Dict[str, Any]]:
         """
         Get leverage decision.
@@ -287,20 +301,22 @@ class DecisionPolicy:
             leverage = await self.leverage_sizer.calculate_leverage(
                 ml_predictions={},  # Placeholder for ML predictions
                 analyst_confidence=analyst_confidence,
-                tactician_confidence=tactician_confidence
+                tactician_confidence=tactician_confidence,
             )
 
             return {
                 "leverage": leverage,
                 "confidence": combined_confidence,
-                "source": "leverage_sizer"
+                "source": "leverage_sizer",
             }
 
         except Exception as e:
             self.logger.error(failed(f"❌ Leverage decision failed: {e}"))
             return None
 
-    async def _get_sr_decision(self, market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+    async def _get_sr_decision(
+        self, market_data: pd.DataFrame
+    ) -> Optional[Dict[str, Any]]:
         """
         Get SR breakout decision using centralized logic.
 
@@ -326,7 +342,7 @@ class DecisionPolicy:
                 "breakout_price": prediction.get("price"),
                 "outcome": prediction.get("outcome", "consolidation"),
                 "sr_context": prediction.get("sr_context", {}),
-                "source": "sr_predictor"
+                "source": "sr_predictor",
             }
 
         except Exception as e:
@@ -337,7 +353,7 @@ class DecisionPolicy:
         self,
         market_data: pd.DataFrame,
         analyst_confidence: float,
-        tactician_confidence: float
+        tactician_confidence: float,
     ) -> Optional[Dict[str, Any]]:
         """
         Get ML tactics decision.
@@ -356,9 +372,7 @@ class DecisionPolicy:
 
             # Get ML tactics decision
             decision = await self.ml_tactics.get_tactics_decision(
-                market_data,
-                analyst_confidence,
-                tactician_confidence
+                market_data, analyst_confidence, tactician_confidence
             )
 
             return decision
@@ -374,7 +388,7 @@ class DecisionPolicy:
         sr_decision: Optional[Dict[str, Any]],
         ml_decision: Optional[Dict[str, Any]],
         analyst_confidence: float,
-        tactician_confidence: float
+        tactician_confidence: float,
     ) -> Optional[TradeDecision]:
         """
         Aggregate all component decisions into a unified trade decision.
@@ -396,11 +410,15 @@ class DecisionPolicy:
 
             # Check confidence threshold
             if combined_confidence < self.confidence_threshold:
-                self.logger.info(f"Confidence {combined_confidence:.3f} below threshold {self.confidence_threshold}")
+                self.logger.info(
+                    f"Confidence {combined_confidence:.3f} below threshold {self.confidence_threshold}"
+                )
                 return None
 
             # Determine action based on decisions
-            action = self._determine_action(sizing_decision, leverage_decision, sr_decision, ml_decision)
+            action = self._determine_action(
+                sizing_decision, leverage_decision, sr_decision, ml_decision
+            )
 
             if not action:
                 return None
@@ -409,8 +427,14 @@ class DecisionPolicy:
             decision = TradeDecision(
                 action=action,
                 confidence=combined_confidence,
-                position_size=sizing_decision.get("position_size", 0.0) if sizing_decision else 0.0,
-                leverage=leverage_decision.get("leverage", 1.0) if leverage_decision else 1.0,
+                position_size=(
+                    sizing_decision.get("position_size", 0.0)
+                    if sizing_decision
+                    else 0.0
+                ),
+                leverage=(
+                    leverage_decision.get("leverage", 1.0) if leverage_decision else 1.0
+                ),
                 price=sr_decision.get("breakout_price") if sr_decision else None,
                 metadata={
                     "analyst_confidence": analyst_confidence,
@@ -419,8 +443,8 @@ class DecisionPolicy:
                     "leverage_decision": leverage_decision,
                     "sr_decision": sr_decision,
                     "ml_decision": ml_decision,
-                    "timestamp": datetime.now().isoformat()
-                }
+                    "timestamp": datetime.now().isoformat(),
+                },
             )
 
             return decision
@@ -434,7 +458,7 @@ class DecisionPolicy:
         sizing_decision: Optional[Dict[str, Any]],
         leverage_decision: Optional[Dict[str, Any]],
         sr_decision: Optional[Dict[str, Any]],
-        ml_decision: Optional[Dict[str, Any]]
+        ml_decision: Optional[Dict[str, Any]],
     ) -> Optional[str]:
         """
         Determine the final action based on all decisions.
@@ -459,7 +483,9 @@ class DecisionPolicy:
                 return None
 
             # Check SR breakout direction
-            breakout_direction = sr_decision.get("breakout_direction") if sr_decision else None
+            breakout_direction = (
+                sr_decision.get("breakout_direction") if sr_decision else None
+            )
 
             # Determine action
             if breakout_direction == "up":
@@ -502,6 +528,7 @@ class DecisionPolicy:
 
         except Exception as e:
             self.logger.error(failed(f"❌ Decision Policy cleanup failed: {e}"))
+
 
 class TacticsOrchestrator:
     """
@@ -575,43 +602,49 @@ class TacticsOrchestrator:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Tactics Orchestrator initialization failed: {e}"))
+            self.logger.error(
+                failed(f"❌ Tactics Orchestrator initialization failed: {e}")
+            )
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
-            self.logger.info("🔄 Refreshing tactics orchestrator configuration from step17 results...")
-            
+            self.logger.info(
+                "🔄 Refreshing tactics orchestrator configuration from step17 results..."
+            )
+
             # Refresh decision policy
             if self.decision_policy:
                 self.decision_policy.refresh_step17_configuration(step17_results)
-            
+
             # Refresh position monitor (already has auto-refresh)
             if self.position_monitor:
                 # Position monitor auto-refreshes from step12 results
                 pass
-            
+
             # Refresh position closer
             if self.position_closer:
                 self.position_closer.refresh_step17_configuration(step17_results)
-            
+
             # Refresh order manager if it has step17 refresh method
-            if hasattr(self.order_manager, 'refresh_step17_configuration'):
+            if hasattr(self.order_manager, "refresh_step17_configuration"):
                 self.order_manager.refresh_step17_configuration(step17_results)
-            
+
             # Refresh position strategy if it has step17 refresh method
-            if hasattr(self.position_strategy, 'refresh_step17_configuration'):
+            if hasattr(self.position_strategy, "refresh_step17_configuration"):
                 self.position_strategy.refresh_step17_configuration(step17_results)
-            
-            self.logger.info("✅ Tactics orchestrator configuration refreshed from step17 results")
-            
+
+            self.logger.info(
+                "✅ Tactics orchestrator configuration refreshed from step17 results"
+            )
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -721,7 +754,10 @@ class TacticsOrchestrator:
 
             for assessment in assessments:
                 # Check if position should be closed
-                if assessment.position_action in [PositionAction.STOP_LOSS, PositionAction.FULL_CLOSE]:
+                if assessment.position_action in [
+                    PositionAction.STOP_LOSS,
+                    PositionAction.FULL_CLOSE,
+                ]:
                     await self._close_position(assessment)
 
         except Exception as e:
@@ -735,31 +771,33 @@ class TacticsOrchestrator:
             # Get market data and analyst predictions
             market_data = await self._get_market_data()
             analyst_predictions = await self._get_analyst_predictions()
-            
+
             if not market_data or not analyst_predictions:
                 return
-            
+
             # Generate Tactician multi-output predictions
             tactician_predictions = await self._generate_tactician_predictions(
                 market_data, analyst_predictions
             )
-            
+
             if not tactician_predictions:
                 return
-            
+
             # Evaluate green light signal
             green_light_signal = tactician_predictions.get("green_light_signal", {})
-            
+
             if green_light_signal.get("signal") == "GREEN_LIGHT":
                 # Generate trade decision
                 decision = await self._create_trade_decision(
                     market_data, analyst_predictions, tactician_predictions
                 )
-                
+
                 if decision:
                     self.decision_history.append(decision)
-                    self.logger.info(f"Generated trade decision: {decision.action} (confidence: {decision.confidence:.3f})")
-            
+                    self.logger.info(
+                        f"Generated trade decision: {decision.action} (confidence: {decision.confidence:.3f})"
+                    )
+
             # Check for exit signals on existing positions
             await self._check_exit_signals(tactician_predictions)
 
@@ -769,7 +807,7 @@ class TacticsOrchestrator:
     async def _get_market_data(self) -> Optional[pd.DataFrame]:
         """
         Get current market data.
-        
+
         Returns:
             pd.DataFrame: Market data or None
         """
@@ -777,7 +815,7 @@ class TacticsOrchestrator:
             # This would get actual market data
             # For now, return None to indicate no data available
             return None
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error getting market data: {e}"))
             return None
@@ -785,7 +823,7 @@ class TacticsOrchestrator:
     async def _get_analyst_predictions(self) -> Optional[Dict[str, Any]]:
         """
         Get Analyst predictions.
-        
+
         Returns:
             Dict: Analyst predictions or None
         """
@@ -793,58 +831,60 @@ class TacticsOrchestrator:
             # This would get actual Analyst predictions
             # For now, return None to indicate no predictions available
             return None
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error getting Analyst predictions: {e}"))
             return None
 
     async def _generate_tactician_predictions(
-        self,
-        market_data: pd.DataFrame,
-        analyst_predictions: Dict[str, Any]
+        self, market_data: pd.DataFrame, analyst_predictions: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
         Generate Tactician multi-output predictions.
-        
+
         Args:
             market_data: Market data
             analyst_predictions: Analyst predictions
-            
+
         Returns:
             Dict: Tactician predictions or None
         """
         try:
             if not self.ml_tactics:
                 return None
-            
+
             # Extract Analyst barriers
             analyst_barriers = self._extract_analyst_barriers(analyst_predictions)
-            
+
             # Extract analyst confidence
             analyst_confidence = analyst_predictions.get("confidence", 0.5)
-            
+
             # Generate multi-output predictions
-            tactician_predictions = await self.ml_tactics.generate_multi_output_predictions(
-                market_data=market_data,
-                analyst_barriers=analyst_barriers,
-                symbol="BTCUSDT",  # This would come from context
-                timeframe="1m",
-                analyst_confidence=analyst_confidence
+            tactician_predictions = (
+                await self.ml_tactics.generate_multi_output_predictions(
+                    market_data=market_data,
+                    analyst_barriers=analyst_barriers,
+                    symbol="BTCUSDT",  # This would come from context
+                    timeframe="1m",
+                    analyst_confidence=analyst_confidence,
+                )
             )
-            
+
             return tactician_predictions
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error generating Tactician predictions: {e}"))
             return None
 
-    def _extract_analyst_barriers(self, analyst_predictions: Dict[str, Any]) -> Dict[str, float]:
+    def _extract_analyst_barriers(
+        self, analyst_predictions: Dict[str, Any]
+    ) -> Dict[str, float]:
         """
         Extract barrier values from Analyst predictions.
-        
+
         Args:
             analyst_predictions: Analyst predictions
-            
+
         Returns:
             Dict: Barrier values
         """
@@ -853,11 +893,11 @@ class TacticsOrchestrator:
             # This is a simplified extraction - adjust based on actual Analyst output structure
             barriers = {
                 "upper_barrier": analyst_predictions.get("upper_barrier", 0.02),
-                "lower_barrier": analyst_predictions.get("lower_barrier", -0.01)
+                "lower_barrier": analyst_predictions.get("lower_barrier", -0.01),
             }
-            
+
             return barriers
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error extracting Analyst barriers: {e}"))
             return {"upper_barrier": 0.02, "lower_barrier": -0.01}
@@ -866,33 +906,33 @@ class TacticsOrchestrator:
         self,
         market_data: pd.DataFrame,
         analyst_predictions: Dict[str, Any],
-        tactician_predictions: Dict[str, Any]
+        tactician_predictions: Dict[str, Any],
     ) -> Optional[TradeDecision]:
         """
         Create trade decision based on predictions.
-        
+
         Args:
             market_data: Market data
             analyst_predictions: Analyst predictions
             tactician_predictions: Tactician predictions
-            
+
         Returns:
             TradeDecision: Trade decision or None
         """
         try:
             # Get combined confidence
             combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
-            
+
             # Determine action based on direction
             action = self._determine_action_from_predictions(tactician_predictions)
-            
+
             if not action:
                 return None
-            
+
             # Calculate position size and leverage
             position_size = await self._calculate_position_size(tactician_predictions)
             leverage = await self._calculate_leverage(tactician_predictions)
-            
+
             # Create decision
             decision = TradeDecision(
                 action=action,
@@ -903,24 +943,28 @@ class TacticsOrchestrator:
                 metadata={
                     "analyst_predictions": analyst_predictions,
                     "tactician_predictions": tactician_predictions,
-                    "green_light_signal": tactician_predictions.get("green_light_signal", {}),
-                    "timestamp": datetime.now().isoformat()
-                }
+                    "green_light_signal": tactician_predictions.get(
+                        "green_light_signal", {}
+                    ),
+                    "timestamp": datetime.now().isoformat(),
+                },
             )
-            
+
             return decision
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error creating trade decision: {e}"))
             return None
 
-    def _determine_action_from_predictions(self, tactician_predictions: Dict[str, Any]) -> Optional[str]:
+    def _determine_action_from_predictions(
+        self, tactician_predictions: Dict[str, Any]
+    ) -> Optional[str]:
         """
         Determine action from Tactician predictions.
-        
+
         Args:
             tactician_predictions: Tactician predictions
-            
+
         Returns:
             str: Action or None
         """
@@ -928,44 +972,46 @@ class TacticsOrchestrator:
             # Check direction from 50% barrier prediction (more reliable)
             fifty_percent_pred = tactician_predictions.get("fifty_percent", {})
             direction = fifty_percent_pred.get("direction", "UP")
-            
+
             if direction == "UP":
                 return "BUY"
             elif direction == "DOWN":
                 return "SELL"
             else:
                 return None
-                
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error determining action: {e}"))
             return None
 
-    async def _calculate_position_size(self, tactician_predictions: Dict[str, Any]) -> float:
+    async def _calculate_position_size(
+        self, tactician_predictions: Dict[str, Any]
+    ) -> float:
         """
         Calculate position size based on Tactician predictions.
-        
+
         Args:
             tactician_predictions: Tactician predictions
-            
+
         Returns:
             float: Position size
         """
         try:
             if not self.position_sizer:
                 return 0.0
-            
+
             # Use combined confidence for position sizing
             combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
-            
+
             # Calculate position size using position sizer
             position_size = await self.position_sizer.calculate_position_size(
                 ml_predictions=tactician_predictions,
                 analyst_confidence=combined_confidence,
-                tactician_confidence=combined_confidence
+                tactician_confidence=combined_confidence,
             )
-            
+
             return position_size
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error calculating position size: {e}"))
             return 0.0
@@ -973,29 +1019,29 @@ class TacticsOrchestrator:
     async def _calculate_leverage(self, tactician_predictions: Dict[str, Any]) -> float:
         """
         Calculate leverage based on Tactician predictions.
-        
+
         Args:
             tactician_predictions: Tactician predictions
-            
+
         Returns:
             float: Leverage
         """
         try:
             if not self.leverage_sizer:
                 return 1.0
-            
+
             # Use combined confidence for leverage calculation
             combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
-            
+
             # Calculate leverage using leverage sizer
             leverage = await self.leverage_sizer.calculate_leverage(
                 ml_predictions=tactician_predictions,
                 analyst_confidence=combined_confidence,
-                tactician_confidence=combined_confidence
+                tactician_confidence=combined_confidence,
             )
-            
+
             return leverage
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error calculating leverage: {e}"))
             return 1.0
@@ -1003,28 +1049,29 @@ class TacticsOrchestrator:
     async def _check_exit_signals(self, tactician_predictions: Dict[str, Any]) -> None:
         """
         Check for exit signals on existing positions.
-        
+
         Args:
             tactician_predictions: Tactician predictions
         """
         try:
             if not self.ml_tactics:
                 return
-            
+
             # Get current positions
             active_positions = self.get_active_positions()
-            
+
             for position_id, position in active_positions.items():
                 # Evaluate exit signal for this position
                 exit_signal = await self.ml_tactics.evaluate_exit_signal(
-                    tactician_predictions,
-                    position
+                    tactician_predictions, position
                 )
-                
+
                 if exit_signal.get("exit_signal") in ["EXIT", "PARTIAL_EXIT"]:
-                    self.logger.info(f"Exit signal for position {position_id}: {exit_signal['exit_signal']}")
+                    self.logger.info(
+                        f"Exit signal for position {position_id}: {exit_signal['exit_signal']}"
+                    )
                     # This would trigger position closing logic
-                    
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error checking exit signals: {e}"))
 
@@ -1059,13 +1106,15 @@ class TacticsOrchestrator:
                     "side": assessment.side,
                     "entry_price": assessment.entry_price,
                     "current_price": assessment.current_price,
-                    "quantity": assessment.current_quantity
+                    "quantity": assessment.current_quantity,
                 },
-                assessment.action_reason
+                assessment.action_reason,
             )
 
             if result:
-                self.logger.info(f"Closed position {assessment.position_id}: {result.get('pnl', 0):.4f} PnL")
+                self.logger.info(
+                    f"Closed position {assessment.position_id}: {result.get('pnl', 0):.4f} PnL"
+                )
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error closing position: {e}"))

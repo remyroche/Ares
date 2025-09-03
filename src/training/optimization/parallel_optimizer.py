@@ -12,6 +12,7 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, warning
 
+
 @dataclass
 class ParallelConfig:
     """Configuration for parallel optimization."""
@@ -22,6 +23,7 @@ class ParallelConfig:
     chunk_size: int = 10
     timeout_seconds: int = 300
     enable_async: bool = True
+
 
 class ParallelParameterOptimizer:
     """Implements parallel optimization for time efficiency."""

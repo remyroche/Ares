@@ -112,7 +112,9 @@ async def run_validator(
         # Try to read the files to validate structure
         try:
             import pandas as pd
+
 from src.core.decorators import handles_errors
+
             # Read train data
             train_data = pd.read_parquet(train_path)
 

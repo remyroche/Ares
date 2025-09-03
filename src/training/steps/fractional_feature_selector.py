@@ -24,7 +24,6 @@ from sklearn.feature_selection import (
 from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.logger import get_logger
 from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     validate_data_quality,
@@ -32,6 +31,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import get_logger
+
 
 class FractionalFeatureSelector:
     """Intelligent feature selector for Step 7 with fractional label alignment."""

@@ -15,7 +15,6 @@ from src.utils.warning_symbols import (
     asyncio,
     error,
     execution_error,
-    import,
     initialization_error,
     invalid,
     warning,
@@ -70,8 +69,12 @@ class ExchangeVolumeAdapter:
             "exchange_volume_adapter",
             {},
         )
-        self.enable_volume_adaptation: bool = self.adapter_config.get("enable_volume_adaptation", True)
-        self.enable_dynamic_adjustment: bool = self.adapter_config.get("enable_dynamic_adjustment", True)
+        self.enable_volume_adaptation: bool = self.adapter_config.get(
+            "enable_volume_adaptation", True
+        )
+        self.enable_dynamic_adjustment: bool = self.adapter_config.get(
+            "enable_dynamic_adjustment", True
+        )
         self.volume_history_window: int = self.adapter_config.get(
             "volume_history_window",
             24,
@@ -257,7 +260,9 @@ class ExchangeVolumeAdapter:
             self.print(error("Error calculating spread adjustment: {e}"))
             return base_spread * 2.0  # Conservative fallback
 
-    def calculate_slippage_adjustment(self, exchange: str, base_slippage: float = None) -> float:
+    def calculate_slippage_adjustment(
+        self, exchange: str, base_slippage: float = None
+    ) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
         try:
             profile = self.get_volume_profile(exchange)
@@ -376,12 +381,17 @@ class ExchangeVolumeAdapter:
             base_factor = profile["position_size_multiplier"]
 
             # Apply dynamic adjustments if enabled
-            if self.enable_dynamic_adjustment and exchange_upper in self.current_volume_metrics:
+            if (
+                self.enable_dynamic_adjustment
+                and exchange_upper in self.current_volume_metrics
+            ):
                 metrics = self.current_volume_metrics[exchange_upper]
 
                 # Adjust based on current volume vs average
                 if metrics.get("current_volume") and profile.get("avg_daily_volume"):
-                    volume_ratio = metrics["current_volume"] / profile["avg_daily_volume"]
+                    volume_ratio = (
+                        metrics["current_volume"] / profile["avg_daily_volume"]
+                    )
                     volume_adjustment = min(1.5, max(0.5, volume_ratio))
                     base_factor *= volume_adjustment
 
@@ -463,6 +473,7 @@ class ExchangeVolumeAdapter:
 
         except Exception:
             self.print(error("Error during cleanup: {e}"))
+
 
 @handles_errors(fallback=None)
 async def setup_exchange_volume_adapter(

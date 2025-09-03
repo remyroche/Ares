@@ -215,6 +215,7 @@ async def run_validator(
             "validation_time": time.time() - start_time,
         }
 
+
 # Legacy function for backward compatibility
 async def run_step_validator(
     training_input: Dict[str, Any],

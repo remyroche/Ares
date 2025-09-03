@@ -101,6 +101,7 @@ if centralized_decorators is None:
 else:
     monitor_data_collection = centralized_decorators.monitor_data_collection
 
+
 class DataCollectionStep:
     """Step 1: Data Collection using standardized pipeline utilities."""
 
@@ -984,6 +985,7 @@ class DataCollectionStep:
             logger.error(f"📋 Full error: {str(e)}")
             logger.info("=" * 80)
 
+
 @monitor_data_collection()
 @handles_errors(fallback=False)
 async def run_step(
@@ -1165,6 +1167,7 @@ async def run_step(
         logger.exception(f"❌ Step 1: Data Collection failed: {e}")
         return False
 
+
 if __name__ == "__main__":
     # Parse command line arguments
     import asyncio
@@ -1216,6 +1219,7 @@ if __name__ == "__main__":
         import gc
 
 import os.path
+
 from src.core.decorators import handles_errors
 
 gc.collect()

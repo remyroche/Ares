@@ -6,16 +6,17 @@ from datetime import datetime
 from typing import Any
 
 from src.config import CONFIG, get_environment_settings
+from src.core.decorators import handles_errors
 from src.paper_trader import PaperTrader
 from src.sentinel.sentinel import Sentinel
 from src.supervisor.ab_tester import ABTester
 from src.supervisor.monitoring import Monitoring
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.supervisor.risk_allocator import RiskAllocator
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
+
 
 class Supervisor:
     """The central real-time orchestrator of the Ares Trading Bot.
@@ -307,6 +308,7 @@ class Supervisor:
                 f"Failed to synchronize state with exchange: {e}", exc_info=True
             )
 
+
 class MainSupervisor:
     """Main Supervisor Entrypoint with DI, type hints, and robust error handling."""
 
@@ -419,7 +421,9 @@ class MainSupervisor:
             history = history[-limit:]
         return history
 
+
 main_supervisor: MainSupervisor | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_main_supervisor(

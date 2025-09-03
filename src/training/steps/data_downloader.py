@@ -13,6 +13,7 @@ from src.config import CONFIG
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+
 @handles_errors(fallback=False)
 async def download_all_data_with_consolidation(
     symbol: str,

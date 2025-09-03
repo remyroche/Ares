@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 from .standardized_error_handler import (
@@ -26,6 +27,7 @@ from .standardized_error_handler import (
     ErrorSeverity,
     standardized_error_handler,
 )
+
 
 class StepContract:
     """Defines the input/output contract for each step."""
@@ -35,6 +37,7 @@ class StepContract:
         self.inputs = inputs
         self.outputs = outputs
         self.timestamp = datetime.now().isoformat()
+
 
 class Steps1_7CompatibilityFramework:
     """Comprehensive compatibility framework for steps 1-7."""
@@ -628,6 +631,7 @@ class Steps1_7CompatibilityFramework:
         except Exception as e:
             self.logger.error(f"Failed to export compatibility report: {e}")
             return False
+
 
 # Global instance
 steps_1_7_compatibility = Steps1_7CompatibilityFramework()

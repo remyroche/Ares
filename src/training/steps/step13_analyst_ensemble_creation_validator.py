@@ -14,6 +14,7 @@ from src.utils.warning_symbols import error, failed, missing, success, warning
 
 logger = system_logger
 
+
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
 

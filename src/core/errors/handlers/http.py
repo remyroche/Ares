@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict
 
 from ..base import AppError
 from ..mapping import error_mapper
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +115,7 @@ def create_aiohttp_middleware():
         app = web.Application(middlewares=[create_aiohttp_middleware()])
     """
     from aiohttp import web
+
     @web.middleware
     async def error_middleware(request, handler):
         try:

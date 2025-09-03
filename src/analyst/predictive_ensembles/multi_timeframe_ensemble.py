@@ -7,6 +7,7 @@ This integrates multi-timeframe training into the existing ensemble system,
 making each individual model (XGBoost, LSTM, etc.) a multi-timeframe ensemble.
 """
 
+import logging
 import os
 import time
 from datetime import datetime
@@ -22,13 +23,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-import logging
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
-from src.utils.warning_symbols import error, failed, import, logging, warning
+from src.utils.warning_symbols import error, failed, logging, warning
 
 
 class MultiTimeframeEnsemble:

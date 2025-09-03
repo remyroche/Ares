@@ -103,6 +103,16 @@ class EnhancedMatrixOperationsStep(BaseStep):
         # Check for selected features
         if "selected_features" not in pipeline_state:
             self.logger.warning("No selected features, will use all features")
+        else:
+            # Quick sanity check for selected features presence
+            try:
+                data_any = pipeline_state.get("engineered_data", {}).get("train")
+                if isinstance(data_any, pd.DataFrame):
+                    missing = [f for f in pipeline_state["selected_features"] if f not in data_any.columns]
+                    if missing:
+                        self.logger.warning(f"Selected features missing in train data: {missing[:10]}{'...' if len(missing)>10 else ''}")
+            except Exception:
+                pass
         
         # Validate matrix computation requirements
         if self.matrix_config.get("matrix_computations", {}).get("regime_transition_matrix", False):
@@ -159,6 +169,14 @@ class EnhancedMatrixOperationsStep(BaseStep):
             )
             
             matrix_results[split_name] = split_matrices
+            # Log quick summary
+            try:
+                n_feats = len([c for c in data.columns if c.startswith('feature_')])
+                self.logger.info(
+                    f"✅ {split_name}: matrices computed; features={n_feats}, keys={list(split_matrices.keys())}"
+                )
+            except Exception:
+                pass
         
         # Perform feature importance analysis
         self.logger.info("📊 Analyzing feature importance...")

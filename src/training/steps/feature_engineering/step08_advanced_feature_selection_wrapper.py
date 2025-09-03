@@ -21,7 +21,15 @@ class AdvancedFeatureSelectionStep(BaseStep):
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         # Prefer engineered data produced by step06/07, but allow fallback to files
-        return True, []
+        errors = []
+        if "engineered_data" not in pipeline_state:
+            # Legacy path: rely on persisted filtered feature files written by step07
+            self.logger.warning("No engineered_data in memory; relying on filtered feature parquet files if available")
+        # Validate required training_input keys
+        for key in ["symbol", "exchange", "timeframe", "data_dir"]:
+            if key not in training_input:
+                self.logger.warning(f"Missing training_input key: {key}")
+        return len(errors) == 0, errors
 
     @handles_errors(
         exceptions=(Exception,),
@@ -36,6 +44,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
 
         step_impl = Step08AdvancedFeatureSelection(self.config)
         result_state = await step_impl.execute(training_input, pipeline_state)
+        self.logger.info("✅ Step08 legacy implementation executed")
 
         # Ensure downstream steps have a deterministic key to read
         pipeline_state.update(result_state)

@@ -116,6 +116,7 @@ def create_aiohttp_middleware():
         
         app = web.Application(middlewares=[create_aiohttp_middleware()])
     """
+    from aiohttp import web
     @web.middleware
     async def error_middleware(request, handler):
         try:

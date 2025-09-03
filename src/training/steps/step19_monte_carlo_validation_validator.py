@@ -117,7 +117,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.info("✅ Monte Carlo validation validation passed")
         return True
 
-    @handles_errors(default_return=(False, {}), context="Step14._validate_monte_carlo_files")
+    @handles_errors, default_return=(False, {}), context="Step14._validate_monte_carlo_files"
     def _validate_monte_carlo_files(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -159,7 +159,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.info("✅ All Monte Carlo validation files exist")
         return True, {"missing_files": [], "files": file_details}
 
-    @handles_errors(default_return=(False, {}), context="Step14._validate_statistical_significance")
+    @handles_errors, default_return=(False, {}), context="Step14._validate_statistical_significance"
     def _validate_statistical_significance(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -247,7 +247,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.error(f"Results file not found: {results_file}")
         return False, {"missing_file": results_file}
 
-    @handles_errors(default_return=(False, {}), context="Step14._validate_performance_distribution")
+    @handles_errors, default_return=(False, {}), context="Step14._validate_performance_distribution"
     def _validate_performance_distribution(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -368,7 +368,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         self.logger.error(f"Performance file not found: {performance_file}")
         return False, {"missing_file": performance_file}
 
-    @handles_errors(default_return=(False, {}), context="Step14._validate_monte_carlo_robustness")
+    @handles_errors, default_return=(False, {}), context="Step14._validate_monte_carlo_robustness"
     def _validate_monte_carlo_robustness(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:

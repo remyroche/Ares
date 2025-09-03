@@ -20,7 +20,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from src.utils.error_handler import handle_errors
+# Removed handle_errors import - not used in this file
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,

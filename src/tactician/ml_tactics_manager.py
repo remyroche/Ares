@@ -14,8 +14,7 @@ from src.utils.warning_symbols import failed, invalid, warning
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import validate_data_quality
+from src.core.decorators import handles_errors, validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, warning
 
@@ -436,14 +435,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML tactics execution failed: {e}"))
             return {}
 
-    @validate_data_quality(
-        required_columns=None,  # This method validates dict input, not DataFrame
-        min_rows=1,
-        max_null_ratio=0.0,
-        check_duplicates=False,
-        check_timestamps=False,
-        context="ML tactics input validation",
-    )
+    @validates(strict=True)
     @handles_errors(fallback=False)
     def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
         """

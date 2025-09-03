@@ -3,7 +3,13 @@
 PaperTrader for training and testnet trading.
 Uses Binance testnet via BinanceExchange for all operations.
 """
-from src.core.decorators import handles_errors
+from src.core.decorators import (
+    handles_errors,
+    log_execution_time,
+    log_call,
+    retry,
+    traced,
+)
 
 from src.core.domain import handle_specific_errors
 
@@ -19,11 +25,15 @@ from src.config.constants import (
     DEFAULT_SLIPPAGE_RATE,
 )
 from src.utils.logger import system_logger
-from src.utils.trading_decorators import (
-    ExecutionMode,
-    comprehensive_trading_decorator,
-    get_trade_tracker,
-)
+# Removed trading_decorators imports - using core decorators instead
+from enum import Enum
+
+class ExecutionMode(Enum):
+    """Execution mode enumeration."""
+    LIVE = "live"
+    BACKTEST = "backtest"
+    PAPER = "paper"
+    SIMULATION = "simulation"
 from src.utils.warning_symbols import (
     execution_error,
     initialization_error,
@@ -208,15 +218,10 @@ class PaperTrader:
                 initialization_error(f"Error initializing trading state: {e}"),
             )
 
-    @comprehensive_trading_decorator(
-        enable_error_handling=True,
-        enable_performance_monitoring=True,
-        enable_trade_logging=True,
-        enable_risk_management=True,
-        enable_regime_awareness=True,
-        max_drawdown=0.2,
-        max_position_size=0.1,
-    )
+    @handles_errors(fallback=False)
+    @log_execution_time()
+    @log_call(level="INFO")
+    @traced(span_name="execute_buy_order")
     async def execute_buy_order(
         self,
         symbol: str,
@@ -320,15 +325,10 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error executing buy order: {e}"))
             return False
 
-    @comprehensive_trading_decorator(
-        enable_error_handling=True,
-        enable_performance_monitoring=True,
-        enable_trade_logging=True,
-        enable_risk_management=True,
-        enable_regime_awareness=True,
-        max_drawdown=0.2,
-        max_position_size=0.1,
-    )
+    @handles_errors(fallback=False)
+    @log_execution_time()
+    @log_call(level="INFO")
+    @traced(span_name="execute_sell_order")
     async def execute_sell_order(
         self,
         symbol: str,

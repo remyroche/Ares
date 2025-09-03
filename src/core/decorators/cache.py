@@ -13,11 +13,10 @@ import json
 import pickle
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import A, Callableny
 
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id

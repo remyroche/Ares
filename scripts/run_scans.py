@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 
-from src.utils.warning_symbols import error, failed, warning
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols, failed, warning
 
 # Configure logging
 logging.basicConfig(

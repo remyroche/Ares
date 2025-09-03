@@ -9,7 +9,7 @@ from src.analyst.multi_timeframe_feature_engineering import (
 from src.analyst.multi_timeframe_regime_integration import (
     MultiTimeframeRegimeIntegration,
 )
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 

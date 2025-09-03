@@ -1,7 +1,7 @@
 # src/tactician/ml_target_updater.py
 
 
-from src.core.domain import validate_data_quality
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 
 """
 ML Target Updater for continuously updating ML targets based on real-time conditions.
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
-from src.core.decorators import handles_errors, validates
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators, validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,

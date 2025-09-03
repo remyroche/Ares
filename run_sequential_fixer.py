@@ -12,8 +12,8 @@ from pathlib import Path
 # Add code_quality to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code_quality'))
 
-from code_quality.fixers.sequential_fixer import SequentialFixer
-from code_quality.core.config import get_default_config
+from code_quality.fixers.sequential_fixer import SequentialFixer as SequentialFixer_3
+from code_quality.core.config import get_default_config as get_default_config_code_quality_core_config
 
 def main():
     """Run sequential fixer and generate report."""

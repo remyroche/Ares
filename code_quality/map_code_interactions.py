@@ -18,14 +18,14 @@ from pathlib import Path
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from analyzers.architecture_analyzer import ArchitectureAnalyzer
-from analyzers.call_graph_analyzer import CallGraphAnalyzer
-from analyzers.complexity_analyzer import ComplexityAnalyzer
-from analyzers.dependency_analyzer import DependencyAnalyzer
-from analyzers.import_analyzer import ImportAnalyzer
+from analyzers.architecture_analyzer import ArchitectureAnalyzer as ArchitectureAnalyzer_3
+from analyzers.call_graph_analyzer import CallGraphAnalyzer as CallGraphAnalyzer_analyzers_call_graph_analyzer
+from analyzers.complexity_analyzer import ComplexityAnalyzer as ComplexityAnalyzer_analyzers_complexity_analyzer
+from analyzers.dependency_analyzer import DependencyAnalyzer as DependencyAnalyzer_analyzers_dependency_analyzer
+from analyzers.import_analyzer import ImportAnalyzer as ImportAnalyzer_analyzers_import_analyzer
 from reporters.html_reporter import HTMLReporter
 
-from core.config import get_default_config
+from core.config import get_default_config as get_default_config_core_config
 
 
 class CodeInteractionMapper:

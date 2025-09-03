@@ -1,7 +1,7 @@
 # src/tactician/position_sizer.py
 
 
-from src.core.domain import validate_data_quality
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 
 """
 Simplified Position Sizer for high leverage trading.
@@ -13,11 +13,11 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.confidence import normalize_dual_confidence
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import error, initialization_error, missing
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols, initialization_error, missing
 
 from kelly_criterion_fix import calculate_correct_kelly_position_size
-from src.core.decorators import handles_errors, validates
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors, validates
 from src.utils.logger import system_logger
 
 
@@ -71,7 +71,7 @@ class PositionSizer:
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
 
-    @handles_errors(
+    @core_handles_errors(
         error_handlers={
             ValueError: (False, "Invalid position sizer configuration"),
             AttributeError: (False, "Missing required sizing parameters"),
@@ -80,7 +80,7 @@ class PositionSizer:
         default_return=False,
         context="position sizer initialization",
     )
-    @handles_errors(fallback=False)
+    @core_handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the position sizer."""
         self.logger.info("Initializing position sizer...")
@@ -93,7 +93,7 @@ class PositionSizer:
         self.logger.info("✅ Position sizer initialized successfully")
         return True
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
 
     def _validate_configuration(self) -> bool:
         """Validate position sizer configuration."""
@@ -162,7 +162,7 @@ class PositionSizer:
         check_timestamps=False,
         context="position sizing calculation input validation",
     )
-    @handles_errors(
+    @core_handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for position sizing"),
             AttributeError: (None, "Sizer not properly initialized"),
@@ -582,7 +582,7 @@ class PositionSizer:
             return self.position_sizing_history[-limit:]
         return self.position_sizing_history.copy()
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the position sizer."""
         try:
@@ -593,7 +593,7 @@ class PositionSizer:
             self.print(error(f"Error stopping position sizer: {e}"))
             raise
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup position sizer resources."""
         try:
@@ -605,7 +605,7 @@ class PositionSizer:
             self.logger.exception(f"Error cleaning up position sizer: {e}")
             raise
 
-@handles_errors(fallback=None)
+@core_handles_errors(fallback=None)
 async def setup_position_sizer(
     config: dict[str, Any] | None = None,
 ) -> PositionSizer | None:

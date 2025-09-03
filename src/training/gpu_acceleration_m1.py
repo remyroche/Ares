@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.core.decorators import cached, log_call, validates
-from src.core.domain import quality_gate, secure_data_processing
+from src.core.decorators import cached as cached_src_core_decorators, log_call, validates
+from src.core.domain import quality_gate as quality_gate_src_core_domain, secure_data_processing
 
 # src/training/gpu_acceleration_m1.py
 
@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 
 

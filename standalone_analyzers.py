@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 # Import minimal modules
-from minimal_config import CodeQualityConfig, get_default_config
+from minimal_config import CodeQualityConfig as CodeQualityConfig_minimal_config, get_default_config
 
 
 class TypeChecker:

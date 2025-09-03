@@ -10,7 +10,7 @@ import sys
 import traceback
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, A, Callableny
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,10 +25,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from src.utils.logger import system_logger  # noqa: E402
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
-def _handle_errors(default: Any | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def _handle_errors(default: Any | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to log exceptions and optionally return a default value.
 
     This keeps the script robust for long-running diagnostics.

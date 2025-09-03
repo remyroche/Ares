@@ -5,13 +5,13 @@ from datetime import datetime
 from typing import Any
 
 from src.config import CONFIG, get_environment_settings
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.paper_trader import PaperTrader
 from src.sentinel.sentinel import Sentinel
 from src.supervisor.ab_tester import ABTester
 from src.supervisor.monitoring import Monitoring
 from src.supervisor.performance_reporter import PerformanceReporter
-from src.supervisor.risk_allocator import RiskAllocator
+from src.supervisor.risk_allocator import RiskAllocator as RiskAllocator_src_supervisor_risk_allocator
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager

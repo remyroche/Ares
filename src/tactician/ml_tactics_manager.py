@@ -1,17 +1,17 @@
 # src/tactician/ml_tactics_manager.py
 
 
-from src.core.domain import validate_data_quality
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 
 from datetime import datetime
 from typing import Any
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import failed, invalid, warning
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors
+from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols, invalid, warning
 
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors, validates
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors, validates
 from src.utils.logger import system_logger
 
 
@@ -106,7 +106,7 @@ class MLTacticsManager:
             "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1),
         }
 
-    @handles_errors(
+    @core_handles_errors(
         error_handlers={
             ValueError: (False, "Invalid ML tactics manager configuration"),
             AttributeError: (False, "Missing required ML tactics parameters"),
@@ -141,7 +141,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML Tactics Manager initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @core_handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate ML tactics manager configuration.
@@ -269,7 +269,7 @@ class MLTacticsManager:
         except Exception as e:
             self.logger.exception(f"Error refreshing step17 configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @core_handles_errors(fallback=False)
     async def _initialize_ml_models(self) -> bool:
         """
         Initialize multi-output prediction models.
@@ -305,7 +305,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML models initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @core_handles_errors(fallback=False)
     async def _load_pretrained_models(self) -> bool:
         """
         Load pre-trained multi-output models.
@@ -323,7 +323,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ Failed to load pre-trained models: {e}"))
             return False
 
-    @handles_errors(fallback=False)
+    @core_handles_errors(fallback=False)
     async def _initialize_fallback_models(self) -> bool:
         """
         Initialize fallback models for testing.
@@ -347,7 +347,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ Fallback models initialization failed: {e}"))
             return False
 
-    @handles_errors(
+    @core_handles_errors(
         error_handlers={
             ValueError: (False, "Invalid ML tactics parameters"),
             AttributeError: (False, "Missing ML tactics components"),
@@ -432,7 +432,7 @@ class MLTacticsManager:
             return {}
 
     @validates(strict=True)
-    @handles_errors(fallback=False)
+    @core_handles_errors(fallback=False)
     def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
         """
         Validate ML tactics input parameters.
@@ -464,7 +464,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"ML tactics input validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _get_ml_predictions(self) -> dict[str, Any] | None:
         """
         Get ML predictions.
@@ -517,7 +517,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ Failed to get ML predictions: {e}"))
             return None
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _apply_regime_and_location_tactics(
         self, regime_info: dict[str, Any],
     ) -> dict[str, Any]:
@@ -570,7 +570,7 @@ class MLTacticsManager:
             )
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _make_ml_entry_decisions(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -613,7 +613,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML entry decisions making failed: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _make_ml_sizing_decisions(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -659,7 +659,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML sizing decisions making failed: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _make_ml_leverage_decisions(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -705,7 +705,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML leverage decisions making failed: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _make_ml_directional_decisions(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -748,7 +748,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ ML directional decisions making failed: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     def _make_ml_liquidation_risk_decisions(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -796,7 +796,7 @@ class MLTacticsManager:
             )
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def _calculate_position_size(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -834,7 +834,7 @@ class MLTacticsManager:
             self.logger.exception(failed(f"❌ Position size calculation failed: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def _calculate_leverage(
         self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
@@ -918,7 +918,7 @@ class MLTacticsManager:
         """
         return self.ml_decisions.copy()
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the ML tactics manager and cleanup resources."""
         try:
@@ -929,7 +929,7 @@ class MLTacticsManager:
         except Exception as e:
             self.logger.exception(failed(f"❌ Failed to stop ML Tactics Manager: {e}"))
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup ML tactics manager resources."""
         try:
@@ -940,7 +940,7 @@ class MLTacticsManager:
         except Exception as e:
             self.logger.exception(f"Error cleaning up ML Tactics Manager: {e}")
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def generate_multi_output_predictions(
         self,
         market_data: pd.DataFrame,
@@ -1480,7 +1480,7 @@ class MLTacticsManager:
             },
         }
 
-    @handles_errors(fallback=None)
+    @core_handles_errors(fallback=None)
     async def evaluate_exit_signal(
         self,
         current_predictions: dict[str, Any],
@@ -1558,7 +1558,7 @@ class MLTacticsManager:
                 "exit_thresholds": self.exit_thresholds,
             }
 
-@handles_errors(fallback=None)
+@core_handles_errors(fallback=None)
 async def setup_ml_tactics_manager(
     config: dict[str, Any] | None = None,
 ) -> MLTacticsManager | None:

@@ -8,8 +8,7 @@ Maps internal exceptions to appropriate HTTP/gRPC/CLI responses.
 
 import logging
 import traceback
-from collections.abc import Callable
-from typing import Any
+from typing import A, Callableny
 
 from .base import (
     AppError,

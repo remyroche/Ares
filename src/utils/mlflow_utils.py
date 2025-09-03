@@ -6,7 +6,7 @@ from typing import Any
 import mlflow
 
 from src.config import ARES_VERSION
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.common_operations import (
     format_datetime,
     get_current_datetime,

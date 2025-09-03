@@ -14,26 +14,17 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-from src.core.decorators import handles_errors
-
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
-    comprehensive_data_validation,
-    ensure_data_integrity,
-    handle_errors,
-    memory_efficient,
-    monitor_feature_engineering,
-    monitor_step_execution,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    secure_step_execution,
-    validate_data_structure,
-    with_tracing_span,
-    validate_pipeline_step
+from src.core.decorators import (
+    handles_errors,
+    validates,
+    validate_dataframe,
+    log_execution_time,
+    traced,
+    error_boundary
 )
 from src.utils.logger import system_logger
 
@@ -51,7 +42,7 @@ class FinalRegimeClusteringStep:
         self.regime_results = {}
         self._initialize_components()
 
-    @secure_step_execution
+    @error_boundary
     def _initialize_components(self) -> None:
         """Initialize regime clustering components."""
         self.logger.info("🔧 Initializing final regime clustering components...")
@@ -92,7 +83,7 @@ class FinalRegimeClusteringStep:
         default_return=False,
         context="regime_clustering_initialization"
     )
-    @secure_step_execution
+    @error_boundary
     async def initialize(self) -> bool:
         """Initialize the final regime clustering step."""
         try:
@@ -105,8 +96,8 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to initialize regime clustering step: {e}")
             return False
 
-    @monitor_step_execution
-    @secure_step_execution
+    @log_execution_time
+    @error_boundary
     @validates()
     @handles_errors(
         exceptions=(Exception,),
@@ -155,7 +146,7 @@ class FinalRegimeClusteringStep:
         context="load_and_prepare_data"
     )
     @validates()
-    @ensure_data_integrity
+    @error_boundary
     async def _load_and_prepare_data(self) -> dict[str, Any]:
         """Load and prepare data for regime clustering."""
         try:
@@ -215,7 +206,7 @@ class FinalRegimeClusteringStep:
         default_return=pd.DataFrame(),
         context="prepare_features_with_optimized_params"
     )
-    @monitor_feature_engineering()
+    @log_execution_time
     @validates()
     async def _prepare_features_with_optimized_params(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features using optimized parameters from step03."""
@@ -822,7 +813,7 @@ class FinalRegimeClusteringStep:
         default_return=False,
         context="regime_clustering_cleanup"
     )
-    @secure_step_execution
+    @error_boundary
     async def cleanup(self) -> bool:
         """Clean up resources after regime clustering."""
         try:
@@ -840,7 +831,7 @@ class FinalRegimeClusteringStep:
     default_return=False,
     context="step3_5_final_regime_clustering"
 )
-@secure_step_execution
+@error_boundary
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the final regime clustering step."""
     try:

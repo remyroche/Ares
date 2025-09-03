@@ -44,8 +44,7 @@ import contextlib
 
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.error_handler import handle_errors
+from src.core.decorators import validate_dataframe, traced, handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
@@ -182,7 +181,7 @@ result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
             self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
             return "cpu"
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="analyst creation step initialization",
@@ -192,7 +191,7 @@ result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
         self.logger.info("Initializing Analyst Creation Step...")
         self.logger.info("Analyst Creation Step initialized successfully.")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="analyst creation step execution",
@@ -650,7 +649,7 @@ result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
             self.logger.exception(f"❌ Error saving analyst models: {e}")
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=False,
     context="step11_analyst_creation"

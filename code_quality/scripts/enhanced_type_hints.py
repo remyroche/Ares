@@ -471,7 +471,9 @@ def main():
     result = enhancer.analyze_and_improve_coverage(target_coverage=args.target)
     
     # Save report
-    report_file = '/workspace/code_quality/reports/enhanced_type_hints_report.json'
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_file = f'/workspace/code_quality/reports/enhanced_type_hints_report_{timestamp}.json'
     Path(report_file).parent.mkdir(exist_ok=True)
     
     with open(report_file, 'w') as f:

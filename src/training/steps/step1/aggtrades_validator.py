@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.common_operations import ensure_directory
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -53,7 +54,7 @@ class AggtradesValidator:
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok=True)
+        ensure_directory(self.data_cache_path)
 
     @with_tracing_span("get_aggtrades_files")
     def get_aggtrades_files(self, symbol: str, exchange: str) -> list[Path]:

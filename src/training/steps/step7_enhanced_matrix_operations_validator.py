@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
+from src.utils.common_operations import safe_json_load
 
 
 class Step7EnhancedMatrixOperationsValidator(BaseValidator):
@@ -158,8 +159,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-            with open(config_file, 'r') as f:
-                config = json.load(f)
+            config = safe_json_load(config_file)
 
             # Check required fields
             required_fields = [
@@ -234,8 +234,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-            with open(results_file, 'r') as f:
-                results = json.load(f)
+            results = safe_json_load(results_file)
 
             # Check if results contain expected operations
             expected_operations = [
@@ -340,8 +339,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-            with open(summary_file, 'r') as f:
-                summary = json.load(f)
+            summary = safe_json_load(summary_file)
 
             # Check required fields
             required_fields = [

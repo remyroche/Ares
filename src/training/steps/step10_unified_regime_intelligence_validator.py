@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 warnings.filterwarnings("ignore")
 
@@ -685,10 +686,9 @@ import os.path
 			report_path = (
 				"validation_reports/step5_5_unified_regime_intelligence_validation.json"
 			)
-			os.makedirs("validation_reports", exist_ok=True)
+			ensure_directory("validation_reports")
 
-			with open(report_path, "w") as f:
-				json.dump(report, f, indent=2)
+			safe_json_dump(report, report_path, indent=2)
 
 			self.logger.info(f"Validation report saved to {report_path}")
 

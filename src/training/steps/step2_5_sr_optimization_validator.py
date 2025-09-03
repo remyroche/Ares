@@ -27,6 +27,7 @@ from src.utils.centralized_decorators import (
     quality_gate
 )
 from src.utils.logger import system_logger
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step2_5SROptimizationValidator")
 
@@ -120,8 +121,7 @@ class SROptimizationValidator:
             
             # Validate JSON format
             try:
-                with open(results_file, 'r') as f:
-                    results_data = json.load(f)
+                results_data = safe_json_load(results_file)
             except json.JSONDecodeError as e:
                 errors.append(f"Invalid JSON format in optimization results: {e}")
                 return {"valid": False, "errors": errors}
@@ -175,8 +175,7 @@ class SROptimizationValidator:
             if not results_file.exists():
                 return {"valid": False, "errors": ["Optimization results file not found"]}
             
-            with open(results_file, 'r') as f:
-                results_data = json.load(f)
+            results_data = safe_json_load(results_file)
             
             # Validate method weights
             method_weights = results_data.get("method_weights", {})
@@ -295,8 +294,7 @@ class SROptimizationValidator:
             if not results_file.exists():
                 return {"valid": False, "errors": ["Optimization results file not found"]}
             
-            with open(results_file, 'r') as f:
-                results_data = json.load(f)
+            results_data = safe_json_load(results_file)
             
             # Check performance metrics quality
             performance_metrics = results_data.get("performance_metrics", {})

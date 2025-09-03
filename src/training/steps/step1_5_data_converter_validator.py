@@ -20,6 +20,7 @@ if str(project_root) not in sys.path:
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
+from src.utils.common_operations import safe_json_load
 
 
 class Step1_5DataConverterValidator(BaseValidator):
@@ -338,8 +339,7 @@ class Step1_5DataConverterValidator(BaseValidator):
                 return False
 
             # Load and validate config
-            with open(config_path, "r") as f:
-                config: Dict[str, Any] = json.load(f)
+            config: Dict[str, Any] = safe_json_load(config_path)
 
             # Check required config fields
             required_fields = ["symbol", "exchange", "timeframe", "data_path", "created_at"]

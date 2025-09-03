@@ -638,8 +638,7 @@ class HMMBasedTrainingStep:
                         rf_path = os.path.join(
                             rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json",
                         )
-                        with open(rf_path, "w") as f:
-                            json.dump(artifact, f, indent=2)
+                        safe_json_dump(artifact, rf_path, indent=2)
                         self.logger.info(f"💾 Saved regime forecasting artifact -> {rf_path}")
                     except Exception as _inner:
                         self.logger.warning(
@@ -2516,8 +2515,7 @@ class HMMBasedTrainingStep:
                 },
             }
 
-            with open(summary_path, "w") as f:
-                json.dump(summary, f, indent=2, default=str)
+            safe_json_dump(summary, summary_path, indent=2, default=str)
 
             self.logger.info(
                 f"✅ Saved comprehensive training summary to {summary_path}",
@@ -2596,8 +2594,7 @@ class HMMBasedTrainingStep:
             if feature_summary:
                 feature_path = (f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
                 )
-                with open(feature_path, "w") as f:
-                    json.dump(feature_summary, f, indent=2, default=str)
+                safe_json_dump(feature_summary, feature_path, indent=2, default=str)
                 self.logger.info(
                     f"✅ Saved feature importance summary to {feature_path}",
                 )
@@ -2667,8 +2664,7 @@ class HMMBasedTrainingStep:
             # Save model metadata
             metadata_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_model_metadata.json"
             )
-            with open(metadata_file, "w") as f:
-                json.dump(model_metadata, f, indent=2)
+            safe_json_dump(model_metadata, metadata_file, indent=2)
 
             self.logger.info(f"✅ Saved model metadata to {metadata_file}")
 
@@ -2695,8 +2691,7 @@ class HMMBasedTrainingStep:
             # Save training history
             history_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_history.json"
             )
-            with open(history_file, "w") as f:
-                json.dump(training_history, f, indent=2)
+            safe_json_dump(training_history, history_file, indent=2)
 
             self.logger.info(f"✅ Saved training history to {history_file}")
 
@@ -2708,8 +2703,7 @@ class HMMBasedTrainingStep:
             # Save feature report
             feature_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_feature_report.json"
             )
-            with open(feature_file, "w") as f:
-                json.dump(feature_report, f, indent=2)
+            safe_json_dump(feature_report, feature_file, indent=2)
 
             self.logger.info(f"✅ Saved feature analysis report to {feature_file}")
 
@@ -2720,8 +2714,7 @@ class HMMBasedTrainingStep:
                 training_results, exchange, symbol, combined_data, feature_columns,
             )
 
-            with open(summary_file, "w") as f:
-                json.dump(summary_data, f, indent=2)
+            safe_json_dump(summary_data, summary_file, indent=2)
 
             self.logger.info(f"✅ Saved training summary to {summary_file}")
 

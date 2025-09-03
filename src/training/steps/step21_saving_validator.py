@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
 	missing,
 	validation_error,
 )
+from src.utils.common_operations import safe_json_load, ensure_directory
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -213,10 +214,7 @@ class Step21SavingValidator(BaseValidator):
 			# Check training summary
 			summary_file = f"{data_dir}/{exchange}_{symbol}_training_summary.json"
 			if os.path.exists(summary_file):
-				import json as _json
-
-				with open(summary_file) as f:
-					summary = _json.load(f)
+				summary = safe_json_load(summary_file)
 
 				# Check if all steps are marked as completed
 				if "completed_steps" in summary:
@@ -298,10 +296,7 @@ class Step21SavingValidator(BaseValidator):
 
 			if os.path.exists(metadata_file):
 				try:
-					import json as _json
-
-					with open(metadata_file) as f:
-						metadata = _json.load(f)
+					metadata = safe_json_load(metadata_file)
 
 					# Check required metadata fields
 					required_fields = ["model_type", "training_date", "version"]
@@ -323,10 +318,7 @@ class Step21SavingValidator(BaseValidator):
 
 			if os.path.exists(config_file):
 				try:
-					import json as _json
-
-					with open(config_file) as f:
-						config = _json.load(f)
+					config = safe_json_load(config_file)
 
 					# Check config completeness
 					if len(config) < 5:
@@ -400,10 +392,7 @@ class Step21SavingValidator(BaseValidator):
 			metadata_file = f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
 			if os.path.exists(metadata_file):
-				import json as _json
-
-				with open(metadata_file) as f:
-					metadata = _json.load(f)
+				metadata = safe_json_load(metadata_file)
 
 				# Check model performance metrics
 				if "final_accuracy" in metadata:

@@ -25,7 +25,6 @@ from src.utils.centralized_decorators import (
 
 logger = system_logger.getChild("DataGapDetector")
 
-
 class DataGapDetector:
     """Detects missing data gaps in trading data files."""
 
@@ -36,6 +35,7 @@ class DataGapDetector:
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
+from src.core.decorators import handles_errors
                 MissingDataDownloaderAndGapFiller,
             )
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
@@ -46,8 +46,7 @@ class DataGapDetector:
     @validate_data_structure
     @comprehensive_data_validation
     @with_tracing_span("detect_missing_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
+    @handles_errors
         default_return={
             "symbol": "",
             "exchange": "",
@@ -302,11 +301,7 @@ class DataGapDetector:
         }
 
     @with_tracing_span("detect_aggtrades_gaps")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
-        default_return=[],
-        context="data_gap_detector.detect_aggtrades_gaps"
-    )
+    @handles_errors(fallback=[])
     def detect_aggtrades_gaps(self, symbol: str, exchange: str, min_gap_seconds: int = 10) -> list[dict]:
         """Detect gaps within aggtrades files.
 

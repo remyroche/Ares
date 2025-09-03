@@ -32,7 +32,7 @@ from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
 )
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
     secure_data_processing,
@@ -53,7 +53,8 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_artifact_with_standardized_name
 )
 from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
-
+import copy
+import os.path
 
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
@@ -583,8 +584,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
     track_data_quality=True,
     save_artifacts=True,
 )
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi-timeframe HMM ensemble training",
 )
@@ -761,9 +761,7 @@ async def run_step(
             "success": False,
         }
 
-
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi-timeframe HMM ensemble validation",
 )

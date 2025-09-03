@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from copy import copy
 
@@ -33,7 +33,6 @@ from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
 from src.utils.common_operations import ensure_directory
-
 
 # -----------------------------------------------------------------------------
 # Warnings logging setup
@@ -51,7 +50,6 @@ if not _warning_logger.handlers:
     except Exception:
         pass
 
-
 def _showwarning(
     message: str | Warning,
     category: type[Warning],
@@ -63,9 +61,7 @@ def _showwarning(
     with contextlib.suppress(Exception):
         _warning_logger.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
 
-
 warnings.showwarning = _showwarning
-
 
 # -----------------------------------------------------------------------------
 # Orchestrator
@@ -223,11 +219,7 @@ class VectorizedLabellingOrchestrator:
         except Exception:
             pass
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="vectorized labelling orchestrator initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize vectorized labeling orchestrator components."""
         try:
@@ -312,11 +304,7 @@ class VectorizedLabellingOrchestrator:
             )
             return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="vectorized labeling orchestration",
-    )
+    @handles_errors(fallback=None)
     async def orchestrate_labeling_and_feature_engineering(
         self,
         price_data: pd.DataFrame,
@@ -1744,7 +1732,6 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
             self.logger.warning(f"MI analysis internal error: {e}")
 
-
 # -----------------------------------------------------------------------------
 # Stationarity Checker
 # -----------------------------------------------------------------------------
@@ -1944,7 +1931,6 @@ class VectorizedStationarityChecker:
         except Exception as e:
             self.logger.exception(f"Error transforming order flow stationarity: {e}")
             return order_flow_data
-
 
 # -----------------------------------------------------------------------------
 # Feature Selector
@@ -2312,7 +2298,6 @@ class VectorizedFeatureSelector:
         except Exception as e:
             self.logger.exception(f"Error removing low importance features: {e}")
             return []
-
 
 # -----------------------------------------------------------------------------
 # Data Normalizer

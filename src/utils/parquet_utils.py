@@ -7,10 +7,9 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.error_handler import handle_data_processing_errors, handle_file_operations
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
+from src.core.decorators import handles_errors
 
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
@@ -18,7 +17,7 @@ class ParquetUtils:
     def __init__(self) -> None:
         self.logger = system_logger.getChild("ParquetUtils")
 
-    @handle_file_operations(
+    @handles_errors(
         default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file"
     )
     def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
@@ -70,8 +69,8 @@ class ParquetUtils:
 
         return result
 
-    @handle_file_operations(default_return=None, context="ParquetUtils.safe_read_parquet")
-    @handle_data_processing_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
+    @handles_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
+    @handles_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
     def safe_read_parquet(
         self,
         file_path: str,
@@ -116,7 +115,7 @@ class ParquetUtils:
         self.logger.error(f"❌ All strategies failed for file: {file_path}")
         return None
 
-    @handle_file_operations(default_return=False, context="ParquetUtils.repair_parquet_file")
+    @handles_errors(default_return=False, context="ParquetUtils.repair_parquet_file")
     def repair_parquet_file(self, file_path: str, backup_path: str | None = None) -> bool:
         """
         Attempt to repair a corrupted parquet file.
@@ -143,7 +142,6 @@ class ParquetUtils:
 
         self.logger.error(f"❌ Could not read file for repair: {file_path}")
         return False
-
 
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""

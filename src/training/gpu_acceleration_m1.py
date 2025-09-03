@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
     debug_training_step,
@@ -20,7 +20,6 @@ from src.utils.training_pipeline_decorators import (
     secure_data_processing,
     validate_step_output,
 )
-
 
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
@@ -56,7 +55,7 @@ class GPUAccelerationM1:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=None)
+    @handles_errors(fallback=None)
     def gpu_matrix_multiplication(
         self, A: np.ndarray, B: np.ndarray
     ) -> tuple[np.ndarray, dict[str, Any]]:
@@ -122,7 +121,7 @@ class GPUAccelerationM1:
     @memory_efficient(chunk_size=3000, streaming_processing=True)
     @debug_training_step(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=None)
+    @handles_errors(fallback=None)
     def gpu_svd_decomposition(
         self, matrix: np.ndarray, k: int | None = None
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
@@ -192,7 +191,7 @@ class GPUAccelerationM1:
                 return self._cpu_svd_decomposition(matrix, k)
             raise
 
-    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=False)
+    @handles_errors(fallback=False)
     def _should_use_gpu(self, *matrices: np.ndarray) -> bool:
         """Check if GPU should be used for the given matrices.
 

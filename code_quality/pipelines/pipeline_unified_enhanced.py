@@ -22,8 +22,9 @@ from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
 from scripts.safe_import_fixer import SafeImportFixer
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.enhanced_type_hints import TypeHintEnhancer
-from scripts.detect_circular_imports import CircularImportDetector
+from scripts.detect_circular_imports import ImportAnalyzer as CircularImportDetector
 from function_validator import FunctionValidator
+from enhanced_validator import EnhancedValidator
 from comprehensive_code_review import CodeQualityReviewer
 from scripts.simple_interaction_mapper import extract_interactions, generate_report
 from utils.report_aggregator import ReportAggregator
@@ -281,6 +282,39 @@ class UnifiedEnhancedPipeline:
         
         # Save individual report
         report_path = self.reports_dir / f"function_validation_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
+        return result
+        
+    def run_enhanced_validation(self) -> Dict[str, Any]:
+        """Run enhanced validation for function arguments and data access."""
+        print("\n" + "="*60)
+        print("Running Enhanced Validation (Arguments & Data Access)")
+        print("="*60)
+        
+        start_time = time.time()
+        validator = EnhancedValidator(str(self.project_root))
+        report = validator.validate_project()
+        
+        result = {
+            'issues': report['issues'],
+            'total_issues': report['summary']['total_issues'],
+            'argument_mismatches': report['summary']['argument_mismatches'],
+            'unsafe_data_access': report['summary']['unsafe_data_access'],
+            'missing_null_checks': report['summary']['missing_null_checks'],
+            'type_inconsistencies': report['summary']['type_inconsistencies'],
+            'files_processed': report['summary']['files_processed'],
+            'execution_time': time.time() - start_time,
+            'data_access_summary': report.get('data_access_summary', {}),
+            'function_signatures': len(report.get('function_signatures', {}))
+        }
+        
+        # Add to aggregator
+        self.report_aggregator.add_enhanced_validation_results(report)
+        
+        # Save individual report
+        report_path = self.reports_dir / f"enhanced_validation_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
             
@@ -544,6 +578,7 @@ class UnifiedEnhancedPipeline:
         # Analysis
         self.results['analysis'] = {
             'function_validation': self.run_function_validation(),
+            'enhanced_validation': self.run_enhanced_validation(),
             'comprehensive_review': self.run_comprehensive_review(),
             'interaction_mapping': self.run_interaction_mapping(),
             'metrics': self.run_metrics_analysis(),
@@ -645,6 +680,15 @@ class UnifiedEnhancedPipeline:
         print(f"Total Directories: {summary['total_directories']}")
         print(f"Total Issues Found: {summary['total_issues']}")
         print(f"Issues Fixed: {summary['fixed_issues']}")
+        
+        # Print enhanced validation specific stats if available
+        if 'enhanced_validation' in self.results.get('analysis', {}):
+            ev = self.results['analysis']['enhanced_validation']
+            print("\nEnhanced Validation Results:")
+            print(f"  - Argument Mismatches: {ev.get('argument_mismatches', 0)}")
+            print(f"  - Unsafe Data Access: {ev.get('unsafe_data_access', 0)}")
+            print(f"  - Missing Null Checks: {ev.get('missing_null_checks', 0)}")
+            print(f"  - Type Inconsistencies: {ev.get('type_inconsistencies', 0)}")
         
         print("\nIssue Breakdown:")
         for issue_type, count in summary['issue_breakdown'].items():

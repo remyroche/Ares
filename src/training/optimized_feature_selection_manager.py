@@ -19,9 +19,8 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class OptimizedFeatureSelectionManager:
     """Optimized Feature Selection Manager for ML Training Steps."
@@ -98,11 +97,7 @@ class OptimizedFeatureSelectionManager:
 
         self.config = default_config
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="optimized feature selection",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def select_features_optimized(
         self,
         features_df: pd.DataFrame,
@@ -759,8 +754,6 @@ for i, _col in enumerate(features_df.columns):
                 if has_sr_base or has_derivative_with_anchor:
                     categories["sr_features"].append(feature)
                     categorized = True
-
-
 
             if not categorized:
                 categories["other"].append(feature)

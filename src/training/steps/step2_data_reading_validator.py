@@ -28,7 +28,6 @@ from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step2DataReadingValidator")
 
-
 @with_tracing_span("validate_data_reading")
 @quality_gate(
     min_quality_score=0.8,
@@ -36,7 +35,7 @@ logger = system_logger.getChild("Step2DataReadingValidator")
     required_grade="B"
 )
 @comprehensive_data_validation
-@handle_errors
+@handles_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -94,6 +93,7 @@ async def run_validator(
         except Exception as e:
             pass  # TODO: Handle exception properly
 import numpy as np
+from src.core.decorators import handles_errors
             
 # Read the most recent data file
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
@@ -240,7 +240,6 @@ import numpy as np
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }
-
 
 if __name__ == "__main__":
     # Test the validator

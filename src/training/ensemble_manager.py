@@ -3,12 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import (
-import asyncio
-
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.trading_decorators import (
     comprehensive_model_decorator,
@@ -20,7 +15,6 @@ from src.utils.warning_symbols import (
     invalid,
     warning,
 )
-
 
 class EnsembleManager:
     """Ensemble manager responsible for creating and managing model ensembles."
@@ -59,7 +53,7 @@ class EnsembleManager:
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid ensemble manager configuration"),
             AttributeError: (False, "Missing required ensemble parameters"),
@@ -95,11 +89,7 @@ class EnsembleManager:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate ensemble manager configuration."
 
@@ -123,11 +113,7 @@ class EnsembleManager:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble components initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_ensemble_components(self) -> None:
         """Initialize ensemble components."""
         try:
@@ -238,11 +224,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.is_creating_ensembles = False
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="ensemble inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_ensemble_inputs(
         self,
         optimization_results: dict[str, Any],
@@ -282,11 +264,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analyst ensemble creation",
-    )
+    @handles_errors(fallback=None)
     async def _create_analyst_ensembles(
         self,
         optimization_results: dict[str, Any],
@@ -348,11 +326,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician ensemble creation",
-    )
+    @handles_errors(fallback=None)
     async def _create_tactician_ensembles(
         self,
         optimization_results: dict[str, Any],
@@ -402,11 +376,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe ensemble creation",
-    )
+    @handles_errors(fallback=None)
     async def _create_multi_timeframe_ensemble(
         self,
         analyst_models: dict[str, Any],
@@ -450,11 +420,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe ensemble creation",
-    )
+    @handles_errors(fallback=None)
     async def _create_timeframe_ensemble(
         self,
         timeframe_models: dict[str, Any],
@@ -500,11 +466,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician single ensemble creation",
-    )
+    @handles_errors(fallback=None)
     async def _create_tactician_single_ensemble(
         self,
         tactician_models: dict[str, Any],
@@ -548,11 +510,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble optimization",
-    )
+    @handles_errors(fallback=None)
     async def _optimize_ensembles(
         self,
         ensembles: dict[str, Any],
@@ -593,11 +551,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="single ensemble optimization",
-    )
+    @handles_errors(fallback=None)
     async def _optimize_single_ensemble(
         self,
         ensemble: dict[str, Any],
@@ -636,11 +590,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_ensemble_results(self, ensemble_results: dict[str, Any]) -> None:
         """Store ensemble results."
 
@@ -686,11 +636,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         """
         return self.ensemble_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="ensemble manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the ensemble manager and cleanup resources."""
         try:
@@ -702,12 +648,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="ensemble manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_ensemble_manager(
     config: dict[str, Any] | None = None,
 ) -> EnsembleManager | None:

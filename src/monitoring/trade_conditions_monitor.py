@@ -10,10 +10,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
-
 
 class TradeAction(Enum):
     ENTER_LONG = "enter_long"
@@ -23,7 +22,6 @@ class TradeAction(Enum):
     HOLD = "hold"
     CANCEL_ORDER = "cancel_order"
 
-
 class TradeConditionsMonitor:
     """Trade conditions monitor scaffold."""
 
@@ -31,7 +29,7 @@ class TradeConditionsMonitor:
         self.config = config
         self.logger = system_logger.getChild("TradeConditionsMonitor")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid trade monitor configuration"),
             AttributeError: (False, "Missing trade monitor parameters"),

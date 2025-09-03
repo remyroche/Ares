@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
@@ -24,7 +24,6 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.fr
     FractionalTripleBarrierLabeling
 )
 from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
-
 
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
@@ -203,7 +202,6 @@ class HMMFractionalIntegration:
         """
         return self.regime_metrics.copy()
 
-
 class CombinedFractionalSystem:
     """Unified system combining fractional labeling and differentiation."
     
@@ -237,7 +235,7 @@ class CombinedFractionalSystem:
         
         self.logger.info("✅ Combined Fractional System initialized successfully")
     
-    @handle_errors("Combined fractional system processing")
+    @handles_errors
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     async def process_data(
@@ -474,7 +472,6 @@ with open(report_file, 'w') as f:
         except Exception as e:
             self.logger.error(f"Failed to export performance report: {e}")
             return ""
-
 
 # Configuration helper
 def get_combined_fractional_config(

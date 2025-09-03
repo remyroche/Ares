@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import asyncio
@@ -20,7 +20,6 @@ import asyncio
     error,
     initialization_error,
 )
-
 
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
@@ -53,11 +52,7 @@ class FeatureIntegrationManager:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature integration initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize feature integration manager."""
         try:
@@ -88,11 +83,7 @@ AdvancedFeatureEngineering,
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature integration",
-    )
+    @handles_errors(fallback=None)
     async def integrate_features(
         self,
         historical_data: pd.DataFrame,

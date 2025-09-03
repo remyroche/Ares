@@ -63,7 +63,6 @@ from src.utils.enhanced_mlflow_integration import (
 
 logger = system_logger.getChild("Step4TripleBarrierMethod")
 
-
 class TripleBarrierMethodStep:
     """Step 4: Triple Barrier Method with enhanced data quality management."""
 
@@ -113,7 +112,7 @@ class TripleBarrierMethodStep:
     )
     @with_enhanced_mlflow_logging("step4_triple_barrier_method")
     @comprehensive_data_validation
-    @handle_errors
+    @handles_errors
     @memory_efficient
     @resource_monitor
     @secure_data_processing
@@ -334,6 +333,7 @@ class TripleBarrierMethodStep:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
+from src.core.decorators import handles_errors
 
 OptimizedTripleBarrierLabeling
             )
@@ -501,7 +501,6 @@ OptimizedTripleBarrierLabeling
             self.logger.warning(f"⚠️ Could not create enhanced labels: {e}")
             return data
 
-
 async def run_step(
     symbol: str,
     exchange: str,
@@ -551,7 +550,6 @@ async def run_step(
         data_dir=data_dir,
         force_rerun=force_rerun,
     )
-
 
 if __name__ == "__main__":
     # Test the step

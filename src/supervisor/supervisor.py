@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import pandas as pd
@@ -22,7 +22,6 @@ DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
 }
 
-
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""
 
@@ -33,10 +32,7 @@ class CircuitBreaker:
         self.last_failure_time = None
         self.state = "CLOSED"  # CLOSED = OPEN, HALF_OPEN
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, AttributeError, RuntimeError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def call(self, func: callable, *args, **kwargs):
         """Execute function with circuit breaker protection."""
         if self.state == "OPEN":
@@ -59,7 +55,6 @@ class CircuitBreaker:
                 self.state = "OPEN"
             raise
 
-
 class OnlineLearningManager:
     """Manages online learning for model weighting based on performance."""
 
@@ -72,10 +67,7 @@ class OnlineLearningManager:
         self.min_weight: float = config.get("min_weight", 0.1)
         self.max_weight: float = config.get("max_weight", 0.8)
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def update_model_performance(self, model_id: str, performance: float) -> None:
         """Update model performance and recalculate weights."""
         try:
@@ -93,10 +85,7 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error updating model performance: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None,
-    )
+    @handles_errors(fallback=None)
     async def _recalculate_weights(self) -> None:
         """Recalculate model weights based on performance."""
         try:
@@ -139,7 +128,6 @@ class OnlineLearningManager:
     def get_model_performances(self) -> dict[str, list[float]]:
         """Get model performance history."""
         return {k: v.copy() for k, v in self.model_performances.items()}
-
 
 class Supervisor:
     """
@@ -195,7 +183,7 @@ class Supervisor:
             "max_confidence_threshold", 0.9
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid supervisor configuration"),
             AttributeError: (False, "Missing required supervisor parameters"),
@@ -222,11 +210,7 @@ class Supervisor:
             self.print(failed("❌ Supervisor initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervisor configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_supervisor_configuration(self) -> None:
         try:
             self.supervisor_config.setdefault("supervision_interval", 60)
@@ -241,11 +225,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error loading supervisor configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         try:
             if self.supervision_interval <= 0:
@@ -266,11 +246,7 @@ class Supervisor:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="component initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_components(self) -> None:
         try:
             # Initialize critical components with updated structure
@@ -295,11 +271,7 @@ class Supervisor:
         except Exception:
             self.print(initialization_error("Error initializing components: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="circuit breakers setup",
-    )
+    @handles_errors(fallback=None)
     async def _setup_circuit_breakers(self) -> None:
         """Setup circuit breakers for critical services."""
         try:
@@ -320,11 +292,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error setting up circuit breakers: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="online learning setup",
-    )
+    @handles_errors(fallback=None)
     async def _setup_online_learning(self) -> None:
         """Setup online learning for model weighting."""
         try:
@@ -336,11 +304,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error setting up online learning: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="component monitors setup",
-    )
+    @handles_errors(fallback=None)
     async def _setup_component_monitors(self) -> None:
         """Setup component-specific monitoring."""
         try:
@@ -353,11 +317,7 @@ class Supervisor:
         except Exception:
             self.print(error("Error setting up component monitors: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced prediction service initialization",
-    )
+    @handles_errors(fallback=False)
     async def _initialize_enhanced_prediction_service(self) -> bool:
         """Initialize the enhanced prediction service."""
         try:
@@ -377,11 +337,7 @@ class Supervisor:
             self.logger.error(f"❌ Error initializing Enhanced Prediction Service: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="getting analyst predictions",
-    )
+    @handles_errors
     @with_tracing_span("get_analyst_predictions")
     async def get_analyst_predictions(
         self,
@@ -436,11 +392,7 @@ class Supervisor:
             self.logger.error(error(f"❌ Error getting analyst predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="getting tactician predictions",
-    )
+    @handles_errors
     @with_tracing_span("get_tactician_predictions")
     async def get_tactician_predictions(
         self,
@@ -497,11 +449,7 @@ class Supervisor:
             self.logger.error(error(f"❌ Error getting tactician predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="analyst deciding position entry",
-    )
+    @handles_errors
     @with_tracing_span("analyst_decide_position_entry")
     async def _analyst_decide_position_entry(
         self,
@@ -595,11 +543,7 @@ class Supervisor:
             self.logger.error(error(f"❌ Error determining trade direction: {e}"))
             return "neutral"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="tactician calculating execution parameters",
-    )
+    @handles_errors
     @with_tracing_span("tactician_calculate_execution_parameters")
     async def _tactician_calculate_execution_parameters(
         self,
@@ -742,11 +686,7 @@ import numpy as np
         else:
             return "wait_for_confirmation"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="integrating analyst ML profit predictions",
-    )
+    @handles_errors
     async def _integrate_analyst_ml_profit_predictions(
         self,
         ml_profit_predictions: dict[str, Any],
@@ -804,11 +744,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error integrating analyst ML profit predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="integrating tactician ML profit predictions",
-    )
+    @handles_errors
     async def _integrate_tactician_ml_profit_predictions(
         self,
         ml_profit_predictions: dict[str, Any],
@@ -864,11 +800,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error integrating tactician ML profit predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating enhanced analyst signals",
-    )
+    @handles_errors
     async def _generate_enhanced_analyst_signals(
         self,
         ml_profit_data: dict[str, Any],
@@ -930,11 +862,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error generating enhanced analyst signals: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating enhanced tactician signals",
-    )
+    @handles_errors
     async def _generate_enhanced_tactician_signals(
         self,
         ml_profit_data: dict[str, Any],
@@ -1012,11 +940,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error generating enhanced tactician signals: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating position decision signals",
-    )
+    @handles_errors
     async def _generate_position_decision_signals(
         self,
         ml_profit_data: dict[str, Any],
@@ -1111,11 +1035,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error generating position decision signals: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating leverage inputs",
-    )
+    @handles_errors
     async def _generate_leverage_inputs(
         self,
         ml_profit_data: dict[str, Any],
@@ -1200,11 +1120,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error generating leverage inputs: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="calculating analyst risk metrics",
-    )
+    @handles_errors
     async def _calculate_analyst_risk_metrics(
         self,
         ml_profit_data: dict[str, Any],
@@ -1283,7 +1199,7 @@ import numpy as np
             self.logger.error(error(f"❌ Error calculating analyst risk metrics: {e}"))
             return {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Supervisor run failed"),
         },
@@ -1298,11 +1214,7 @@ import numpy as np
             await asyncio.sleep(self.supervision_interval)
         return True
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="supervision step",
-    )
+    @handles_errors(fallback=None)
     async def _perform_supervision(self) -> None:
         # Perform health checks
         await self._monitor_system_health()
@@ -1325,11 +1237,7 @@ import numpy as np
         # Check for recovery needs
         await self._check_recovery_needs()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="system health monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _monitor_system_health(self) -> None:
         try:
             # Check critical components health
@@ -1453,11 +1361,7 @@ import numpy as np
                     f"{component} features: {feature_percentage:.1f}% ({active_features}/{total_features} active)",
                 )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="component features monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _monitor_component_features(self) -> None:
         """Monitor component-specific features and sub-components."""
         try:
@@ -1473,11 +1377,7 @@ import numpy as np
         except Exception:
             self.print(error("Error monitoring component features: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="component health check",
-    )
+    @handles_errors(fallback=False)
     async def _check_component_health(self, component: str) -> bool:
         """Check health of a specific component."""
         try:
@@ -1495,11 +1395,7 @@ import numpy as np
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="component coordination",
-    )
+    @handles_errors(fallback=None)
     async def _coordinate_components(self) -> None:
         """
         Coordinate components with clear separation of responsibilities:
@@ -1520,11 +1416,7 @@ import numpy as np
         except Exception:
             self.print(error("Error coordinating components: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="analyst strategist coordination",
-    )
+    @handles_errors(fallback=None)
     async def _coordinate_analyst_strategist(self) -> None:
         """Coordinate Analyst and Strategist components."""
         try:
@@ -1549,11 +1441,7 @@ import numpy as np
         except Exception:
             self.print(error("Error coordinating Analyst-Strategist: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="strategist tactician coordination",
-    )
+    @handles_errors(fallback=None)
     async def _coordinate_strategist_tactician(self) -> None:
         """
         Coordinate Strategist and Tactician components.
@@ -1587,11 +1475,7 @@ import numpy as np
         except Exception:
             self.print(error("Error coordinating Strategist-Tactician: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="training manager coordination",
-    )
+    @handles_errors(fallback=None)
     async def _coordinate_training_manager(self) -> None:
         """Coordinate Enhanced Training Manager with other components."""
         try:
@@ -1618,11 +1502,7 @@ import numpy as np
         except Exception:
             self.print(error("Error coordinating Training Manager: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="online learning update",
-    )
+    @handles_errors(fallback=None)
     async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
         try:
@@ -1682,11 +1562,7 @@ import numpy as np
         except Exception:
             self.print(error("Error updating online learning: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="recovery trigger",
-    )
+    @handles_errors(fallback=None)
     async def _trigger_recovery(self, component: str) -> None:
         """Trigger recovery for a failed component."""
         try:
@@ -1719,11 +1595,7 @@ import numpy as np
         except Exception:
             self.print(error("Error triggering recovery for {component}: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="recovery attempt",
-    )
+    @handles_errors(fallback=False)
     async def _attempt_recovery(self, component: str) -> bool:
         """Attempt to recover a failed component."""
         try:
@@ -1747,11 +1619,7 @@ import numpy as np
             self.print(error("Error attempting recovery for {component}: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="database recovery",
-    )
+    @handles_errors(fallback=False)
     async def _recover_database(self) -> bool:
         """Recover database connection."""
         try:
@@ -1764,11 +1632,7 @@ import numpy as np
             self.print(failed("Database recovery failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="exchange recovery",
-    )
+    @handles_errors(fallback=False)
     async def _recover_exchange(self) -> bool:
         """Recover exchange connection."""
         try:
@@ -1781,11 +1645,7 @@ import numpy as np
             self.print(failed("Exchange recovery failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="analyst recovery",
-    )
+    @handles_errors(fallback=False)
     async def _recover_analyst(self) -> bool:
         """Recover analyst component."""
         try:
@@ -1798,11 +1658,7 @@ import numpy as np
             self.print(failed("Analyst recovery failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="strategist recovery",
-    )
+    @handles_errors(fallback=False)
     async def _recover_strategist(self) -> bool:
         """Recover strategist component."""
         try:
@@ -1815,11 +1671,7 @@ import numpy as np
             self.print(failed("Strategist recovery failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tactician recovery",
-    )
+    @handles_errors(fallback=False)
     async def _recover_tactician(self) -> bool:
         """Recover tactician component."""
         try:
@@ -1832,11 +1684,7 @@ import numpy as np
             self.print(failed("Tactician recovery failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced training manager recovery",
-    )
+    @handles_errors(fallback=False)
     async def _recover_enhanced_training_manager(self) -> bool:
         """Recover enhanced training manager component."""
         try:
@@ -1849,11 +1697,7 @@ import numpy as np
             self.print(failed("Enhanced training manager recovery failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="generic recovery",
-    )
+    @handles_errors(fallback=False)
     async def _generic_recovery(self, component: str) -> bool:
         """Generic recovery for unspecified components."""
         try:
@@ -1865,11 +1709,7 @@ import numpy as np
             self.print(failed("Generic recovery failed for {component}: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="recovery needs check",
-    )
+    @handles_errors(fallback=None)
     async def _check_recovery_needs(self) -> None:
         """Check if any components need recovery."""
         try:
@@ -1880,11 +1720,7 @@ import numpy as np
         except Exception:
             self.print(error("Error checking recovery needs: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="supervision results update",
-    )
+    @handles_errors(fallback=None)
     async def _update_supervision_results(self) -> None:
         try:
             # Add timestamp
@@ -1912,11 +1748,7 @@ import numpy as np
         except Exception:
             self.print(error("Error updating supervision results: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="supervisor stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Supervisor...")
         try:
@@ -1962,11 +1794,7 @@ import numpy as np
         """Get component monitors status."""
         return self.component_monitors.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="portfolio guards enforcement",
-    )
+    @handles_errors(fallback=None)
     async def _enforce_portfolio_guards(self) -> None:
         """Pause tactician or reduce risk when daily loss / drawdown limits are breached."""
         try:
@@ -2012,15 +1840,9 @@ import numpy as np
             self.print(error("Error enforcing portfolio guards: {e}"))
             return
 
-
 supervisor: Supervisor | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="supervisor setup",
-)
+@handles_errors(fallback=None)
 async def setup_supervisor(
     config: dict[str, Any] | None = None,
 ) -> Supervisor | None:

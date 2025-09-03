@@ -142,7 +142,7 @@ class DataCollectionStep:
         self.logger.info("Initializing Data Collection Step...")
         self.logger.info("Data Collection Step initialized successfully")
 
-    # @with_enhanced_mlflow_logging - removed, use traced"step1_data_collection")
+    # @with_enhanced_mlflow_logging - removed, use traced"step01_data_collection")
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -262,7 +262,7 @@ class DataCollectionStep:
 
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 step_data=pipeline_state,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -278,7 +278,7 @@ class DataCollectionStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 report_data=report_data,
                 report_type="data_collection_report",
                 additional_metadata={
@@ -299,7 +299,7 @@ class DataCollectionStep:
             # Log data quality summary
             quality_report_name = log_step_report(
                 config=self.config,
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 report_data={
                     "quality_check_passed": pipeline_state.get(
                         "quality_check_passed", False
@@ -325,7 +325,7 @@ class DataCollectionStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "data_collection_performance",

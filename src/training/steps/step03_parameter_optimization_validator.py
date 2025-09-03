@@ -29,7 +29,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     """Validator for Step 3: Parameter Optimization."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step3_parameter_optimization", config)
+        super().__init__("step03_parameter_optimization", config)
         self.logger = system_logger.getChild("Validator.Step3")
 
     @validates()
@@ -99,7 +99,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         except Exception as e:
             error_context = {
-                "step": "step3_parameter_optimization",
+                "step": "step03_parameter_optimization",
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
@@ -503,7 +503,7 @@ async def run_validator(
         )
         
         return {
-            "step_name": "step3_parameter_optimization",
+            "step_name": "step03_parameter_optimization",
             "validation_passed": validation_passed,
             "prerequisites": prereq_result,
             "step_execution": step_result,
@@ -514,7 +514,7 @@ async def run_validator(
         
     except Exception as e:
         error_context = {
-            "step": "step3_parameter_optimization",
+            "step": "step03_parameter_optimization",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
             "error_type": type(e).__name__,
@@ -523,7 +523,7 @@ async def run_validator(
         }
         logger.exception(f"❌ Step 3 validation failed: {error_context}")
         return {
-            "step_name": "step3_parameter_optimization",
+            "step_name": "step03_parameter_optimization",
             "validation_passed": False,
             "error": str(e),
             "error_context": error_context

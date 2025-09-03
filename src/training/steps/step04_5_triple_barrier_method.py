@@ -114,7 +114,7 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
         max_correlation=0.95,
         required_grade="C"
     )
-    # @with_enhanced_mlflow_logging - removed, use traced"step4_triple_barrier_method")
+    # @with_enhanced_mlflow_logging - removed, use traced"step04_5_triple_barrier_method")
     @validates()
     @handles_errors
     # @memory_efficient - removed
@@ -259,7 +259,7 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step4_triple_barrier_method",
+                step_name="step04_5_triple_barrier_method",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -271,7 +271,7 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step4_triple_barrier_method",
+                step_name="step04_5_triple_barrier_method",
                 report_data=report_data,
                 report_type="triple_barrier_method_report",
                 additional_metadata={
@@ -288,7 +288,7 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
             if result_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step4_triple_barrier_method",
+                    step_name="step04_5_triple_barrier_method",
                     df=result_data,
                     artifact_type="triple_barrier_labels",
                     additional_metadata={
@@ -306,7 +306,7 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step4_triple_barrier_method",
+                step_name="step04_5_triple_barrier_method",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "triple_barrier_performance",

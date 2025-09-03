@@ -48,7 +48,7 @@ class ProgressManager:
         """Save progress for a specific step.
 
         Args:
-            step_name: Name of the step (e.g., 'step1_data_collection')
+            step_name: Name of the step (e.g., 'step01_data_collection')
             step_data: Data to save for this step
             metadata: Optional metadata about the step execution
 

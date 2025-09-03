@@ -49,10 +49,10 @@ def with_enhanced_mlflow_logging(step_name: str):
     with the required metadata associations.
 
     Args:
-        step_name: Name of the pipeline step (e.g., "step3_hmm_regime_discovery")
+        step_name: Name of the pipeline step (e.g., "step03_hmm_regime_discovery")
 
     Usage:
-        @with_enhanced_mlflow_logging("step3_hmm_regime_discovery")
+        @with_enhanced_mlflow_logging("step03_hmm_regime_discovery")
         async def execute(self, training_input, pipeline_state):
             # Step execution logic
             return results

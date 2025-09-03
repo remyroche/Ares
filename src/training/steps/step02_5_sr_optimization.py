@@ -134,7 +134,7 @@ class SROptimizationStep:
     @monitor_step_execution
     @secure_step_execution
     @validates()
-    # @with_enhanced_mlflow_logging - removed, use traced"step2_5_sr_optimization")
+    # @with_enhanced_mlflow_logging - removed, use traced"step02_5_sr_optimization")
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -266,7 +266,7 @@ class SROptimizationStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step2_5_sr_optimization",
+                step_name="step02_5_sr_optimization",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -278,7 +278,7 @@ class SROptimizationStep:
             # Log the main report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step2_5_sr_optimization",
+                step_name="step02_5_sr_optimization",
                 report_data=report_data,
                 report_type="sr_optimization_report",
                 additional_metadata={
@@ -296,7 +296,7 @@ class SROptimizationStep:
             if optimization_result:
                 optimization_report_name = log_step_report(
                     config=self.config,
-                    step_name="step2_5_sr_optimization",
+                    step_name="step02_5_sr_optimization",
                     report_data=optimization_result,
                     report_type="optimization_results",
                     additional_metadata={
@@ -313,7 +313,7 @@ class SROptimizationStep:
             if sr_analysis_reports:
                 sr_analysis_report_name = log_step_report(
                     config=self.config,
-                    step_name="step2_5_sr_optimization",
+                    step_name="step02_5_sr_optimization",
                     report_data=sr_analysis_reports,
                     report_type="sr_analysis_reports",
                     additional_metadata={
@@ -330,7 +330,7 @@ class SROptimizationStep:
             if sr_integration_analysis:
                 integration_report_name = log_step_report(
                     config=self.config,
-                    step_name="step2_5_sr_optimization",
+                    step_name="step02_5_sr_optimization",
                     report_data=sr_integration_analysis,
                     report_type="sr_integration_analysis",
                     additional_metadata={
@@ -347,7 +347,7 @@ class SROptimizationStep:
             if detailed_reports:
                 detailed_reports_name = log_step_report(
                     config=self.config,
-                    step_name="step2_5_sr_optimization",
+                    step_name="step02_5_sr_optimization",
                     report_data=detailed_reports,
                     report_type="detailed_optimization_reports",
                     additional_metadata={
@@ -363,7 +363,7 @@ class SROptimizationStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step2_5_sr_optimization",
+                step_name="step02_5_sr_optimization",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "sr_optimization_performance",
@@ -1282,7 +1282,7 @@ class SROptimizationStep:
                 results_data = optimization_result
             
             # Add metadata
-            results_data["metadata"]["step"] = "step2_5_sr_optimization"
+            results_data["metadata"]["step"] = "step02_5_sr_optimization"
             results_data["metadata"]["timestamp"] = time.time()
             results_data["metadata"]["detailed_reports"] = list(detailed_reports.keys())
             
@@ -1373,7 +1373,7 @@ class SROptimizationStep:
             # Create comprehensive report
             comprehensive_report = {
                 "execution_summary": {
-                    "step_name": "step2_5_sr_optimization",
+                    "step_name": "step02_5_sr_optimization",
                     "execution_time": time.time() - self.start_time,
                     "timestamp": datetime.now().isoformat(),
                     "status": "completed"
@@ -1473,7 +1473,7 @@ class SROptimizationStep:
 @handles_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step2_5_sr_optimization"
+    context="step02_5_sr_optimization"
 )
 @secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:

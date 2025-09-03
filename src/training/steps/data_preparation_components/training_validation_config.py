@@ -1,4 +1,5 @@
-"""Training validation configuration and rules."
+"""Training validation configuration and rules.
+
 Defines error thresholds, validation criteria, and step progression rules.
 """
 import os
@@ -387,9 +388,8 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     # Check available memory (need at least 2GB free for blank mode, 4GB for full training)
     memory = psutil.virtual_memory()
 
-    # Check if we're in blank training mode by looking at environment or config'
+    # Check if we're in blank training mode by looking at environment or config
     import os as _os
-import os.path
 
     blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 
@@ -487,7 +487,7 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
     min_params = 3  # Conservative minimum for any mode
     production_min_params = 8  # Production mode minimum
 
-    # Check if we're in production mode (more than 5 parameters suggests production)'
+                    # Check if we're in production mode (more than 5 parameters suggests production)
     is_production_mode = len(data) >= 5
 
     if is_production_mode and len(data) < production_min_params:

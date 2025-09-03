@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Data Quality Monitor for Real-time Monitoring and Alerting."
+"""Data Quality Monitor for Real-time Monitoring and Alerting.
 
 This module provides real-time monitoring of data quality metrics and alerting
 capabilities for the enhanced data quality system.
@@ -11,9 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 
-from src.core.decorators import handles_errors, traced
-
 import pandas as pd
+from src.core.decorators import handles_errors, traced
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -116,7 +115,7 @@ class DataQualityMonitor:
         timeframes: List[str],
         interval_seconds: int = 300
     ) -> bool:
-        """Start real-time monitoring of data quality."
+        """Start real-time monitoring of data quality.
         
         Args:
             symbols: List of symbols to monitor
@@ -151,7 +150,7 @@ class DataQualityMonitor:
 
     @traced(span_name="add_alert_callback")
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
-        """Add a callback function to be called when alerts are generated."
+        """Add a callback function to be called when alerts are generated.
         
         Args:
             callback: Function to call with alert data
@@ -161,7 +160,7 @@ class DataQualityMonitor:
 
     @traced(span_name="set_quality_thresholds")
     def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
-        """Set quality monitoring thresholds."
+        """Set quality monitoring thresholds.
         
         Args:
             thresholds: Dictionary of threshold values
@@ -215,20 +214,16 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import os.path
             
-manager = EnhancedDataQualityManager(str(self.data_cache_path))
+            manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
-# Run quality check
+            # Run quality check
             quality_results = await manager.comprehensive_quality_check(
-            symbol=symbol,
+                symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
                 check_gaps=True,
-                fill_gaps=False,  # Don't auto-fill during monitoring'
+                fill_gaps=False,  # Don't auto-fill during monitoring
                 validate_format=True
             )
             
@@ -445,7 +440,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
         end_time: Optional[datetime] = None,
         limit: int = 100
     ) -> List[DataQualityAlert]:
-        """Get filtered alerts."
+        """Get filtered alerts.
         
         Args:
             symbol: Filter by symbol
@@ -485,7 +480,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
 
     @traced(span_name="acknowledge_alert")
     def acknowledge_alert(self, alert_index: int) -> bool:
-        """Acknowledge an alert by index."
+        """Acknowledge an alert by index.
         
         Args:
             alert_index: Index of alert to acknowledge
@@ -505,7 +500,7 @@ manager = EnhancedDataQualityManager(str(self.data_cache_path))
 
     @traced(span_name="resolve_alert")
     def resolve_alert(self, alert_index: int) -> bool:
-        """Mark an alert as resolved."
+        """Mark an alert as resolved.
         
         Args:
             alert_index: Index of alert to resolve

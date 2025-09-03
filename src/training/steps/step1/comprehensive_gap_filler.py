@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-"""Comprehensive Gap Filler for Pipeline Integration"
+"""Comprehensive Gap Filler for Pipeline Integration.
+
 Handles aggtrades, futures, and klines files with gap detection and filling.
 """
 
@@ -382,9 +383,7 @@ class ComprehensiveGapFiller:
         gap_start: datetime,
         gap_end: datetime,
     ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from regular Binance API for"
-        recent data.
-        """
+        """Download futures funding rate data from regular Binance API for recent data."""
         await self._ensure_session()
 
         try:
@@ -400,9 +399,7 @@ class ComprehensiveGapFiller:
         gap_end: datetime,
         market_segment: str = "um",
     ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from Binance Vision for a"
-        specific gap period.
-        """
+        """Download futures funding rate data from Binance Vision for a specific gap period."""
         await self._ensure_session()
 
         base_url = "https://data.binance.vision"
@@ -720,7 +717,7 @@ class ComprehensiveGapFiller:
                     df_missing = self._standardize_aggtrades_format(df_missing)
 
                 # Load existing file
-                file_path = self.data_cache_path / file_name
+                file_path = Path(self.data_cache_path) / file_name
                 if file_path.exists():
                     # Read existing file (Parquet or CSV)
                     if file_path.suffix.lower() == ".parquet":
@@ -931,12 +928,11 @@ class ComprehensiveGapFiller:
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         from src.utils.logger import system_logger
-import copy
 
-logger = system_logger.getChild("ComprehensiveGapFiller")
+        logger = system_logger.getChild("ComprehensiveGapFiller")
         
-gap_filling_start = datetime.now()
-logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
+        gap_filling_start = datetime.now()
+        logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
         logger.info(f"⏱️  Max API calls per gap: {self.max_api_calls_per_gap}")
         logger.info(f"⏱️  Call delay: {self.call_delay}s")

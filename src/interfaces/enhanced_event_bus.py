@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from abc import ABC
 from collections import defaultdict
 from collections.abc import Callable
@@ -173,7 +174,6 @@ class FileEventStore(IEventStore):
     """File-based event store implementation"""
 
     def __init__(self, storage_path: str = "event_store"):
-        self.storage_path = Path(storage_path)
         self.events_path = self.storage_path / "events"
         self.snapshots_path = self.storage_path / "snapshots"
         self.logger = system_logger.getChild("FileEventStore")
@@ -302,7 +302,6 @@ class EventVersionManager:
     """Manages event schema versioning and migration"""
 
     def __init__(self):
-        self.logger = system_logger.getChild("EventVersionManager")
         self.version_mappings: dict[str, dict[str, Any]] = {}
         self._register_default_versions()
 
@@ -423,7 +422,6 @@ class EnhancedEventBus:
     """
 
     def __init__(self, config: dict[str, Any]):
-        self.config = config
         self.logger = system_logger.getChild("EnhancedEventBus")
         self.is_running = False
         self.status: dict[str, Any] = {}

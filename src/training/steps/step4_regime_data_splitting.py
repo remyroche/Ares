@@ -17,6 +17,9 @@ from typing import Any, Dict, List, Optional, Tuple
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -279,8 +282,7 @@ class RegimeDataSplittingStep:
             data = data.sort_values('timestamp').reset_index(drop=True)
             
             # Create training directory
-            training_dir = Path(data_dir) / "training"
-            training_dir.mkdir(parents=True, exist_ok=True)
+            training_dir = ensure_directory(Path(data_dir) / "training")
             
             # Save unified dataset with regime labels
             unified_file = training_dir / f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
@@ -312,8 +314,7 @@ class RegimeDataSplittingStep:
             }
             
             labels_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
-            with open(labels_file, 'w') as f:
-                json.dump(regime_labels, f, indent=2)
+            safe_json_dump(regime_labels, labels_file, indent=2)
             
             self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
             
@@ -410,8 +411,7 @@ class RegimeDataSplittingStep:
 import numpy as np
 import pandas as pd
 
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+            safe_json_dump(metadata, metadata_file, indent=2)
             
             self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
             

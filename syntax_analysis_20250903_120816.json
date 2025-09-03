@@ -1,0 +1,816 @@
+{
+  "total_files": 487,
+  "valid_files": 339,
+  "error_files": 148,
+  "errors_by_type": {
+    "invalid syntax": 26,
+    "expected 'except' or 'finally' block": 16,
+    "unexpected indent": 66,
+    "unterminated triple-quoted string literal (detected at line 1146)": 1,
+    "expected an indented block after 'try' statement on line 321": 1,
+    "expected an indented block after 'try' statement on line 2541": 1,
+    "expected an indented block after 'if' statement on line 65": 1,
+    "unindent does not match any outer indentation level": 11,
+    "expected an indented block after 'try' statement on line 2353": 1,
+    "expected an indented block after 'try' statement on line 53": 1,
+    "unterminated string literal (detected at line 95)": 1,
+    "unterminated string literal (detected at line 729)": 1,
+    "unmatched ')'": 12,
+    "invalid syntax. Perhaps you forgot a comma?": 1,
+    "expected an indented block after 'try' statement on line 846": 1,
+    "expected an indented block after 'try' statement on line 188": 1,
+    "expected an indented block after 'try' statement on line 25": 1,
+    "expected an indented block after 'try' statement on line 259": 1,
+    "expected an indented block after 'try' statement on line 26": 1,
+    "expected an indented block after 'if' statement on line 542": 1,
+    "expected an indented block after 'try' statement on line 153": 1,
+    "'(' was never closed": 1
+  },
+  "files_by_error": {
+    "invalid syntax": [
+      {
+        "file": "launcher/enhanced_trading_launcher.py",
+        "line": 81,
+        "text": "@handle_specific_errors("
+      },
+      {
+        "file": "interfaces/enhanced_event_bus.py",
+        "line": 8,
+        "text": "from pathlib import Path"
+      },
+      {
+        "file": "integration/paper_trading_integration.py",
+        "line": 15,
+        "text": "from datetime import datetime"
+      },
+      {
+        "file": "training/feature_engineering.py",
+        "line": 8,
+        "text": "from collections.abc import Callable"
+      },
+      {
+        "file": "training/step_orchestrator.py",
+        "line": 306,
+        "text": "import copy"
+      },
+      {
+        "file": "utils/data_loader.py",
+        "line": 21,
+        "text": "as,"
+      },
+      {
+        "file": "utils/enhanced_memory_management.py",
+        "line": 40,
+        "text": "except ImportError:"
+      },
+      {
+        "file": "utils/configuration_security.py",
+        "line": 101,
+        "text": "@handles_errors(Exception,, fallback=None, context=\"configuration loading\")"
+      },
+      {
+        "file": "utils/enhanced_missing_value_handler.py",
+        "line": 81,
+        "text": "@handles_errors(Exception,, fallback=None, context=\"missing value handling\")"
+      },
+      {
+        "file": "analyst/liquidation_risk_model.py",
+        "line": 9,
+        "text": "from src.core.domain import handle_specific_errors"
+      },
+      {
+        "file": "analyst/di_analyst.py",
+        "line": 45,
+        "text": "self.logger = logging.getLogger(self.__class__.__name__)"
+      },
+      {
+        "file": "analyst/unified_regime_classifier.py",
+        "line": 39,
+        "text": "self.logger = logging.getLogger(self.__class__.__name__)"
+      },
+      {
+        "file": "database/precomputed_features_manager.py",
+        "line": 24,
+        "text": "except Exception:"
+      },
+      {
+        "file": "analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+        "line": 39,
+        "text": "self.logger = logging.getLogger(self.__class__.__name__)"
+      },
+      {
+        "file": "training/steps/step18_walk_forward_validation_validator.py",
+        "line": 124,
+        "text": "@handles_errors, default_return=(False, {}), context=\"Step13._validate_walk_forward_files\""
+      },
+      {
+        "file": "training/steps/hmm_feature_enhancer.py",
+        "line": 4,
+        "text": "from src.core.decorators import (, traced"
+      },
+      {
+        "file": "training/steps/step4_regime_data_splitting_validator.py",
+        "line": 8,
+        "text": "from src.core.decorators import validates"
+      },
+      {
+        "file": "training/steps/step11_analyst_creation_validator.py",
+        "line": 5,
+        "text": "from src.core.decorators import validates"
+      },
+      {
+        "file": "training/steps/step19_monte_carlo_validation_validator.py",
+        "line": 120,
+        "text": "@handles_errors, default_return=(False, {}), context=\"Step14._validate_monte_carlo_files\""
+      },
+      {
+        "file": "training/steps/step3_parameter_optimization_validator.py",
+        "line": 9,
+        "text": "from src.core.decorators import validates"
+      },
+      {
+        "file": "training/steps/step5_labeling_validator.py",
+        "line": 8,
+        "text": "from src.core.decorators import validates"
+      },
+      {
+        "file": "training/steps/step6_feature_engineering_validator.py",
+        "line": 5,
+        "text": "from src.core.decorators import validates"
+      },
+      {
+        "file": "training/steps/step9_5_hmm_lm_generalist_training_validator.py",
+        "line": 5,
+        "text": "from src.core.decorators import validates"
+      },
+      {
+        "file": "training/core/checkpoint_manager.py",
+        "line": 39,
+        "text": "self.checkpoint_interval: int = self.checkpoint_config.get("
+      },
+      {
+        "file": "training/core/stage_context.py",
+        "line": 31,
+        "text": "self.enable_context_management: bool = self.context_config.get("
+      },
+      {
+        "file": "training/core/pipeline_orchestrator.py",
+        "line": 34,
+        "text": "self.pipeline_interval: int = self.pipeline_config.get("
+      }
+    ],
+    "expected 'except' or 'finally' block": [
+      {
+        "file": "supervisor/enhanced_prediction_service.py",
+        "line": 257,
+        "text": "from src.core.decorators import handles_errors"
+      },
+      {
+        "file": "tactician/position_monitor.py",
+        "line": 590,
+        "text": "import copy"
+      },
+      {
+        "file": "tactician/sr_data_integration.py",
+        "line": 32,
+        "text": "from src.utils.logger import system_logger"
+      },
+      {
+        "file": "tactician/sr_breakout_predictor.py",
+        "line": 917,
+        "text": "with open(file_path, 'w') as f:"
+      },
+      {
+        "file": "training/regularization.py",
+        "line": 329,
+        "text": "import numpy as np"
+      },
+      {
+        "file": "training/enhanced_coarse_optimizer.py",
+        "line": 460,
+        "text": "import copy"
+      },
+      {
+        "file": "training/wavelet_caching_workflow.py",
+        "line": 238,
+        "text": "import copy"
+      },
+      {
+        "file": "utils/model_performance_monitor.py",
+        "line": 386,
+        "text": "from src.core.decorators import handles_errors"
+      },
+      {
+        "file": "utils/quality_alert_system.py",
+        "line": 258,
+        "text": "if alert.details:"
+      },
+      {
+        "file": "utils/base_validator.py",
+        "line": 302,
+        "text": "import os.path"
+      },
+      {
+        "file": "analyst/autoencoder_feature_generator.py",
+        "line": 1921,
+        "text": "import os.path"
+      },
+      {
+        "file": "training/steps/step14_tactician_labeling.py",
+        "line": 621,
+        "text": "from src.utils.logger import log_dataframe_overview, log_io_operation"
+      },
+      {
+        "file": "training/steps/step21_saving.py",
+        "line": 242,
+        "text": "import mlflow  # type: ignore"
+      },
+      {
+        "file": "training/steps/precompute_wavelet_features.py",
+        "line": 162,
+        "text": "import copy"
+      },
+      {
+        "file": "training/steps/unified_data_loader.py",
+        "line": 29,
+        "text": "import logging"
+      },
+      {
+        "file": "training/steps/step8_regime_data_splitting.py",
+        "line": 154,
+        "text": "import numpy as np"
+      }
+    ],
+    "unexpected indent": [
+      {
+        "file": "supervisor/supervisor.py",
+        "line": 630,
+        "text": "analyst_decision = analyst_signals.get(\"analyst_decision\", {})"
+      },
+      {
+        "file": "pipelines/live_trading_pipeline.py",
+        "line": 18,
+        "text": "performance_monitor,"
+      },
+      {
+        "file": "pipelines/improved_pipeline_executor.py",
+        "line": 159,
+        "text": "prices = []"
+      },
+      {
+        "file": "tactician/position_division_strategy.py",
+        "line": 13,
+        "text": "handle_errors,"
+      },
+      {
+        "file": "tactician/enhanced_execution_manager.py",
+        "line": 47,
+        "text": "self.barrier_calculator = DynamicBarrierCalculator(self.config)"
+      },
+      {
+        "file": "training/enhanced_training_manager_enhanced.py",
+        "line": 3616,
+        "text": "await self._generate_step_report("
+      },
+      {
+        "file": "training/multi_output_probability_trainer.py",
+        "line": 38,
+        "text": "def fit("
+      },
+      {
+        "file": "training/enhanced_lm_optimizer.py",
+        "line": 1356,
+        "text": "tscv = TimeSeriesSplit(n_splits=n_folds)"
+      },
+      {
+        "file": "training/multi_objective_optimizer.py",
+        "line": 70,
+        "text": "@handles_errors("
+      },
+      {
+        "file": "training/calibration_manager.py",
+        "line": 134,
+        "text": "if self.enable_temperature_scaling:"
+      },
+      {
+        "file": "training/training_orchestrator.py",
+        "line": 419,
+        "text": "self.logger.info(\"\u2705 All component managers initialized\")"
+      },
+      {
+        "file": "training/factory.py",
+        "line": 186,
+        "text": "if memory_gb < 8:"
+      },
+      {
+        "file": "training/training_manager.py",
+        "line": 205,
+        "text": "self.logger.info(\"Feature integration manager initialized successfully\")"
+      },
+      {
+        "file": "training/di_training_manager.py",
+        "line": 116,
+        "text": "await self._initialize_training_steps()"
+      },
+      {
+        "file": "exchange/binance.py",
+        "line": 14,
+        "text": "handle_network_operations,"
+      },
+      {
+        "file": "utils/vif_calculator.py",
+        "line": 73,
+        "text": "if r_squared < 1.0:"
+      },
+      {
+        "file": "utils/data_formatting_framework.py",
+        "line": 401,
+        "text": "handled_data = data.copy()"
+      },
+      {
+        "file": "utils/database_security.py",
+        "line": 358,
+        "text": "if params.get(\"ssl\", False):"
+      },
+      {
+        "file": "analyst/advanced_feature_engineering.py",
+        "line": 1296,
+        "text": "self.is_initialized = True"
+      },
+      {
+        "file": "analyst/feature_engineering_orchestrator.py",
+        "line": 349,
+        "text": "high_diff = df[\"high\"].diff().fillna(0)"
+      },
+      {
+        "file": "analyst/enhanced_prediction_integrator.py",
+        "line": 10,
+        "text": "ValidationLevel,"
+      },
+      {
+        "file": "analyst/regime_expert_orchestrator.py",
+        "line": 17,
+        "text": ")"
+      },
+      {
+        "file": "analyst/meta_label_relevance.py",
+        "line": 114,
+        "text": "if magnitudes.ndim == 1:"
+      },
+      {
+        "file": "analyst/analyst.py",
+        "line": 313,
+        "text": "if self.liquidation_risk_model:"
+      },
+      {
+        "file": "database/migration_utils.py",
+        "line": 412,
+        "text": "if len(sys.argv) < 2:"
+      },
+      {
+        "file": "training/optimization/computational_optimization_manager.py",
+        "line": 1747,
+        "text": "valid_fields = {field.name for field in fields(ComputationalOptimizationConfig)}"
+      },
+      {
+        "file": "training/steps/fractional_feature_selector.py",
+        "line": 693,
+        "text": "history_file = output_path / \"selection_history.json\""
+      },
+      {
+        "file": "training/steps/step9_5_hmm_lm_generalist_training.py",
+        "line": 124,
+        "text": "default_return={\"status\": \"FAILED\", \"error\": \"Execution failed\"},"
+      },
+      {
+        "file": "training/steps/step2_5_sr_optimization.py",
+        "line": 1516,
+        "text": "test_config = {"
+      },
+      {
+        "file": "training/steps/step2_5_sr_optimization_validator.py",
+        "line": 94,
+        "text": "default_return={\"valid\": False, \"errors\": [\"Validation failed\"]},"
+      },
+      {
+        "file": "training/steps/step2_data_reading.py",
+        "line": 148,
+        "text": "min_quality_score=0.8,"
+      },
+      {
+        "file": "training/steps/step9_hmm_based_training_validator.py",
+        "line": 32,
+        "text": "min_quality_score=0.7,"
+      },
+      {
+        "file": "training/steps/step3_parameter_optimization.py",
+        "line": 130,
+        "text": "default_return={\"success\": False, \"error\": \"Data loading failed\"},"
+      },
+      {
+        "file": "training/steps/step16_confidence_calibration.py",
+        "line": 857,
+        "text": "backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,"
+      },
+      {
+        "file": "training/steps/step3_5_final_regime_clustering.py",
+        "line": 881,
+        "text": "test_config = {"
+      },
+      {
+        "file": "training/steps/step4_triple_barrier_method_validator.py",
+        "line": 32,
+        "text": "min_quality_score=0.7,"
+      },
+      {
+        "file": "training/steps/combined_fractional_system.py",
+        "line": 466,
+        "text": "history_file = output_path / \"performance_history.json\""
+      },
+      {
+        "file": "training/steps/step3_hmm_regime_discovery.py",
+        "line": 200,
+        "text": "min_quality_score=0.7,"
+      },
+      {
+        "file": "training/steps/vectorized_advanced_feature_engineering.py",
+        "line": 37,
+        "text": "ValidationLevel,"
+      },
+      {
+        "file": "training/steps/step6_feature_engineering.py",
+        "line": 144,
+        "text": "backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,"
+      },
+      {
+        "file": "training/steps/step8_regime_data_splitting_validator.py",
+        "line": 32,
+        "text": "min_quality_score=0.7,"
+      },
+      {
+        "file": "training/steps/step2_data_reading_validator.py",
+        "line": 35,
+        "text": "min_quality_score=0.8,"
+      },
+      {
+        "file": "training/steps/step9_5_multi_timeframe_hmm_ensemble.py",
+        "line": 41,
+        "text": "MultiTimeframeHMMEnsemble,"
+      },
+      {
+        "file": "training/steps/vectorized_labelling_orchestrator.py",
+        "line": 28,
+        "text": "get_current_datetime, format_datetime, ensure_directory,"
+      },
+      {
+        "file": "training/steps/integrated_data_quality_pipeline.py",
+        "line": 54,
+        "text": "default_return={\"success\": False, \"error\": \"Pipeline failed\"},"
+      },
+      {
+        "file": "training/steps/step9_hmm_based_training_enhanced.py",
+        "line": 1053,
+        "text": "self.models[f\"{model_name}_single\"] = {"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization.py",
+        "line": 66,
+        "text": "default_return={\"status\": \"FAILED\", \"error\": \"Execution failed\"},"
+      },
+      {
+        "file": "training/steps/step3_5_final_regime_clustering_validator.py",
+        "line": 447,
+        "text": "test_input = {"
+      },
+      {
+        "file": "training/steps/step4_regime_data_splitting.py",
+        "line": 142,
+        "text": "min_quality_score=0.8,"
+      },
+      {
+        "file": "training/steps/step7_enhanced_matrix_operations.py",
+        "line": 161,
+        "text": "model_performance_thresholds={},"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+        "line": 47,
+        "text": "MLFLOW_AVAILABLE = True"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+        "line": 42,
+        "text": "OPTUNA_AVAILABLE = True"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+        "line": 33,
+        "text": "MLFLOW_AVAILABLE = True"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+        "line": 776,
+        "text": "async def test() -> None:"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+        "line": 522,
+        "text": "return model"
+      },
+      {
+        "file": "training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+        "line": 39,
+        "text": "SROptimizationParameters,"
+      },
+      {
+        "file": "training/steps/step1/comprehensive_gap_filler.py",
+        "line": 939,
+        "text": "logger.info(f\"\ud83d\udcc1 Data cache path: {self.data_cache_path}\")"
+      },
+      {
+        "file": "training/steps/step1/data_quality_monitor.py",
+        "line": 226,
+        "text": "quality_results = await manager.comprehensive_quality_check("
+      },
+      {
+        "file": "training/steps/step1/enhanced_data_quality_manager.py",
+        "line": 73,
+        "text": "min_quality_score=0.6,"
+      },
+      {
+        "file": "training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+        "line": 468,
+        "text": "dates = pd.date_range(\"2024-01-01\", periods=1000, freq=\"1min\")"
+      },
+      {
+        "file": "training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+        "line": 802,
+        "text": "data_copy = data.copy()"
+      },
+      {
+        "file": "training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+        "line": 706,
+        "text": "dates = pd.date_range(\"2024-01-01\", periods=1000, freq=\"1min\")"
+      },
+      {
+        "file": "training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+        "line": 301,
+        "text": "self.logger.info(\"\u2705 Saved optimization results\")"
+      },
+      {
+        "file": "training/steps/data_preparation_components/training_validation_config.py",
+        "line": 394,
+        "text": "blank_mode = _os.getenv(\"BLANK_TRAINING_MODE\", \"0\") == \"1\""
+      },
+      {
+        "file": "pipelines/components/lifecycle_manager.py",
+        "line": 18,
+        "text": "performance_monitor,"
+      },
+      {
+        "file": "pipelines/components/data_manager.py",
+        "line": 22,
+        "text": "handle_specific_errors,"
+      }
+    ],
+    "unterminated triple-quoted string literal (detected at line 1146)": [
+      {
+        "file": "tactician/tactician.py",
+        "line": 1138,
+        "text": "\"\"\""
+      }
+    ],
+    "expected an indented block after 'try' statement on line 321": [
+      {
+        "file": "training/model_trainer.py",
+        "line": 322,
+        "text": "from src.utils.mlflow_utils import log_params_with_metadata"
+      }
+    ],
+    "expected an indented block after 'try' statement on line 2541": [
+      {
+        "file": "training/enhanced_training_manager.py",
+        "line": 2542,
+        "text": "from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep"
+      }
+    ],
+    "expected an indented block after 'if' statement on line 65": [
+      {
+        "file": "training/feature_integration.py",
+        "line": 66,
+        "text": "import copy"
+      }
+    ],
+    "unindent does not match any outer indentation level": [
+      {
+        "file": "training/enhanced_matrix_operations.py",
+        "line": 1549,
+        "text": "except Exception:"
+      },
+      {
+        "file": "training/enhanced_training_manager_optimized.py",
+        "line": 431,
+        "text": "if writer is not None:"
+      },
+      {
+        "file": "training/optimized_feature_selection_manager.py",
+        "line": 308,
+        "text": "except:"
+      },
+      {
+        "file": "utils/model_manager.py",
+        "line": 95,
+        "text": "_NP_ORIGINAL_BITGEN_CTOR = original_ctor"
+      },
+      {
+        "file": "training/steps/step5_hmm_based_training_validator.py",
+        "line": 724,
+        "text": "_asyncio.run(test_validator())"
+      },
+      {
+        "file": "training/steps/step1_5_data_converter_validator.py",
+        "line": 432,
+        "text": "_asyncio.run(test_validator())"
+      },
+      {
+        "file": "training/steps/step10_unified_regime_intelligence_validator.py",
+        "line": 548,
+        "text": "except Exception as e:"
+      },
+      {
+        "file": "training/steps/step1_data_collection_validator.py",
+        "line": 435,
+        "text": "_asyncio.run(test_validator())"
+      },
+      {
+        "file": "training/steps/step11_analyst_creation.py",
+        "line": 163,
+        "text": "except Exception as e:  # noqa: BLE001"
+      },
+      {
+        "file": "training/steps/step5_regime_data_splitting_validator.py",
+        "line": 87,
+        "text": "asyncio.run(test_validator())"
+      },
+      {
+        "file": "training/steps/step1/data_resampler.py",
+        "line": 816,
+        "text": "report += f\"\"\"\""
+      }
+    ],
+    "expected an indented block after 'try' statement on line 2353": [
+      {
+        "file": "training/enhanced_training_manager_backup.py",
+        "line": 2354,
+        "text": "from src.training.steps import step7_analyst_enhancement"
+      }
+    ],
+    "expected an indented block after 'try' statement on line 53": [
+      {
+        "file": "training/multi_output_model_trainer.py",
+        "line": 54,
+        "text": "from .steps.step9_hmm_based_training import ("
+      }
+    ],
+    "unterminated string literal (detected at line 95)": [
+      {
+        "file": "training/data_efficiency_optimizer.py",
+        "line": 95,
+        "text": "\"\"\"),\""
+      }
+    ],
+    "unterminated string literal (detected at line 729)": [
+      {
+        "file": "training/data_manager.py",
+        "line": 729,
+        "text": "f\"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}\",'"
+      }
+    ],
+    "unmatched ')'": [
+      {
+        "file": "utils/data_optimizer.py",
+        "line": 98,
+        "text": "@handles_errors, default_return=lambda self, df: df, context=\"optimize dataframe\")"
+      },
+      {
+        "file": "training/steps/step10_unified_regime_intelligence.py",
+        "line": 1977,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step4_triple_barrier_method.py",
+        "line": 340,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step5_labeling.py",
+        "line": 612,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step19_monte_carlo_validation.py",
+        "line": 243,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step12_analyst_enhancement.py",
+        "line": 3623,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step18_walk_forward_validation.py",
+        "line": 196,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step15_tactician_specialist_training.py",
+        "line": 1154,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/fractional_differentiation.py",
+        "line": 15,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step1/data_quality_dashboard.py",
+        "line": 20,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step1/data_gap_detector.py",
+        "line": 63,
+        "text": ")"
+      },
+      {
+        "file": "training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+        "line": 14,
+        "text": ")"
+      }
+    ],
+    "invalid syntax. Perhaps you forgot a comma?": [
+      {
+        "file": "strategist/strategist_backup.py",
+        "line": 59,
+        "text": "self.strategist_config.get(\"strategy_interval\", 1800)"
+      }
+    ],
+    "expected an indented block after 'try' statement on line 846": [
+      {
+        "file": "analyst/ml_confidence_predictor.py",
+        "line": 848,
+        "text": "from src.analyst.multi_timeframe_feature_engineering import ("
+      }
+    ],
+    "expected an indented block after 'try' statement on line 188": [
+      {
+        "file": "training/steps/step14_tactician_labeling_validator.py",
+        "line": 189,
+        "text": "from src.utils.logger import log_io_operation"
+      }
+    ],
+    "expected an indented block after 'try' statement on line 25": [
+      {
+        "file": "training/steps/enhanced_step1_data_collection.py",
+        "line": 26,
+        "text": "from src.utils.enhanced_data_quality_validator import ("
+      }
+    ],
+    "expected an indented block after 'try' statement on line 259": [
+      {
+        "file": "training/steps/step9_hmm_based_training.py",
+        "line": 260,
+        "text": "import json"
+      }
+    ],
+    "expected an indented block after 'try' statement on line 26": [
+      {
+        "file": "training/steps/enhanced_step1_5_data_converter.py",
+        "line": 27,
+        "text": "from src.utils.enhanced_data_quality_validator import ("
+      }
+    ],
+    "expected an indented block after 'if' statement on line 542": [
+      {
+        "file": "training/steps/raw_data_quality_checker.py",
+        "line": 544,
+        "text": "combined_data.loc[resampled_time] = orig_row"
+      }
+    ],
+    "expected an indented block after 'try' statement on line 153": [
+      {
+        "file": "training/steps/step13_analyst_ensemble_creation.py",
+        "line": 154,
+        "text": "import copy"
+      }
+    ],
+    "'(' was never closed": [
+      {
+        "file": "pipelines/components/monitoring_manager.py",
+        "line": 28,
+        "text": "@handles_errors("
+      }
+    ]
+  },
+  "timestamp": "2025-09-03T12:08:15.760373"
+}

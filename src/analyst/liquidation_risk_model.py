@@ -3,10 +3,10 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 import pandas as pd
-from src.utils.centralized_decorators_simple import (
 import logging
 import datetime as datetime
 import asyncio
+from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
@@ -103,7 +103,7 @@ class LiquidationRiskModel:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="risk configuration loading",
     )
     async def _load_risk_configuration(self) -> None:
@@ -115,7 +115,7 @@ class LiquidationRiskModel:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -141,7 +141,7 @@ class LiquidationRiskModel:
             return True
 
         except Exception:
-            self.logger.error("Configuration validation failed: {e}")
+            self.logger.error(f"Configuration validation failed: {e}")
             return False
 
     @handle_specific_errors(
@@ -201,7 +201,7 @@ class LiquidationRiskModel:
             return risk_assessment
 
         except Exception:
-            self.logger.error("Error calculating liquidation risk: {e}")
+            self.logger.error(f"Error calculating liquidation risk: {e}")
             return None
 
     @validate_data_quality(validation_level="WARNING")
@@ -251,7 +251,7 @@ class LiquidationRiskModel:
             return max(0.0, min(1.0, adverse_risk))
 
         except Exception:
-            self.logger.error("Error extracting adverse risk: {e}")
+            self.logger.error(f"Error extracting adverse risk: {e}")
             return 0.5
 
     def _calculate_safe_leverage(
@@ -286,7 +286,7 @@ class LiquidationRiskModel:
             )
 
         except Exception:
-            self.logger.error("Error calculating safe leverage: {e}")
+            self.logger.error(f"Error calculating safe leverage: {e}")
             return self.min_leverage
 
     def _get_max_safe_leverage(self, adverse_risk: float) -> int:
@@ -311,7 +311,7 @@ class LiquidationRiskModel:
             return max_leverage
 
         except Exception:
-            self.logger.error("Error getting max safe leverage: {e}")
+            self.logger.error(f"Error getting max safe leverage: {e}")
             return self.min_leverage
 
     def _classify_risk_level(self, adverse_risk: float) -> str:
@@ -334,7 +334,7 @@ class LiquidationRiskModel:
             return "EXTREME"
 
         except Exception:
-            self.logger.error("Error classifying risk level: {e}")
+            self.logger.error(f"Error classifying risk level: {e}")
             return "UNKNOWN"
 
     def _generate_risk_recommendation(
@@ -360,7 +360,7 @@ class LiquidationRiskModel:
             return "NORMAL_TRADING"
 
         except Exception:
-            self.logger.error("Error generating risk recommendation: {e}")
+            self.logger.error(f"Error generating risk recommendation: {e}")
             return "UNKNOWN"
 
     def _calculate_liquidation_prices(
@@ -395,7 +395,7 @@ class LiquidationRiskModel:
             return liquidation_prices
 
         except Exception:
-            self.logger.error("Error calculating liquidation prices: {e}")
+            self.logger.error(f"Error calculating liquidation prices: {e}")
             return {}
 
     def get_risk_assessments(self) -> dict[str, Any]:
@@ -412,7 +412,7 @@ class LiquidationRiskModel:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="liquidation risk model cleanup",
     )
     async def stop(self) -> None:
@@ -423,4 +423,4 @@ class LiquidationRiskModel:
             self.risk_assessments = {}
             self.logger.info("Liquidation Risk Model stopped successfully")
         except Exception:
-            self.logger.error("Error stopping Liquidation Risk Model: {e}")
+            self.logger.error(f"Error stopping Liquidation Risk Model: {e}")

@@ -46,7 +46,7 @@ class EnhancedRegimePredictor:
     @with_tracing_span("enhanced_regime_predictor.predict_regime_changes")
     @handle_errors(
         exceptions=(Exception,),
-        default_return={"success": False, "predictions": [], "error": "Prediction failed"},
+            default_return={"success": False, "predictions": [], "error": "Prediction failed"},
         context="enhanced_regime_prediction"
     )
     def predict_regime_changes(
@@ -123,7 +123,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.zeros(0, dtype=float),
+            default_return=np.zeros(0, dtype=float),
         context="calculate_regime_stability"
     )
     def _calculate_regime_stability(self, hmm_probs: np.ndarray) -> np.ndarray:
@@ -136,7 +136,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.zeros(0, dtype=float),
+            default_return=np.zeros(0, dtype=float),
         context="calculate_regime_entropy"
     )
     def _calculate_regime_entropy(self, hmm_probs: np.ndarray) -> np.ndarray:
@@ -151,7 +151,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.zeros(0, dtype=bool),
+            default_return=np.zeros(0, dtype=bool),
         context="detect_regime_changes_multi_signal"
     )
     def _detect_regime_changes_multi_signal(
@@ -205,7 +205,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.zeros(0, dtype=float),
+            default_return=np.zeros(0, dtype=float),
         context="calculate_transition_probabilities"
     )
     def _calculate_transition_probabilities(
@@ -234,7 +234,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.zeros(0, dtype=float),
+            default_return=np.zeros(0, dtype=float),
         context="calculate_prediction_confidence"
     )
     def _calculate_prediction_confidence(
@@ -274,7 +274,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.ones(0, dtype=float),
+            default_return=np.ones(0, dtype=float),
         context="apply_persistence_model"
     )
     def _apply_persistence_model(
@@ -315,7 +315,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=[],
+            default_return=[],
         context="create_prediction_events"
     )
     def _create_prediction_events(
@@ -354,7 +354,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=np.zeros(0, dtype=int),
+            default_return=np.zeros(0, dtype=int),
         context="calculate_regime_durations"
     )
     def _calculate_regime_durations(self, states: np.ndarray) -> np.ndarray:
@@ -387,7 +387,7 @@ class EnhancedRegimePredictor:
     @with_tracing_span("enhanced_regime_predictor.fit_persistence_model")
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="fit_persistence_model"
     )
     def fit_persistence_model(self, regime_sequence: np.ndarray) -> bool:
@@ -478,7 +478,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=float('inf'),
+            default_return=float('inf'),
         context="calculate_aic"
     )
     def _calculate_aic(self, data: np.ndarray, pdf_func, *params) -> float:
@@ -495,7 +495,7 @@ class EnhancedRegimePredictor:
     @with_tracing_span("enhanced_regime_predictor.fit_adaptive_boundaries")
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="fit_adaptive_boundaries"
     )
     def fit_adaptive_boundaries(self, features: pd.DataFrame) -> bool:
@@ -541,7 +541,7 @@ class EnhancedRegimePredictor:
     
     @handle_errors(
         exceptions=(Exception,),
-        default_return=pd.DataFrame(),
+            default_return=pd.DataFrame(),
         context="extract_regime_characteristics"
     )
     def _extract_regime_characteristics(self, features: pd.DataFrame) -> pd.DataFrame:

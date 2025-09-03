@@ -1,9 +1,10 @@
 # src/analyst/analyst.py
 
+import copy
 from datetime import datetime
-from typing import (
 import logging
 import asyncio
+from typing import (
     TYPE_CHECKING,
     Any,
 )
@@ -182,7 +183,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analyst configuration loading",
     )
     async def _load_analyst_configuration(self) -> None:
@@ -194,7 +195,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -213,7 +214,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analyst modules initialization",
     )
     async def _initialize_analyst_modules(self) -> None:
@@ -230,7 +231,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="technical analysis initialization",
     )
     async def _initialize_technical_analysis(self) -> None:
@@ -241,7 +242,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="risk analysis initialization",
     )
     async def _initialize_risk_analysis(self) -> None:
@@ -252,7 +253,7 @@ class Analyst:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="dual model system initialization",
     )
     async def _initialize_dual_model_system(self) -> None:
@@ -268,12 +269,12 @@ class Analyst:
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Dual Model System: {e}"),
+                initialization_error(f"Error initializing Dual Model System: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="market health analyzer initialization",
     )
     async def _initialize_market_health_analyzer(self) -> None:
@@ -291,24 +292,21 @@ class Analyst:
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Market Health Analyzer: {e}"),
+                initialization_error(f"Error initializing Market Health Analyzer: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="liquidation risk model initialization",
     )
     async def _initialize_liquidation_risk_model(self) -> None:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import numpy as np
+            import numpy as np
 
-self.liquidation_risk_model = await setup_liquidation_risk_model(
+            self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,
             )
             if self.liquidation_risk_model:
@@ -318,12 +316,12 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         except Exception:
             self.print(
-                initialization_error("Error initializing Liquidation Risk Model: {e}"),
+                initialization_error(f"Error initializing Liquidation Risk Model: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="feature engineering orchestrator initialization",
     )
     async def _initialize_feature_engineering_orchestrator(self) -> None:
@@ -344,7 +342,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ML confidence predictor initialization",
     )
     async def _initialize_ml_confidence_predictor(self) -> None:
@@ -355,7 +353,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="regime classifier initialization",
     )
     async def _initialize_regime_classifier(self) -> None:
@@ -487,13 +485,13 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
         except Exception:
             self.is_analyzing = False
-            self.logger.error(failed("❌ Analysis failed: {e}"))
+            self.logger.error(failed(f"❌ Analysis failed: {e}"))
 
             return False
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="ML predictions",
     )
     async def _get_ml_predictions(
@@ -516,7 +514,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="analysis inputs validation",
     )
     def _validate_analysis_inputs(self, analysis_input: dict[str, Any]) -> bool:
@@ -546,7 +544,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+            default_return={},
         context="technical analysis",
     )
     async def _perform_technical_analysis(
@@ -604,7 +602,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing price analysis: {e}")
+            self.logger.error(f"Error performing price analysis: {e}")
 
             return {}
 
@@ -633,7 +631,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing volume analysis: {e}")
+            self.logger.error(f"Error performing volume analysis: {e}")
 
             return {}
 
@@ -667,7 +665,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing indicator analysis: {e}")
+            self.logger.error(f"Error performing indicator analysis: {e}")
 
             return {}
 
@@ -686,7 +684,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing pattern analysis: {e}")
+            self.logger.error(f"Error performing pattern analysis: {e}")
 
             return {}
 
@@ -713,7 +711,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing volatility analysis: {e}")
+            self.logger.error(f"Error performing volatility analysis: {e}")
 
             return {}
 
@@ -732,7 +730,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing correlation analysis: {e}")
+            self.logger.error(f"Error performing correlation analysis: {e}")
 
             return {}
 
@@ -757,7 +755,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing drawdown analysis: {e}")
+            self.logger.error(f"Error performing drawdown analysis: {e}")
 
             return {}
 
@@ -774,13 +772,13 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             }
 
         except Exception:
-            self.logger.error("Error performing risk scoring: {e}")
+            self.logger.error(f"Error performing risk scoring: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ML predictions",
     )
     async def _perform_ml_predictions(
@@ -819,18 +817,18 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return ml_results
 
         except Exception:
-            self.logger.error("Error performing ML predictions: {e}")
+            self.logger.error(f"Error performing ML predictions: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="SR analysis",
     )
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="regime classification",
     )
     async def _perform_regime_classification(
@@ -890,13 +888,13 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return regime_results
 
         except Exception:
-            self.logger.error("Error performing regime classification: {e}")
+            self.logger.error(f"Error performing regime classification: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analysis results storage",
     )
     async def _store_analysis_results(self) -> None:
@@ -913,12 +911,12 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
             self.logger.info("Analysis results stored successfully")
         except Exception:
-            self.logger.error("Error storing analysis results: {e}")
+            self.logger.error(f"Error storing analysis results: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analysis results getting",
     )
     def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
@@ -937,13 +935,13 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return self.analysis_results.get(analysis_type, {})
 
         except Exception:
-            self.logger.error("Error getting analysis results: {e}")
+            self.logger.error(f"Error getting analysis results: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="analysis history getting",
     )
     def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -962,7 +960,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
             return self.analysis_history[-limit:]
 
         except Exception:
-            self.logger.error("Error getting analysis history: {e}")
+            self.logger.error(f"Error getting analysis history: {e}")
 
             return []
 
@@ -986,7 +984,7 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="analyst cleanup",
     )
     async def stop(self) -> None:
@@ -1010,13 +1008,13 @@ self.liquidation_risk_model = await setup_liquidation_risk_model(
 
             self.logger.info("✅ Analyst stopped successfully")
         except Exception:
-            self.logger.error("❌ Error stopping Analyst: {e}")
+            self.logger.error(f"❌ Error stopping Analyst: {e}")
 
 
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
+        default_return=None,
     context="analyst setup",
 )
 async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:

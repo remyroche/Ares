@@ -79,8 +79,8 @@ from src.utils.decorators import (
     pa_check_io,
     pa_check_output,
     validate_call_or_runtime_types,
-    with_tracing_span,
 )
+from src.core.decorators import traced as with_tracing_span
 from src.utils.enhanced_data_quality_decorators import (
     comprehensive_data_validation,
     optimize_memory_usage,
@@ -98,11 +98,8 @@ from src.utils.enhanced_data_quality_decorators import (
 )
 
 # Import all decorators from their respective modules
-from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_file_operations
+from src.utils.compat import handle_errors, handle_specific_errors
 from src.utils.training_pipeline_decorators import (
 import copy
 import numpy as np

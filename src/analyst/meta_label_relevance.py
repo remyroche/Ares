@@ -16,7 +16,7 @@ import logging
 
 @handle_errors(
     exceptions=(Exception,), default_return={}, context="compute_mutual_information"
-)
+        )
 def compute_mutual_information(
     X: pd.DataFrame,
     y: pd.Series,
@@ -52,7 +52,7 @@ def compute_mutual_information(
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=0.0,
+        default_return=0.0,
     context="compute_mutual_information_pair",
 )
 def compute_mutual_information_pair(
@@ -67,7 +67,7 @@ def compute_mutual_information_pair(
 
 @handle_errors(
     exceptions=(Exception,), default_return={}, context="compute_shap_importance"
-)
+        )
 def compute_shap_importance(
     X: pd.DataFrame,
     y: pd.Series,
@@ -109,7 +109,7 @@ def compute_shap_importance(
 import copy
 import os.path
 
-    magnitudes = _np.abs(_np.array(sv))
+magnitudes = _np.abs(_np.array(sv))
     if magnitudes.ndim == 1:
         magnitudes = magnitudes.reshape(-1, 1)
     mean_abs = _np.mean(magnitudes, axis=0)
@@ -118,7 +118,7 @@ import os.path
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return={
+        default_return={
         "sharpe_base": 0.0,
         "sharpe_gated": 0.0,
         "delta_sharpe": 0.0,
@@ -200,7 +200,7 @@ class MetaLabelRelevanceEvaluator:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={"active_labels": [], "inactive_labels": []},
+            default_return={"active_labels": [], "inactive_labels": []},
         context="evaluate_from_frame",
     )
     def evaluate_from_frame(

@@ -1,15 +1,15 @@
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import (
 import logging
 import asyncio
+from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -111,13 +111,13 @@ class PredictiveEnsembles:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(failed("❌ Predictive Ensembles initialization failed: {e}"))
+            self.logger.error(failed(f"❌ Predictive Ensembles initialization failed: {e}"))
 
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ensemble configuration loading",
     )
     async def _load_ensemble_configuration(self) -> None:
@@ -145,12 +145,12 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error loading ensemble configuration: {e}")
+            self.logger.error(f"Error loading ensemble configuration: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -192,13 +192,13 @@ class PredictiveEnsembles:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error validating configuration: {e}")
+            self.logger.error(f"Error validating configuration: {e}")
 
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ensemble modules initialization",
     )
     async def _initialize_ensemble_modules(self) -> None:
@@ -228,12 +228,12 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing ensemble modules: {e}")
+            self.logger.error(initialization_f"Error initializing ensemble modules: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="model ensemble initialization",
     )
     async def _initialize_model_ensemble(self) -> None:
@@ -251,12 +251,12 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing model ensemble: {e}")
+            self.logger.error(initialization_f"Error initializing model ensemble: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="voting ensemble initialization",
     )
     async def _initialize_voting_ensemble(self) -> None:
@@ -274,12 +274,12 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing voting ensemble: {e}")
+            self.logger.error(initialization_f"Error initializing voting ensemble: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="stacking ensemble initialization",
     )
     async def _initialize_stacking_ensemble(self) -> None:
@@ -298,12 +298,12 @@ class PredictiveEnsembles:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing stacking ensemble: {e}"),
+                initialization_error(f"Error initializing stacking ensemble: {e}"),
             )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="bagging ensemble initialization",
     )
     async def _initialize_bagging_ensemble(self) -> None:
@@ -321,12 +321,12 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing bagging ensemble: {e}")
+            self.logger.error(initialization_f"Error initializing bagging ensemble: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="boosting ensemble initialization",
     )
     async def _initialize_boosting_ensemble(self) -> None:
@@ -345,7 +345,7 @@ class PredictiveEnsembles:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing boosting ensemble: {e}"),
+                initialization_error(f"Error initializing boosting ensemble: {e}"),
             )
 
     @handle_specific_errors(
@@ -408,14 +408,14 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error executing predictive ensembles: {e}")
+            self.logger.error(f"Error executing predictive ensembles: {e}")
 
             self.is_ensembling = False
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+            default_return=False,
         context="ensemble inputs validation",
     )
     def _validate_ensemble_inputs(self, ensemble_input: dict[str, Any]) -> bool:
@@ -434,7 +434,7 @@ class PredictiveEnsembles:
             for field in required_fields:
                 if field not in ensemble_input:
                     self.print(
-                        missing("Missing required ensemble input field: {field}"),
+                        missing(f"Missing required ensemble input field: {field}"),
                     )
                     return False
 
@@ -453,13 +453,13 @@ class PredictiveEnsembles:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error validating ensemble inputs: {e}")
+            self.logger.error(f"Error validating ensemble inputs: {e}")
 
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="model ensemble",
     )
     async def _perform_model_ensemble(
@@ -503,13 +503,13 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing model ensemble: {e}")
+            self.logger.error(f"Error performing model ensemble: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="voting ensemble",
     )
     async def _perform_voting_ensemble(
@@ -553,13 +553,13 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing voting ensemble: {e}")
+            self.logger.error(f"Error performing voting ensemble: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="stacking ensemble",
     )
     async def _perform_stacking_ensemble(
@@ -605,13 +605,13 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing stacking ensemble: {e}")
+            self.logger.error(f"Error performing stacking ensemble: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="bagging ensemble",
     )
     async def _perform_bagging_ensemble(
@@ -659,13 +659,13 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing bagging ensemble: {e}")
+            self.logger.error(f"Error performing bagging ensemble: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="boosting ensemble",
     )
     async def _perform_boosting_ensemble(
@@ -707,7 +707,7 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing boosting ensemble: {e}")
+            self.logger.error(f"Error performing boosting ensemble: {e}")
 
             return {}
 
@@ -726,7 +726,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing random forest: {e}")
+            self.logger.error(f"Error performing random forest: {e}")
 
             return {}
 
@@ -747,7 +747,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing gradient boosting: {e}")
+            self.logger.error(f"Error performing gradient boosting: {e}")
 
             return {}
 
@@ -768,7 +768,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing linear regression: {e}")
+            self.logger.error(f"Error performing linear regression: {e}")
 
             return {}
 
@@ -787,7 +787,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing SVR model: {e}")
+            self.logger.error(f"Error performing SVR model: {e}")
 
             return {}
 
@@ -806,7 +806,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing hard voting: {e}")
+            self.logger.error(f"Error performing hard voting: {e}")
 
             return {}
 
@@ -824,7 +824,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing soft voting: {e}")
+            self.logger.error(f"Error performing soft voting: {e}")
 
             return {}
 
@@ -845,7 +845,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing weighted voting: {e}")
+            self.logger.error(f"Error performing weighted voting: {e}")
 
             return {}
 
@@ -866,7 +866,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing majority voting: {e}")
+            self.logger.error(f"Error performing majority voting: {e}")
 
             return {}
 
@@ -885,7 +885,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing meta learner: {e}")
+            self.logger.error(f"Error performing meta learner: {e}")
 
             return {}
 
@@ -906,7 +906,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing cross validation: {e}")
+            self.logger.error(validation_f"Error performing cross validation: {e}")
 
             return {}
 
@@ -933,7 +933,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing feature importance: {e}")
+            self.logger.error(f"Error performing feature importance: {e}")
 
             return {}
 
@@ -954,7 +954,7 @@ class PredictiveEnsembles:
             }
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing model selection: {e}")
+            self.logger.error(f"Error performing model selection: {e}")
 
             return {}
 
@@ -976,7 +976,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing bootstrap sampling: {e}")
+            self.logger.error(f"Error performing bootstrap sampling: {e}")
 
             return {}
 
@@ -997,7 +997,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing out of bag estimation: {e}")
+            self.logger.error(f"Error performing out of bag estimation: {e}")
 
             return {}
 
@@ -1018,7 +1018,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing feature sampling: {e}")
+            self.logger.error(f"Error performing feature sampling: {e}")
 
             return {}
 
@@ -1039,7 +1039,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(validation_"Error performing bagging validation: {e}")
+            self.logger.error(validation_f"Error performing bagging validation: {e}")
 
             return {}
 
@@ -1058,7 +1058,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing AdaBoost: {e}")
+            self.logger.error(f"Error performing AdaBoost: {e}")
 
             return {}
 
@@ -1079,7 +1079,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing gradient boosting ensemble: {e}")
+            self.logger.error(f"Error performing gradient boosting ensemble: {e}")
 
             return {}
 
@@ -1097,7 +1097,7 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing XGBoost: {e}")
+            self.logger.error(f"Error performing XGBoost: {e}")
 
             return {}
 
@@ -1115,13 +1115,13 @@ class PredictiveEnsembles:
             }
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error performing LightGBM: {e}")
+            self.logger.error(f"Error performing LightGBM: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ensemble results storage",
     )
     async def _store_ensemble_results(self) -> None:
@@ -1141,12 +1141,12 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error storing ensemble results: {e}")
+            self.logger.error(f"Error storing ensemble results: {e}")
 
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ensemble results getting",
     )
     def get_ensemble_results(self, ensemble_type: str | None = None) -> dict[str, Any]:
@@ -1166,13 +1166,13 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting ensemble results: {e}")
+            self.logger.error(f"Error getting ensemble results: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+            default_return=None,
         context="ensemble history getting",
     )
     def get_ensemble_history(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -1195,7 +1195,7 @@ class PredictiveEnsembles:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error getting ensemble history: {e}")
+            self.logger.error(f"Error getting ensemble history: {e}")
 
             return []
 
@@ -1226,7 +1226,7 @@ class PredictiveEnsembles:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="predictive ensembles cleanup",
     )
     async def stop(self) -> None:
@@ -1247,7 +1247,7 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error stopping predictive ensembles: {e}")
+            self.logger.error(f"Error stopping predictive ensembles: {e}")
 
 
 
@@ -1257,7 +1257,7 @@ predictive_ensembles: PredictiveEnsembles | None = None
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
+        default_return=None,
     context="predictive ensembles setup",
 )
 async def setup_predictive_ensembles(

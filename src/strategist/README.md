@@ -88,6 +88,10 @@ print(f"Confidence: {strategy['confidence']}")
 print(f"Reasoning: {strategy['reasoning']}")
 ```
 
+Note:
+- Regime detection is enabled by default via `enable_regime_detection`. If the optional regime classifier dependencies are unavailable, initialization will continue with regime detection automatically disabled.
+- The Strategist uses robust error handling decorators and lazy imports to ensure core functionality remains available even when optional modules are missing.
+
 ## Configuration Options
 
 ### StrategistConfig

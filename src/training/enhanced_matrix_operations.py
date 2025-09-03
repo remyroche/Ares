@@ -1546,7 +1546,7 @@ for feature in features_df.columns:
                     
                     # Stability score is the mean CV score
                     stability_scores[feature] = np.mean(cv_scores)
-                except Exception:
+                        except Exception:
                     stability_scores[feature] = 0.0
                     
         except Exception as e:

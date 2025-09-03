@@ -1,17 +1,16 @@
+from collections.abc import Callable
+import pandas as pd
+
 from src.core.decorators import (
     cached,
     compose,
     handles_errors,
     traced,
-    validates
-
-from collections.abc import Callable
-
-import pandas as pd
-
+    validates,
     guard_dataframe_nulls,
     validate_call_or_runtime_types,
-    with_tracing_span,
+    with_tracing_span
+)
 
 
 class FeatureGenerator:
@@ -54,6 +53,7 @@ class FeatureGenerator:
                 "open_close_ratio": data["open"] / data["close"],
             },
             index=data.index,
+        )
 
     @validates
     @validates(mode="warn", arg_index=1)
@@ -66,6 +66,7 @@ class FeatureGenerator:
                 "ma_20": data["close"].rolling(20).mean(),
             },
             index=data.index,
+        )
 
     @validates
     @validates(mode="warn", arg_index=1)
@@ -77,6 +78,7 @@ class FeatureGenerator:
                 "volatility_10": data["close"].rolling(10).std(),
             },
             index=data.index,
+        )
 
     @validates
     @validates(mode="warn", arg_index=1)
@@ -89,6 +91,7 @@ class FeatureGenerator:
                 "volume_ratio": data["volume"] / vol_ma_5,
             },
             index=data.index,
+        )
 
     @validates
     @validates(mode="warn", arg_index=1)
@@ -100,6 +103,7 @@ class FeatureGenerator:
                 "macd": self._calculate_macd(data["close"]),
             },
             index=data.index,
+        )
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         delta = prices.diff()

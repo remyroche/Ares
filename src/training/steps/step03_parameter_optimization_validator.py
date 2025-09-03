@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validator for Step 3: Parameter Optimization."
 
+import pandas as pd
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
 """
@@ -16,7 +17,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger

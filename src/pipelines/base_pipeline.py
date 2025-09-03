@@ -3,19 +3,14 @@ Base pipeline framework for Ares trading bot (minimal scaffold).
 """
 from __future__ import annotations
 
-from src.core.decorators import (
-    cached,
-    handles_errors,
-    log_execution_time
-)
-
-from src.core.domain import PerformanceLevel as PerformanceLevel_src_core_domain
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from src.core.decorators import cached, handles_errors, log_execution_time
+from src.core.domain import PerformanceLevel as PerformanceLevel_src_core_domain
 from src.utils.logger import system_logger
+
 
 @dataclass
 class PipelineConfig:

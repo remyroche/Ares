@@ -12,14 +12,11 @@ Demonstrates the new components:
 import tempfile
 
 # Import the new components
-from code_quality import (
-    # New analyzers
+from code_quality import (  # New analyzers; New reporters; Quick access functions
     ComplexityAnalyzer,
     DeadCodeAnalyzer,
-    # New reporters
     ErrorReporter,
     TrendReporter,
-    # Quick access functions
     analyze_complexity,
     analyze_dead_code,
     generate_html_report,

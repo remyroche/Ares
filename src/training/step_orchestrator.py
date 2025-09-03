@@ -18,6 +18,7 @@ from src.utils.warning_symbols import (
     error,
     failed,
 )
+from src.utils.step_dependency_validator import validate_step_dependencies
 
 
 class StepOrchestrator:
@@ -178,6 +179,16 @@ class StepOrchestrator:
             return True
 
         try:
+            # Guard dependencies before running
+            try:
+                pipeline_state = self._build_pipeline_state(step_name)
+                deps_ok = await validate_step_dependencies(step_name, pipeline_state)
+                if not deps_ok:
+                    self.print(failed(f"❌ Dependencies not satisfied for {step_name}"))
+                    return False
+            except Exception as e:
+                self.logger.warning(f"⚠️ Dependency validation error for {step_name}: {e}")
+
             # Set up enhanced training manager if not already done
             if not self.enhanced_training_manager:
                 setup_success = await self._setup_enhanced_training_manager(config)

@@ -1,17 +1,14 @@
 # src/tactician/dynamic_barrier_calculator.py
 
-from src.core.decorators import (
-    handles_errors,
-    traced
-)
-
-import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
-import pandas as pd
+from typing import Any, Dict, Optional, Tuple
 
+import pandas as pd
+import yaml
+
+from src.core.decorators import handles_errors, traced
 from src.utils.logger import get_logger
-from src.core.decorators import handles_errors
+
 
 class DynamicBarrierCalculator:
     """Dynamic barrier calculator for Tactician based on Analyst triple barrier values.

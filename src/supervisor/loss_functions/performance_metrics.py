@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 import numpy as np
 
 from src.core.decorators import handles_errors
+
 from .base import PnLLossFunctionsBase
 
 

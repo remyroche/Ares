@@ -4,20 +4,21 @@ This module generates advanced features including technical indicators,
 wavelet features, and market microstructure features.
 """
 
-from typing import Any, Dict, Tuple, List, Optional
-from pathlib import Path
-import pandas as pd
-import numpy as np
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from src.training.base_step import BaseStep
-from src.utils.logger import system_logger
+import numpy as np
+import pandas as pd
+
 from src.core.decorators import handles_errors
+from src.training.base_step import BaseStep
 
 # Import feature engineering utilities
 from src.training.utils.feature_engineering.resampling import OptimizedResampler
-from src.training.utils.feature_engineering.wavelet_features import WaveletTransformAnalyzer
 from src.training.utils.feature_engineering.technical_indicators import TechnicalIndicatorCalculator
+from src.training.utils.feature_engineering.wavelet_features import WaveletTransformAnalyzer
+from src.utils.logger import system_logger
 
 
 class AdvancedFeatureEngineeringStep(BaseStep):
@@ -118,14 +119,28 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         labeled_data_path = Path(pipeline_state["labeled_data"])
         data = pd.read_parquet(labeled_data_path)
         
+        # Memory optimization: cast to float32 where appropriate
+        for c in ["open", "high", "low", "close", "volume"]:
+            if c in data.columns and data[c].dtype == np.float64:
+                data[c] = data[c].astype(np.float32)
+        if "composite_cluster_id" in data.columns:
+            data["composite_cluster_id"] = data["composite_cluster_id"].astype("category")
+        
         self.logger.info(f"📊 Loaded {len(data)} rows of labeled data")
         
         # Initialize feature storage
         all_features = {}
         
-        # 1. Calculate technical indicators
+        # 1. Calculate technical indicators (chunked to bound memory)
         self.logger.info("📈 Calculating technical indicators...")
-        technical_features = self.indicator_calculator.calculate_all_features(data)
+        chunk_size = int(self.feature_config.get("chunk_size", 300_000))
+        tech_chunks: List[pd.DataFrame] = []
+        for start in range(0, len(data), chunk_size):
+            end = min(len(data), start + chunk_size)
+            part = data.iloc[start:end].copy()
+            tech = self.indicator_calculator.calculate_all_features(part)
+            tech_chunks.append(tech)
+        technical_features = pd.concat(tech_chunks, axis=0, ignore_index=True)
         all_features['technical'] = technical_features
         
         # 2. Calculate wavelet features (if enabled)
@@ -165,15 +180,15 @@ class AdvancedFeatureEngineeringStep(BaseStep):
             pipeline_state.get("train_end_idx", int(len(combined_features) * 0.8))
         )
         
-        # 8. Save feature sets
+        # 8. Save feature sets with compression
         output_dir = Path(training_input.get("data_dir", "data/training"))
         output_dir.mkdir(parents=True, exist_ok=True)
         
         train_path = output_dir / f"{exchange}_{symbol}_{base_timeframe}_features_train.parquet"
         val_path = output_dir / f"{exchange}_{symbol}_{base_timeframe}_features_val.parquet"
         
-        train_features.to_parquet(train_path)
-        val_features.to_parquet(val_path)
+        train_features.to_parquet(train_path, compression="snappy")
+        val_features.to_parquet(val_path, compression="snappy")
         
         self.logger.info(
             f"✅ Saved features - Train: {len(train_features)} rows, "

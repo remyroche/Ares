@@ -9,8 +9,8 @@ from datetime import datetime
 from typing import Any, Dict
 
 import numpy as np
-import pandas as pd
 import optuna
+import pandas as pd
 
 from src.config.config_manager import (
     get_config_manager,
@@ -25,6 +25,7 @@ from src.utils.warning_symbols import (
     failed,
     missing,
 )
+
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""

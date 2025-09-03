@@ -9,17 +9,17 @@ re-assessment and position decision logic every 10 seconds, using the existing
 PositionDivisionStrategy for consistency.
 """
 import asyncio
-import yaml
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
-
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -27,6 +27,7 @@ from src.utils.warning_symbols import (
     missing,
     warning,
 )
+
 
 class PositionAction(Enum):
     """Enum for position actions."""
@@ -586,12 +587,12 @@ class PositionMonitor:
                         with open(path, 'r') as f:
                             import yaml
                     except Exception as e:
+                        pass  # TODO: Handle exception
+                    except Exception as e:
                         pass  # TODO: Handle exception properly
-import copy
-
-updated_config = yaml.safe_load(f)
-                            
-# Check if this is newer than our current config
+                           
+                        # Check if this is newer than our current config
+                        updated_config = yaml.safe_load(f)
                         if "timestamp" in updated_config:
                             config_time = datetime.fromisoformat(updated_config["timestamp"])
                             if hasattr(self, '_last_step12_refresh'):

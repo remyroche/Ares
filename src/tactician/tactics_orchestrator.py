@@ -772,33 +772,33 @@ class TacticsOrchestrator:
         """Derive price target and adverse hit probabilities from multi-output predictions.
 
         Produces keys:
-          - price_target_confidences: {'0.5%','1.0%','1.5%','2.0%'}
+          - price_target_confidences: {'0.25%','0.5%','0.75%','1.0%'}
           - adversarial_confidences:  same keys representing adverse move risks
         """
         try:
             # Gather confidences for 25% and 50% barriers across timeframes
+            c_025_candidates = []
             c_05_candidates = []
-            c_10_candidates = []
             for key in ['twenty_five_percent', 'twenty_five_percent_5m']:
                 if key in predictions and predictions[key]:
                     c = float(predictions[key].get('confidence', 0.0))
-                    c_05_candidates.append(c)
+                    c_025_candidates.append(c)
             for key in ['fifty_percent', 'fifty_percent_5m']:
                 if key in predictions and predictions[key]:
                     c = float(predictions[key].get('confidence', 0.0))
-                    c_10_candidates.append(c)
+                    c_05_candidates.append(c)
 
-            conf_05 = max(c_05_candidates) if c_05_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.9
-            conf_10 = max(c_10_candidates) if c_10_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.8
-            # Extrapolate to 1.5% and 2.0% from 1.0%
-            conf_15 = max(0.0, min(1.0, conf_10 * 0.75))
-            conf_20 = max(0.0, min(1.0, conf_10 * 0.6))
+            conf_025 = max(c_025_candidates) if c_025_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.95
+            conf_05 = max(c_05_candidates) if c_05_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.85
+            # Extrapolate to 0.75% and 1.0% from 0.5%
+            conf_075 = max(0.0, min(1.0, conf_05 * 0.85))
+            conf_10 = max(0.0, min(1.0, conf_05 * 0.7))
 
             price_target_confidences = {
+                '0.25%': float(max(0.0, min(1.0, conf_025))),
                 '0.5%': float(max(0.0, min(1.0, conf_05))),
-                '1.0%': float(max(0.0, min(1.0, conf_10))),
-                '1.5%': float(conf_15),
-                '2.0%': float(conf_20),
+                '0.75%': float(conf_075),
+                '1.0%': float(conf_10),
             }
 
             # Adverse probabilities as complementary likelihoods

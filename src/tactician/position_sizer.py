@@ -301,8 +301,8 @@ class PositionSizer:
     ) -> float:
         """Calculate position size based on ML confidence scores."""
         try:
-            # Get average confidence for target levels (0.5% to 2.0%)
-            target_levels = [0.5, 1.0, 1.5, 2.0]
+            # Get average confidence for target levels (0.25% to 1.0%)
+            target_levels = [0.25, 0.5, 0.75, 1.0]
             confidences = []
 
             for level in target_levels:
@@ -463,7 +463,7 @@ class PositionSizer:
         """Generate reason for position sizing decision."""
         try:
             # Get average confidence and risk
-            key_levels = [0.5, 1.0, 1.5, 2.0]
+            key_levels = [0.25, 0.5, 0.75, 1.0]
             confidences = []
             risks = []
 

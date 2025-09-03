@@ -16,19 +16,19 @@ def map_scenario_to_target_probabilities(scenario_analysis: Dict[str, Any]) -> D
     Inputs:
       - scenario_analysis: dict with keys including 'profit_zone_probability' and 'risk_zone_probability'.
 
-    Returns a dict of probabilities for 0.5%, 1.0%, 1.5%, 2.0% targets.
+    Returns a dict of probabilities for 0.25%, 0.5%, 0.75%, 1.0% targets.
     """
     try:
         profit_p = float(scenario_analysis.get('profit_zone_probability', 0.0))
         # Distribute profit probability across tiers with decaying weights
         # 0.5% gets the most weight; longer targets receive less
         weights = {
-            '0.5%': 0.4,
-            '1.0%': 0.3,
-            '1.5%': 0.2,
-            '2.0%': 0.1,
+            '0.25%': 0.35,
+            '0.5%': 0.30,
+            '0.75%': 0.20,
+            '1.0%': 0.15,
         }
         total = sum(weights.values()) or 1.0
         return {k: min(1.0, max(0.0, profit_p * (w / total))) for k, w in weights.items()}
     except Exception:
-        return {'0.5%': 0.25, '1.0%': 0.15, '1.5%': 0.07, '2.0%': 0.03}
+        return {'0.25%': 0.30, '0.5%': 0.22, '0.75%': 0.15, '1.0%': 0.10}

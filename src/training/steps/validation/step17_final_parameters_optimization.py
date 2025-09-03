@@ -1668,6 +1668,7 @@ class FinalParametersOptimizationStep:
             }
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+from src.training.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

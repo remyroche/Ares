@@ -1,0 +1,12 @@
+{
+  "fixed": 0,
+  "failed": 15,
+  "fixed_files": [],
+  "error_patterns": {
+    "invalid syntax": 6,
+    "unindent does not match any outer indentation level": 1,
+    "unexpected indent": 3,
+    "unterminated string literal (detected at line 229)": 1,
+    "unmatched ')'": 4
+  }
+}

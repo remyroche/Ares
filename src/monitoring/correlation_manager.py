@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Any
 
 from src.utils.logger import system_logger
+import asyncio
 
 
 class CorrelationStatus(Enum):

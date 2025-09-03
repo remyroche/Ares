@@ -6,6 +6,7 @@ This module applies the triple barrier method to create trading signals and labe
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
 """
 import asyncio
+import copy
 import sys
 from pathlib import Path
 from src.utils.common_operations import ensure_directory
@@ -79,9 +80,7 @@ class TripleBarrierMethodStep:
         """Initialize triple barrier method components."""
         self.logger.info("🔧 Initializing triple barrier method components...")
         try:
-import copy
-from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
-from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
@@ -109,13 +108,11 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @traced(span_name="execute_triple_barrier_method")
-    # @quality_gate - removed, handled by validates
+    @validates(
         min_quality_score=0.7,
         max_correlation=0.95,
         required_grade="C"
     )
-    # @with_enhanced_mlflow_logging - removed, use traced"step04_5_triple_barrier_method")
-    @validates()
     @handles_errors
     # @memory_efficient - removed
     # @resource_monitor - removed, use log_execution_time
@@ -333,11 +330,7 @@ from .step4_analyst_labeling_feature_engineering_components.optimized_triple_bar
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
             # Create triple barrier labeler with configuration
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-OptimizedTripleBarrierLabeling
-)
+            from src.labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
             
             labeler = OptimizedTripleBarrierLabeling(
                 profit_take_multiplier=profit_take_multiplier,

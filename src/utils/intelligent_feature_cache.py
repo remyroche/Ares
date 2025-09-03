@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Intelligent Feature Caching System
 
@@ -256,7 +257,9 @@ class IntelligentFeatureCache:
 
             # Load into memory cache if there's space
             data_size_mb = self._estimate_data_size_mb(data)
-            if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
+            if (
+                data_size_mb < self.max_memory_mb * 0.1
+            ):  # Only load if < 10% of max memory
                 self.memory_cache[cache_key] = data
                 self.cache_metadata[cache_key] = metadata
                 self.cache_metadata[cache_key]["last_access"] = time.time()
@@ -343,7 +346,9 @@ class IntelligentFeatureCache:
             Dictionary with cache statistics
         """
         memory_usage = self._get_memory_usage_mb()
-        disk_usage = sum(f.stat().st_size for f in self.cache_dir.glob("*.pkl*")) / (1024 * 1024)
+        disk_usage = sum(f.stat().st_size for f in self.cache_dir.glob("*.pkl*")) / (
+            1024 * 1024
+        )
 
         total_requests = self.hit_count + self.miss_count
         hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Base error hierarchy with codes and status mapping.
 
@@ -89,6 +90,7 @@ class AppError(Exception):
 
 
 # Specific error types
+
 
 class ValidationError(AppError):
     """Input validation error."""

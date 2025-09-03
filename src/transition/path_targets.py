@@ -11,13 +11,17 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     import pandas as pd
+
     # TODO: Add proper implementation
+
+
 @dataclass
 class PathClassConfig:
     enable_beginning_of_trend: bool
     adx_sideways_threshold: float
     return_threshold: float
     onset_window_bars: int
+
 
 class PathTargetEngineer:
     """

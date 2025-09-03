@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/supervisor/optimizer.py
 import asyncio
 from datetime import datetime
@@ -258,7 +259,9 @@ class Optimizer:
             self.logger.exception(f"Error calculating SR levels: {e}")
             return []
 
+
 optimizer: Optimizer | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:

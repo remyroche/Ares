@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/launcher_integration_patch.py
 
 """Integration patch for ares_launcher.py to enable the new optimization features.
@@ -330,6 +331,7 @@ class OptimizedAresLauncherMixin:
             "optimization_factory_ready": self.optimization_factory is not None,
         }
 
+
 def create_optimized_launcher_patch() -> Callable[[Any], Any]:
     """Create a patch that can be applied to the existing AresLauncher."""
 
@@ -373,6 +375,7 @@ def create_optimized_launcher_patch() -> Callable[[Any], Any]:
         return launcher_instance
 
     return patch_launcher
+
 
 # Quick integration function for immediate use
 def enable_optimizations_in_launcher() -> Callable[[Any], Any] | None:

@@ -31,6 +31,7 @@ def init_sentry() -> None:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.aiohttp import AioHttpIntegration
+
         SENTRY_AVAILABLE = True
     except ImportError:
         sentry_sdk = None
@@ -58,7 +59,9 @@ def init_sentry() -> None:
                 dsn=dsn,
                 environment=os.getenv("SENTRY_ENV", "production"),
                 traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
-                profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
+                profiles_sample_rate=float(
+                    os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")
+                ),
                 integrations=integrations,
                 send_default_pii=False,
             )

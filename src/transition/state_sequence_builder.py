@@ -21,6 +21,7 @@ class StateBuilderConfig:
     use_existing_urc_models: bool
     cache_dir: str | None
 
+
 class StateSequenceBuilder:
     """
     Build per-timestep state sequences for pre/post windows using the existing

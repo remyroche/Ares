@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -68,9 +69,17 @@ class AdvancedReportingEngine:
 
             return {
                 "current_return": returns[-1] if returns else 0,
-                "rolling_1h_return": (np.mean(returns[-60:]) if len(returns) >= 60 else np.mean(returns)),
-                "rolling_24h_return": (np.mean(returns[-1440:]) if len(returns) >= 1440 else np.mean(returns)),
-                "volatility": (np.std(returns[-100:]) if len(returns) >= 100 else np.std(returns)),
+                "rolling_1h_return": (
+                    np.mean(returns[-60:]) if len(returns) >= 60 else np.mean(returns)
+                ),
+                "rolling_24h_return": (
+                    np.mean(returns[-1440:])
+                    if len(returns) >= 1440
+                    else np.mean(returns)
+                ),
+                "volatility": (
+                    np.std(returns[-100:]) if len(returns) >= 100 else np.std(returns)
+                ),
                 "sharpe_ratio": self._calculate_sharpe_ratio(returns),
                 "max_drawdown": self._calculate_max_drawdown(returns),
                 "win_rate": self._calculate_win_rate(returns),
@@ -92,9 +101,15 @@ class AdvancedReportingEngine:
             if not returns:
                 return {}
 
-            short_trend = np.mean(returns[-20:]) if len(returns) >= 20 else np.mean(returns)
-            medium_trend = np.mean(returns[-100:]) if len(returns) >= 100 else np.mean(returns)
-            long_trend = np.mean(returns[-500:]) if len(returns) >= 500 else np.mean(returns)
+            short_trend = (
+                np.mean(returns[-20:]) if len(returns) >= 20 else np.mean(returns)
+            )
+            medium_trend = (
+                np.mean(returns[-100:]) if len(returns) >= 100 else np.mean(returns)
+            )
+            long_trend = (
+                np.mean(returns[-500:]) if len(returns) >= 500 else np.mean(returns)
+            )
 
             return {
                 "short_term_trend": short_trend,
@@ -109,7 +124,9 @@ class AdvancedReportingEngine:
             return {}
 
     @handles_errors(fallback=None)
-    async def _perform_risk_analysis(self, performance_data: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_risk_analysis(
+        self, performance_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform comprehensive risk analysis."""
         try:
             returns = performance_data.get("returns", [])
@@ -131,7 +148,9 @@ class AdvancedReportingEngine:
             return {}
 
     @handles_errors(fallback=None)
-    async def _perform_attribution_analysis(self, performance_data: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_attribution_analysis(
+        self, performance_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Perform performance attribution analysis."""
         try:
             returns = performance_data.get("returns", [])
@@ -152,7 +171,9 @@ class AdvancedReportingEngine:
             return {}
 
     @handles_errors(fallback=None)
-    async def _generate_performance_forecast(self, performance_data: dict[str, Any]) -> dict[str, Any]:
+    async def _generate_performance_forecast(
+        self, performance_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Generate performance forecast."""
         try:
             returns = performance_data.get("returns", [])
@@ -327,6 +348,7 @@ class AdvancedReportingEngine:
         except Exception as e:
             self.logger.exception(f"Error caching report: {e}")
 
+
 class PerformanceReporter:
     """
     Enhanced Performance Reporter component with DI, type hints, robust error handling, and advanced reporting capabilities.
@@ -344,27 +366,40 @@ class PerformanceReporter:
         self.is_running: bool = False
         self.status: dict[str, Any] = {}
         self.history: list[dict[str, Any]] = []
-        self.reporter_config: dict[str, Any] = self.config.get("performance_reporter", {})
+        self.reporter_config: dict[str, Any] = self.config.get(
+            "performance_reporter", {}
+        )
         self.report_interval: int = self.reporter_config.get("report_interval", 3600)
         self.max_history: int = self.reporter_config.get("max_history", 100)
         self.reports: list[dict[str, Any]] = []
         self.report_templates: dict[str, Any] = {}
         self.max_reports: int = self.reporter_config.get("max_reports", 100)
-        self.attribution_config: dict[str, Any] = self.reporter_config.get("attribution", {})
+        self.attribution_config: dict[str, Any] = self.reporter_config.get(
+            "attribution", {}
+        )
         self.attribution_factors: list[str] = self.attribution_config.get(
-            "factors", ["timing", "selection", "interaction"],
+            "factors",
+            ["timing", "selection", "interaction"],
         )
 
         # Advanced reporting engine
         self.advanced_engine = AdvancedReportingEngine(config)
 
         # Real-time reporting configuration
-        self.enable_real_time_reporting: bool = self.reporter_config.get("enable_real_time_reporting", True)
-        self.real_time_interval: int = self.reporter_config.get("real_time_interval", 300)
+        self.enable_real_time_reporting: bool = self.reporter_config.get(
+            "enable_real_time_reporting", True
+        )
+        self.real_time_interval: int = self.reporter_config.get(
+            "real_time_interval", 300
+        )
 
         # Export configuration
-        self.export_formats: list[str] = self.reporter_config.get("export_formats", ["json", "csv", "html"])
-        self.export_directory: str = self.reporter_config.get("export_directory", "reports")
+        self.export_formats: list[str] = self.reporter_config.get(
+            "export_formats", ["json", "csv", "html"]
+        )
+        self.export_directory: str = self.reporter_config.get(
+            "export_directory", "reports"
+        )
 
     @handles_errors(
         error_handlers={
@@ -427,7 +462,9 @@ class PerformanceReporter:
             # Update configuration
             self.report_interval = self.reporter_config["report_interval"]
             self.max_history = self.reporter_config["max_history"]
-            self.enable_real_time_reporting = self.reporter_config["enable_real_time_reporting"]
+            self.enable_real_time_reporting = self.reporter_config[
+                "enable_real_time_reporting"
+            ]
             self.real_time_interval = self.reporter_config["real_time_interval"]
             self.export_formats = self.reporter_config["export_formats"]
             self.export_directory = self.reporter_config["export_directory"]
@@ -768,12 +805,15 @@ class PerformanceReporter:
 
             # Calculate factor contributions
             for factor in self.attribution_factors:
-                contribution = self._calculate_factor_contribution(factor, portfolio_data, benchmark_data)
+                contribution = self._calculate_factor_contribution(
+                    factor, portfolio_data, benchmark_data
+                )
                 attribution_results["factors"][factor] = contribution
 
             # Calculate total attribution
             total_contribution = sum(
-                contribution.get("contribution", 0) for contribution in attribution_results["factors"].values()
+                contribution.get("contribution", 0)
+                for contribution in attribution_results["factors"].values()
             )
 
             attribution_results["total_contribution"] = total_contribution
@@ -794,9 +834,13 @@ class PerformanceReporter:
         """Calculate contribution of a specific factor."""
         try:
             if factor == "timing":
-                return self._calculate_market_timing_contribution(portfolio_data, benchmark_data)
+                return self._calculate_market_timing_contribution(
+                    portfolio_data, benchmark_data
+                )
             if factor == "selection":
-                return self._calculate_stock_selection_contribution(portfolio_data, benchmark_data)
+                return self._calculate_stock_selection_contribution(
+                    portfolio_data, benchmark_data
+                )
             if factor == "interaction":
                 return self._calculate_risk_management_contribution(portfolio_data)
             return {"contribution": 0.0, "method": "unknown", "significance": "low"}
@@ -840,10 +884,14 @@ class PerformanceReporter:
                 "details": {"selection_score": 0.82, "selection_accuracy": 0.71},
             }
         except Exception as e:
-            self.logger.exception(f"Error calculating stock selection contribution: {e}")
+            self.logger.exception(
+                f"Error calculating stock selection contribution: {e}"
+            )
             return {"contribution": 0.0, "method": "unknown", "significance": "low"}
 
-    def _calculate_risk_management_contribution(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
+    def _calculate_risk_management_contribution(
+        self, portfolio_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Calculate risk management contribution."""
         try:
             # Mock calculation - replace with actual risk management analysis
@@ -854,10 +902,14 @@ class PerformanceReporter:
                 "details": {"risk_score": 0.65, "risk_efficiency": 0.73},
             }
         except Exception as e:
-            self.logger.exception(f"Error calculating risk management contribution: {e}")
+            self.logger.exception(
+                f"Error calculating risk management contribution: {e}"
+            )
             return {"contribution": 0.0, "method": "unknown", "significance": "low"}
 
-    def _calculate_leverage_contribution(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
+    def _calculate_leverage_contribution(
+        self, portfolio_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Calculate leverage contribution."""
         try:
             # Mock calculation - replace with actual leverage analysis
@@ -940,12 +992,16 @@ class PerformanceReporter:
             if not returns:
                 return 0.0
             # Calculate kurtosis as a measure of tail risk
-            return np.mean((np.array(returns) - np.mean(returns)) ** 4) / (np.std(returns) ** 4)
+            return np.mean((np.array(returns) - np.mean(returns)) ** 4) / (
+                np.std(returns) ** 4
+            )
         except Exception as e:
             self.logger.exception(f"Error calculating tail risk: {e}")
             return 0.0
 
+
 performance_reporter: PerformanceReporter | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_performance_reporter(

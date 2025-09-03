@@ -1,11 +1,6 @@
 # src/monitoring/performance_monitor.py
 
-from src.core.decorators import (
-    cached,
-    handles_errors,
-    log_execution_time
-)
-
+from src.core.decorators import cached, handles_errors, log_execution_time
 from src.core.domain import PerformanceLevel
 
 """
@@ -19,8 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-
 from src.utils.logger import system_logger
+
 
 @dataclass
 class PerformanceMetrics:
@@ -44,6 +39,7 @@ class PerformanceMetrics:
     confidence_analyst: float = 0.0
     confidence_tactician: float = 0.0
     confidence_final: float = 0.0
+
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
@@ -70,7 +66,11 @@ class PerformanceMonitor:
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @log_execution_time()
     @cached()
-    @handles_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="performance_monitor.initialize",
+    )
     async def initialize(self) -> bool:
         self.logger.info("📈 Initializing Performance Monitor ...")
         self.metrics_history.clear()

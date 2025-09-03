@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 SR Trading Intelligence - Comprehensive Access to SR Levels for Trading Decisions
 
@@ -24,6 +25,7 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("SRTradingIntelligence")
 
+
 class SRTradingIntelligence:
     """
     Trading Intelligence system that provides comprehensive access to SR levels.
@@ -42,8 +44,12 @@ class SRTradingIntelligence:
 
         # Configuration
         self.intelligence_config = config.get("sr_trading_intelligence", {})
-        self.enable_real_time_updates = self.intelligence_config.get("enable_real_time_updates", True)
-        self.update_interval_seconds = self.intelligence_config.get("update_interval_seconds", 60)
+        self.enable_real_time_updates = self.intelligence_config.get(
+            "enable_real_time_updates", True
+        )
+        self.update_interval_seconds = self.intelligence_config.get(
+            "update_interval_seconds", 60
+        )
         self.max_position_size = self.intelligence_config.get("max_position_size", 0.1)
         self.risk_tolerance = self.intelligence_config.get("risk_tolerance", 0.02)
 
@@ -81,13 +87,16 @@ class SRTradingIntelligence:
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to initialize SR Trading Intelligence: {e}")
+            self.logger.exception(
+                f"❌ Failed to initialize SR Trading Intelligence: {e}"
+            )
             return False
 
     async def _create_sr_manager(self) -> SRLevelsManager | None:
         """Create and initialize SR Levels Manager."""
         try:
             from src.tactician.sr_levels_manager import create_sr_levels_manager
+
             return await create_sr_levels_manager(self.config)
         except Exception as e:
             self.logger.exception(f"❌ Error creating SR Levels Manager: {e}")
@@ -136,7 +145,9 @@ class SRTradingIntelligence:
 
             if current_price > 0:
                 await self.sr_manager.update_levels_with_live_data(
-                    current_price, current_volume, current_time,
+                    current_price,
+                    current_volume,
+                    current_time,
                 )
 
         except Exception as e:
@@ -163,12 +174,14 @@ class SRTradingIntelligence:
 
             # Get basic SR levels
             sr_levels = self.sr_manager.get_sr_levels_for_trading(
-                current_price, include_metadata,
+                current_price,
+                include_metadata,
             )
 
             # Add trading intelligence
             trading_intelligence = self._generate_trading_intelligence(
-                current_price, sr_levels,
+                current_price,
+                sr_levels,
             )
 
             # Combine results
@@ -177,10 +190,10 @@ class SRTradingIntelligence:
                 "trading_intelligence": trading_intelligence,
                 "risk_assessment": self._assess_risk(current_price, sr_levels),
                 "position_recommendations": self._generate_position_recommendations(
-                    current_price, sr_levels,
+                    current_price,
+                    sr_levels,
                 ),
             }
-
 
         except Exception as e:
             self.logger.exception(f"❌ Error getting SR levels for trading: {e}")
@@ -208,25 +221,33 @@ class SRTradingIntelligence:
 
             if nearest_support and nearest_resistance:
                 # Determine market position
-                support_distance = abs(current_price - nearest_support["price"]) / current_price
-                resistance_distance = abs(current_price - nearest_resistance["price"]) / current_price
+                support_distance = (
+                    abs(current_price - nearest_support["price"]) / current_price
+                )
+                resistance_distance = (
+                    abs(current_price - nearest_resistance["price"]) / current_price
+                )
 
                 if support_distance < 0.01:  # Within 1% of support
                     intelligence["market_position"] = "near_support"
-                    intelligence["entry_opportunities"].append({
-                        "type": "long_entry",
-                        "price": nearest_support["price"],
-                        "confidence": nearest_support["quality_score"],
-                        "reason": "Price near strong support level",
-                    })
+                    intelligence["entry_opportunities"].append(
+                        {
+                            "type": "long_entry",
+                            "price": nearest_support["price"],
+                            "confidence": nearest_support["quality_score"],
+                            "reason": "Price near strong support level",
+                        }
+                    )
                 elif resistance_distance < 0.01:  # Within 1% of resistance
                     intelligence["market_position"] = "near_resistance"
-                    intelligence["exit_signals"].append({
-                        "type": "long_exit",
-                        "price": nearest_resistance["price"],
-                        "confidence": nearest_resistance["quality_score"],
-                        "reason": "Price near strong resistance level",
-                    })
+                    intelligence["exit_signals"].append(
+                        {
+                            "type": "long_exit",
+                            "price": nearest_resistance["price"],
+                            "confidence": nearest_resistance["quality_score"],
+                            "reason": "Price near strong resistance level",
+                        }
+                    )
 
                 # Determine trend direction
                 if nearest_support["price"] > nearest_resistance["price"]:
@@ -235,7 +256,10 @@ class SRTradingIntelligence:
                     intelligence["trend_direction"] = "uptrend"
 
                 # Assess volatility
-                level_distance = abs(nearest_resistance["price"] - nearest_support["price"]) / current_price
+                level_distance = (
+                    abs(nearest_resistance["price"] - nearest_support["price"])
+                    / current_price
+                )
                 if level_distance < 0.02:
                     intelligence["volatility_assessment"] = "low"
                 elif level_distance > 0.05:
@@ -280,13 +304,19 @@ class SRTradingIntelligence:
             nearest_resistance = sr_levels.get("nearest_resistance")
 
             if nearest_support and nearest_resistance:
-                support_distance = abs(current_price - nearest_support["price"]) / current_price
-                resistance_distance = abs(current_price - nearest_resistance["price"]) / current_price
+                support_distance = (
+                    abs(current_price - nearest_support["price"]) / current_price
+                )
+                resistance_distance = (
+                    abs(current_price - nearest_resistance["price"]) / current_price
+                )
 
                 # Closer to levels = higher risk
                 if min(support_distance, resistance_distance) < 0.005:  # Within 0.5%
                     risk_score += 0.2
-                    risk_assessment["risk_factors"].append("Price very close to SR level")
+                    risk_assessment["risk_factors"].append(
+                        "Price very close to SR level"
+                    )
 
                 # Factor 2: Level strength
                 support_strength = nearest_support.get("strength", 0.5)
@@ -348,30 +378,42 @@ class SRTradingIntelligence:
                 return recommendations
 
             # Long entry recommendation
-            if (nearest_support["quality_score"] > 0.7 and
-                nearest_support["proximity"] < 0.02):
-                recommendations.append({
-                    "action": "long_entry",
-                    "entry_price": nearest_support["price"],
-                    "stop_loss": nearest_support["price"] * 0.99,  # 1% below support
-                    "take_profit": nearest_resistance["price"] * 1.02,  # 2% above resistance
-                    "confidence": nearest_support["quality_score"],
-                    "reason": f"Strong support at {nearest_support['price']:.4f} with quality {nearest_support['quality_score']:.2f}",
-                    "risk_reward_ratio": 2.0,
-                })
+            if (
+                nearest_support["quality_score"] > 0.7
+                and nearest_support["proximity"] < 0.02
+            ):
+                recommendations.append(
+                    {
+                        "action": "long_entry",
+                        "entry_price": nearest_support["price"],
+                        "stop_loss": nearest_support["price"]
+                        * 0.99,  # 1% below support
+                        "take_profit": nearest_resistance["price"]
+                        * 1.02,  # 2% above resistance
+                        "confidence": nearest_support["quality_score"],
+                        "reason": f"Strong support at {nearest_support['price']:.4f} with quality {nearest_support['quality_score']:.2f}",
+                        "risk_reward_ratio": 2.0,
+                    }
+                )
 
             # Short entry recommendation
-            if (nearest_resistance["quality_score"] > 0.7 and
-                nearest_resistance["proximity"] < 0.02):
-                recommendations.append({
-                    "action": "short_entry",
-                    "entry_price": nearest_resistance["price"],
-                    "stop_loss": nearest_resistance["price"] * 1.01,  # 1% above resistance
-                    "take_profit": nearest_support["price"] * 0.98,  # 2% below support
-                    "confidence": nearest_resistance["quality_score"],
-                    "reason": f"Strong resistance at {nearest_resistance['price']:.4f} with quality {nearest_resistance['quality_score']:.2f}",
-                    "risk_reward_ratio": 2.0,
-                })
+            if (
+                nearest_resistance["quality_score"] > 0.7
+                and nearest_resistance["proximity"] < 0.02
+            ):
+                recommendations.append(
+                    {
+                        "action": "short_entry",
+                        "entry_price": nearest_resistance["price"],
+                        "stop_loss": nearest_resistance["price"]
+                        * 1.01,  # 1% above resistance
+                        "take_profit": nearest_support["price"]
+                        * 0.98,  # 2% below support
+                        "confidence": nearest_resistance["quality_score"],
+                        "reason": f"Strong resistance at {nearest_resistance['price']:.4f} with quality {nearest_resistance['quality_score']:.2f}",
+                        "risk_reward_ratio": 2.0,
+                    }
+                )
 
             # Exit recommendations for existing positions
             if self.current_position:
@@ -379,22 +421,34 @@ class SRTradingIntelligence:
                 self.current_position.get("entry_price", 0)
 
                 if position_type == "long" and nearest_resistance["proximity"] < 0.01:
-                    recommendations.append({
-                        "action": "exit_long",
-                        "exit_price": nearest_resistance["price"],
-                        "confidence": nearest_resistance["quality_score"],
-                        "reason": "Price near strong resistance, consider taking profits",
-                        "urgency": "high" if nearest_resistance["proximity"] < 0.005 else "medium",
-                    })
+                    recommendations.append(
+                        {
+                            "action": "exit_long",
+                            "exit_price": nearest_resistance["price"],
+                            "confidence": nearest_resistance["quality_score"],
+                            "reason": "Price near strong resistance, consider taking profits",
+                            "urgency": (
+                                "high"
+                                if nearest_resistance["proximity"] < 0.005
+                                else "medium"
+                            ),
+                        }
+                    )
 
                 elif position_type == "short" and nearest_support["proximity"] < 0.01:
-                    recommendations.append({
-                        "action": "exit_short",
-                        "exit_price": nearest_support["price"],
-                        "confidence": nearest_support["quality_score"],
-                        "reason": "Price near strong support, consider covering short",
-                        "urgency": "high" if nearest_support["proximity"] < 0.005 else "medium",
-                    })
+                    recommendations.append(
+                        {
+                            "action": "exit_short",
+                            "exit_price": nearest_support["price"],
+                            "confidence": nearest_support["quality_score"],
+                            "reason": "Price near strong support, consider covering short",
+                            "urgency": (
+                                "high"
+                                if nearest_support["proximity"] < 0.005
+                                else "medium"
+                            ),
+                        }
+                    )
 
             return recommendations
 
@@ -420,15 +474,19 @@ class SRTradingIntelligence:
             }
 
             # Add to trading history
-            self.trading_history.append({
-                **self.current_position,
-                "action": "position_update",
-            })
+            self.trading_history.append(
+                {
+                    **self.current_position,
+                    "action": "position_update",
+                }
+            )
 
             # Update performance metrics
             await self._update_performance_metrics()
 
-            self.logger.info(f"✅ Updated position: {position_type} {size} @ {entry_price}")
+            self.logger.info(
+                f"✅ Updated position: {position_type} {size} @ {entry_price}"
+            )
 
         except Exception as e:
             self.logger.exception(f"❌ Error updating position: {e}")
@@ -462,10 +520,12 @@ class SRTradingIntelligence:
                 "pnl_percentage": (pnl / (entry_price * size)) * 100,
             }
 
-            self.trading_history.append({
-                **trade_record,
-                "action": "position_close",
-            })
+            self.trading_history.append(
+                {
+                    **trade_record,
+                    "action": "position_close",
+                }
+            )
 
             # Clear current position
             self.current_position = {}
@@ -473,7 +533,9 @@ class SRTradingIntelligence:
             # Update performance metrics
             await self._update_performance_metrics()
 
-            self.logger.info(f"✅ Closed position: P&L {pnl:.2f} ({trade_record['pnl_percentage']:.2f}%)")
+            self.logger.info(
+                f"✅ Closed position: P&L {pnl:.2f} ({trade_record['pnl_percentage']:.2f}%)"
+            )
 
         except Exception as e:
             self.logger.exception(f"❌ Error closing position: {e}")
@@ -485,13 +547,21 @@ class SRTradingIntelligence:
                 return
 
             # Calculate basic metrics
-            total_trades = len([t for t in self.trading_history if t.get("action") == "position_close"])
-            winning_trades = len([t for t in self.trading_history if t.get("pnl", 0) > 0])
+            total_trades = len(
+                [t for t in self.trading_history if t.get("action") == "position_close"]
+            )
+            winning_trades = len(
+                [t for t in self.trading_history if t.get("pnl", 0) > 0]
+            )
 
             win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
 
             # Calculate P&L metrics
-            pnl_values = [t.get("pnl", 0) for t in self.trading_history if t.get("action") == "position_close"]
+            pnl_values = [
+                t.get("pnl", 0)
+                for t in self.trading_history
+                if t.get("action") == "position_close"
+            ]
 
             if pnl_values:
                 total_pnl = sum(pnl_values)
@@ -526,7 +596,9 @@ class SRTradingIntelligence:
                 self.trading_history = data.get("trades", [])
                 self.performance_metrics = data.get("performance", {})
 
-                self.logger.info(f"✅ Loaded {len(self.trading_history)} trading records")
+                self.logger.info(
+                    f"✅ Loaded {len(self.trading_history)} trading records"
+                )
             else:
                 self.logger.info("No trading history found, starting fresh")
 
@@ -569,7 +641,10 @@ class SRTradingIntelligence:
         except Exception as e:
             self.logger.exception(f"❌ Error during shutdown: {e}")
 
-async def create_sr_trading_intelligence(config: dict[str, Any]) -> SRTradingIntelligence:
+
+async def create_sr_trading_intelligence(
+    config: dict[str, Any],
+) -> SRTradingIntelligence:
     """Factory function to create and initialize SR Trading Intelligence."""
     intelligence = SRTradingIntelligence(config)
     if await intelligence.initialize():

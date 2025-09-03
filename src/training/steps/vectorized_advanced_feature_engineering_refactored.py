@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Refactored VectorizedAdvancedFeatureEngineering with reduced complexity and type hints.
 This refactored version breaks down the massive engineer_features method into smaller,
@@ -17,6 +18,7 @@ import pandas as pd
 
 class FeatureCategory(Enum):
     """Enumeration of feature categories"""
+
     PRICE = "price"
     VOLUME = "volume"
     MICROSTRUCTURE = "microstructure"
@@ -31,6 +33,7 @@ class FeatureCategory(Enum):
 @dataclass
 class FeatureConfig:
     """Configuration for feature engineering"""
+
     enable_wavelet: bool = True
     enable_microstructure: bool = True
     enable_regime: bool = True
@@ -45,6 +48,7 @@ class FeatureConfig:
 @dataclass
 class PreprocessingResult:
     """Result of data preprocessing"""
+
     data: pd.DataFrame
     original_shape: tuple[int, int]
     preprocessed_shape: tuple[int, int]
@@ -129,7 +133,9 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
 
         # Step 3: Preprocess data
         preprocessed_data = await self._preprocess_all_data(
-            price_data, volume_data, order_flow_data,
+            price_data,
+            volume_data,
+            order_flow_data,
         )
 
         if not preprocessed_data:
@@ -137,7 +143,8 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
 
         # Step 4: Extract features in parallel
         feature_tasks = self._create_feature_extraction_tasks(
-            preprocessed_data, sr_levels,
+            preprocessed_data,
+            sr_levels,
         )
 
         # Step 5: Execute feature extraction
@@ -188,7 +195,9 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
             # Preprocess order flow data if available
             order_flow_result = None
             if order_flow_data is not None:
-                order_flow_result = await self._preprocess_order_flow_data(order_flow_data)
+                order_flow_result = await self._preprocess_order_flow_data(
+                    order_flow_data
+                )
 
             return {
                 "price": price_result.data,
@@ -246,12 +255,16 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
             method="enhanced",
         )
 
-    async def _preprocess_order_flow_data(self, data: pd.DataFrame) -> PreprocessingResult:
+    async def _preprocess_order_flow_data(
+        self, data: pd.DataFrame
+    ) -> PreprocessingResult:
         """Preprocess order flow data"""
         # Similar to price/volume preprocessing
         return await self._preprocess_price_data(data)
 
-    def _ensure_datetime_index(self, data: pd.DataFrame, data_type: str) -> pd.DataFrame:
+    def _ensure_datetime_index(
+        self, data: pd.DataFrame, data_type: str
+    ) -> pd.DataFrame:
         """Ensure data has a proper datetime index"""
         if isinstance(data.index, pd.DatetimeIndex):
             return data
@@ -381,7 +394,8 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
 
         # Volume indicators
         features["volume_indicators"] = self._calculate_volume_indicators(
-            price_data, volume_data,
+            price_data,
+            volume_data,
         )
 
         return {"technical": pd.concat(features.values(), axis=1)}
@@ -508,12 +522,10 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
             "total_features": sum(df.shape[1] for df in features.values()),
             "categories": list(features.keys()),
             "feature_counts": {
-                category: df.shape[1]
-                for category, df in features.items()
+                category: df.shape[1] for category, df in features.items()
             },
             "timestamp": pd.Timestamp.now(),
         }
-
 
     # Technical indicator calculation methods
     def _calculate_moving_averages(self, price_data: pd.DataFrame) -> pd.DataFrame:
@@ -523,7 +535,9 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         for period in [5, 10, 20, 50, 100, 200]:
             if len(price_data) >= period:
                 ma_features[f"ma_{period}"] = price_data["close"].rolling(period).mean()
-                ma_features[f"ema_{period}"] = price_data["close"].ewm(span=period).mean()
+                ma_features[f"ema_{period}"] = (
+                    price_data["close"].ewm(span=period).mean()
+                )
 
         return ma_features
 
@@ -551,11 +565,14 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         signal = macd.ewm(span=9, adjust=False).mean()
         histogram = macd - signal
 
-        return pd.DataFrame({
-            "macd": macd,
-            "macd_signal": signal,
-            "macd_histogram": histogram,
-        }, index=price_data.index)
+        return pd.DataFrame(
+            {
+                "macd": macd,
+                "macd_signal": signal,
+                "macd_histogram": histogram,
+            },
+            index=price_data.index,
+        )
 
     def _calculate_bollinger_bands(
         self,
@@ -570,13 +587,17 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         upper_band = sma + (std * std_dev)
         lower_band = sma - (std * std_dev)
 
-        return pd.DataFrame({
-            "bb_upper": upper_band,
-            "bb_middle": sma,
-            "bb_lower": lower_band,
-            "bb_width": upper_band - lower_band,
-            "bb_percent": (price_data["close"] - lower_band) / (upper_band - lower_band),
-        }, index=price_data.index)
+        return pd.DataFrame(
+            {
+                "bb_upper": upper_band,
+                "bb_middle": sma,
+                "bb_lower": lower_band,
+                "bb_width": upper_band - lower_band,
+                "bb_percent": (price_data["close"] - lower_band)
+                / (upper_band - lower_band),
+            },
+            index=price_data.index,
+        )
 
     def _calculate_volume_indicators(
         self,
@@ -587,7 +608,11 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         volume_features = pd.DataFrame(index=price_data.index)
 
         # On-Balance Volume (OBV)
-        obv = (np.sign(price_data["close"].diff()) * volume_data["volume"]).fillna(0).cumsum()
+        obv = (
+            (np.sign(price_data["close"].diff()) * volume_data["volume"])
+            .fillna(0)
+            .cumsum()
+        )
         volume_features["obv"] = obv
 
         # Volume Moving Average

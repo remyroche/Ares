@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/diverse_lookback_config.py
 
 """
@@ -40,91 +41,143 @@ def get_diverse_lookback_config() -> dict[str, Any]:
                 "max": 50,
                 "step": 2,
                 "description": "RSI lookback periods for momentum analysis",
-                "expected_insights": ["Short-term momentum", "Medium-term trend", "Long-term trend"],
+                "expected_insights": [
+                    "Short-term momentum",
+                    "Medium-term trend",
+                    "Long-term trend",
+                ],
             },
             "MACD_fast": {
                 "min": 5,
                 "max": 25,
                 "step": 1,
                 "description": "MACD fast period for quick signal generation",
-                "expected_insights": ["Quick momentum", "Fast trend changes", "Short-term signals"],
+                "expected_insights": [
+                    "Quick momentum",
+                    "Fast trend changes",
+                    "Short-term signals",
+                ],
             },
             "MACD_slow": {
                 "min": 20,
                 "max": 40,
                 "step": 2,
                 "description": "MACD slow period for trend confirmation",
-                "expected_insights": ["Trend confirmation", "Medium-term trend", "Signal filtering"],
+                "expected_insights": [
+                    "Trend confirmation",
+                    "Medium-term trend",
+                    "Signal filtering",
+                ],
             },
             "Bollinger_Bands": {
                 "min": 10,
                 "max": 50,
                 "step": 2,
                 "description": "Bollinger Bands lookback for volatility analysis",
-                "expected_insights": ["Volatility regime", "Price extremes", "Mean reversion"],
+                "expected_insights": [
+                    "Volatility regime",
+                    "Price extremes",
+                    "Mean reversion",
+                ],
             },
             "SMA_short": {
                 "min": 3,
                 "max": 20,
                 "step": 1,
                 "description": "Short SMA for immediate trend detection",
-                "expected_insights": ["Immediate trend", "Quick reversals", "Short-term support/resistance"],
+                "expected_insights": [
+                    "Immediate trend",
+                    "Quick reversals",
+                    "Short-term support/resistance",
+                ],
             },
             "SMA_long": {
                 "min": 20,
                 "max": 100,
                 "step": 5,
                 "description": "Long SMA for major trend identification",
-                "expected_insights": ["Major trend", "Long-term support/resistance", "Trend strength"],
+                "expected_insights": [
+                    "Major trend",
+                    "Long-term support/resistance",
+                    "Trend strength",
+                ],
             },
             "EMA_short": {
                 "min": 3,
                 "max": 20,
                 "step": 1,
                 "description": "Short EMA for responsive trend detection",
-                "expected_insights": ["Responsive trend", "Quick signals", "Short-term momentum"],
+                "expected_insights": [
+                    "Responsive trend",
+                    "Quick signals",
+                    "Short-term momentum",
+                ],
             },
             "EMA_long": {
                 "min": 20,
                 "max": 100,
                 "step": 5,
                 "description": "Long EMA for major trend confirmation",
-                "expected_insights": ["Major trend confirmation", "Long-term momentum", "Trend persistence"],
+                "expected_insights": [
+                    "Major trend confirmation",
+                    "Long-term momentum",
+                    "Trend persistence",
+                ],
             },
             "ATR": {
                 "min": 5,
                 "max": 30,
                 "step": 1,
                 "description": "ATR for volatility measurement",
-                "expected_insights": ["Volatility regime", "Risk assessment", "Position sizing"],
+                "expected_insights": [
+                    "Volatility regime",
+                    "Risk assessment",
+                    "Position sizing",
+                ],
             },
             "Stochastic_k": {
                 "min": 5,
                 "max": 30,
                 "step": 1,
                 "description": "Stochastic %K for momentum analysis",
-                "expected_insights": ["Momentum extremes", "Overbought/oversold", "Divergence detection"],
+                "expected_insights": [
+                    "Momentum extremes",
+                    "Overbought/oversold",
+                    "Divergence detection",
+                ],
             },
             "Stochastic_d": {
                 "min": 3,
                 "max": 10,
                 "step": 1,
                 "description": "Stochastic %D for signal confirmation",
-                "expected_insights": ["Signal confirmation", "Momentum smoothing", "Trend confirmation"],
+                "expected_insights": [
+                    "Signal confirmation",
+                    "Momentum smoothing",
+                    "Trend confirmation",
+                ],
             },
             "ADX": {
                 "min": 5,
                 "max": 30,
                 "step": 1,
                 "description": "ADX for trend strength measurement",
-                "expected_insights": ["Trend strength", "Market regime", "Directional movement"],
+                "expected_insights": [
+                    "Trend strength",
+                    "Market regime",
+                    "Directional movement",
+                ],
             },
             "CCI": {
                 "min": 5,
                 "max": 30,
                 "step": 1,
                 "description": "CCI for cyclical analysis",
-                "expected_insights": ["Cyclical extremes", "Mean reversion", "Momentum cycles"],
+                "expected_insights": [
+                    "Cyclical extremes",
+                    "Mean reversion",
+                    "Momentum cycles",
+                ],
             },
         },
         "diversity_metrics": {
@@ -149,17 +202,29 @@ def get_diverse_lookback_config() -> dict[str, Any]:
         "market_insight_categories": {
             "short_term": {
                 "period_range": [3, 10],
-                "insights": ["Immediate momentum", "Quick reversals", "Short-term signals"],
+                "insights": [
+                    "Immediate momentum",
+                    "Quick reversals",
+                    "Short-term signals",
+                ],
                 "weight": 0.3,
             },
             "medium_term": {
                 "period_range": [11, 25],
-                "insights": ["Trend detection", "Momentum confirmation", "Medium-term patterns"],
+                "insights": [
+                    "Trend detection",
+                    "Momentum confirmation",
+                    "Medium-term patterns",
+                ],
                 "weight": 0.4,
             },
             "long_term": {
                 "period_range": [26, 100],
-                "insights": ["Major trends", "Long-term support/resistance", "Market regime"],
+                "insights": [
+                    "Major trends",
+                    "Long-term support/resistance",
+                    "Market regime",
+                ],
                 "weight": 0.3,
             },
         },
@@ -172,19 +237,35 @@ def get_diverse_lookback_config() -> dict[str, Any]:
             "regime_insight_mapping": {
                 "trending_up": {
                     "preferred_periods": ["medium_term", "long_term"],
-                    "insights": ["Trend continuation", "Momentum strength", "Support levels"],
+                    "insights": [
+                        "Trend continuation",
+                        "Momentum strength",
+                        "Support levels",
+                    ],
                 },
                 "trending_down": {
                     "preferred_periods": ["medium_term", "long_term"],
-                    "insights": ["Trend continuation", "Momentum weakness", "Resistance levels"],
+                    "insights": [
+                        "Trend continuation",
+                        "Momentum weakness",
+                        "Resistance levels",
+                    ],
                 },
                 "high_volatility": {
                     "preferred_periods": ["short_term", "medium_term"],
-                    "insights": ["Volatility spikes", "Quick reversals", "Risk management"],
+                    "insights": [
+                        "Volatility spikes",
+                        "Quick reversals",
+                        "Risk management",
+                    ],
                 },
                 "low_volatility": {
                     "preferred_periods": ["medium_term", "long_term"],
-                    "insights": ["Range-bound markets", "Mean reversion", "Breakout detection"],
+                    "insights": [
+                        "Range-bound markets",
+                        "Mean reversion",
+                        "Breakout detection",
+                    ],
                 },
             },
         },
@@ -216,7 +297,11 @@ def get_diverse_period_selection_strategy() -> dict[str, Any]:
             },
             "pareto_optimization": {
                 "enabled": True,
-                "objectives": ["information_score", "diversity_score", "complementarity_score"],
+                "objectives": [
+                    "information_score",
+                    "diversity_score",
+                    "complementarity_score",
+                ],
                 "weights": [0.4, 0.4, 0.2],
             },
             "clustering_approach": {
@@ -279,47 +364,103 @@ def get_period_insight_mapping() -> dict[str, Any]:
             "RSI": {
                 "short_periods": {
                     "range": [5, 10],
-                    "insights": ["Quick momentum changes", "Short-term overbought/oversold", "Immediate reversals"],
+                    "insights": [
+                        "Quick momentum changes",
+                        "Short-term overbought/oversold",
+                        "Immediate reversals",
+                    ],
                     "use_cases": ["Scalping", "Quick entries", "Momentum trading"],
                 },
                 "medium_periods": {
                     "range": [11, 20],
-                    "insights": ["Trend momentum", "Medium-term cycles", "Divergence detection"],
+                    "insights": [
+                        "Trend momentum",
+                        "Medium-term cycles",
+                        "Divergence detection",
+                    ],
                     "use_cases": ["Swing trading", "Trend following", "Mean reversion"],
                 },
                 "long_periods": {
                     "range": [21, 50],
-                    "insights": ["Major trend confirmation", "Long-term cycles", "Market regime"],
-                    "use_cases": ["Position trading", "Trend confirmation", "Market analysis"],
+                    "insights": [
+                        "Major trend confirmation",
+                        "Long-term cycles",
+                        "Market regime",
+                    ],
+                    "use_cases": [
+                        "Position trading",
+                        "Trend confirmation",
+                        "Market analysis",
+                    ],
                 },
             },
             "MACD": {
                 "fast_periods": {
                     "range": [5, 15],
-                    "insights": ["Quick signal generation", "Fast trend changes", "Momentum shifts"],
-                    "use_cases": ["Quick entries", "Momentum trading", "Signal generation"],
+                    "insights": [
+                        "Quick signal generation",
+                        "Fast trend changes",
+                        "Momentum shifts",
+                    ],
+                    "use_cases": [
+                        "Quick entries",
+                        "Momentum trading",
+                        "Signal generation",
+                    ],
                 },
                 "slow_periods": {
                     "range": [20, 40],
-                    "insights": ["Trend confirmation", "Signal filtering", "Major trend detection"],
-                    "use_cases": ["Trend confirmation", "Signal filtering", "Major trend analysis"],
+                    "insights": [
+                        "Trend confirmation",
+                        "Signal filtering",
+                        "Major trend detection",
+                    ],
+                    "use_cases": [
+                        "Trend confirmation",
+                        "Signal filtering",
+                        "Major trend analysis",
+                    ],
                 },
             },
             "Bollinger_Bands": {
                 "short_periods": {
                     "range": [10, 20],
-                    "insights": ["Quick volatility changes", "Short-term extremes", "Immediate mean reversion"],
-                    "use_cases": ["Volatility trading", "Quick reversals", "Range trading"],
+                    "insights": [
+                        "Quick volatility changes",
+                        "Short-term extremes",
+                        "Immediate mean reversion",
+                    ],
+                    "use_cases": [
+                        "Volatility trading",
+                        "Quick reversals",
+                        "Range trading",
+                    ],
                 },
                 "medium_periods": {
                     "range": [21, 35],
-                    "insights": ["Volatility regime", "Medium-term extremes", "Trend volatility"],
-                    "use_cases": ["Volatility analysis", "Trend volatility", "Risk management"],
+                    "insights": [
+                        "Volatility regime",
+                        "Medium-term extremes",
+                        "Trend volatility",
+                    ],
+                    "use_cases": [
+                        "Volatility analysis",
+                        "Trend volatility",
+                        "Risk management",
+                    ],
                 },
                 "long_periods": {
                     "range": [36, 50],
-                    "insights": ["Major volatility cycles", "Long-term extremes", "Market regime volatility"],
-                    "use_cases": ["Market analysis", "Long-term volatility", "Regime detection"],
+                    "insights": [
+                        "Major volatility cycles",
+                        "Long-term extremes",
+                        "Market regime volatility",
+                    ],
+                    "use_cases": [
+                        "Market analysis",
+                        "Long-term volatility",
+                        "Regime detection",
+                    ],
                 },
             },
         },
@@ -331,7 +472,11 @@ def get_period_insight_mapping() -> dict[str, Any]:
                     {"MACD_fast": "short", "MACD_slow": "long"},
                     {"Stochastic": "short", "EMA": "long"},
                 ],
-                "insights": ["Momentum within trends", "Trend confirmation with momentum", "Divergence detection"],
+                "insights": [
+                    "Momentum within trends",
+                    "Trend confirmation with momentum",
+                    "Divergence detection",
+                ],
             },
             "volatility_trend": {
                 "description": "Combining volatility and trend indicators",
@@ -340,7 +485,11 @@ def get_period_insight_mapping() -> dict[str, Any]:
                     {"Bollinger_Bands": "medium", "EMA": "long"},
                     {"ATR": "long", "ADX": "medium"},
                 ],
-                "insights": ["Trend strength with volatility", "Volatility regime trends", "Risk-adjusted trends"],
+                "insights": [
+                    "Trend strength with volatility",
+                    "Volatility regime trends",
+                    "Risk-adjusted trends",
+                ],
             },
             "cycle_trend": {
                 "description": "Combining cyclical and trend indicators",
@@ -349,7 +498,11 @@ def get_period_insight_mapping() -> dict[str, Any]:
                     {"Stochastic": "medium", "EMA": "long"},
                     {"RSI": "medium", "ADX": "long"},
                 ],
-                "insights": ["Cycles within trends", "Trend cycle analysis", "Cycle-based entries"],
+                "insights": [
+                    "Cycles within trends",
+                    "Trend cycle analysis",
+                    "Cycle-based entries",
+                ],
             },
         },
     }
@@ -367,19 +520,31 @@ def get_high_leverage_period_priorities() -> dict[str, Any]:
             "risk_management": {
                 "priority": "high",
                 "preferred_periods": ["short", "medium"],
-                "insights": ["Quick risk assessment", "Immediate volatility", "Fast position sizing"],
+                "insights": [
+                    "Quick risk assessment",
+                    "Immediate volatility",
+                    "Fast position sizing",
+                ],
                 "indicators": ["ATR", "Bollinger_Bands", "Stochastic"],
             },
             "signal_speed": {
                 "priority": "high",
                 "preferred_periods": ["short", "medium"],
-                "insights": ["Quick signal generation", "Fast momentum detection", "Immediate reversals"],
+                "insights": [
+                    "Quick signal generation",
+                    "Fast momentum detection",
+                    "Immediate reversals",
+                ],
                 "indicators": ["RSI", "MACD_fast", "Stochastic_k"],
             },
             "trend_confirmation": {
                 "priority": "medium",
                 "preferred_periods": ["medium", "long"],
-                "insights": ["Trend confirmation", "Signal filtering", "Major trend detection"],
+                "insights": [
+                    "Trend confirmation",
+                    "Signal filtering",
+                    "Major trend detection",
+                ],
                 "indicators": ["MACD_slow", "SMA_long", "EMA_long"],
             },
             "volatility_analysis": {

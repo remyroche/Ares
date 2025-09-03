@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -56,10 +57,14 @@ class PurgedKFoldTime:
                 val_start_time = index[val_start_i]
                 val_end_time = index[val_stop_i - 1]
                 purge_delta = (
-                    self.purge if isinstance(self.purge, pd.Timedelta) else pd.Timedelta(minutes=int(self.purge))
+                    self.purge
+                    if isinstance(self.purge, pd.Timedelta)
+                    else pd.Timedelta(minutes=int(self.purge))
                 )
                 embargo_delta = (
-                    self.embargo if isinstance(self.embargo, pd.Timedelta) else pd.Timedelta(minutes=int(self.embargo))
+                    self.embargo
+                    if isinstance(self.embargo, pd.Timedelta)
+                    else pd.Timedelta(minutes=int(self.embargo))
                 )
                 # Build boolean mask for training indices
                 train_mask = np.ones(n_samples, dtype=bool)
@@ -73,7 +78,9 @@ class PurgedKFoldTime:
                 train_idx = np.nonzero(train_mask)[0]
             else:
                 purge_n = int(self.purge) if isinstance(self.purge, int | float) else 0
-                embargo_n = int(self.embargo) if isinstance(self.embargo, int | float) else 0
+                embargo_n = (
+                    int(self.embargo) if isinstance(self.embargo, int | float) else 0
+                )
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
                 train_mask = np.ones(n_samples, dtype=bool)

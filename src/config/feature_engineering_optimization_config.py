@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/feature_engineering_optimization_config.py
 
 """
@@ -109,9 +110,9 @@ def get_feature_engineering_optimization_config() -> dict[str, Any]:
             "max_leverage": 100,
             "target_leverage": 25,
             "max_drawdown_threshold": 0.05,  # 5% max drawdown for high leverage
-            "volatility_threshold": 0.02,    # 2% daily volatility threshold
+            "volatility_threshold": 0.02,  # 2% daily volatility threshold
             "signal_quality_threshold": 0.6,
-            "timeframe_analysis_window": 30,   # days
+            "timeframe_analysis_window": 30,  # days
         },
         "timeframe_analysis": {
             "min_data_points": 1000,

@@ -1,28 +1,22 @@
 from __future__ import annotations
-# src/interfaces/enhanced_event_bus.py
+
+from abc import ABC
+from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any
 
 from src.core.decorators import handles_errors
 from src.core.domain import (
     PerformanceLevel,
     handle_specific_errors,
-    performance_monitor
+    performance_monitor,
 )
-from pathlib import Path
-from collections.abc import Callable
-from typing import Any
-from dataclasses import (
-    asdict,
-    dataclass
-)
-from enum import Enum
-from abc import ABC
-from datetime import (
-    UTC,
-    datetime
-)
-from collections import defaultdict
-from src.utils.logger import system_logger
 from src.utils.advanced_decorators import PerformanceLevel
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -31,6 +25,8 @@ from src.utils.warning_symbols import (
     validation_error,
     warning,
 )
+
+# src/interfaces/enhanced_event_bus.py
 
 
 class EventType(Enum):
@@ -231,11 +227,17 @@ class FileEventStore(IEventStore):
                             event = Event.from_dict(event_data)
 
                             # Apply filters
-                            if aggregate_id and event.metadata.aggregate_id != aggregate_id:
+                            if (
+                                aggregate_id
+                                and event.metadata.aggregate_id != aggregate_id
+                            ):
                                 continue
                             if event.metadata.sequence_number < from_sequence:
                                 continue
-                            if to_sequence is not None and event.metadata.sequence_number > to_sequence:
+                            if (
+                                to_sequence is not None
+                                and event.metadata.sequence_number > to_sequence
+                            ):
                                 continue
                             if event_types and event.event_type not in event_types:
                                 continue
@@ -355,7 +357,9 @@ class EventVersionManager:
 
             schema = self.version_mappings[version].get(event_type)
             if not schema:
-                self.logger.warning(warning(f"No schema defined for event type: {event_type}"))
+                self.logger.warning(
+                    warning(f"No schema defined for event type: {event_type}")
+                )
                 return True
 
             # Validate required fields
@@ -404,8 +408,13 @@ class EventVersionManager:
 
             # Apply simple migration example
             if current_version == "1.0.0" and target_version == "1.1.0":
-                if isinstance(migrated_event.data, dict) and "timestamp" not in migrated_event.data:
-                    migrated_event.data["timestamp"] = migrated_event.metadata.timestamp.isoformat()
+                if (
+                    isinstance(migrated_event.data, dict)
+                    and "timestamp" not in migrated_event.data
+                ):
+                    migrated_event.data["timestamp"] = (
+                        migrated_event.metadata.timestamp.isoformat()
+                    )
 
             self.logger.info(
                 f"Migrated event {event.metadata.event_id} from {current_version} to {target_version}",
@@ -421,6 +430,7 @@ class EnhancedEventBus:
     """
     Enhanced Event Bus with event sourcing, versioning, and persistence capabilities
     """
+
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("EnhancedEventBus")
@@ -475,7 +485,9 @@ class EnhancedEventBus:
 
             await self._load_configuration()
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for enhanced event bus"))
+                self.logger.error(
+                    invalid("Invalid configuration for enhanced event bus")
+                )
                 return False
 
             await self._initialize_event_processing()
@@ -487,7 +499,9 @@ class EnhancedEventBus:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Enhanced Event Bus initialization failed: {e}"))
+            self.logger.exception(
+                failed(f"❌ Enhanced Event Bus initialization failed: {e}")
+            )
             return False
 
     @performance_monitor(level=PerformanceLevel.BASIC)
@@ -696,7 +710,9 @@ class EnhancedEventBus:
                 sequence_number=self.sequence_counter,
                 state_data={
                     "metrics": self.metrics.copy(),
-                    "subscribers_count": {k: len(v) for k, v in self.subscribers.items()},
+                    "subscribers_count": {
+                        k: len(v) for k, v in self.subscribers.items()
+                    },
                     "queue_size": self.event_queue.qsize(),
                     "last_processed": datetime.now(UTC).isoformat(),
                 },

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Error boundary decorator for consistent error handling.
 
@@ -79,7 +80,9 @@ def handles_errors(
                 raise app_error from exc
             raise
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         try:
             return await func(*args, **kwargs)
         except exceptions as exc:
@@ -137,6 +140,7 @@ def error_boundary(
         def process_batch(items: List[dict]) -> List[dict]:
             return [transform(item) for item in items]
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         boundary_name = name or func.__name__
         try:
@@ -154,7 +158,9 @@ def error_boundary(
                 return None
             raise
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         boundary_name = name or func.__name__
         try:
             return await func(*args, **kwargs)
@@ -195,6 +201,7 @@ def converts_errors(
         def get_user(user_id: str) -> dict:
             return users[user_id]  # KeyError -> NotFoundError
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return func(*args, **kwargs)
@@ -206,7 +213,9 @@ def converts_errors(
             # No mapping found, raise original
             raise
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         try:
             return await func(*args, **kwargs)
         except Exception as exc:

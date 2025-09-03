@@ -1,7 +1,9 @@
 from __future__ import annotations
-# src/tactician/sr_weight_optimizer.py
 
 from src.core.decorators import handles_errors
+
+# src/tactician/sr_weight_optimizer.py
+
 
 """
 SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
@@ -14,11 +16,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import system_logger
 from src.tactician.sr_breakout_predictor import (
     ensure_optimized_sr_config,
-    setup_sr_breakout_predictor
+    setup_sr_breakout_predictor,
 )
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     invalid,
@@ -41,6 +43,7 @@ class WeightOptimizationResult:
     backtest_periods: int
     confidence_level: float
 
+
 class SRWeightOptimizer:
     """
     SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
@@ -51,6 +54,7 @@ class SRWeightOptimizer:
     - Multiple optimization strategies
     - Result validation and ranking
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize the SR weight optimizer.
@@ -108,7 +112,9 @@ class SRWeightOptimizer:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ SR Weight Optimizer initialization failed: {e}"))
+            self.logger.exception(
+                failed(f"❌ SR Weight Optimizer initialization failed: {e}")
+            )
             return False
 
     def _validate_configuration(self) -> bool:
@@ -182,12 +188,16 @@ class SRWeightOptimizer:
                 self._record_optimization_step(i, weights, result)
 
                 if i % 10 == 0:
-                    self.logger.info(f"Optimization progress: {i}/{min(len(weight_combinations), self.max_iterations)}")
+                    self.logger.info(
+                        f"Optimization progress: {i}/{min(len(weight_combinations), self.max_iterations)}"
+                    )
 
             if best_result:
                 self.best_weights = best_result.weights
                 self.optimization_results.append(best_result)
-                self.logger.info(f"✅ Weight optimization completed. Best score: {best_score:.4f}")
+                self.logger.info(
+                    f"✅ Weight optimization completed. Best score: {best_score:.4f}"
+                )
 
             return best_result
 
@@ -231,7 +241,9 @@ class SRWeightOptimizer:
             return combinations
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error generating weight combinations: {e}"))
+            self.logger.exception(
+                failed(f"❌ Error generating weight combinations: {e}")
+            )
             return []
 
     async def _test_weights(
@@ -282,7 +294,6 @@ class SRWeightOptimizer:
                 confidence_level=performance_metrics.get("confidence", 0.0),
             )
 
-
         except Exception as e:
             self.logger.exception(failed(f"❌ Error testing weights: {e}"))
             return None
@@ -311,19 +322,27 @@ class SRWeightOptimizer:
             # Run predictions on historical data
             for i in range(len(market_data) - self.backtest_periods):
                 # Get historical window
-                historical_data = market_data.iloc[i:i+self.backtest_periods]
+                historical_data = market_data.iloc[i : i + self.backtest_periods]
 
                 # Get prediction
                 prediction = await self.sr_predictor.predict_breakout(historical_data)
 
                 if prediction:
                     # Compare with actual target
-                    actual_target = target_data.iloc[i+self.backtest_periods] if i+self.backtest_periods < len(target_data) else 0
+                    actual_target = (
+                        target_data.iloc[i + self.backtest_periods]
+                        if i + self.backtest_periods < len(target_data)
+                        else 0
+                    )
 
                     result = {
                         "prediction": prediction,
                         "actual_target": actual_target,
-                        "timestamp": market_data.index[i+self.backtest_periods] if i+self.backtest_periods < len(market_data) else None,
+                        "timestamp": (
+                            market_data.index[i + self.backtest_periods]
+                            if i + self.backtest_periods < len(market_data)
+                            else None
+                        ),
                     }
                     results.append(result)
 
@@ -333,7 +352,9 @@ class SRWeightOptimizer:
             self.logger.exception(failed(f"❌ Error running backtest: {e}"))
             return None
 
-    def _calculate_performance_metrics(self, backtest_results: list[dict[str, Any]]) -> dict[str, float]:
+    def _calculate_performance_metrics(
+        self, backtest_results: list[dict[str, Any]]
+    ) -> dict[str, float]:
         """
         Calculate performance metrics from backtest results.
 
@@ -348,17 +369,29 @@ class SRWeightOptimizer:
                 return {}
 
             # Extract predictions and actuals
-            predictions = [r["prediction"].get("confidence", 0.0) for r in backtest_results]
+            predictions = [
+                r["prediction"].get("confidence", 0.0) for r in backtest_results
+            ]
             actuals = [r["actual_target"] for r in backtest_results]
 
             # Calculate basic metrics
             total_predictions = len(predictions)
-            correct_predictions = sum(1 for p, a in zip(predictions, actuals, strict=False) if (p > 0.5 and a > 0) or (p < 0.5 and a < 0))
-            win_rate = correct_predictions / total_predictions if total_predictions > 0 else 0.0
+            correct_predictions = sum(
+                1
+                for p, a in zip(predictions, actuals, strict=False)
+                if (p > 0.5 and a > 0) or (p < 0.5 and a < 0)
+            )
+            win_rate = (
+                correct_predictions / total_predictions
+                if total_predictions > 0
+                else 0.0
+            )
 
             # Calculate returns
             returns = []
-            for _i, (pred, actual) in enumerate(zip(predictions, actuals, strict=False)):
+            for _i, (pred, actual) in enumerate(
+                zip(predictions, actuals, strict=False)
+            ):
                 if pred > 0.5:  # Predicted positive
                     returns.append(actual)
                 else:  # Predicted negative
@@ -397,10 +430,14 @@ class SRWeightOptimizer:
             }
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating performance metrics: {e}"))
+            self.logger.exception(
+                failed(f"❌ Error calculating performance metrics: {e}")
+            )
             return {}
 
-    def _calculate_optimization_score(self, performance_metrics: dict[str, float]) -> float:
+    def _calculate_optimization_score(
+        self, performance_metrics: dict[str, float]
+    ) -> float:
         """
         Calculate optimization score from performance metrics.
 
@@ -417,21 +454,28 @@ class SRWeightOptimizer:
             profit_factor_weight = 0.25
             drawdown_weight = 0.2
 
-            sharpe_score = min(performance_metrics.get("sharpe_ratio", 0.0) / 2.0, 1.0)  # Normalize to 0-1
+            sharpe_score = min(
+                performance_metrics.get("sharpe_ratio", 0.0) / 2.0, 1.0
+            )  # Normalize to 0-1
             win_rate_score = performance_metrics.get("win_rate", 0.0)
-            profit_factor_score = min(performance_metrics.get("profit_factor", 0.0) / 2.0, 1.0)  # Normalize to 0-1
-            drawdown_score = max(0, 1.0 + performance_metrics.get("max_drawdown", 0.0))  # Higher drawdown = lower score
+            profit_factor_score = min(
+                performance_metrics.get("profit_factor", 0.0) / 2.0, 1.0
+            )  # Normalize to 0-1
+            drawdown_score = max(
+                0, 1.0 + performance_metrics.get("max_drawdown", 0.0)
+            )  # Higher drawdown = lower score
 
             return (
-                sharpe_score * sharpe_weight +
-                win_rate_score * win_rate_weight +
-                profit_factor_score * profit_factor_weight +
-                drawdown_score * drawdown_weight
+                sharpe_score * sharpe_weight
+                + win_rate_score * win_rate_weight
+                + profit_factor_score * profit_factor_weight
+                + drawdown_score * drawdown_weight
             )
 
-
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating optimization score: {e}"))
+            self.logger.exception(
+                failed(f"❌ Error calculating optimization score: {e}")
+            )
             return 0.0
 
     def _record_optimization_step(
@@ -470,7 +514,9 @@ class SRWeightOptimizer:
         """
         return self.best_weights.copy() if self.best_weights else None
 
-    def get_optimization_results(self, limit: int | None = None) -> list[WeightOptimizationResult]:
+    def get_optimization_results(
+        self, limit: int | None = None
+    ) -> list[WeightOptimizationResult]:
         """
         Get optimization results.
 
@@ -489,7 +535,9 @@ class SRWeightOptimizer:
             self.logger.exception(failed(f"❌ Error getting optimization results: {e}"))
             return []
 
-    def get_optimization_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_optimization_history(
+        self, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get optimization history.
 
@@ -584,7 +632,9 @@ class SRWeightOptimizer:
 
             # Set best weights
             if self.optimization_results:
-                best_result = max(self.optimization_results, key=lambda x: x.optimization_score)
+                best_result = max(
+                    self.optimization_results, key=lambda x: x.optimization_score
+                )
                 self.best_weights = best_result.weights
 
             self.logger.info(f"✅ Optimization results loaded from {filepath}")

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Pipeline framework for Ares trading bot.
 

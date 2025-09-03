@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/interfaces/base_interfaces.py
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -7,6 +6,8 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+
+# src/interfaces/base_interfaces.py
 
 
 @dataclass
@@ -31,11 +32,11 @@ class AnalysisResult:
     symbol: str
     confidence: float
     signal: str  # 'BUY', 'SELL', 'HOLD'
-    features: dict[str , float]
-    technical_indicators: dict[str , float]
+    features: dict[str, float]
+    technical_indicators: dict[str, float]
     market_regime: str
-    support_resistance: dict[str , float]
-    risk_metrics: dict[str , float]
+    support_resistance: dict[str, float]
+    risk_metrics: dict[str, float]
 
 
 @dataclass
@@ -47,8 +48,8 @@ class StrategyResult:
     position_bias: str  # 'LONG', 'SHORT', 'NEUTRAL'
     leverage_cap: float
     max_notional_size: float
-    risk_parameters: dict[str , float]
-    market_conditions: dict[str , Any]
+    risk_parameters: dict[str, float]
+    market_conditions: dict[str, Any]
 
 
 @dataclass
@@ -72,19 +73,23 @@ class IExchangeClient(ABC):
 
     @abstractmethod
     async def get_klines(
-        self, symbol: str,
-        interval: str, limit: int = 100,
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 100,
     ) -> list[MarketData]:
         """Get historical kline data"""
 
     @abstractmethod
-    async def get_account_info(self) -> dict[str , Any]:
+    async def get_account_info(self) -> dict[str, Any]:
         """Get account information"""
 
     @abstractmethod
     async def create_order(
-        self, symbol: str,
-        side: str, quantity: float,
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
         price: float | None = None,
         order_type: str = "MARKET",
     ) -> dict[str, Any]:
@@ -120,7 +125,7 @@ class IPerformanceReporter(ABC):
         """Log a trade"""
 
     @abstractmethod
-    async def get_performance_summary(self) -> dict[str , Any]:
+    async def get_performance_summary(self) -> dict[str, Any]:
         """Get performance summary"""
 
     @abstractmethod
@@ -161,8 +166,10 @@ class IAnalyst(ABC):
 
     @abstractmethod
     async def get_historical_analysis(
-        self, symbol: str,
-        start_date: datetime, end_date: datetime,
+        self,
+        symbol: str,
+        start_date: datetime,
+        end_date: datetime,
     ) -> list[AnalysisResult]:
         """Get historical analysis results"""
 
@@ -188,7 +195,8 @@ class IStrategist(ABC):
 
     @abstractmethod
     async def formulate_strategy(
-        self, analysis_result: AnalysisResult,
+        self,
+        analysis_result: AnalysisResult,
     ) -> StrategyResult:
         """Formulate trading strategy based on analysis"""
 
@@ -197,7 +205,7 @@ class IStrategist(ABC):
         """Update strategy parameters"""
 
     @abstractmethod
-    async def get_strategy_performance(self) -> dict[str , Any]:
+    async def get_strategy_performance(self) -> dict[str, Any]:
         """Get strategy performance metrics"""
 
 
@@ -214,20 +222,20 @@ class ITactician(ABC):
 
     @abstractmethod
     async def execute_trade_decision(
-        self, strategy_result: StrategyResult,
-        analysis_result: AnalysisResult) -> TradeDecision | None:
+        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
+    ) -> TradeDecision | None:
         """Execute trade decision based on strategy and analysis"""
 
     @abstractmethod
     async def calculate_position_size(
-        self, strategy_result: StrategyResult,
-        account_balance: float) -> float:
+        self, strategy_result: StrategyResult, account_balance: float
+    ) -> float:
         """Calculate position size"""
 
     @abstractmethod
     async def calculate_risk_parameters(
-        self, strategy_result: StrategyResult,
-        market_data: MarketData) -> dict[str, float]:
+        self, strategy_result: StrategyResult, market_data: MarketData
+    ) -> dict[str, float]:
         """Calculate risk parameters"""
 
 
@@ -243,11 +251,11 @@ class ISupervisor(ABC):
         """Stop the supervisor"""
 
     @abstractmethod
-    async def monitor_performance(self) -> dict[str , Any]:
+    async def monitor_performance(self) -> dict[str, Any]:
         """Monitor system performance"""
 
     @abstractmethod
-    async def manage_risk(self) -> dict[str , Any]:
+    async def manage_risk(self) -> dict[str, Any]:
         """Manage risk across all components"""
 
     @abstractmethod

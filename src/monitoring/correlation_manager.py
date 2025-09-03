@@ -24,6 +24,7 @@ class CorrelationStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+
 @dataclass
 class CorrelationRequest:
     """Correlation request tracking."""
@@ -39,6 +40,7 @@ class CorrelationRequest:
     performance_metrics: dict[str, float] = None
     metadata: dict[str, Any] = None
 
+
 class CorrelationManager:
     """
     Centralized correlation ID management and request/response correlation tracking.
@@ -53,7 +55,9 @@ class CorrelationManager:
         self.enable_correlation_tracking: bool = bool(
             self.correlation_config.get("enable_correlation_tracking", True),
         )
-        self.correlation_timeout: int = int(self.correlation_config.get("correlation_timeout", 300))
+        self.correlation_timeout: int = int(
+            self.correlation_config.get("correlation_timeout", 300)
+        )
         self.max_correlation_history: int = int(
             self.correlation_config.get("max_correlation_history", 10000),
         )
@@ -117,7 +121,9 @@ class CorrelationManager:
         req.response_timestamp = datetime.now()
         req.response_data = dict(response_data or {})
         req.error_info = dict(error_info or {}) if error_info else None
-        req.status = CorrelationStatus.FAILED if error_info else CorrelationStatus.COMPLETED
+        req.status = (
+            CorrelationStatus.FAILED if error_info else CorrelationStatus.COMPLETED
+        )
 
     def get_request(self, correlation_id: str) -> CorrelationRequest | None:
         return self.correlation_requests.get(correlation_id)

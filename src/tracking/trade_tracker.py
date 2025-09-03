@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Comprehensive Trade Tracking System
 
@@ -31,6 +32,7 @@ class TradeStatus(Enum):
     CANCELLED = "cancelled"
     FAILED = "failed"
 
+
 class ModelType(Enum):
     """Model type enumeration."""
 
@@ -40,9 +42,9 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
 
+
 @dataclass_json
 @dataclass
-
 class FeatureImportance:
     """Feature importance tracking."""
 
@@ -53,9 +55,9 @@ class FeatureImportance:
     timeframe: str
     regime: str
 
+
 @dataclass_json
 @dataclass
-
 class ModelPrediction:
     """Individual model prediction tracking."""
 
@@ -69,9 +71,9 @@ class ModelPrediction:
     prediction_time: datetime
     model_version: str
 
+
 @dataclass_json
 @dataclass
-
 class EnsembleDecision:
     """Ensemble decision tracking."""
 
@@ -84,9 +86,9 @@ class EnsembleDecision:
     meta_learner_prediction: str | None = None
     meta_learner_confidence: float | None = None
 
+
 @dataclass_json
 @dataclass
-
 class RegimeAnalysis:
     """Market regime analysis tracking."""
 
@@ -98,9 +100,9 @@ class RegimeAnalysis:
     regime_transition_probability: float
     regime_duration: int | None = None
 
+
 @dataclass_json
 @dataclass
-
 class DecisionPath:
     """Decision path analysis tracking."""
 
@@ -110,9 +112,9 @@ class DecisionPath:
     decision_thresholds: dict[str, float]
     decision_metadata: dict[str, Any]
 
+
 @dataclass_json
 @dataclass
-
 class ModelBehavior:
     """Model behavior monitoring."""
 
@@ -124,9 +126,9 @@ class ModelBehavior:
     model_performance_metrics: dict[str, float]
     last_retraining: datetime | None = None
 
+
 @dataclass_json
 @dataclass
-
 class TradeRecord:
     """Comprehensive trade record."""
 
@@ -163,6 +165,7 @@ class TradeRecord:
     close_timestamp: datetime | None = None
     close_price: float | None = None
     close_reason: str | None = None
+
 
 class TradeTracker:
     """

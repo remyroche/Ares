@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Enhanced Validation Decorators for Comprehensive Pipeline Validation
 
@@ -77,21 +78,31 @@ def comprehensive_step_validation(
                 # Validate prerequisites
                 if validate_prerequisites and validator:
                     context.start_validation()
-                    prereq_result = await _validate_prerequisites_async(validator, args, kwargs, context)
+                    prereq_result = await _validate_prerequisites_async(
+                        validator, args, kwargs, context
+                    )
                     context.end_validation("prerequisites")
 
                     if not prereq_result["validation_passed"]:
-                        logger.error(f"❌ Prerequisites validation failed: {prereq_result['errors']}")
-                        return await _handle_validation_failure(func, args, kwargs, prereq_result)
+                        logger.error(
+                            f"❌ Prerequisites validation failed: {prereq_result['errors']}"
+                        )
+                        return await _handle_validation_failure(
+                            func, args, kwargs, prereq_result
+                        )
 
                 # Validate inputs
                 if validate_inputs and validator:
                     context.start_validation()
-                    input_result = await _validate_inputs_async(validator, args, kwargs, context)
+                    input_result = await _validate_inputs_async(
+                        validator, args, kwargs, context
+                    )
                     context.end_validation("inputs")
 
                     if not input_result["validation_passed"]:
-                        logger.warning(f"⚠️ Input validation issues: {input_result['warnings']}")
+                        logger.warning(
+                            f"⚠️ Input validation issues: {input_result['warnings']}"
+                        )
 
                 # Execute the function
                 result = await func(*args, **kwargs)
@@ -99,21 +110,31 @@ def comprehensive_step_validation(
                 # Validate outputs
                 if validate_outputs and validator:
                     context.start_validation()
-                    output_result = await _validate_outputs_async(validator, result, context)
+                    output_result = await _validate_outputs_async(
+                        validator, result, context
+                    )
                     context.end_validation("outputs")
 
                     if not output_result["validation_passed"]:
-                        logger.error(f"❌ Output validation failed: {output_result['errors']}")
-                        return await _handle_validation_failure(func, args, kwargs, output_result)
+                        logger.error(
+                            f"❌ Output validation failed: {output_result['errors']}"
+                        )
+                        return await _handle_validation_failure(
+                            func, args, kwargs, output_result
+                        )
 
                 # Validate data quality
                 if validate_data_quality and validator:
                     context.start_validation()
-                    quality_result = await _validate_data_quality_async(validator, result, context)
+                    quality_result = await _validate_data_quality_async(
+                        validator, result, context
+                    )
                     context.end_validation("data_quality")
 
                     if not quality_result["validation_passed"]:
-                        logger.warning(f"⚠️ Data quality issues: {quality_result['warnings']}")
+                        logger.warning(
+                            f"⚠️ Data quality issues: {quality_result['warnings']}"
+                        )
 
                 # Log performance metrics
                 _log_validation_performance(context, logger, log_level)
@@ -137,21 +158,31 @@ def comprehensive_step_validation(
                 # Validate prerequisites
                 if validate_prerequisites and validator:
                     context.start_validation()
-                    prereq_result = _validate_prerequisites_sync(validator, args, kwargs, context)
+                    prereq_result = _validate_prerequisites_sync(
+                        validator, args, kwargs, context
+                    )
                     context.end_validation("prerequisites")
 
                     if not prereq_result["validation_passed"]:
-                        logger.error(f"❌ Prerequisites validation failed: {prereq_result['errors']}")
-                        return _handle_validation_failure_sync(func, args, kwargs, prereq_result)
+                        logger.error(
+                            f"❌ Prerequisites validation failed: {prereq_result['errors']}"
+                        )
+                        return _handle_validation_failure_sync(
+                            func, args, kwargs, prereq_result
+                        )
 
                 # Validate inputs
                 if validate_inputs and validator:
                     context.start_validation()
-                    input_result = _validate_inputs_sync(validator, args, kwargs, context)
+                    input_result = _validate_inputs_sync(
+                        validator, args, kwargs, context
+                    )
                     context.end_validation("inputs")
 
                     if not input_result["validation_passed"]:
-                        logger.warning(f"⚠️ Input validation issues: {input_result['warnings']}")
+                        logger.warning(
+                            f"⚠️ Input validation issues: {input_result['warnings']}"
+                        )
 
                 # Execute the function
                 result = func(*args, **kwargs)
@@ -163,17 +194,25 @@ def comprehensive_step_validation(
                     context.end_validation("outputs")
 
                     if not output_result["validation_passed"]:
-                        logger.error(f"❌ Output validation failed: {output_result['errors']}")
-                        return _handle_validation_failure_sync(func, args, kwargs, output_result)
+                        logger.error(
+                            f"❌ Output validation failed: {output_result['errors']}"
+                        )
+                        return _handle_validation_failure_sync(
+                            func, args, kwargs, output_result
+                        )
 
                 # Validate data quality
                 if validate_data_quality and validator:
                     context.start_validation()
-                    quality_result = _validate_data_quality_sync(validator, result, context)
+                    quality_result = _validate_data_quality_sync(
+                        validator, result, context
+                    )
                     context.end_validation("data_quality")
 
                     if not quality_result["validation_passed"]:
-                        logger.warning(f"⚠️ Data quality issues: {quality_result['warnings']}")
+                        logger.warning(
+                            f"⚠️ Data quality issues: {quality_result['warnings']}"
+                        )
 
                 # Log performance metrics
                 _log_validation_performance(context, logger, log_level)
@@ -194,7 +233,9 @@ def comprehensive_step_validation(
 
 
 def validate_with_base_validator(
-    validator_class: type, validation_method: str = "validate", fallback_to_original: bool = True,
+    validator_class: type,
+    validation_method: str = "validate",
+    fallback_to_original: bool = True,
 ):
     """
     Decorator that uses a specific BaseValidator class for validation.
@@ -219,7 +260,9 @@ def validate_with_base_validator(
                     validation_result = await validation_method_func(*args, **kwargs)
 
                     if not validation_result:
-                        system_logger.warning(f"⚠️ Validation failed for {func.__name__}")
+                        system_logger.warning(
+                            f"⚠️ Validation failed for {func.__name__}"
+                        )
                         if not fallback_to_original:
                             msg = f"Validation failed for {func.__name__}"
                             raise ValueError(msg)
@@ -246,7 +289,9 @@ def validate_with_base_validator(
                     validation_result = validation_method_func(*args, **kwargs)
 
                     if not validation_result:
-                        system_logger.warning(f"⚠️ Validation failed for {func.__name__}")
+                        system_logger.warning(
+                            f"⚠️ Validation failed for {func.__name__}"
+                        )
                         if not fallback_to_original:
                             msg = f"Validation failed for {func.__name__}"
                             raise ValueError(msg)
@@ -269,7 +314,9 @@ def validate_with_base_validator(
 
 
 def smart_validation_cache(
-    cache_key_func: Callable | None = None, ttl_seconds: int = 300, max_cache_size: int = 1000,  # 5 minutes default
+    cache_key_func: Callable | None = None,
+    ttl_seconds: int = 300,
+    max_cache_size: int = 1000,  # 5 minutes default
 ):
     """
     Smart caching decorator for validation results to improve performance.
@@ -308,7 +355,9 @@ def smart_validation_cache(
             # Manage cache size
             if len(cache) >= max_cache_size:
                 # Remove oldest entries
-                oldest_key = min(cache_timestamps.keys(), key=lambda k: cache_timestamps[k])
+                oldest_key = min(
+                    cache_timestamps.keys(), key=lambda k: cache_timestamps[k]
+                )
                 del cache[oldest_key]
                 del cache_timestamps[oldest_key]
 
@@ -341,7 +390,9 @@ def smart_validation_cache(
             # Manage cache size
             if len(cache) >= max_cache_size:
                 # Remove oldest entries
-                oldest_key = min(cache_timestamps.keys(), key=lambda k: cache_timestamps[k])
+                oldest_key = min(
+                    cache_timestamps.keys(), key=lambda k: cache_timestamps[k]
+                )
                 del cache[oldest_key]
                 del cache_timestamps[oldest_key]
 
@@ -467,7 +518,10 @@ def _extract_validator_instance(args: tuple, kwargs: dict) -> BaseValidator | No
 
 
 async def _validate_prerequisites_async(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+    validator: BaseValidator,
+    args: tuple,
+    kwargs: dict,
+    context: ValidationContext,
 ) -> dict[str, Any]:
     """Validate prerequisites asynchronously."""
     try:
@@ -484,7 +538,10 @@ async def _validate_prerequisites_async(
 
 
 def _validate_prerequisites_sync(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+    validator: BaseValidator,
+    args: tuple,
+    kwargs: dict,
+    context: ValidationContext,
 ) -> dict[str, Any]:
     """Validate prerequisites synchronously."""
     try:
@@ -501,7 +558,10 @@ def _validate_prerequisites_sync(
 
 
 async def _validate_inputs_async(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+    validator: BaseValidator,
+    args: tuple,
+    kwargs: dict,
+    context: ValidationContext,
 ) -> dict[str, Any]:
     """Validate inputs asynchronously."""
     try:
@@ -512,7 +572,9 @@ async def _validate_inputs_async(
         for file_path in file_paths:
             if file_path and Path(file_path).exists():
                 file_validator = ComprehensiveFileValidator()
-                result = file_validator.validate_file_format(file_path, None, validator.step_name)
+                result = file_validator.validate_file_format(
+                    file_path, None, validator.step_name
+                )
                 validation_results.append(result)
 
         # Aggregate results
@@ -528,7 +590,10 @@ async def _validate_inputs_async(
 
 
 def _validate_inputs_sync(
-    validator: BaseValidator, args: tuple, kwargs: dict, context: ValidationContext,
+    validator: BaseValidator,
+    args: tuple,
+    kwargs: dict,
+    context: ValidationContext,
 ) -> dict[str, Any]:
     """Validate inputs synchronously."""
     try:
@@ -539,7 +604,9 @@ def _validate_inputs_sync(
         for file_path in file_paths:
             if file_path and Path(file_path).exists():
                 file_validator = ComprehensiveFileValidator()
-                result = file_validator.validate_file_format(file_path, None, validator.step_name)
+                result = file_validator.validate_file_format(
+                    file_path, None, validator.step_name
+                )
                 validation_results.append(result)
 
         # Aggregate results
@@ -554,7 +621,9 @@ def _validate_inputs_sync(
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
-async def _validate_outputs_async(validator: BaseValidator, result: Any, context: ValidationContext) -> dict[str, Any]:
+async def _validate_outputs_async(
+    validator: BaseValidator, result: Any, context: ValidationContext
+) -> dict[str, Any]:
     """Validate outputs asynchronously."""
     try:
         if hasattr(validator, "validate_step_output"):
@@ -569,7 +638,9 @@ async def _validate_outputs_async(validator: BaseValidator, result: Any, context
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
-def _validate_outputs_sync(validator: BaseValidator, result: Any, context: ValidationContext) -> dict[str, Any]:
+def _validate_outputs_sync(
+    validator: BaseValidator, result: Any, context: ValidationContext
+) -> dict[str, Any]:
     """Validate outputs synchronously."""
     try:
         if hasattr(validator, "validate_step_output"):
@@ -585,7 +656,9 @@ def _validate_outputs_sync(validator: BaseValidator, result: Any, context: Valid
 
 
 async def _validate_data_quality_async(
-    validator: BaseValidator, result: Any, context: ValidationContext,
+    validator: BaseValidator,
+    result: Any,
+    context: ValidationContext,
 ) -> dict[str, Any]:
     """Validate data quality asynchronously."""
     try:
@@ -618,7 +691,9 @@ async def _validate_data_quality_async(
         return {"validation_passed": False, "warnings": [], "errors": [str(e)]}
 
 
-def _validate_data_quality_sync(validator: BaseValidator, result: Any, context: ValidationContext) -> dict[str, Any]:
+def _validate_data_quality_sync(
+    validator: BaseValidator, result: Any, context: ValidationContext
+) -> dict[str, Any]:
     """Validate data quality synchronously."""
     try:
         # Check if result contains DataFrames
@@ -651,32 +726,46 @@ def _validate_data_quality_sync(validator: BaseValidator, result: Any, context: 
 
 
 async def _handle_validation_failure(
-    func: Callable, args: tuple, kwargs: dict, validation_result: dict[str, Any],
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+    validation_result: dict[str, Any],
 ) -> Any:
     """Handle validation failure for async functions."""
     # For now, log the failure and continue with original function
     # In production, you might want to raise an exception or take other action
-    system_logger.warning(f"Validation failed but continuing with {func.__name__}: {validation_result}")
+    system_logger.warning(
+        f"Validation failed but continuing with {func.__name__}: {validation_result}"
+    )
     return await func(*args, **kwargs)
 
 
 def _handle_validation_failure_sync(
-    func: Callable, args: tuple, kwargs: dict, validation_result: dict[str, Any],
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+    validation_result: dict[str, Any],
 ) -> Any:
     """Handle validation failure for sync functions."""
     # For now, log the failure and continue with original function
     # In production, you might want to raise an exception or take other action
-    system_logger.warning(f"Validation failed but continuing with {func.__name__}: {validation_result}")
+    system_logger.warning(
+        f"Validation failed but continuing with {func.__name__}: {validation_result}"
+    )
     return func(*args, **kwargs)
 
 
-def _log_validation_performance(context: ValidationContext, logger: Any, log_level: str):
+def _log_validation_performance(
+    context: ValidationContext, logger: Any, log_level: str
+):
     """Log validation performance metrics."""
     if log_level.upper() == "DEBUG":
         for validation_type, times in context.performance_metrics.items():
             if times:
                 avg_time = sum(times) / len(times)
-                logger.debug(f"📊 {validation_type} validation: avg={avg_time:.3f}s, count={len(times)}")
+                logger.debug(
+                    f"📊 {validation_type} validation: avg={avg_time:.3f}s, count={len(times)}"
+                )
 
 
 def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> list[str]:
@@ -693,7 +782,15 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict) -> list[str]:
                     file_paths.append(item)
 
     # Look for file paths in keyword arguments
-    file_keywords = ["file_path", "filepath", "path", "file", "filename", "data_dir", "output_dir"]
+    file_keywords = [
+        "file_path",
+        "filepath",
+        "path",
+        "file",
+        "filename",
+        "data_dir",
+        "output_dir",
+    ]
     for key, value in kwargs.items():
         if any(file_key in key.lower() for file_key in file_keywords):
             if isinstance(value, str) and _looks_like_file_path(value):
@@ -731,4 +828,8 @@ def _looks_like_file_path(path: str) -> bool:
 
     # Check for common file extensions
     file_extensions = [".parquet", ".csv", ".json", ".pkl", ".pickle", ".h5", ".hdf5"]
-    return any(path.lower().endswith(ext) for ext in file_extensions) or "/" in path or "\\" in path
+    return (
+        any(path.lower().endswith(ext) for ext in file_extensions)
+        or "/" in path
+        or "\\" in path
+    )

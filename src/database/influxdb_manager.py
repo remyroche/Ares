@@ -1,6 +1,4 @@
 from __future__ import annotations
-# src/database/influxdb_manager.py
-
 
 import influxdb_client
 import numpy as np
@@ -14,6 +12,8 @@ from src.config import (
     INFLUXDB_URL,
 )
 from src.utils.logger import logger
+
+# src/database/influxdb_manager.py
 
 
 class InfluxDBManager:
@@ -131,7 +131,9 @@ class InfluxDBManager:
 
         # Convert timestamp to milliseconds integer as expected by the rest of the application
         if "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
+            df["timestamp"] = (
+                pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
+            )
 
             # Validate that timestamps are reasonable (>= 2000-01-01)
             min_reasonable_ts = 946684800000  # 2000-01-01 in milliseconds

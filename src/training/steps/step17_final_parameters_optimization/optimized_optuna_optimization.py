@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/training/steps/optimized_optuna_optimization.py
 
 import logging
 import time
@@ -15,6 +14,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from src.utils.logger import setup_logging
+
+# src/training/steps/optimized_optuna_optimization.py
+
 
 setup_logging()
 
@@ -138,7 +140,15 @@ class AdvancedOptunaManager:
         return summary
 
     def optimize(
-        self, model_type: str, X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int | None = 15, subsample_fraction: float | None = None,
+        self,
+        model_type: str,
+        X: pd.DataFrame,
+        y: pd.Series,
+        n_trials: int = 100,
+        n_jobs: int = -1,
+        cv_folds: int = 5,
+        early_stopping_patience: int | None = 15,
+        subsample_fraction: float | None = None,
     ) -> dict[str, Any]:
         """Runs a full hyperparameter optimization for a specified model.
 

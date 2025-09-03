@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/enhanced_feature_engineering_optimizer.py
 
 """
@@ -47,34 +48,42 @@ class EnhancedFeatureEngineeringOptimizer:
         self.logger = system_logger.getChild("EnhancedFeatureEngineeringOptimizer")
 
         # Enhanced optimization settings
-        self.meta_optimization_config = config.get("enhanced_feature_optimization", {
-            "meta_optimization": {
-                "enabled": True,
-                "n_trials": 200,
-                "cv_folds": 5,
-                "random_state": 42,
-                "early_stopping_patience": 20,
-                "performance_threshold": 0.8,
+        self.meta_optimization_config = config.get(
+            "enhanced_feature_optimization",
+            {
+                "meta_optimization": {
+                    "enabled": True,
+                    "n_trials": 200,
+                    "cv_folds": 5,
+                    "random_state": 42,
+                    "early_stopping_patience": 20,
+                    "performance_threshold": 0.8,
+                },
+                "parameter_space_optimization": {
+                    "enabled": True,
+                    "mi_threshold": 0.1,
+                    "correlation_threshold": 0.8,
+                    "adaptive_sampling": True,
+                    "space_reduction_factor": 0.5,
+                },
+                "multi_objective": {
+                    "enabled": True,
+                    "objectives": [
+                        "importance",
+                        "stability",
+                        "diversity",
+                        "efficiency",
+                    ],
+                    "weights": [0.4, 0.2, 0.2, 0.2],
+                },
+                "shap_analysis": {
+                    "n_samples": 1000,
+                    "max_display": 20,
+                    "interaction_analysis": True,
+                    "feature_interactions": True,
+                },
             },
-            "parameter_space_optimization": {
-                "enabled": True,
-                "mi_threshold": 0.1,
-                "correlation_threshold": 0.8,
-                "adaptive_sampling": True,
-                "space_reduction_factor": 0.5,
-            },
-            "multi_objective": {
-                "enabled": True,
-                "objectives": ["importance", "stability", "diversity", "efficiency"],
-                "weights": [0.4, 0.2, 0.2, 0.2],
-            },
-            "shap_analysis": {
-                "n_samples": 1000,
-                "max_display": 20,
-                "interaction_analysis": True,
-                "feature_interactions": True,
-            },
-        })
+        )
 
         # Initialize base feature parameters
         self.base_feature_params = self._initialize_base_parameters()
@@ -90,7 +99,9 @@ class EnhancedFeatureEngineeringOptimizer:
         return {
             "RSI": {
                 "lookback_period": list(range(5, 61, 5)),  # 5 to 60 in steps of 5
-                "overbought_threshold": list(range(65, 91, 5)),  # 65 to 90 in steps of 5
+                "overbought_threshold": list(
+                    range(65, 91, 5)
+                ),  # 65 to 90 in steps of 5
                 "oversold_threshold": list(range(10, 36, 5)),  # 10 to 35 in steps of 5
             },
             "MACD": {
@@ -154,7 +165,9 @@ class EnhancedFeatureEngineeringOptimizer:
         Returns:
             Dictionary with enhanced optimization results
         """
-        self.logger.info(f"🎯 Starting enhanced feature parameter optimization for {symbol} on {exchange}")
+        self.logger.info(
+            f"🎯 Starting enhanced feature parameter optimization for {symbol} on {exchange}"
+        )
 
         results = {
             "optimization_timestamp": datetime.now().isoformat(),
@@ -175,20 +188,28 @@ class EnhancedFeatureEngineeringOptimizer:
 
         # 2. Perform meta-optimization
         self.logger.info("🧠 Performing meta-optimization...")
-        meta_results = await self._perform_meta_optimization(data, target, optimized_param_space)
+        meta_results = await self._perform_meta_optimization(
+            data, target, optimized_param_space
+        )
         results["meta_optimization_results"] = meta_results
 
         # 3. Multi-objective optimization
         self.logger.info("🎯 Performing multi-objective optimization...")
         multi_obj_results = await self._perform_multi_objective_optimization(
-            data, target, optimized_param_space, regimes,
+            data,
+            target,
+            optimized_param_space,
+            regimes,
         )
         results["multi_objective_results"] = multi_obj_results
 
         # 4. Enhanced feature optimization with optimized parameters
         self.logger.info("⚡ Performing enhanced feature optimization...")
         enhanced_results = await self._perform_enhanced_feature_optimization(
-            data, target, optimized_param_space, regimes,
+            data,
+            target,
+            optimized_param_space,
+            regimes,
         )
         results["enhanced_optimizations"] = enhanced_results
 
@@ -198,9 +219,13 @@ class EnhancedFeatureEngineeringOptimizer:
         results["performance_analysis"] = performance_analysis
 
         # 6. Save results
-        await self._save_enhanced_optimization_results(results, symbol, exchange, timeframe)
+        await self._save_enhanced_optimization_results(
+            results, symbol, exchange, timeframe
+        )
 
-        self.logger.info("✅ Enhanced feature parameter optimization completed successfully")
+        self.logger.info(
+            "✅ Enhanced feature parameter optimization completed successfully"
+        )
         return results
 
     async def _optimize_parameter_space(
@@ -216,22 +241,31 @@ class EnhancedFeatureEngineeringOptimizer:
             self.logger.info(f"🔍 Optimizing parameter space for {feature_name}...")
 
             # Generate sample parameter combinations
-            sample_combinations = self._generate_sample_combinations(base_params, n_samples=100)
+            sample_combinations = self._generate_sample_combinations(
+                base_params, n_samples=100
+            )
 
             # Calculate performance metrics for each combination
             performance_metrics = []
             for params in sample_combinations:
-                feature_values = self._calculate_feature_with_params(data, feature_name, params)
+                feature_values = self._calculate_feature_with_params(
+                    data, feature_name, params
+                )
                 if feature_values is not None:
-                    metrics = await self._calculate_performance_metrics(feature_values, target)
-                    performance_metrics.append({
-                        "params": params,
-                        "metrics": metrics,
-                    })
+                    metrics = await self._calculate_performance_metrics(
+                        feature_values, target
+                    )
+                    performance_metrics.append(
+                        {
+                            "params": params,
+                            "metrics": metrics,
+                        }
+                    )
 
             # Analyze parameter importance using RF + SHAP
             param_importance = await self._analyze_parameter_importance(
-                sample_combinations, performance_metrics,
+                sample_combinations,
+                performance_metrics,
             )
 
             # Reduce parameter space based on importance
@@ -270,16 +304,21 @@ class EnhancedFeatureEngineeringOptimizer:
             def objective(trial):
                 # Sample parameters from optimized space
                 params = self._sample_parameters_from_space(
-                    param_space["reduced_params"], trial,
+                    param_space["reduced_params"],
+                    trial,
                 )
 
                 # Calculate feature with sampled parameters
-                feature_values = self._calculate_feature_with_params(data, feature_name, params)
+                feature_values = self._calculate_feature_with_params(
+                    data, feature_name, params
+                )
                 if feature_values is None:
                     return 0.0
 
                 # Calculate multi-objective score
-                return self._calculate_multi_objective_score(feature_values, target, params)
+                return self._calculate_multi_objective_score(
+                    feature_values, target, params
+                )
 
             # Optimize
             study.optimize(
@@ -312,28 +351,39 @@ class EnhancedFeatureEngineeringOptimizer:
             self.logger.info(f"🎯 Multi-objective optimizing {feature_name}...")
 
             # Generate parameter combinations
-            combinations = self._generate_param_combinations(param_space["reduced_params"])
+            combinations = self._generate_param_combinations(
+                param_space["reduced_params"]
+            )
 
             # Calculate multi-objective scores
             objective_scores = []
             for params in combinations:
-                feature_values = self._calculate_feature_with_params(data, feature_name, params)
+                feature_values = self._calculate_feature_with_params(
+                    data, feature_name, params
+                )
                 if feature_values is not None:
                     scores = await self._calculate_all_objectives(
-                        feature_values, target, params, regimes,
+                        feature_values,
+                        target,
+                        params,
+                        regimes,
                     )
-                    objective_scores.append({
-                        "params": params,
-                        "scores": scores,
-                        "weighted_score": self._calculate_weighted_score(scores),
-                    })
+                    objective_scores.append(
+                        {
+                            "params": params,
+                            "scores": scores,
+                            "weighted_score": self._calculate_weighted_score(scores),
+                        }
+                    )
 
             # Select Pareto-optimal solutions
             pareto_optimal = self._find_pareto_optimal_solutions(objective_scores)
 
             multi_obj_results[feature_name] = {
                 "pareto_optimal_solutions": pareto_optimal,
-                "objective_weights": self.meta_optimization_config["multi_objective"]["weights"],
+                "objective_weights": self.meta_optimization_config["multi_objective"][
+                    "weights"
+                ],
                 "n_solutions": len(pareto_optimal),
             }
 
@@ -366,19 +416,28 @@ class EnhancedFeatureEngineeringOptimizer:
 
                     if len(regime_data) >= 100:  # Minimum sample requirement
                         regime_opt = await self._optimize_feature_for_regime(
-                            regime_data, regime_target, feature_name, reduced_params,
+                            regime_data,
+                            regime_target,
+                            feature_name,
+                            reduced_params,
                         )
                         regime_results[f"regime_{regime}"] = regime_opt
 
                 enhanced_results[feature_name] = {
                     "regime_optimizations": regime_results,
                     "global_optimization": await self._optimize_feature_globally(
-                        data, target, feature_name, reduced_params,
+                        data,
+                        target,
+                        feature_name,
+                        reduced_params,
                     ),
                 }
             else:
                 enhanced_results[feature_name] = await self._optimize_feature_globally(
-                    data, target, feature_name, reduced_params,
+                    data,
+                    target,
+                    feature_name,
+                    reduced_params,
                 )
 
         return enhanced_results
@@ -397,7 +456,9 @@ class EnhancedFeatureEngineeringOptimizer:
         param_data = []
         performance_scores = []
 
-        for combo, metrics in zip(parameter_combinations, performance_metrics, strict=False):
+        for combo, metrics in zip(
+            parameter_combinations, performance_metrics, strict=False
+        ):
             # Flatten parameters
             flat_params = self._flatten_parameters(combo)
             param_data.append(flat_params)
@@ -429,7 +490,9 @@ class EnhancedFeatureEngineeringOptimizer:
         """Reduce parameter space based on importance scores."""
 
         reduced_params = {}
-        self.meta_optimization_config["parameter_space_optimization"]["space_reduction_factor"]
+        self.meta_optimization_config["parameter_space_optimization"][
+            "space_reduction_factor"
+        ]
 
         for param_name, param_values in base_params.items():
             importance = param_importance.get(param_name, 0.0)
@@ -462,13 +525,19 @@ class EnhancedFeatureEngineeringOptimizer:
         objectives = {}
 
         # 1. Importance objective (SHAP-based)
-        objectives["importance"] = await self._calculate_importance_score(feature_values, target)
+        objectives["importance"] = await self._calculate_importance_score(
+            feature_values, target
+        )
 
         # 2. Stability objective (cross-validation)
-        objectives["stability"] = await self._calculate_stability_score(feature_values, target)
+        objectives["stability"] = await self._calculate_stability_score(
+            feature_values, target
+        )
 
         # 3. Diversity objective (correlation with existing features)
-        objectives["diversity"] = await self._calculate_diversity_score(feature_values, target)
+        objectives["diversity"] = await self._calculate_diversity_score(
+            feature_values, target
+        )
 
         # 4. Efficiency objective (computational efficiency)
         objectives["efficiency"] = self._calculate_efficiency_score(params)
@@ -502,8 +571,12 @@ class EnhancedFeatureEngineeringOptimizer:
                 if i != j:
                     # Check if other solution dominates this one
                     dominates = True
-                    for obj in self.meta_optimization_config["multi_objective"]["objectives"]:
-                        if other_solution["scores"].get(obj, 0.0) < solution["scores"].get(obj, 0.0):
+                    for obj in self.meta_optimization_config["multi_objective"][
+                        "objectives"
+                    ]:
+                        if other_solution["scores"].get(obj, 0.0) < solution[
+                            "scores"
+                        ].get(obj, 0.0):
                             dominates = False
                             break
 
@@ -516,11 +589,17 @@ class EnhancedFeatureEngineeringOptimizer:
 
         return pareto_optimal
 
-    def _early_stopping_callback(self, study: optuna.Study, trial: optuna.FrozenTrial) -> None:
+    def _early_stopping_callback(
+        self, study: optuna.Study, trial: optuna.FrozenTrial
+    ) -> None:
         """Early stopping callback for Optuna optimization."""
 
-        patience = self.meta_optimization_config["meta_optimization"]["early_stopping_patience"]
-        threshold = self.meta_optimization_config["meta_optimization"]["performance_threshold"]
+        patience = self.meta_optimization_config["meta_optimization"][
+            "early_stopping_patience"
+        ]
+        threshold = self.meta_optimization_config["meta_optimization"][
+            "performance_threshold"
+        ]
 
         # Stop if best value exceeds threshold
         if study.best_value > threshold:
@@ -564,13 +643,19 @@ class EnhancedFeatureEngineeringOptimizer:
 
         # Sample combinations
         if len(all_combinations) <= n_samples:
-            return [dict(zip(param_names, combo, strict=False)) for combo in all_combinations]
+            return [
+                dict(zip(param_names, combo, strict=False))
+                for combo in all_combinations
+            ]
         sampled_indices = np.random.choice(
             len(all_combinations),
             size=n_samples,
             replace=False,
         )
-        return [dict(zip(param_names, all_combinations[i], strict=False)) for i in sampled_indices]
+        return [
+            dict(zip(param_names, all_combinations[i], strict=False))
+            for i in sampled_indices
+        ]
 
     def _flatten_parameters(self, params: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested parameters for analysis."""
@@ -641,13 +726,19 @@ class EnhancedFeatureEngineeringOptimizer:
 
         try:
             # Calculate importance using SHAP
-            metrics["importance"] = await self._calculate_importance_score(feature_values, target)
+            metrics["importance"] = await self._calculate_importance_score(
+                feature_values, target
+            )
 
             # Calculate stability using cross-validation
-            metrics["stability"] = await self._calculate_stability_score(feature_values, target)
+            metrics["stability"] = await self._calculate_stability_score(
+                feature_values, target
+            )
 
             # Calculate diversity (inverse correlation with target)
-            metrics["diversity"] = await self._calculate_diversity_score(feature_values, target)
+            metrics["diversity"] = await self._calculate_diversity_score(
+                feature_values, target
+            )
 
             # Calculate efficiency (computational efficiency)
             metrics["efficiency"] = 1.0  # Placeholder
@@ -667,7 +758,9 @@ class EnhancedFeatureEngineeringOptimizer:
 
         return metrics
 
-    async def _calculate_importance_score(self, feature_values: pd.Series, target: pd.Series) -> float:
+    async def _calculate_importance_score(
+        self, feature_values: pd.Series, target: pd.Series
+    ) -> float:
         """Calculate importance score using SHAP."""
 
         try:
@@ -692,7 +785,9 @@ class EnhancedFeatureEngineeringOptimizer:
             self.logger.warning(f"⚠️ Error calculating importance score: {e}")
             return 0.0
 
-    async def _calculate_stability_score(self, feature_values: pd.Series, target: pd.Series) -> float:
+    async def _calculate_stability_score(
+        self, feature_values: pd.Series, target: pd.Series
+    ) -> float:
         """Calculate stability score using cross-validation."""
 
         try:
@@ -703,7 +798,10 @@ class EnhancedFeatureEngineeringOptimizer:
             # Perform cross-validation
             cv_scores = cross_val_score(
                 RandomForestRegressor(n_estimators=50, random_state=42),
-                X, y, cv=5, scoring="neg_mean_squared_error",
+                X,
+                y,
+                cv=5,
+                scoring="neg_mean_squared_error",
             )
 
             # Calculate stability as coefficient of variation
@@ -715,7 +813,9 @@ class EnhancedFeatureEngineeringOptimizer:
             self.logger.warning(f"⚠️ Error calculating stability score: {e}")
             return 0.0
 
-    async def _calculate_diversity_score(self, feature_values: pd.Series, target: pd.Series) -> float:
+    async def _calculate_diversity_score(
+        self, feature_values: pd.Series, target: pd.Series
+    ) -> float:
         """Calculate diversity score (inverse correlation with target)."""
 
         try:
@@ -798,15 +898,23 @@ class EnhancedFeatureEngineeringOptimizer:
 
         for param_name, param_values in param_space.items():
             if isinstance(param_values[0], int):
-                sampled_params[param_name] = trial.suggest_int(param_name, min(param_values), max(param_values))
+                sampled_params[param_name] = trial.suggest_int(
+                    param_name, min(param_values), max(param_values)
+                )
             elif isinstance(param_values[0], float):
-                sampled_params[param_name] = trial.suggest_float(param_name, min(param_values), max(param_values))
+                sampled_params[param_name] = trial.suggest_float(
+                    param_name, min(param_values), max(param_values)
+                )
             else:
-                sampled_params[param_name] = trial.suggest_categorical(param_name, param_values)
+                sampled_params[param_name] = trial.suggest_categorical(
+                    param_name, param_values
+                )
 
         return sampled_params
 
-    def _generate_param_combinations(self, params: dict[str, list]) -> list[dict[str, Any]]:
+    def _generate_param_combinations(
+        self, params: dict[str, list]
+    ) -> list[dict[str, Any]]:
         """Generate all parameter combinations."""
 
         import itertools
@@ -835,14 +943,20 @@ class EnhancedFeatureEngineeringOptimizer:
 
         feature_scores = []
         for params in combinations:
-            feature_values = self._calculate_feature_with_params(data, feature_name, params)
+            feature_values = self._calculate_feature_with_params(
+                data, feature_name, params
+            )
             if feature_values is not None:
-                importance_score = await self._calculate_importance_score(feature_values, target)
-                feature_scores.append({
-                    "params": params,
-                    "importance": importance_score,
-                    "feature_values": feature_values,
-                })
+                importance_score = await self._calculate_importance_score(
+                    feature_values, target
+                )
+                feature_scores.append(
+                    {
+                        "params": params,
+                        "importance": importance_score,
+                        "feature_values": feature_values,
+                    }
+                )
 
         if feature_scores:
             feature_scores.sort(key=lambda x: x["importance"], reverse=True)
@@ -864,14 +978,20 @@ class EnhancedFeatureEngineeringOptimizer:
 
         feature_scores = []
         for params in combinations:
-            feature_values = self._calculate_feature_with_params(data, feature_name, params)
+            feature_values = self._calculate_feature_with_params(
+                data, feature_name, params
+            )
             if feature_values is not None:
-                importance_score = await self._calculate_importance_score(feature_values, target)
-                feature_scores.append({
-                    "params": params,
-                    "importance": importance_score,
-                    "feature_values": feature_values,
-                })
+                importance_score = await self._calculate_importance_score(
+                    feature_values, target
+                )
+                feature_scores.append(
+                    {
+                        "params": params,
+                        "importance": importance_score,
+                        "feature_values": feature_values,
+                    }
+                )
 
         if feature_scores:
             feature_scores.sort(key=lambda x: x["importance"], reverse=True)
@@ -879,7 +999,9 @@ class EnhancedFeatureEngineeringOptimizer:
 
         return []
 
-    async def _analyze_optimization_performance(self, results: dict[str, Any]) -> dict[str, Any]:
+    async def _analyze_optimization_performance(
+        self, results: dict[str, Any]
+    ) -> dict[str, Any]:
         """Analyze the performance of the optimization process."""
 
         performance_analysis = {
@@ -890,15 +1012,21 @@ class EnhancedFeatureEngineeringOptimizer:
         }
 
         # Analyze parameter space reduction
-        for feature_name, space_data in results.get("parameter_space_optimization", {}).items():
+        for feature_name, space_data in results.get(
+            "parameter_space_optimization", {}
+        ).items():
             reduction_ratio = space_data.get("space_reduction_ratio", 1.0)
             performance_analysis["parameter_space_reduction"][feature_name] = {
                 "reduction_ratio": reduction_ratio,
-                "efficiency_gain": 1.0 / reduction_ratio if reduction_ratio > 0 else 1.0,
+                "efficiency_gain": (
+                    1.0 / reduction_ratio if reduction_ratio > 0 else 1.0
+                ),
             }
 
         # Analyze meta-optimization effectiveness
-        for feature_name, meta_data in results.get("meta_optimization_results", {}).items():
+        for feature_name, meta_data in results.get(
+            "meta_optimization_results", {}
+        ).items():
             best_value = meta_data.get("best_value", 0.0)
             n_trials = meta_data.get("n_trials", 0)
             performance_analysis["meta_optimization_effectiveness"][feature_name] = {
@@ -916,10 +1044,14 @@ class EnhancedFeatureEngineeringOptimizer:
     ) -> dict[str, Any]:
         """Load enhanced optimized parameters."""
 
-        filepath = Path(f"data/enhanced_feature_engineering_optimization/{exchange}_{symbol}_{timeframe}_enhanced_feature_optimization.json")
+        filepath = Path(
+            f"data/enhanced_feature_engineering_optimization/{exchange}_{symbol}_{timeframe}_enhanced_feature_optimization.json"
+        )
 
         if not filepath.exists():
-            self.logger.warning(f"⚠️ No enhanced optimization results found for {symbol} on {exchange}")
+            self.logger.warning(
+                f"⚠️ No enhanced optimization results found for {symbol} on {exchange}"
+            )
             return {}
 
         try:
@@ -929,5 +1061,7 @@ class EnhancedFeatureEngineeringOptimizer:
             return results.get("enhanced_optimizations", {})
 
         except Exception as e:
-            self.logger.exception(f"❌ Error loading enhanced optimization results: {e}")
+            self.logger.exception(
+                f"❌ Error loading enhanced optimization results: {e}"
+            )
             return {}

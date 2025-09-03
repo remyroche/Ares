@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/supervisor/risk_allocator.py
 
 import asyncio
 from datetime import datetime
@@ -9,6 +8,8 @@ import numpy as np
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+# src/supervisor/risk_allocator.py
 
 
 class RiskAllocator:
@@ -179,7 +180,9 @@ class RiskAllocator:
     def get_risk_allocations(self) -> dict[str, Any]:
         return self.risk_allocations.copy()
 
-    def calculate_var(self, returns: list[float], confidence_level: float = None) -> float:
+    def calculate_var(
+        self, returns: list[float], confidence_level: float = None
+    ) -> float:
         """
         Calculate Value at Risk (VaR).
 
@@ -204,7 +207,9 @@ class RiskAllocator:
             self.logger.exception(f"Error calculating VaR: {e}")
             return 0.0
 
-    def calculate_expected_shortfall(self, returns: list[float], confidence_level: float = None) -> float:
+    def calculate_expected_shortfall(
+        self, returns: list[float], confidence_level: float = None
+    ) -> float:
         """
         Calculate Expected Shortfall (ES) / Conditional VaR.
 
@@ -267,7 +272,9 @@ class RiskAllocator:
             self.logger.exception(f"Error calculating multi-timeframe VaR: {e}")
             return {}
 
-    def monitor_risk_limits(self, current_var: float, current_es: float) -> dict[str, Any]:
+    def monitor_risk_limits(
+        self, current_var: float, current_es: float
+    ) -> dict[str, Any]:
         """
         Monitor risk limits and generate alerts.
 
@@ -291,7 +298,9 @@ class RiskAllocator:
                 alerts.append(
                     {
                         "type": "var_limit_exceeded",
-                        "severity": ("high" if current_var > var_limit * 1.5 else "medium"),
+                        "severity": (
+                            "high" if current_var > var_limit * 1.5 else "medium"
+                        ),
                         "message": f"VaR ({current_var:.4f}) exceeds limit ({var_limit:.4f})",
                         "value": current_var,
                         "limit": var_limit,
@@ -382,7 +391,11 @@ class RiskAllocator:
                 "min_es": np.min(es_values),
                 "es_volatility": np.std(es_values),
                 "risk_events": len(
-                    [entry for entry in self.var_history if entry["risk_status"] == "elevated"],
+                    [
+                        entry
+                        for entry in self.var_history
+                        if entry["risk_status"] == "elevated"
+                    ],
                 ),
             }
 
@@ -390,7 +403,9 @@ class RiskAllocator:
             self.logger.exception(f"Error calculating risk summary: {e}")
             return {}
 
+
 risk_allocator: RiskAllocator | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_risk_allocator(

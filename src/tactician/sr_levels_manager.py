@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 SR Levels Manager - Comprehensive Support/Resistance Level Management
 
@@ -26,6 +27,7 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("SRLevelsManager")
+
 
 class SRLevel:
     """Individual Support/Resistance Level with comprehensive information."""
@@ -139,6 +141,7 @@ class SRLevel:
 
         return min(1.0, score)
 
+
 class SRLevelsManager:
     """
     Comprehensive SR Levels Manager for trading intelligence.
@@ -216,7 +219,9 @@ class SRLevelsManager:
             Dictionary with support and resistance levels
         """
         try:
-            self.logger.info(f"🔍 Calculating SR levels from backtest data ({len(market_data)} points)")
+            self.logger.info(
+                f"🔍 Calculating SR levels from backtest data ({len(market_data)} points)"
+            )
 
             # Get current price for context
             current_price = market_data["close"].iloc[-1]
@@ -227,7 +232,9 @@ class SRLevelsManager:
 
             # Method 1: Use the main SR context method (comprehensive)
             try:
-                sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
+                sr_context = await self.sr_predictor.get_sr_context(
+                    market_data, current_price
+                )
 
                 # Process support levels from context
                 for level_data in sr_context.get("support_levels", []):
@@ -241,38 +248,52 @@ class SRLevelsManager:
                     if level:
                         resistance_levels.append(level)
 
-                self.logger.info(f"✅ Retrieved {len(support_levels)} support and {len(resistance_levels)} resistance levels from SR context")
+                self.logger.info(
+                    f"✅ Retrieved {len(support_levels)} support and {len(resistance_levels)} resistance levels from SR context"
+                )
 
             except Exception as e:
                 self.logger.warning(f"⚠️ SR context method failed: {e}")
 
             # Method 2: Use direct detection methods if context method didn't provide enough levels
             if len(support_levels) < 3 or len(resistance_levels) < 3:
-                self.logger.info("🔄 Using direct detection methods for additional levels")
+                self.logger.info(
+                    "🔄 Using direct detection methods for additional levels"
+                )
 
                 try:
                     # Direct support level detection
-                    direct_support = await self.sr_predictor._detect_support_levels(market_data)
+                    direct_support = await self.sr_predictor._detect_support_levels(
+                        market_data
+                    )
                     for level_data in direct_support:
                         level = self._create_sr_level_from_data(level_data, "support")
                         if level and not self._level_exists(level, support_levels):
                             support_levels.append(level)
 
                     # Direct resistance level detection
-                    direct_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
+                    direct_resistance = (
+                        await self.sr_predictor._detect_resistance_levels(market_data)
+                    )
                     for level_data in direct_resistance:
-                        level = self._create_sr_level_from_data(level_data, "resistance")
+                        level = self._create_sr_level_from_data(
+                            level_data, "resistance"
+                        )
                         if level and not self._level_exists(level, resistance_levels):
                             resistance_levels.append(level)
 
-                    self.logger.info(f"✅ Added {len(direct_support)} direct support and {len(direct_resistance)} direct resistance levels")
+                    self.logger.info(
+                        f"✅ Added {len(direct_support)} direct support and {len(direct_resistance)} direct resistance levels"
+                    )
 
                 except Exception as e:
                     self.logger.warning(f"⚠️ Direct detection methods failed: {e}")
 
             # Method 3: Use specific detection methods for comprehensive coverage
             if len(support_levels) < 5 or len(resistance_levels) < 5:
-                self.logger.info("🔄 Using specific detection methods for comprehensive coverage")
+                self.logger.info(
+                    "🔄 Using specific detection methods for comprehensive coverage"
+                )
 
                 detection_methods = ["fractal", "volume", "pivot", "atr"]
 
@@ -283,25 +304,39 @@ class SRLevelsManager:
                         self.sr_predictor.sr_detection_method = method
 
                         # Detect support levels with this method
-                        method_support = await self.sr_predictor._detect_support_levels(market_data)
+                        method_support = await self.sr_predictor._detect_support_levels(
+                            market_data
+                        )
                         for level_data in method_support:
-                            level = self._create_sr_level_from_data(level_data, "support")
+                            level = self._create_sr_level_from_data(
+                                level_data, "support"
+                            )
                             if level and not self._level_exists(level, support_levels):
                                 level.metadata["detection_method"] = method
                                 support_levels.append(level)
 
                         # Detect resistance levels with this method
-                        method_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
+                        method_resistance = (
+                            await self.sr_predictor._detect_resistance_levels(
+                                market_data
+                            )
+                        )
                         for level_data in method_resistance:
-                            level = self._create_sr_level_from_data(level_data, "resistance")
-                            if level and not self._level_exists(level, resistance_levels):
+                            level = self._create_sr_level_from_data(
+                                level_data, "resistance"
+                            )
+                            if level and not self._level_exists(
+                                level, resistance_levels
+                            ):
                                 level.metadata["detection_method"] = method
                                 resistance_levels.append(level)
 
                         # Restore original method
                         self.sr_predictor.sr_detection_method = original_method
 
-                        self.logger.info(f"✅ Added {len(method_support)} {method} support and {len(method_resistance)} {method} resistance levels")
+                        self.logger.info(
+                            f"✅ Added {len(method_support)} {method} support and {len(method_resistance)} {method} resistance levels"
+                        )
 
                     except Exception as e:
                         self.logger.warning(f"⚠️ {method} detection method failed: {e}")
@@ -319,7 +354,9 @@ class SRLevelsManager:
             # Save to storage
             await self.save_levels()
 
-            self.logger.info(f"✅ Final calculation: {len(support_levels)} support and {len(resistance_levels)} resistance levels")
+            self.logger.info(
+                f"✅ Final calculation: {len(support_levels)} support and {len(resistance_levels)} resistance levels"
+            )
 
             return {
                 "support_levels": support_levels,
@@ -362,32 +399,46 @@ class SRLevelsManager:
             # Detect support levels if requested
             if level_type in ["support", "both"]:
                 try:
-                    support_data = await self.sr_predictor._detect_support_levels(market_data)
+                    support_data = await self.sr_predictor._detect_support_levels(
+                        market_data
+                    )
                     for level_data in support_data:
                         level = self._create_sr_level_from_data(level_data, "support")
                         if level:
                             level.metadata["detection_method"] = method
                             support_levels.append(level)
 
-                    self.logger.info(f"✅ Detected {len(support_levels)} support levels using {method} method")
+                    self.logger.info(
+                        f"✅ Detected {len(support_levels)} support levels using {method} method"
+                    )
 
                 except Exception as e:
-                    self.logger.exception(f"❌ Error detecting support levels with {method} method: {e}")
+                    self.logger.exception(
+                        f"❌ Error detecting support levels with {method} method: {e}"
+                    )
 
             # Detect resistance levels if requested
             if level_type in ["resistance", "both"]:
                 try:
-                    resistance_data = await self.sr_predictor._detect_resistance_levels(market_data)
+                    resistance_data = await self.sr_predictor._detect_resistance_levels(
+                        market_data
+                    )
                     for level_data in resistance_data:
-                        level = self._create_sr_level_from_data(level_data, "resistance")
+                        level = self._create_sr_level_from_data(
+                            level_data, "resistance"
+                        )
                         if level:
                             level.metadata["detection_method"] = method
                             resistance_levels.append(level)
 
-                    self.logger.info(f"✅ Detected {len(resistance_levels)} resistance levels using {method} method")
+                    self.logger.info(
+                        f"✅ Detected {len(resistance_levels)} resistance levels using {method} method"
+                    )
 
                 except Exception as e:
-                    self.logger.exception(f"❌ Error detecting resistance levels with {method} method: {e}")
+                    self.logger.exception(
+                        f"❌ Error detecting resistance levels with {method} method: {e}"
+                    )
 
             # Restore original method
             self.sr_predictor.sr_detection_method = original_method
@@ -399,10 +450,16 @@ class SRLevelsManager:
             }
 
         except Exception as e:
-            self.logger.exception(f"❌ Error calculating SR levels with {method} method: {e}")
+            self.logger.exception(
+                f"❌ Error calculating SR levels with {method} method: {e}"
+            )
             # Restore original method on error
             self.sr_predictor.sr_detection_method = original_method
-            return {"support_levels": [], "resistance_levels": [], "method_used": method}
+            return {
+                "support_levels": [],
+                "resistance_levels": [],
+                "method_used": method,
+            }
 
     async def update_levels_with_live_data(
         self,
@@ -422,7 +479,9 @@ class SRLevelsManager:
             Update summary
         """
         try:
-            self.logger.info(f"🔄 Updating SR levels with live data (price: {current_price:.4f})")
+            self.logger.info(
+                f"🔄 Updating SR levels with live data (price: {current_price:.4f})"
+            )
 
             updates = {
                 "support_touches": 0,
@@ -474,47 +533,98 @@ class SRLevelsManager:
         """
         try:
             # Find nearest levels
-            nearest_support = self._find_nearest_level(current_price, self.support_levels)
-            nearest_resistance = self._find_nearest_level(current_price, self.resistance_levels)
+            nearest_support = self._find_nearest_level(
+                current_price, self.support_levels
+            )
+            nearest_resistance = self._find_nearest_level(
+                current_price, self.resistance_levels
+            )
 
             # Calculate proximity
-            support_proximity = self._calculate_proximity(current_price, nearest_support)
-            resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
+            support_proximity = self._calculate_proximity(
+                current_price, nearest_support
+            )
+            resistance_proximity = self._calculate_proximity(
+                current_price, nearest_resistance
+            )
 
             # Prepare response
             response = {
                 "current_price": current_price,
                 "timestamp": datetime.now().isoformat(),
-                "nearest_support": {
-                    "price": nearest_support.price if nearest_support else None,
-                    "strength": nearest_support.strength if nearest_support else None,
-                    "proximity": support_proximity,
-                    "touch_count": nearest_support.touch_count if nearest_support else None,
-                    "age_hours": nearest_support.age_hours if nearest_support else None,
-                    "bounce_rate": nearest_support.bounce_rate if nearest_support else None,
-                    "quality_score": nearest_support.calculate_quality_score() if nearest_support else None,
-                } if nearest_support else None,
-                "nearest_resistance": {
-                    "price": nearest_resistance.price if nearest_resistance else None,
-                    "strength": nearest_resistance.strength if nearest_resistance else None,
-                    "proximity": resistance_proximity,
-                    "touch_count": nearest_resistance.touch_count if nearest_resistance else None,
-                    "age_hours": nearest_resistance.age_hours if nearest_resistance else None,
-                    "bounce_rate": nearest_resistance.bounce_rate if nearest_resistance else None,
-                    "quality_score": nearest_resistance.calculate_quality_score() if nearest_resistance else None,
-                } if nearest_resistance else None,
+                "nearest_support": (
+                    {
+                        "price": nearest_support.price if nearest_support else None,
+                        "strength": (
+                            nearest_support.strength if nearest_support else None
+                        ),
+                        "proximity": support_proximity,
+                        "touch_count": (
+                            nearest_support.touch_count if nearest_support else None
+                        ),
+                        "age_hours": (
+                            nearest_support.age_hours if nearest_support else None
+                        ),
+                        "bounce_rate": (
+                            nearest_support.bounce_rate if nearest_support else None
+                        ),
+                        "quality_score": (
+                            nearest_support.calculate_quality_score()
+                            if nearest_support
+                            else None
+                        ),
+                    }
+                    if nearest_support
+                    else None
+                ),
+                "nearest_resistance": (
+                    {
+                        "price": (
+                            nearest_resistance.price if nearest_resistance else None
+                        ),
+                        "strength": (
+                            nearest_resistance.strength if nearest_resistance else None
+                        ),
+                        "proximity": resistance_proximity,
+                        "touch_count": (
+                            nearest_resistance.touch_count
+                            if nearest_resistance
+                            else None
+                        ),
+                        "age_hours": (
+                            nearest_resistance.age_hours if nearest_resistance else None
+                        ),
+                        "bounce_rate": (
+                            nearest_resistance.bounce_rate
+                            if nearest_resistance
+                            else None
+                        ),
+                        "quality_score": (
+                            nearest_resistance.calculate_quality_score()
+                            if nearest_resistance
+                            else None
+                        ),
+                    }
+                    if nearest_resistance
+                    else None
+                ),
                 "all_levels": {
                     "support_count": len(self.support_levels),
                     "resistance_count": len(self.resistance_levels),
-                    "total_count": len(self.support_levels) + len(self.resistance_levels),
+                    "total_count": len(self.support_levels)
+                    + len(self.resistance_levels),
                 },
             }
 
             # Add detailed metadata if requested
             if include_metadata:
                 response["detailed_levels"] = {
-                    "support_levels": [level.to_dict() for level in self.support_levels],
-                    "resistance_levels": [level.to_dict() for level in self.resistance_levels],
+                    "support_levels": [
+                        level.to_dict() for level in self.support_levels
+                    ],
+                    "resistance_levels": [
+                        level.to_dict() for level in self.resistance_levels
+                    ],
                 }
 
             return response
@@ -573,7 +683,9 @@ class SRLevelsManager:
                 },
                 "overlap_analysis": overlap_analysis,
                 "recommendations": self._generate_comparison_recommendations(
-                    price_quality, vwap_quality, overlap_analysis,
+                    price_quality,
+                    vwap_quality,
+                    overlap_analysis,
                 ),
                 "timestamp": datetime.now().isoformat(),
             }
@@ -608,7 +720,7 @@ class SRLevelsManager:
                 filtered.append(level)
 
         # Limit total levels
-        return filtered[:self.max_levels]
+        return filtered[: self.max_levels]
 
     def _is_price_near_level(self, price1: float, price2: float) -> bool:
         """Check if two prices are near each other."""
@@ -616,7 +728,9 @@ class SRLevelsManager:
             return False
         return abs(price1 - price2) / price2 < self.proximity_threshold
 
-    def _find_nearest_level(self, price: float, levels: list[SRLevel]) -> SRLevel | None:
+    def _find_nearest_level(
+        self, price: float, levels: list[SRLevel]
+    ) -> SRLevel | None:
         """Find the nearest level to a given price."""
         if not levels:
             return None
@@ -636,12 +750,14 @@ class SRLevelsManager:
 
         # Remove levels older than 30 days and with low strength
         self.support_levels = [
-            l for l in self.support_levels
+            l
+            for l in self.support_levels
             if (current_time - l.creation_time).days < 30 or l.strength > 0.6
         ]
 
         self.resistance_levels = [
-            l for l in self.resistance_levels
+            l
+            for l in self.resistance_levels
             if (current_time - l.creation_time).days < 30 or l.strength > 0.6
         ]
 
@@ -660,7 +776,9 @@ class SRLevelsManager:
             "avg_quality": avg_quality,
         }
 
-    def _calculate_levels_overlap(self, levels1: list[SRLevel], levels2: list[SRLevel]) -> dict[str, Any]:
+    def _calculate_levels_overlap(
+        self, levels1: list[SRLevel], levels2: list[SRLevel]
+    ) -> dict[str, Any]:
         """Calculate overlap between two sets of levels."""
         if not levels1 or not levels2:
             return {"overlap_count": 0, "overlap_rate": 0.0, "overlap_details": []}
@@ -670,16 +788,23 @@ class SRLevelsManager:
 
         for l1 in levels1:
             for l2 in levels2:
-                if (l1.level_type == l2.level_type and
-                    self._is_price_near_level(l1.price, l2.price)):
+                if l1.level_type == l2.level_type and self._is_price_near_level(
+                    l1.price, l2.price
+                ):
                     overlap_count += 1
-                    overlap_details.append({
-                        "level1": l1.to_dict(),
-                        "level2": l2.to_dict(),
-                        "price_difference": abs(l1.price - l2.price),
-                    })
+                    overlap_details.append(
+                        {
+                            "level1": l1.to_dict(),
+                            "level2": l2.to_dict(),
+                            "price_difference": abs(l1.price - l2.price),
+                        }
+                    )
 
-        overlap_rate = overlap_count / min(len(levels1), len(levels2)) if min(len(levels1), len(levels2)) > 0 else 0.0
+        overlap_rate = (
+            overlap_count / min(len(levels1), len(levels2))
+            if min(len(levels1), len(levels2)) > 0
+            else 0.0
+        )
 
         return {
             "overlap_count": overlap_count,
@@ -687,7 +812,9 @@ class SRLevelsManager:
             "overlap_details": overlap_details,
         }
 
-    def _create_sr_level_from_data(self, level_data: dict[str, Any], level_type: str) -> SRLevel | None:
+    def _create_sr_level_from_data(
+        self, level_data: dict[str, Any], level_type: str
+    ) -> SRLevel | None:
         """Create SRLevel object from level data dictionary."""
         try:
             if not level_data or not isinstance(level_data, dict):
@@ -707,7 +834,9 @@ class SRLevelsManager:
                 method=level_data.get("method", "unknown"),
                 data_source=level_data.get("data_source", "price"),
                 timestamp=timestamp,
-                strength=level_data.get("enhanced_strength", level_data.get("strength", 0.5)),
+                strength=level_data.get(
+                    "enhanced_strength", level_data.get("strength", 0.5)
+                ),
                 volume=level_data.get("volume", 0.0),
                 touch_count=level_data.get("touch_count", 0),
                 age_hours=level_data.get("age_hours", 0.0),
@@ -717,7 +846,6 @@ class SRLevelsManager:
                 metadata=level_data.get("metadata", {}),
             )
 
-
         except Exception as e:
             self.logger.exception(f"❌ Error creating SR level from data: {e}")
             return None
@@ -726,8 +854,10 @@ class SRLevelsManager:
         """Check if a level already exists in the list based on price proximity."""
         try:
             for existing_level in existing_levels:
-                if (existing_level.level_type == new_level.level_type and
-                    self._is_price_near_level(new_level.price, existing_level.price)):
+                if (
+                    existing_level.level_type == new_level.level_type
+                    and self._is_price_near_level(new_level.price, existing_level.price)
+                ):
                     return True
             return False
 
@@ -746,21 +876,33 @@ class SRLevelsManager:
 
         # Quality-based recommendations
         if price_quality["avg_quality"] > vwap_quality["avg_quality"]:
-            recommendations.append("Price-based detection shows higher quality - consider prioritizing price data")
+            recommendations.append(
+                "Price-based detection shows higher quality - consider prioritizing price data"
+            )
         elif vwap_quality["avg_quality"] > price_quality["avg_quality"]:
-            recommendations.append("VWAP-based detection shows higher quality - consider prioritizing VWAP data")
+            recommendations.append(
+                "VWAP-based detection shows higher quality - consider prioritizing VWAP data"
+            )
 
         # Overlap-based recommendations
         if overlap_analysis["overlap_rate"] < 0.3:
-            recommendations.append("Low overlap between approaches - consider adjusting detection parameters")
+            recommendations.append(
+                "Low overlap between approaches - consider adjusting detection parameters"
+            )
         elif overlap_analysis["overlap_rate"] > 0.8:
-            recommendations.append("High overlap between approaches - both methods are detecting similar levels")
+            recommendations.append(
+                "High overlap between approaches - both methods are detecting similar levels"
+            )
 
         # General recommendations
         if price_quality["avg_quality"] < 0.5:
-            recommendations.append("Price-based detection quality is low - review detection parameters")
+            recommendations.append(
+                "Price-based detection quality is low - review detection parameters"
+            )
         if vwap_quality["avg_quality"] < 0.5:
-            recommendations.append("VWAP-based detection quality is low - review VWAP calculation")
+            recommendations.append(
+                "VWAP-based detection quality is low - review VWAP calculation"
+            )
 
         return recommendations
 
@@ -769,7 +911,9 @@ class SRLevelsManager:
         try:
             data = {
                 "support_levels": [level.to_dict() for level in self.support_levels],
-                "resistance_levels": [level.to_dict() for level in self.resistance_levels],
+                "resistance_levels": [
+                    level.to_dict() for level in self.resistance_levels
+                ],
                 "last_update": self.last_update.isoformat(),
                 "update_count": self.update_count,
             }
@@ -806,10 +950,14 @@ class SRLevelsManager:
             ]
 
             # Load metadata
-            self.last_update = datetime.fromisoformat(data.get("last_update", datetime.now().isoformat()))
+            self.last_update = datetime.fromisoformat(
+                data.get("last_update", datetime.now().isoformat())
+            )
             self.update_count = data.get("update_count", 0)
 
-            self.logger.info(f"✅ Loaded {len(self.support_levels)} support and {len(self.resistance_levels)} resistance levels")
+            self.logger.info(
+                f"✅ Loaded {len(self.support_levels)} support and {len(self.resistance_levels)} resistance levels"
+            )
 
         except Exception as e:
             self.logger.exception(f"❌ Error loading SR levels: {e}")
@@ -824,10 +972,12 @@ class SRLevelsManager:
                     history_data = json.load(f)
 
             # Add current state to history
-            history_data.append({
-                "timestamp": datetime.now().isoformat(),
-                "data": data,
-            })
+            history_data.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "data": data,
+                }
+            )
 
             # Keep only last 100 entries
             if len(history_data) > 100:
@@ -838,6 +988,7 @@ class SRLevelsManager:
 
         except Exception as e:
             self.logger.exception(f"❌ Error saving to history: {e}")
+
 
 async def create_sr_levels_manager(config: dict[str, Any]) -> SRLevelsManager:
     """Factory function to create and initialize SR Levels Manager."""

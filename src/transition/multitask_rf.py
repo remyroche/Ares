@@ -28,6 +28,7 @@ class MTRFConfig:
     max_train_samples: int
     enable_regression: bool
 
+
 class MultiTaskRandomForest:
     """
     Simple multi-head trainer built on RF:
@@ -70,9 +71,10 @@ class MultiTaskRandomForest:
 
     def _cap(self, X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd.Series]:
         if len(X) > self.cfg.max_train_samples:
-            return X.iloc[-self.cfg.max_train_samples :], y.iloc[
-                -self.cfg.max_train_samples :
-            ]
+            return (
+                X.iloc[-self.cfg.max_train_samples :],
+                y.iloc[-self.cfg.max_train_samples :],
+            )
         return X, y
 
     def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
@@ -122,8 +124,10 @@ class MultiTaskRandomForest:
         pc_pred = pc_model.predict(Xva)
         results["path_class"] = {
             "report": classification_report(
-                yva, pc_pred,
-                output_dict=True, zero_division=0,
+                yva,
+                pc_pred,
+                output_dict=True,
+                zero_division=0,
             ),
             "classes": list(pc_model.classes_),
         }
@@ -132,8 +136,8 @@ class MultiTaskRandomForest:
             proba = pc_model.predict_proba(Xva)
             classes = list(pc_model.classes_)
             val_true = yva.values
-            scales: dict[str , float] = {}
-            thrs: dict[str , float] = {}
+            scales: dict[str, float] = {}
+            thrs: dict[str, float] = {}
             for i, c in enumerate(classes):
                 p = proba[:, i].astype(float)
                 y_bin = (val_true == c).astype(int)
@@ -170,8 +174,10 @@ class MultiTaskRandomForest:
             y_pred = clf.predict(Xva)
             results[head] = {
                 "report": classification_report(
-                    yva, y_pred,
-                    output_dict=True, zero_division=0,
+                    yva,
+                    y_pred,
+                    output_dict=True,
+                    zero_division=0,
                 ),
             }
             try:
@@ -225,8 +231,10 @@ class MultiTaskRandomForest:
                 self.models["next_regime"] = nr_model
                 results["next_regime"] = {
                     "report": classification_report(
-                        yva, nr_model.predict(Xva),
-                        output_dict=True, zero_division=0,
+                        yva,
+                        nr_model.predict(Xva),
+                        output_dict=True,
+                        zero_division=0,
                     ),
                     "classes": list(nr_model.classes_),
                 }
@@ -273,8 +281,10 @@ class MultiTaskRandomForest:
             y_pred = clf.predict(Xva)
             results[head] = {
                 "report": classification_report(
-                    yva, y_pred,
-                    output_dict=True, zero_division=0,
+                    yva,
+                    y_pred,
+                    output_dict=True,
+                    zero_division=0,
                 ),
             }
             try:
@@ -306,8 +316,10 @@ class MultiTaskRandomForest:
                 yva = yh.iloc[split_idx:]
                 reg = RandomForestRegressor(
                     n_estimators=max(200, self.cfg.n_estimators // 2),
-                    max_depth=self.cfg.max_depth, min_samples_leaf = self.cfg.min_samples_leaf,
-                    random_state=self.cfg.random_state, n_jobs = -1,
+                    max_depth=self.cfg.max_depth,
+                    min_samples_leaf=self.cfg.min_samples_leaf,
+                    random_state=self.cfg.random_state,
+                    n_jobs=-1,
                 )
                 reg.fit(Xtr, ytr)
                 self.models[head] = reg
@@ -361,7 +373,9 @@ class MultiTaskRandomForest:
         }
 
     @staticmethod
-    def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
+    def load(
+        models_dir: str, prefix: str = "rolling_mtrf"
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
         models: dict[str, Any] = {}
         # Load models
         for fname in os.listdir(models_dir):
@@ -376,19 +390,25 @@ class MultiTaskRandomForest:
         thresholds: dict[str, Any] = {}
         reliability: dict[str, Any] = {}
         try:
-            with open(os.path.join(models_dir, "thresholds.json"), encoding="utf-8") as f:
+            with open(
+                os.path.join(models_dir, "thresholds.json"), encoding="utf-8"
+            ) as f:
                 thresholds = json.load(f)
         except Exception:
             pass
         try:
-            with open(os.path.join(models_dir, "reliability.json"), encoding="utf-8") as f:
+            with open(
+                os.path.join(models_dir, "reliability.json"), encoding="utf-8"
+            ) as f:
                 reliability = json.load(f)
         except Exception:
             pass
         # Load feature names
         feature_names: list[str] = []
         try:
-            with open(os.path.join(models_dir, f"{prefix}_meta.json"), encoding="utf-8") as f:
+            with open(
+                os.path.join(models_dir, f"{prefix}_meta.json"), encoding="utf-8"
+            ) as f:
                 meta = json.load(f)
                 feature_names = list(meta.get("feature_names", []))
         except Exception:
@@ -402,7 +422,9 @@ class MultiTaskRandomForest:
                 if hasattr(model, "predict_proba"):
                     proba = model.predict_proba(X)
                     classes = getattr(model, "classes_", [])
-                    out[name] = {str(c): proba[:, i].tolist() for i, c in enumerate(classes)}
+                    out[name] = {
+                        str(c): proba[:, i].tolist() for i, c in enumerate(classes)
+                    }
                 else:
                     out[name] = list(map(float, model.predict(X).tolist()))
             except Exception as e:

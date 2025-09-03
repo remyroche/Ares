@@ -1,9 +1,10 @@
 from __future__ import annotations
-# src/config/trading.py
 
 from typing import Any
 
 from src.config.environment import get_environment_settings
+
+# src/config/trading.py
 
 
 def get_trading_config() -> dict[str, Any]:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/performance_comparison.py
 
 """Performance Comparison Module."
@@ -25,6 +26,7 @@ from src.utils.warning_symbols import (
     initialization_error,
 )
 
+
 @dataclass
 class PerformanceMetrics:
     """Structured performance metrics for comparison."""
@@ -45,6 +47,7 @@ class PerformanceMetrics:
     model_complexity: float
     training_time: float
     inference_time: float
+
 
 class PerformanceComparison:
     """Comprehensive performance comparison system."""
@@ -139,14 +142,14 @@ class PerformanceComparison:
             )
 
             # Statistical significance testing
-            comparison_results[
-                "statistical_significance"
-            ] = await self._test_statistical_significance(comparison_results["models"])
+            comparison_results["statistical_significance"] = (
+                await self._test_statistical_significance(comparison_results["models"])
+            )
 
             # Generate recommendations
-            comparison_results[
-                "recommendations"
-            ] = await self._generate_recommendations(comparison_results)
+            comparison_results["recommendations"] = (
+                await self._generate_recommendations(comparison_results)
+            )
 
             # Store results
             self.model_performances.update(comparison_results["models"])
@@ -199,9 +202,9 @@ class PerformanceComparison:
                 ensemble_comparison["complexity_metrics"][ensemble_name] = complexity
 
             # Generate ensemble recommendations
-            ensemble_comparison[
-                "recommendations"
-            ] = await self._generate_ensemble_recommendations(ensemble_comparison)
+            ensemble_comparison["recommendations"] = (
+                await self._generate_ensemble_recommendations(ensemble_comparison)
+            )
 
             # Store results
             self.ensemble_performances.update(ensemble_comparison["ensembles"])
@@ -239,27 +242,27 @@ class PerformanceComparison:
 
                 # Calculate convergence metrics
                 convergence = await self._calculate_convergence_metrics(results)
-                optimization_comparison["convergence_metrics"][strategy_name] = (
-                    convergence
-                )
+                optimization_comparison["convergence_metrics"][
+                    strategy_name
+                ] = convergence
 
                 # Calculate efficiency metrics
                 efficiency = await self._calculate_efficiency_metrics(results)
-                optimization_comparison["efficiency_metrics"][strategy_name] = (
-                    efficiency
-                )
+                optimization_comparison["efficiency_metrics"][
+                    strategy_name
+                ] = efficiency
 
                 # Calculate robustness metrics
                 robustness = await self._calculate_robustness_metrics(results)
-                optimization_comparison["robustness_metrics"][strategy_name] = (
-                    robustness
-                )
+                optimization_comparison["robustness_metrics"][
+                    strategy_name
+                ] = robustness
 
             # Generate optimization recommendations
-            optimization_comparison[
-                "recommendations"
-            ] = await self._generate_optimization_recommendations(
-                optimization_comparison,
+            optimization_comparison["recommendations"] = (
+                await self._generate_optimization_recommendations(
+                    optimization_comparison,
+                )
             )
 
             # Store results
@@ -321,9 +324,9 @@ class PerformanceComparison:
             improvements["statistical_significance"] = significance
 
             # Generate trading recommendations
-            improvements[
-                "recommendations"
-            ] = await self._generate_trading_recommendations(improvements)
+            improvements["recommendations"] = (
+                await self._generate_trading_recommendations(improvements)
+            )
 
             # Store results
             self.comparison_results["trading_improvements"] = improvements
@@ -502,9 +505,9 @@ class PerformanceComparison:
             significance_results[metric] = {
                 "mean": mean_value,
                 "std": std_value,
-                "coefficient_of_variation": std_value / mean_value
-                if mean_value != 0
-                else 0,
+                "coefficient_of_variation": (
+                    std_value / mean_value if mean_value != 0 else 0
+                ),
                 "significant_differences": len(
                     [v for v in values if abs(v - mean_value) > 2 * std_value],
                 ),
@@ -719,8 +722,10 @@ class PerformanceComparison:
         """Generate trading-specific recommendations."""
         return ["Deploy improvements gradually", "Monitor risk metrics closely"]
 
+
 # Global performance comparison instance
 performance_comparison: PerformanceComparison | None = None
+
 
 async def setup_performance_comparison(
     config: dict[str, Any] | None = None,

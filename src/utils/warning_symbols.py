@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Warning symbols and color utilities for enhanced logging output.
 
 This module provides warning symbols = color codes = and formatting utilities

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/types/validation.py
 
 """
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+
 class RuntimeTypeError(Exception):
     """Exception raised when runtime type validation fails."""
 
@@ -33,6 +35,7 @@ class RuntimeTypeError(Exception):
         super().__init__(
             f"Type validation failed in {context}: expected {expected_type}, got {type(actual_value)}",
         )
+
 
 class TypeValidator:
     """Runtime type validation utilities."""
@@ -110,21 +113,26 @@ class TypeValidator:
             # Fallback for complex types
             return True
 
+
 def validate_config(config: Any) -> ConfigDict:
     """Validate configuration dictionary."""
     return TypeValidator.validate_type(config, ConfigDict, "configuration")
+
 
 def validate_market_data(data: Any) -> MarketDataDict:
     """Validate market data structure."""
     return TypeValidator.validate_type(data, MarketDataDict, "market_data")
 
+
 def validate_model_input(input_data: Any) -> ModelInput:
     """Validate ML model input structure."""
     return TypeValidator.validate_type(input_data, ModelInput, "model_input")
 
+
 def validate_ohlcv_data(data: Any) -> OHLCVData:
     """Validate OHLCV data structure."""
     return TypeValidator.validate_type(data, OHLCVData, "ohlcv_data")
+
 
 def type_safe(func: Callable) -> Callable:
     """
@@ -171,6 +179,7 @@ def type_safe(func: Callable) -> Callable:
 
     return wrapper
 
+
 def validate_critical_path(
     validator_func: Callable[[Any], T],
 ) -> Callable[[Callable], Callable]:
@@ -197,7 +206,9 @@ def validate_critical_path(
 
     return decorator
 
+
 # Specific validators for common types
+
 
 def validate_symbol(value: Any) -> Symbol:
     """Validate symbol type."""
@@ -205,11 +216,13 @@ def validate_symbol(value: Any) -> Symbol:
         raise RuntimeTypeError(Symbol, value, "symbol")
     return Symbol(value.upper())
 
+
 def validate_price(value: Any) -> Price:
     """Validate price type."""
     if not isinstance(value, int | float) or value < 0:
         raise RuntimeTypeError(Price, value, "price")
     return Price(float(value))
+
 
 def validate_volume(value: Any) -> Volume:
     """Validate volume type."""

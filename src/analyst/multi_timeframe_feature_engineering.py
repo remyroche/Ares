@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/analyst/multi_timeframe_feature_engineering.py
 
 """Multi-Timeframe Feature Engineering System.
@@ -33,6 +34,7 @@ from src.utils.warning_symbols import error
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+
 class MultiTimeframeFeatureEngineering:
     """Multi-timeframe feature engineering system that adapts indicators to specific timeframes.
 
@@ -62,8 +64,8 @@ class MultiTimeframeFeatureEngineering:
         self.mtf_config = config.get("multi_timeframe_feature_engineering", {})
         self.enable_mtf_features = self.mtf_config.get("enable_mtf_features", True)
         self.enable_timeframe_adaptation = self.mtf_config.get(
-            "enable_timeframe_adaptation",
-            True)
+            "enable_timeframe_adaptation", True
+        )
 
         # Timeframe-specific parameter mappings
         self.timeframe_parameters = self._initialize_timeframe_parameters()
@@ -296,10 +298,12 @@ class MultiTimeframeFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     async def generate_multi_timeframe_features(
-        self, data_dict: dict[str, pd.DataFrame],
+        self,
+        data_dict: dict[str, pd.DataFrame],
         agg_trades_dict: dict[str, pd.DataFrame] | None = None,
         futures_dict: dict[str, pd.DataFrame] | None = None,
-        sr_levels: list[float] | None = None) -> dict[str, pd.DataFrame]:
+        sr_levels: list[float] | None = None,
+    ) -> dict[str, pd.DataFrame]:
         """Generate features for multiple timeframes with appropriate adaptations.
 
         Args:
@@ -332,20 +336,22 @@ class MultiTimeframeFeatureEngineering:
 
                 # Generate base features first
                 base_features = await self._generate_base_features(
-                    timeframe, data,
+                    timeframe,
+                    data,
                     agg_trades_dict.get(timeframe) if agg_trades_dict else None,
                     futures_dict.get(timeframe) if futures_dict else None,
-                    sr_levels)
+                    sr_levels,
+                )
 
                 # Generate timeframe-specific features
                 tf_features = await self._generate_timeframe_specific_features(
-                    timeframe, base_features,
-                    tf_params)
+                    timeframe, base_features, tf_params
+                )
 
                 # Add timeframe metadata
                 tf_features = self._add_timeframe_metadata(
-                    tf_features, timeframe,
-                    tf_params)
+                    tf_features, timeframe, tf_params
+                )
 
                 features_dict[timeframe] = tf_features
 
@@ -363,9 +369,12 @@ class MultiTimeframeFeatureEngineering:
             return {}
 
     async def _generate_base_features(
-        self, timeframe: str,
-        data: pd.DataFrame, agg_trades: pd.DataFrame | None = None,
-        futures: pd.DataFrame | None = None, sr_levels: list[float] | None = None,
+        self,
+        timeframe: str,
+        data: pd.DataFrame,
+        agg_trades: pd.DataFrame | None = None,
+        futures: pd.DataFrame | None = None,
+        sr_levels: list[float] | None = None,
     ) -> pd.DataFrame:
         """Generate base features using the standard feature engineering engine.
 
@@ -383,7 +392,8 @@ class MultiTimeframeFeatureEngineering:
         try:
             # Use base feature engineering engine
             return self.base_feature_engine.generate_all_features(
-                klines_df=data, agg_trades_df=agg_trades or pd.DataFrame(),
+                klines_df=data,
+                agg_trades_df=agg_trades or pd.DataFrame(),
                 futures_df=futures or pd.DataFrame(),
                 sr_levels=sr_levels or [],
             )
@@ -395,8 +405,10 @@ class MultiTimeframeFeatureEngineering:
             return data.copy()
 
     async def _generate_timeframe_specific_features(
-        self, timeframe: str,
-        base_features: pd.DataFrame, tf_params: dict[str, Any],
+        self,
+        timeframe: str,
+        base_features: pd.DataFrame,
+        tf_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Generate timeframe-specific features with adapted parameters.
 
@@ -417,28 +429,28 @@ class MultiTimeframeFeatureEngineering:
 
             # Calculate timeframe-specific technical indicators
             features = self._calculate_timeframe_technical_indicators(
-                features, timeframe,
-                indicator_params)
+                features, timeframe, indicator_params
+            )
 
             # Calculate timeframe-specific volume indicators
             features = self._calculate_timeframe_volume_indicators(
-                features, timeframe,
-                indicator_params)
+                features, timeframe, indicator_params
+            )
 
             # Calculate timeframe-specific volatility indicators
             features = self._calculate_timeframe_volatility_indicators(
-                features, timeframe,
-                indicator_params)
+                features, timeframe, indicator_params
+            )
 
             # Calculate timeframe-specific momentum indicators
             features = self._calculate_timeframe_momentum_indicators(
-                features, timeframe,
-                indicator_params)
+                features, timeframe, indicator_params
+            )
 
             # Calculate timeframe-specific trend indicators
             return self._calculate_timeframe_trend_indicators(
-                features, timeframe,
-                indicator_params)
+                features, timeframe, indicator_params
+            )
 
         except Exception as e:
             self.logger.exception(
@@ -447,8 +459,10 @@ class MultiTimeframeFeatureEngineering:
             return base_features
 
     def _calculate_timeframe_technical_indicators(
-        self, df: pd.DataFrame,
-        timeframe: str, indicator_params: dict[str, Any],
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
+        indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Calculate timeframe-specific technical indicators using price differences.
 
@@ -555,8 +569,10 @@ class MultiTimeframeFeatureEngineering:
             return df
 
     def _calculate_timeframe_volume_indicators(
-        self, df: pd.DataFrame,
-        timeframe: str, indicator_params: dict[str, Any],
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
+        indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Calculate timeframe-specific volume indicators.
 
@@ -604,8 +620,10 @@ class MultiTimeframeFeatureEngineering:
             )
 
     def _calculate_timeframe_volatility_indicators(
-        self, df: pd.DataFrame,
-        timeframe: str, indicator_params: dict[str, Any],
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
+        indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Calculate timeframe-specific volatility indicators.
 
@@ -647,8 +665,10 @@ class MultiTimeframeFeatureEngineering:
             )
 
     def _calculate_timeframe_momentum_indicators(
-        self, df: pd.DataFrame,
-        timeframe: str, indicator_params: dict[str, Any],
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
+        indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Calculate timeframe-specific momentum indicators.
 
@@ -694,8 +714,10 @@ class MultiTimeframeFeatureEngineering:
             )
 
     def _calculate_timeframe_trend_indicators(
-        self, df: pd.DataFrame,
-        timeframe: str, indicator_params: dict[str, Any],
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
+        indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Calculate timeframe-specific trend indicators.
 
@@ -750,8 +772,10 @@ class MultiTimeframeFeatureEngineering:
             )
 
     def _add_timeframe_metadata(
-        self, df: pd.DataFrame,
-        timeframe: str, tf_params: dict[str, Any],
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
+        tf_params: dict[str, Any],
     ) -> pd.DataFrame:
         """Add timeframe metadata to the features DataFrame.
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Refactored cross-timeframe and interaction feature generation with reduced complexity.
 This module breaks down the high-complexity feature generation methods into smaller,
@@ -16,6 +17,7 @@ import pandas as pd
 
 class TimeframeType(Enum):
     """Types of timeframes for analysis"""
+
     ULTRA_SHORT = [1, 2, 3]
     SHORT = [5, 10, 15]
     MEDIUM = [20, 30, 45]
@@ -25,6 +27,7 @@ class TimeframeType(Enum):
 @dataclass
 class CrossTimeframeConfig:
     """Configuration for cross-timeframe feature generation"""
+
     momentum_timeframes: list[int] = None
     volatility_timeframes: list[int] = None
     volume_timeframes: list[int] = None
@@ -61,6 +64,7 @@ class CrossTimeframeConfig:
 @dataclass
 class InteractionConfig:
     """Configuration for interaction feature generation"""
+
     max_interaction_depth: int = 2
     top_k_features: int = 50
     correlation_threshold: float = 0.95
@@ -124,7 +128,9 @@ class CrossTimeframeFeatureGenerator:
         # Validate and filter features
         valid_features = self._validate_features(features)
 
-        self.logger.info(f"✅ Generated {len(valid_features)} valid cross-timeframe features")
+        self.logger.info(
+            f"✅ Generated {len(valid_features)} valid cross-timeframe features"
+        )
         return valid_features
 
     def _validate_input_data(self, price_data: pd.DataFrame) -> bool:
@@ -138,12 +144,16 @@ class CrossTimeframeFeatureGenerator:
 
         required_cols = {"open", "high", "low", "close"}
         if not required_cols.issubset(price_data.columns):
-            self.logger.warning(f"⚠️ Missing required columns: {required_cols - set(price_data.columns)}")
+            self.logger.warning(
+                f"⚠️ Missing required columns: {required_cols - set(price_data.columns)}"
+            )
             return False
 
         return True
 
-    def _extract_price_components(self, price_data: pd.DataFrame) -> dict[str, pd.Series]:
+    def _extract_price_components(
+        self, price_data: pd.DataFrame
+    ) -> dict[str, pd.Series]:
         """Extract and validate price components"""
         try:
             components = {
@@ -186,12 +196,16 @@ class CrossTimeframeFeatureGenerator:
                 executor.submit(self._generate_range_features, price_components),
             )
             futures.append(
-                executor.submit(self._generate_technical_indicator_features, price_components),
+                executor.submit(
+                    self._generate_technical_indicator_features, price_components
+                ),
             )
 
             if volume_data is not None:
                 futures.append(
-                    executor.submit(self._generate_volume_features, price_components, volume_data),
+                    executor.submit(
+                        self._generate_volume_features, price_components, volume_data
+                    ),
                 )
 
             # Collect results
@@ -219,7 +233,9 @@ class CrossTimeframeFeatureGenerator:
         features.update(self._generate_technical_indicator_features(price_components))
 
         if volume_data is not None:
-            features.update(self._generate_volume_features(price_components, volume_data))
+            features.update(
+                self._generate_volume_features(price_components, volume_data)
+            )
 
         return features
 
@@ -236,7 +252,7 @@ class CrossTimeframeFeatureGenerator:
         timeframes = self.config.momentum_timeframes[:4]  # Limit for safety
 
         for i, tf1 in enumerate(timeframes):
-            for tf2 in timeframes[i + 1:]:
+            for tf2 in timeframes[i + 1 :]:
                 if tf1 < len(close) and tf2 < len(close):
                     # Momentum difference
                     momentum_diff = close.pct_change(tf1) - close.pct_change(tf2)
@@ -244,13 +260,17 @@ class CrossTimeframeFeatureGenerator:
                         features[f"momentum_{tf1}m_{tf2}m"] = momentum_diff
 
                     # Momentum ratio
-                    momentum_ratio = close.pct_change(tf1) / (close.pct_change(tf2) + 1e-8)
+                    momentum_ratio = close.pct_change(tf1) / (
+                        close.pct_change(tf2) + 1e-8
+                    )
                     if self._is_valid_feature(momentum_ratio):
                         features[f"momentum_ratio_{tf1}m_{tf2}m"] = momentum_ratio
 
                     # High-Low momentum
                     if len(close) >= max(tf1, tf2) * 2:
-                        hl_features = self._calculate_hl_momentum(high, low, close, tf1, tf2)
+                        hl_features = self._calculate_hl_momentum(
+                            high, low, close, tf1, tf2
+                        )
                         features.update(hl_features)
 
         return features
@@ -267,13 +287,13 @@ class CrossTimeframeFeatureGenerator:
         features = {}
 
         hl_momentum_1 = (
-            high.rolling(tf1, min_periods=tf1 // 2).max() -
-            low.rolling(tf1, min_periods=tf1 // 2).min()
+            high.rolling(tf1, min_periods=tf1 // 2).max()
+            - low.rolling(tf1, min_periods=tf1 // 2).min()
         ) / (close.rolling(tf1, min_periods=tf1 // 2).mean() + 1e-8)
 
         hl_momentum_2 = (
-            high.rolling(tf2, min_periods=tf2 // 2).max() -
-            low.rolling(tf2, min_periods=tf2 // 2).min()
+            high.rolling(tf2, min_periods=tf2 // 2).max()
+            - low.rolling(tf2, min_periods=tf2 // 2).min()
         ) / (close.rolling(tf2, min_periods=tf2 // 2).mean() + 1e-8)
 
         hl_diff = hl_momentum_1 - hl_momentum_2
@@ -290,11 +310,13 @@ class CrossTimeframeFeatureGenerator:
         features = {}
         close = price_components["close"]
 
-        returns = close.pct_change().fillna(method="ffill").fillna(method="bfill").fillna(0)
+        returns = (
+            close.pct_change().fillna(method="ffill").fillna(method="bfill").fillna(0)
+        )
         timeframes = self.config.volatility_timeframes[:3]  # Limit for safety
 
         for i, tf1 in enumerate(timeframes):
-            for tf2 in timeframes[i + 1:]:
+            for tf2 in timeframes[i + 1 :]:
                 if tf1 < len(close) and tf2 < len(close):
                     vol_features = self._calculate_volatility_pair(returns, tf1, tf2)
                     features.update(vol_features)
@@ -344,9 +366,11 @@ class CrossTimeframeFeatureGenerator:
         timeframes = self.config.momentum_timeframes[:3]  # Limit for safety
 
         for i, tf1 in enumerate(timeframes):
-            for tf2 in timeframes[i + 1:]:
+            for tf2 in timeframes[i + 1 :]:
                 if tf1 < len(close) and tf2 < len(close):
-                    range_features = self._calculate_range_pair(high, low, close, tf1, tf2)
+                    range_features = self._calculate_range_pair(
+                        high, low, close, tf1, tf2
+                    )
                     features.update(range_features)
 
         return features
@@ -363,13 +387,13 @@ class CrossTimeframeFeatureGenerator:
         features = {}
 
         range_1 = (
-            high.rolling(tf1, min_periods=tf1 // 2).max() -
-            low.rolling(tf1, min_periods=tf1 // 2).min()
+            high.rolling(tf1, min_periods=tf1 // 2).max()
+            - low.rolling(tf1, min_periods=tf1 // 2).min()
         ) / (close.rolling(tf1, min_periods=tf1 // 2).mean() + 1e-8)
 
         range_2 = (
-            high.rolling(tf2, min_periods=tf2 // 2).max() -
-            low.rolling(tf2, min_periods=tf2 // 2).min()
+            high.rolling(tf2, min_periods=tf2 // 2).max()
+            - low.rolling(tf2, min_periods=tf2 // 2).min()
         ) / (close.rolling(tf2, min_periods=tf2 // 2).mean() + 1e-8)
 
         # Range ratio
@@ -411,7 +435,7 @@ class CrossTimeframeFeatureGenerator:
         close = price_components["close"]
 
         for i, period1 in enumerate(self.config.rsi_periods[:-1]):
-            for period2 in self.config.rsi_periods[i + 1:]:
+            for period2 in self.config.rsi_periods[i + 1 :]:
                 if period1 < len(close) and period2 < len(close):
                     rsi_1 = self._calculate_rsi(close, period1)
                     rsi_2 = self._calculate_rsi(close, period2)
@@ -493,7 +517,7 @@ class CrossTimeframeFeatureGenerator:
         timeframes = self.config.volume_timeframes[:3]  # Limit for safety
 
         for i, tf1 in enumerate(timeframes):
-            for tf2 in timeframes[i + 1:]:
+            for tf2 in timeframes[i + 1 :]:
                 if tf1 < len(volume) and tf2 < len(volume):
                     volume_features = self._calculate_volume_pair(volume, tf1, tf2)
                     features.update(volume_features)
@@ -648,7 +672,9 @@ class InteractionFeatureGenerator:
         # Remove highly correlated features
         final_features = self._remove_correlated_features(interaction_features)
 
-        self.logger.info(f"✅ Generated {len(final_features.columns)} interaction features")
+        self.logger.info(
+            f"✅ Generated {len(final_features.columns)} interaction features"
+        )
         return final_features
 
     def _select_top_features(self, features: pd.DataFrame) -> list[str]:
@@ -661,7 +687,6 @@ class InteractionFeatureGenerator:
 
         # Sort by variance and select top k
         return valid_features.nlargest(self.config.top_k_features).index.tolist()
-
 
     def _generate_interactions_parallel(
         self,
@@ -735,7 +760,7 @@ class InteractionFeatureGenerator:
         feature_cols = features.columns.tolist()
 
         for i, col1 in enumerate(feature_cols):
-            for col2 in feature_cols[i + 1:]:
+            for col2 in feature_cols[i + 1 :]:
                 # Skip if same feature category (if identifiable)
                 if self._same_category(col1, col2):
                     continue
@@ -755,7 +780,7 @@ class InteractionFeatureGenerator:
         feature_cols = features.columns.tolist()
 
         for i, col1 in enumerate(feature_cols):
-            for col2 in feature_cols[i + 1:]:
+            for col2 in feature_cols[i + 1 :]:
                 # Skip if same feature category
                 if self._same_category(col1, col2):
                     continue
@@ -775,7 +800,7 @@ class InteractionFeatureGenerator:
         feature_cols = features.columns.tolist()
 
         for i, col1 in enumerate(feature_cols):
-            for col2 in feature_cols[i + 1:]:
+            for col2 in feature_cols[i + 1 :]:
                 # Skip if same feature category
                 if self._same_category(col1, col2):
                     continue
@@ -850,7 +875,8 @@ class InteractionFeatureGenerator:
         )
 
         to_drop = [
-            column for column in upper_triangle.columns
+            column
+            for column in upper_triangle.columns
             if any(upper_triangle[column] > self.config.correlation_threshold)
         ]
 

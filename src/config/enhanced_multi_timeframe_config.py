@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Configuration for Enhanced Multi-Timeframe Optimizer
 
@@ -143,6 +144,7 @@ def get_enhanced_multi_timeframe_config() -> dict[str, Any]:
         },
     }
 
+
 def get_timeframe_period_mapping() -> dict[str, dict[str, list[int]]]:
     """Get mapping of timeframes to optimized periods for different indicators."""
     return {
@@ -203,16 +205,30 @@ def get_timeframe_period_mapping() -> dict[str, dict[str, list[int]]]:
         },
     }
 
+
 def get_cross_timeframe_period_pairs() -> list[tuple]:
     """Get optimized period pairs for cross-timeframe analysis."""
     return [
-        (3, 5), (3, 8), (3, 12), (3, 20),
-        (5, 8), (5, 12), (5, 20), (5, 30),
-        (8, 12), (8, 20), (8, 30), (8, 50),
-        (12, 20), (12, 30), (12, 50),
-        (20, 30), (20, 50),
+        (3, 5),
+        (3, 8),
+        (3, 12),
+        (3, 20),
+        (5, 8),
+        (5, 12),
+        (5, 20),
+        (5, 30),
+        (8, 12),
+        (8, 20),
+        (8, 30),
+        (8, 50),
+        (12, 20),
+        (12, 30),
+        (12, 50),
+        (20, 30),
+        (20, 50),
         (30, 50),
     ]
+
 
 def get_regime_specific_config() -> dict[str, Any]:
     """Get configuration for regime-specific optimization."""
@@ -227,8 +243,15 @@ def get_regime_specific_config() -> dict[str, Any]:
             "use_regime_specific_periods": True,
             "regime_feature_prefix": "regime_",
             "regime_specific_indicators": [
-                "RSI", "MACD_fast", "Bollinger_Bands", "SMA", "EMA",
-                "ATR", "VWAP", "VWAP_Momentum", "VWAP_Volatility",
+                "RSI",
+                "MACD_fast",
+                "Bollinger_Bands",
+                "SMA",
+                "EMA",
+                "ATR",
+                "VWAP",
+                "VWAP_Momentum",
+                "VWAP_Volatility",
             ],
         },
         "regime_period_optimization": {
@@ -253,6 +276,7 @@ def get_regime_specific_config() -> dict[str, Any]:
         },
     }
 
+
 def get_quality_validation_config() -> dict[str, Any]:
     """Get configuration for quality validation."""
     return {
@@ -272,6 +296,7 @@ def get_quality_validation_config() -> dict[str, Any]:
             "stability_check",
         ],
     }
+
 
 def get_performance_config() -> dict[str, Any]:
     """Get configuration for performance optimization."""

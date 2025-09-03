@@ -1,10 +1,12 @@
 from __future__ import annotations
-# src/training/tpsl_optimizer.py
 
 import numba
 import numpy as np
 import optuna
 import pandas as pd
+
+# src/training/tpsl_optimizer.py
+
 
 try:
     import pandas_ta as ta  # noqa: F401 - ensure .ta accessor is registered
@@ -28,6 +30,7 @@ logger = get_logger("TpSlOptimizer")
 
 # Suppress Optuna's informational messages for a cleaner log
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
 
 @numba.jit(nopython=True, cache=True)
 def _numba_backtest(
@@ -103,6 +106,7 @@ def _numba_backtest(
         return np.empty((0, 2), dtype=np.float64)
     return np.array(trades, dtype=np.float64)
 
+
 class TpSlOptimizer:
     """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds
     for LONG & SHORT strategies, including trading fees.
@@ -138,11 +142,13 @@ class TpSlOptimizer:
                 else:
                     # Best-effort: generate a datetime index if none present
                     self.data["timestamp"] = pd.to_datetime(
-                        self.data.index, errors="coerce",
+                        self.data.index,
+                        errors="coerce",
                     )
 
             self.data["timestamp"] = pd.to_datetime(
-                self.data["timestamp"], errors="coerce",
+                self.data["timestamp"],
+                errors="coerce",
             )
             # Drop any rows with invalid timestamps before indexing
             self.data = self.data.dropna(subset=["timestamp"]).copy()

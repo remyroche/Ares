@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Centralized logging configuration with Standardized Import Management.
 
@@ -24,7 +25,9 @@ from .pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ["src.utils.structured_logging", "src.utils.warning_symbols"]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(
+    REQUIRED_MODULES
+)
 
 # Safe imports with fallbacks
 structured_logging = PipelineStandards.safe_import("src.utils.structured_logging", None)
@@ -56,10 +59,19 @@ else:
     get_json_formatter = structured_logging.get_json_formatter
 
 if warning_symbols is None:
-    def critical(msg): return print(f"CRITICAL: {msg}")
-    def error(msg): return print(f"ERROR: {msg}")
-    def failed(msg): return print(f"FAILED: {msg}")
-    def warning(msg): return print(f"WARNING: {msg}")
+
+    def critical(msg):
+        return print(f"CRITICAL: {msg}")
+
+    def error(msg):
+        return print(f"ERROR: {msg}")
+
+    def failed(msg):
+        return print(f"FAILED: {msg}")
+
+    def warning(msg):
+        return print(f"WARNING: {msg}")
+
 else:
     critical = warning_symbols.critical
     error = warning_symbols.error
@@ -73,13 +85,17 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
     Suppresses messages like:
     "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
     """
+
     TARGET_SUBSTRING = "Falling back to TensorFlow client; we recommended you install the Cloud TPU client"
 
     def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
         try:
             if record and isinstance(record.msg, str):
                 msg_text = record.getMessage()
-                if record.name.startswith("tensorflow") and self.TARGET_SUBSTRING in msg_text:
+                if (
+                    record.name.startswith("tensorflow")
+                    and self.TARGET_SUBSTRING in msg_text
+                ):
                     return False
         except Exception:
             # On any failure, do not drop the log
@@ -127,6 +143,7 @@ class EnhancedLogger:
     """
     Enhanced logger utility with comprehensive error handling and type safety.
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize enhanced logger with enhanced type safety.
@@ -389,6 +406,7 @@ class EnhancedLogger:
         Returns:
             Enhanced logger with warning symbols
         """
+
         class EnhancedLoggerWithWarnings:
             def __init__(self, logger: logging.Logger):
                 self._logger = logger
@@ -738,6 +756,7 @@ def ensure_comprehensive_logging_available():
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
+
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             # Initialize integration if comprehensive logging is available
@@ -787,7 +806,9 @@ def log_io_operation(
     try:
         ctx = " ".join(f"{k}={v}" for k, v in context.items() if v is not None)
         logger.info(
-            f"🔧 {operation} start" + (f" path={path}" if path is not None else "") + (f" {ctx}" if ctx else ""),
+            f"🔧 {operation} start"
+            + (f" path={path}" if path is not None else "")
+            + (f" {ctx}" if ctx else ""),
         )
     except Exception:
         # Logging issues should never break execution
@@ -797,7 +818,11 @@ def log_io_operation(
         elapsed = time.perf_counter() - start
         size_str = "n/a"
         try:
-            if path is not None and os.path.exists(str(path)) and os.path.isfile(str(path)):
+            if (
+                path is not None
+                and os.path.exists(str(path))
+                and os.path.isfile(str(path))
+            ):
                 size_str = _format_bytes(os.path.getsize(str(path)))
         except Exception:
             pass
@@ -927,7 +952,9 @@ def heartbeat(
                     if "regime" in context:
                         context_parts.append(f"regime={context['regime']}")
                     if "asset" in context and "timeframe" in context:
-                        context_parts.append(f"asset={context['asset']}/{context['timeframe']}")
+                        context_parts.append(
+                            f"asset={context['asset']}/{context['timeframe']}"
+                        )
                     elif "asset" in context:
                         context_parts.append(f"asset={context['asset']}")
 
@@ -944,7 +971,9 @@ def heartbeat(
                         # Ignore detail provider errors
                         pass
 
-                logger.info(f"⏳ {name} still running... elapsed={elapsed:.1f}s{context_str}{extra}")
+                logger.info(
+                    f"⏳ {name} still running... elapsed={elapsed:.1f}s{context_str}{extra}"
+                )
             except Exception:
                 # Never crash on logging
                 pass

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Enhanced Outlier Handler
 
@@ -29,6 +30,7 @@ class OutlierSeverity(Enum):
     MEDIUM = "medium"  # Moderate outliers, log error
     HIGH = "high"  # Major outliers, raise exception
     CRITICAL = "critical"  # Critical outliers, raise exception and stop processing
+
 
 class DataSchema:
     """Defines expected data schema for file operations."""
@@ -96,7 +98,11 @@ class DataSchema:
                 actual_type = str(df[column].dtype)
                 if actual_type != expected_type:
                     results["type_mismatches"].append(
-                        {"column": column, "expected": expected_type, "actual": actual_type},
+                        {
+                            "column": column,
+                            "expected": expected_type,
+                            "actual": actual_type,
+                        },
                     )
                     results["warnings"].append(
                         f"Type mismatch in {column}: expected {expected_type}, got {actual_type}",
@@ -107,13 +113,19 @@ class DataSchema:
             if column in df.columns:
                 if "not_null" in constraint and constraint["not_null"]:
                     if df[column].isnull().any():
-                        results["constraint_violations"].append(f"Column {column} contains null values")
+                        results["constraint_violations"].append(
+                            f"Column {column} contains null values"
+                        )
                         results["warnings"].append(f"Null values found in {column}")
 
                 if "unique" in constraint and constraint["unique"]:
                     if df[column].duplicated().any():
-                        results["constraint_violations"].append(f"Column {column} contains duplicate values")
-                        results["warnings"].append(f"Duplicate values found in {column}")
+                        results["constraint_violations"].append(
+                            f"Column {column} contains duplicate values"
+                        )
+                        results["warnings"].append(
+                            f"Duplicate values found in {column}"
+                        )
 
                 if "min" in constraint:
                     min_val = constraint["min"]
@@ -121,7 +133,9 @@ class DataSchema:
                         results["constraint_violations"].append(
                             f"Column {column} contains values below minimum {min_val}",
                         )
-                        results["warnings"].append(f"Values below minimum {min_val} found in {column}")
+                        results["warnings"].append(
+                            f"Values below minimum {min_val} found in {column}"
+                        )
 
                 if "max" in constraint:
                     max_val = constraint["max"]
@@ -129,9 +143,12 @@ class DataSchema:
                         results["constraint_violations"].append(
                             f"Column {column} contains values above maximum {max_val}",
                         )
-                        results["warnings"].append(f"Values above maximum {max_val} found in {column}")
+                        results["warnings"].append(
+                            f"Values above maximum {max_val} found in {column}"
+                        )
 
         return results
+
 
 class OutlierInfo:
     """Information about detected outliers."""
@@ -170,6 +187,7 @@ class OutlierInfo:
     def __repr__(self):
         return self.__str__()
 
+
 class EnhancedOutlierHandler:
     """Enhanced outlier detection and handling with multiple methods and severity classification."""
 
@@ -189,7 +207,14 @@ class EnhancedOutlierHandler:
         self.standard_schemas = {
             "klines": DataSchema(
                 name="klines",
-                required_columns=["timestamp", "open", "high", "low", "close", "volume"],
+                required_columns=[
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                ],
                 data_types={
                     "timestamp": "int64",
                     "open": "float64",
@@ -217,7 +242,10 @@ class EnhancedOutlierHandler:
                 name="labels",
                 required_columns=["timestamp", "label"],
                 data_types={"timestamp": "int64", "label": "object"},
-                constraints={"timestamp": {"not_null": True}, "label": {"not_null": True}},
+                constraints={
+                    "timestamp": {"not_null": True},
+                    "label": {"not_null": True},
+                },
             ),
         }
 
@@ -297,7 +325,9 @@ class EnhancedOutlierHandler:
 
         return all_outliers
 
-    def _detect_zscore_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
+    def _detect_zscore_outliers(
+        self, data: pd.DataFrame, column: str, threshold: float
+    ) -> list[OutlierInfo]:
         """Detect outliers using Z-score method."""
         outliers = []
 
@@ -341,7 +371,9 @@ class EnhancedOutlierHandler:
 
         return outliers
 
-    def _detect_iqr_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
+    def _detect_iqr_outliers(
+        self, data: pd.DataFrame, column: str, threshold: float
+    ) -> list[OutlierInfo]:
         """Detect outliers using IQR method."""
         outliers = []
 
@@ -353,7 +385,9 @@ class EnhancedOutlierHandler:
             lower_bound = Q1 - threshold * IQR
             upper_bound = Q3 + threshold * IQR
 
-            outlier_indices = np.where((data[column] < lower_bound) | (data[column] > upper_bound))[0]
+            outlier_indices = np.where(
+                (data[column] < lower_bound) | (data[column] > upper_bound)
+            )[0]
 
             if len(outlier_indices) > 0:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
@@ -400,7 +434,9 @@ class EnhancedOutlierHandler:
 
         return outliers
 
-    def _detect_isolation_forest_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
+    def _detect_isolation_forest_outliers(
+        self, data: pd.DataFrame, column: str, threshold: float
+    ) -> list[OutlierInfo]:
         """Detect outliers using Isolation Forest method."""
         outliers = []
 
@@ -450,14 +486,18 @@ class EnhancedOutlierHandler:
                 outliers.append(outlier_info)
 
         except ImportError:
-            self.logger.warning("scikit-learn not available for isolation forest outlier detection")
+            self.logger.warning(
+                "scikit-learn not available for isolation forest outlier detection"
+            )
 
         except Exception as e:
             self.logger.exception(f"Error in isolation forest outlier detection: {e}")
 
         return outliers
 
-    def _detect_lof_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
+    def _detect_lof_outliers(
+        self, data: pd.DataFrame, column: str, threshold: float
+    ) -> list[OutlierInfo]:
         """Detect outliers using Local Outlier Factor method."""
         outliers = []
 
@@ -514,7 +554,9 @@ class EnhancedOutlierHandler:
 
         return outliers
 
-    def _detect_mahalanobis_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
+    def _detect_mahalanobis_outliers(
+        self, data: pd.DataFrame, column: str, threshold: float
+    ) -> list[OutlierInfo]:
         """Detect outliers using Mahalanobis distance method."""
         outliers = []
 
@@ -584,12 +626,16 @@ class EnhancedOutlierHandler:
 
             if outlier.severity in [OutlierSeverity.HIGH, OutlierSeverity.CRITICAL]:
                 self.logger.error(f"Critical outlier details: {outlier}")
-                self.logger.error(f"  Values: {outlier.values[:5]}...")  # Show first 5 values
+                self.logger.error(
+                    f"  Values: {outlier.values[:5]}..."
+                )  # Show first 5 values
                 self.logger.error(f"  Context: {outlier.context}")
 
     def _handle_outlier_errors(self, outliers: list[OutlierInfo]) -> None:
         """Handle outlier errors by raising exceptions or logging."""
-        critical_outliers = [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
+        critical_outliers = [
+            o for o in outliers if o.severity == OutlierSeverity.CRITICAL
+        ]
         high_outliers = [o for o in outliers if o.severity == OutlierSeverity.HIGH]
 
         if critical_outliers:
@@ -609,7 +655,9 @@ class EnhancedOutlierHandler:
             if self.raise_errors:
                 raise ValueError(error_msg)
 
-    def validate_data_schema(self, data: pd.DataFrame, schema_name: str) -> dict[str, Any]:
+    def validate_data_schema(
+        self, data: pd.DataFrame, schema_name: str
+    ) -> dict[str, Any]:
         """Validate data against a standard schema.
 
         Args:
@@ -646,7 +694,9 @@ class EnhancedOutlierHandler:
         Returns:
             Created data schema
         """
-        schema = DataSchema(name, required_columns, optional_columns, data_types, constraints)
+        schema = DataSchema(
+            name, required_columns, optional_columns, data_types, constraints
+        )
 
         self.standard_schemas[name] = schema
         self.logger.info(f"Created custom schema: {name}")

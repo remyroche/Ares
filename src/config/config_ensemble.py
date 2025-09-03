@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_ensemble.py
 
 """
@@ -13,6 +14,7 @@ from typing import Any
 
 class EnsembleMethod(Enum):
     """Enum for ensemble gathering methods."""
+
     ALL_THRESHOLD = "all_threshold"
     MAJORITY_VOTE = "majority_vote"
     WEIGHTED_AVERAGE = "weighted_average"

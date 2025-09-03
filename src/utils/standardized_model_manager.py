@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Standardized Model Manager
 
@@ -63,6 +64,7 @@ class ModelMetadata:
         """Create metadata from dictionary."""
         return cls(**data)
 
+
 class StandardizedModelManager:
     """Centralized model management system."""
 
@@ -106,7 +108,11 @@ class StandardizedModelManager:
 
     @handles_errors(fallback=False)
     def save_model(
-        self, model: Any, metadata: ModelMetadata | dict[str, Any], step_name: str, model_id: str | None = None,
+        self,
+        model: Any,
+        metadata: ModelMetadata | dict[str, Any],
+        step_name: str,
+        model_id: str | None = None,
     ) -> bool:
         """Save a model with metadata.
 
@@ -176,7 +182,9 @@ class StandardizedModelManager:
             return False
 
     @handles_errors(fallback=None)
-    def load_model(self, model_id: str, step_name: str | None = None) -> tuple[Any, ModelMetadata] | None:
+    def load_model(
+        self, model_id: str, step_name: str | None = None
+    ) -> tuple[Any, ModelMetadata] | None:
         """Load a model and its metadata.
 
         Args:
@@ -234,7 +242,10 @@ class StandardizedModelManager:
 
     @handles_errors(fallback=False)
     def validate_model(
-        self, model: Any, test_data: pd.DataFrame | np.ndarray, expected_output_shape: tuple | None = None,
+        self,
+        model: Any,
+        test_data: pd.DataFrame | np.ndarray,
+        expected_output_shape: tuple | None = None,
     ) -> bool:
         """Validate a model with test data.
 
@@ -259,7 +270,9 @@ class StandardizedModelManager:
                 # Check output shape if specified
                 if expected_output_shape is not None:
                     if predictions.shape != expected_output_shape:
-                        self.logger.error(f"Output shape mismatch: {predictions.shape} != {expected_output_shape}")
+                        self.logger.error(
+                            f"Output shape mismatch: {predictions.shape} != {expected_output_shape}"
+                        )
                         return False
 
                 # Check for NaN/Inf values
@@ -300,7 +313,11 @@ class StandardizedModelManager:
         """
         if step_name is None:
             return list(self.registry.values())
-        return [metadata for metadata in self.registry.values() if metadata.get("step_name") == step_name]
+        return [
+            metadata
+            for metadata in self.registry.values()
+            if metadata.get("step_name") == step_name
+        ]
 
     def delete_model(self, model_id: str) -> bool:
         """Delete a model and its metadata.
@@ -345,7 +362,12 @@ class StandardizedModelManager:
         Returns:
             Dictionary with model statistics
         """
-        stats = {"total_models": len(self.registry), "models_by_step": {}, "models_by_type": {}, "total_size": 0}
+        stats = {
+            "total_models": len(self.registry),
+            "models_by_step": {},
+            "models_by_type": {},
+            "total_size": 0,
+        }
 
         for metadata in self.registry.values():
             step_name = metadata.get("step_name", "unknown")
@@ -353,15 +375,20 @@ class StandardizedModelManager:
             file_size = metadata.get("file_size", 0)
 
             # Count by step
-            stats["models_by_step"][step_name] = stats["models_by_step"].get(step_name, 0) + 1
+            stats["models_by_step"][step_name] = (
+                stats["models_by_step"].get(step_name, 0) + 1
+            )
 
             # Count by type
-            stats["models_by_type"][model_type] = stats["models_by_type"].get(model_type, 0) + 1
+            stats["models_by_type"][model_type] = (
+                stats["models_by_type"].get(model_type, 0) + 1
+            )
 
             # Total size
             stats["total_size"] += file_size
 
         return stats
+
 
 # Global instance
 standardized_model_manager = StandardizedModelManager()

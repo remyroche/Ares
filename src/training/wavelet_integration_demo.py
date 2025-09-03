@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/wavelet_integration_demo.py
 
 """Comprehensive Wavelet Transform Integration Demo
@@ -33,6 +34,7 @@ from src.utils.warning_symbols import (
     failed,
     problem,
 )
+
 
 class WaveletIntegrationDemo:
     """Comprehensive demonstration of the complete wavelet workflow integration.
@@ -462,6 +464,7 @@ class WaveletIntegrationDemo:
         except Exception:
             self.print(error("Error running complete demo: {e}"))
 
+
 async def main() -> None:
     """Main function to run the wavelet integration demo."""
     try:
@@ -515,5 +518,6 @@ async def main() -> None:
     except Exception:
         pass
 
+
 if __name__ == "__main__":
-    asyncio.run( main())
+    asyncio.run(main())

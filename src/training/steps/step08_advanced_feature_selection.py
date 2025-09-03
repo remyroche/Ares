@@ -474,10 +474,16 @@ class Step08AdvancedFeatureSelection:
         
         # 1. Perform redundancy analysis
         redundancy_groups = {}
+        feature_clusters = {}
         if self.enable_redundancy_analysis:
             self.logger.info("🔄 Analyzing feature redundancy...")
             redundancy_groups = self._analyze_feature_redundancy(X)
             self.logger.info(f"   Found {len(redundancy_groups)} redundancy groups")
+            
+            # Advanced clustering-based redundancy analysis
+            self.logger.info("🔍 Performing hierarchical clustering for redundancy...")
+            feature_clusters = self._hierarchical_feature_clustering(X)
+            self.logger.info(f"   Identified {len(feature_clusters)} feature clusters")
         
         if BORUTA_AVAILABLE:
             # Run Boruta
@@ -540,12 +546,21 @@ class Step08AdvancedFeatureSelection:
             self.logger.info(f"📊 Creating redundancy-aware feature set with {target_size} features...")
             
             # Select features with redundancy consideration
-            if self.enable_redundancy_analysis and redundancy_groups:
-                selected_features = self._select_features_with_redundancy(
-                    feature_importance, 
-                    redundancy_groups, 
+            if self.enable_redundancy_analysis and (redundancy_groups or feature_clusters):
+                # Combine redundancy groups from both methods
+                all_redundancy_groups = dict(redundancy_groups)
+                
+                # Add hierarchical clusters to redundancy groups
+                for cluster_id, cluster_features in feature_clusters.items():
+                    all_redundancy_groups[f'cluster_{cluster_id}'] = cluster_features
+                
+                # Use advanced selection with combined redundancy information
+                selected_features = self._select_features_with_redundancy_advanced(
+                    feature_importance,
+                    all_redundancy_groups,
                     target_size,
-                    confirmed_features
+                    confirmed_features,
+                    boruta_selector if BORUTA_AVAILABLE else None
                 )
             else:
                 # Fallback to simple top selection
@@ -786,6 +801,56 @@ class Step08AdvancedFeatureSelection:
         interactions.sort(key=lambda x: x[2], reverse=True)
         return [(f1, f2, round(score, 3)) for f1, f2, score in interactions[:top_k]]
     
+    def _hierarchical_feature_clustering(self, X: pd.DataFrame, n_clusters: int = None) -> dict[int, List[str]]:
+        """
+        Perform hierarchical clustering on features to identify redundant groups.
+        Uses correlation distance and Ward linkage.
+        
+        Args:
+            X: Feature dataframe
+            n_clusters: Number of clusters (auto-determined if None)
+            
+        Returns:
+            Dictionary mapping cluster IDs to feature lists
+        """
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import squareform
+        
+        # Calculate correlation matrix
+        corr_matrix = X.corr().abs()
+        
+        # Convert to distance matrix (1 - correlation)
+        distance_matrix = 1 - corr_matrix
+        
+        # Convert to condensed distance matrix
+        condensed_distances = squareform(distance_matrix, checks=False)
+        
+        # Perform hierarchical clustering
+        Z = linkage(condensed_distances, method='ward')
+        
+        # Determine optimal number of clusters if not specified
+        if n_clusters is None:
+            # Use elbow method - cut at distance where gap is largest
+            distances = Z[:, 2]
+            gaps = np.diff(distances)
+            optimal_idx = np.argmax(gaps) + 1
+            distance_threshold = distances[optimal_idx]
+            clusters = fcluster(Z, distance_threshold, criterion='distance')
+        else:
+            clusters = fcluster(Z, n_clusters, criterion='maxclust')
+        
+        # Group features by cluster
+        feature_clusters = {}
+        for idx, cluster_id in enumerate(clusters):
+            if cluster_id not in feature_clusters:
+                feature_clusters[cluster_id] = []
+            feature_clusters[cluster_id].append(X.columns[idx])
+        
+        # Filter out singleton clusters
+        feature_clusters = {k: v for k, v in feature_clusters.items() if len(v) > 1}
+        
+        return feature_clusters
+    
     def _analyze_feature_redundancy(self, X: pd.DataFrame) -> dict[str, List[str]]:
         """
         Analyze feature redundancy to identify groups of correlated features.
@@ -950,6 +1015,162 @@ class Step08AdvancedFeatureSelection:
         final_features = confirmed_selected + unconfirmed_selected
         
         return final_features[:target_size]
+    
+    def _select_features_with_redundancy_advanced(
+        self, 
+        feature_importance: pd.Series,
+        all_redundancy_groups: dict[str, List[str]],
+        target_size: int,
+        confirmed_features: List[str],
+        boruta_selector = None
+    ) -> List[str]:
+        """
+        Advanced feature selection that combines Boruta's all-relevant features
+        with redundancy reduction using multiple strategies.
+        
+        Args:
+            feature_importance: Feature importance scores
+            all_redundancy_groups: Combined redundancy groups from multiple methods
+            target_size: Target number of features
+            confirmed_features: Boruta-confirmed features
+            boruta_selector: Fitted Boruta selector (optional)
+            
+        Returns:
+            List of selected features with optimal redundancy
+        """
+        selected_features = []
+        
+        # Strategy 1: Start with Boruta-confirmed features, but limit redundancy
+        if confirmed_features:
+            # Group confirmed features by redundancy
+            confirmed_by_group = {}
+            ungrouped_confirmed = []
+            
+            for feature in confirmed_features:
+                assigned = False
+                for group_name, group_features in all_redundancy_groups.items():
+                    if feature in group_features:
+                        if group_name not in confirmed_by_group:
+                            confirmed_by_group[group_name] = []
+                        confirmed_by_group[group_name].append(feature)
+                        assigned = True
+                        break
+                if not assigned:
+                    ungrouped_confirmed.append(feature)
+            
+            # Add best confirmed features from each group (up to redundancy limit)
+            for group_name, group_confirmed in confirmed_by_group.items():
+                # Sort by importance within group
+                group_importance = feature_importance[group_confirmed].sort_values(ascending=False)
+                # Take up to redundancy_groups_per_concept from each group
+                n_to_take = min(self.redundancy_groups_per_concept, len(group_importance))
+                selected_features.extend(group_importance.head(n_to_take).index.tolist())
+            
+            # Add all ungrouped confirmed features (they're not redundant)
+            selected_features.extend(ungrouped_confirmed)
+        
+        # Strategy 2: Use VIF (Variance Inflation Factor) for remaining features
+        remaining_slots = target_size - len(selected_features)
+        if remaining_slots > 0:
+            # Get remaining features sorted by importance
+            remaining_features = [f for f in feature_importance.index if f not in selected_features]
+            
+            # Calculate VIF-based selection
+            vif_selected = self._select_low_vif_features(
+                feature_importance[remaining_features],
+                all_redundancy_groups,
+                remaining_slots,
+                selected_features
+            )
+            selected_features.extend(vif_selected)
+        
+        # Strategy 3: Ensure diversity across feature concepts
+        if len(selected_features) < target_size:
+            # Check concept coverage
+            concept_coverage = {}
+            for concept, patterns in self.feature_concept_patterns.items():
+                concept_features = [f for f in selected_features 
+                                  if any(p in f.lower() for p in patterns)]
+                concept_coverage[concept] = len(concept_features)
+            
+            # Add features from underrepresented concepts
+            for concept, count in sorted(concept_coverage.items(), key=lambda x: x[1]):
+                if len(selected_features) >= target_size:
+                    break
+                
+                if count < 2:  # Ensure at least 2 features per concept
+                    patterns = self.feature_concept_patterns[concept]
+                    concept_candidates = [f for f in feature_importance.index 
+                                        if any(p in f.lower() for p in patterns) 
+                                        and f not in selected_features]
+                    
+                    # Add best features from this concept
+                    for feature in feature_importance[concept_candidates].sort_values(ascending=False).index:
+                        if len(selected_features) < target_size:
+                            selected_features.append(feature)
+                            count += 1
+                            if count >= 2:
+                                break
+        
+        # Final adjustment: Replace low-importance redundant features
+        if boruta_selector is not None and hasattr(boruta_selector, 'ranking_'):
+            # Get Boruta rankings
+            boruta_ranks = dict(zip(feature_importance.index, boruta_selector.ranking_))
+            
+            # Identify redundant features in selection
+            redundant_pairs = []
+            for i, f1 in enumerate(selected_features):
+                for j, f2 in enumerate(selected_features[i+1:], i+1):
+                    for group_features in all_redundancy_groups.values():
+                        if f1 in group_features and f2 in group_features:
+                            # Keep the one with better Boruta rank
+                            if boruta_ranks.get(f1, float('inf')) > boruta_ranks.get(f2, float('inf')):
+                                redundant_pairs.append((i, f1))  # Remove f1
+                            else:
+                                redundant_pairs.append((j, f2))  # Remove f2
+                            break
+            
+            # Remove redundant features and replace with non-redundant ones
+            removed_indices = set()
+            for idx, feature in redundant_pairs:
+                if idx not in removed_indices and len(selected_features) > target_size:
+                    removed_indices.add(idx)
+            
+            # Remove in reverse order to maintain indices
+            for idx in sorted(removed_indices, reverse=True):
+                selected_features.pop(idx)
+        
+        return selected_features[:target_size]
+    
+    def _select_low_vif_features(
+        self,
+        candidate_importance: pd.Series,
+        redundancy_groups: dict[str, List[str]],
+        n_features: int,
+        already_selected: List[str]
+    ) -> List[str]:
+        """
+        Select features with low VIF (Variance Inflation Factor) to minimize multicollinearity.
+        """
+        selected = []
+        
+        for feature in candidate_importance.index:
+            if len(selected) >= n_features:
+                break
+            
+            # Check if adding this feature would create high multicollinearity
+            redundancy_score = 0
+            for group_name, group_features in redundancy_groups.items():
+                if feature in group_features:
+                    # Count how many from this group are already selected
+                    existing_count = sum(1 for f in already_selected + selected if f in group_features)
+                    redundancy_score += existing_count
+            
+            # Select if redundancy is acceptable
+            if redundancy_score < self.redundancy_groups_per_concept:
+                selected.append(feature)
+        
+        return selected
     
     def _calculate_redundancy_stats(
         self, 

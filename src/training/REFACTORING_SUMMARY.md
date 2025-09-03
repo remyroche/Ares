@@ -57,7 +57,6 @@ This document summarizes the refactoring improvements made to the `src/training/
 - `feature_artifact_loader.py` - Empty duplicate
 - `optimized_step_executor.py` - Empty duplicate
 - `step9_hmm_based_training_enhanced.py` - Enhanced duplicate
-- `step17_final_parameters_optimization_new.py` - New version duplicate
 
 #### Cleanup Analysis
 - Created `cleanup_duplicates.py` script to identify:

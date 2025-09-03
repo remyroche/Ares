@@ -77,8 +77,8 @@ from src.utils.decorators import (
     pa_check_io,
     pa_check_output,
     validate_call_or_runtime_types,
-    with_tracing_span,
 )
+from src.core.decorators import traced as with_tracing_span
 from src.utils.enhanced_data_quality_decorators import (
     comprehensive_data_validation,
     optimize_memory_usage,

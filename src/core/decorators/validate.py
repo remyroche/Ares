@@ -356,9 +356,54 @@ def validate_dataframe(
         
         # Run same validations as sync version
         if not isinstance(df, pd.DataFrame):
-            raise ValidationError(f"Parameter {param_name} must be a pandas DataFrame")
+            raise ValidationError(
+                f"Parameter {param_name} must be a pandas DataFrame",
+                field=param_name,
+                value=type(df).__name__
+            )
         
-        # ... (same validation logic) ...
+        # Validate columns
+        if columns:
+            missing_cols = set(columns) - set(df.columns)
+            if missing_cols:
+                raise ValidationError(
+                    f"Missing required columns: {missing_cols}",
+                    field=param_name,
+                    details={"missing_columns": list(missing_cols)}
+                )
+        
+        # Validate dtypes
+        if dtypes:
+            for col, expected_type in dtypes.items():
+                if col in df.columns:
+                    actual_type = df[col].dtype
+                    # Simple type checking - can be enhanced
+                    if expected_type == int and actual_type.kind not in 'iu':
+                        raise ValidationError(
+                            f"Column {col} has wrong dtype: expected int-like, got {actual_type}",
+                            field=f"{param_name}.{col}"
+                        )
+                    elif expected_type == float and actual_type.kind not in 'iuf':
+                        raise ValidationError(
+                            f"Column {col} has wrong dtype: expected float-like, got {actual_type}",
+                            field=f"{param_name}.{col}"
+                        )
+        
+        # Validate row count
+        row_count = len(df)
+        if row_count < min_rows:
+            raise ValidationError(
+                f"DataFrame has too few rows: {row_count} < {min_rows}",
+                field=param_name,
+                details={"row_count": row_count, "min_rows": min_rows}
+            )
+        
+        if max_rows is not None and row_count > max_rows:
+            raise ValidationError(
+                f"DataFrame has too many rows: {row_count} > {max_rows}",
+                field=param_name,
+                details={"row_count": row_count, "max_rows": max_rows}
+            )
         
         return await func(*args, **kwargs)
     

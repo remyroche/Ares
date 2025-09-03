@@ -1,10 +1,11 @@
 # src/training/steps/fractional_differentiation.py
 
 """Fractional Differentiation for enhanced feature engineering.
-from typing import Any
 Implements fractional-order differentiation to preserve memory and maintain
 stationarity while avoiding over-differencing.
 """
+
+from typing import Any
 
 
 import numpy as np
@@ -12,7 +13,6 @@ import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
 from src.core.decorators import handles_errors, traced
-)
 from src.utils.logger import get_logger
 
 

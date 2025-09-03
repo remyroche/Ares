@@ -1,10 +1,10 @@
 # src/training/steps/combined_fractional_system.py
 
-from src.core.decorators import handles_errors
-
-"""Combined Fractional System: Integration of fractional labeling and fractional differentiation."
+"""Combined Fractional System: Integration of fractional labeling and fractional differentiation.
 Designed to work with existing HMM regime system without redundant regime tuning.
 """
+
+from src.core.decorators import handles_errors
 import asyncio
 import time
 from pathlib import Path
@@ -238,7 +238,6 @@ class CombinedFractionalSystem:
     
     @handles_errors("Combined fractional system processing")
     @validate_data_quality
-    @validates()
     async def process_data(
         self, 
         price_data: pd.DataFrame, 
@@ -454,13 +453,9 @@ class CombinedFractionalSystem:
             # Export to JSON
             report_file = output_path / "combined_system_performance.json"
             import json
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import datetime as datetime
-
-with open(report_file, 'w') as f:
-    json.dump(summary, f, indent=2, default=str)
+            
+            with open(report_file, 'w') as f:
+                json.dump(summary, f, indent=2, default=str)
             
             # Export detailed history
             history_file = output_path / "performance_history.json"

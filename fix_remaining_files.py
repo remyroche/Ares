@@ -16,13 +16,13 @@ def fix_state_manager():
         content=f.read()
     
     # Fix variable assignments
-    content = re.sub(r'(\w+'), (\w+)', r'\1=\2', content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)", r"\\1=\\2", content)
     
     # Fix function parameter syntax
-    content = re.sub(r'(\w+'): (\w+), (\w+)', r'\1: \2=\3', content)
+    content = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)", r"\\1: \\2=\\3", content)
     
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+')', r'default_return=\1', content)
+    content = re.sub(r"default_return\s*,\s*([A-Za-z_][A-Za-z0-9_]*)", r"default_return=\\1", content)
     
     # Fix indentation in try blocks
     lines=content.split('\n')
@@ -40,11 +40,9 @@ def fix_state_manager():
         elif in_try_block and stripped.startswith('except'):
             in_try_block=False
             fixed_lines.append(line)
-        elif in_try_block and stripped and not stripped.startswith('#'):
-            # Fix indentation for try block content
-            if not line.startswith(' ' * (try_indent + 4)):
-                line=' ' * (try_indent + 4) + stripped
-            fixed_lines.append(line)
+        elif in_try_block and (stripped.startswith('import ') or stripped.startswith('from ')):
+            # Ensure imports inside try are indented
+            fixed_lines.append(' ' * (try_indent + 4) + stripped)
         else:
             fixed_lines.append(line)
     

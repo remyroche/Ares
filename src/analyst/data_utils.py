@@ -8,8 +8,8 @@ import pandas as pd
 from scipy.signal import find_peaks  # For volume profile peaks
 
 from src.utils.error_handler import (
+import logging
 import asyncio
-
     handle_errors,
     handle_specific_errors,
 )
@@ -41,6 +41,7 @@ class DataUtils:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("DataUtils")
 
         # Data utils state
@@ -91,7 +92,8 @@ class DataUtils:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for data utils"))
+                self.logger.debug(invalid("Invalid configuration for data utils"))
+
                 return False
 
             # Initialize data utils modules
@@ -100,8 +102,10 @@ class DataUtils:
             self.logger.info("✅ Data Utils initialization completed successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ Data Utils initialization failed: {e}"))
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(failed("❌ Data Utils initialization failed: {e}"))
+
             return False
 
     @handle_errors(
@@ -132,8 +136,10 @@ class DataUtils:
 
             self.logger.info("Data utils configuration loaded successfully")
 
-        except Exception:
-            self.print(error("Error loading data utils configuration: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error loading data utils configuration: {e}")
+
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -150,12 +156,14 @@ class DataUtils:
         try:
             # Validate processing interval
             if self.processing_interval <= 0:
-                self.print(invalid("Invalid processing interval"))
+                self.logger.debug(invalid("Invalid processing interval"))
+
                 return False
 
             # Validate max processing history
             if self.max_processing_history <= 0:
-                self.print(invalid("Invalid max processing history"))
+                self.logger.debug(invalid("Invalid max processing history"))
+
                 return False
 
             # Validate that at least one processing type is enabled
@@ -167,14 +175,17 @@ class DataUtils:
                     self.data_utils_config.get("enable_data_aggregation", True),
                 ],
             ):
-                self.print(error("At least one processing type must be enabled"))
+                self.logger.error("At least one processing type must be enabled")
+
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error validating configuration: {e}")
+
             return False
 
     @handle_errors(
@@ -203,7 +214,8 @@ class DataUtils:
 
             self.logger.info("Data utils modules initialized successfully")
 
-        except Exception:
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
                 initialization_error("Error initializing data utils modules: {e}"),
             )
@@ -226,8 +238,10 @@ class DataUtils:
 
             self.logger.info("Data cleaning module initialized")
 
-        except Exception:
-            self.print(initialization_error("Error initializing data cleaning: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(initialization_"Error initializing data cleaning: {e}")
+
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -247,8 +261,10 @@ class DataUtils:
 
             self.logger.info("Data validation module initialized")
 
-        except Exception:
-            self.print(validation_error("Error initializing data validation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(validation_"Error initializing data validation: {e}")
+
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -268,7 +284,8 @@ class DataUtils:
 
             self.logger.info("Data transformation module initialized")
 
-        except Exception:
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
                 initialization_error("Error initializing data transformation: {e}"),
             )
@@ -291,8 +308,10 @@ class DataUtils:
 
             self.logger.info("Data aggregation module initialized")
 
-        except Exception:
-            self.print(initialization_error("Error initializing data aggregation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(initialization_"Error initializing data aggregation: {e}")
+
 
     @handle_specific_errors(
         error_handlers={
@@ -353,8 +372,10 @@ class DataUtils:
             self.logger.info("✅ Data processing execution completed successfully")
             return True
 
-        except Exception:
-            self.print(error("Error executing data processing: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error executing data processing: {e}")
+
             self.is_processing = False
             return False
 
@@ -385,17 +406,21 @@ class DataUtils:
 
             # Validate data types
             if not isinstance(processing_input["processing_type"], str):
-                self.print(invalid("Invalid processing type"))
+                self.logger.debug(invalid("Invalid processing type"))
+
                 return False
 
             if not isinstance(processing_input["data_source"], str):
-                self.print(invalid("Invalid data source"))
+                self.logger.debug(invalid("Invalid data source"))
+
                 return False
 
             return True
 
-        except Exception:
-            self.print(error("Error validating processing inputs: {e}"))
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error validating processing inputs: {e}")
+
             return False
 
     @handle_errors(
@@ -446,8 +471,10 @@ class DataUtils:
             self.logger.info("Data cleaning completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing data cleaning: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing data cleaning: {e}")
+
             return {}
 
     @handle_errors(
@@ -498,8 +525,10 @@ class DataUtils:
             self.logger.info("Data validation completed")
             return results
 
-        except Exception:
-            self.print(validation_error("Error performing data validation: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(validation_"Error performing data validation: {e}")
+
             return {}
 
     @handle_errors(
@@ -553,8 +582,10 @@ class DataUtils:
             self.logger.info("Data transformation completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing data transformation: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing data transformation: {e}")
+
             return {}
 
     @handle_errors(
@@ -605,8 +636,10 @@ class DataUtils:
             self.logger.info("Data aggregation completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing data aggregation: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing data aggregation: {e}")
+
             return {}
 
     # Data cleaning methods
@@ -624,8 +657,10 @@ class DataUtils:
                 "data_quality_improvement": 0.95,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing outlier removal: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing outlier removal: {e}")
+
             return {}
 
     def _perform_missing_data_handling(
@@ -642,8 +677,10 @@ class DataUtils:
                 "data_completeness": 0.98,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(missing("Error performing missing data handling: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(missing("Error performing missing data handling: {e}"))
+
             return {}
 
     def _perform_duplicate_removal(
@@ -660,8 +697,10 @@ class DataUtils:
                 "data_uniqueness": 0.99,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing duplicate removal: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing duplicate removal: {e}")
+
             return {}
 
     def _perform_data_normalization(
@@ -678,8 +717,10 @@ class DataUtils:
                 "data_scale": "0_to_1",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing data normalization: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing data normalization: {e}")
+
             return {}
 
     # Data validation methods
@@ -697,8 +738,10 @@ class DataUtils:
                 "data_types_validated": 15,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing data type validation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(validation_"Error performing data type validation: {e}")
+
             return {}
 
     def _perform_range_validation(
@@ -715,8 +758,10 @@ class DataUtils:
                 "ranges_validated": 12,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing range validation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(validation_"Error performing range validation: {e}")
+
             return {}
 
     def _perform_format_validation(
@@ -733,8 +778,10 @@ class DataUtils:
                 "formats_validated": 8,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing format validation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(validation_"Error performing format validation: {e}")
+
             return {}
 
     def _perform_consistency_validation(
@@ -751,8 +798,10 @@ class DataUtils:
                 "consistency_rules": 5,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing consistency validation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error(validation_"Error performing consistency validation: {e}")
+
             return {}
 
     # Data transformation methods
@@ -770,8 +819,10 @@ class DataUtils:
                 "scaling_range": "mean_0_std_1",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing feature scaling: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing feature scaling: {e}")
+
             return {}
 
     def _perform_feature_encoding(
@@ -788,8 +839,10 @@ class DataUtils:
                 "encoding_dimensions": 15,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing feature encoding: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing feature encoding: {e}")
+
             return {}
 
     def _perform_feature_selection(
@@ -806,8 +859,10 @@ class DataUtils:
                 "selection_score": 0.85,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing feature selection: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing feature selection: {e}")
+
             return {}
 
     def _perform_dimensionality_reduction(
@@ -824,8 +879,10 @@ class DataUtils:
                 "explained_variance": 0.95,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing dimensionality reduction: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing dimensionality reduction: {e}")
+
             return {}
 
     # Data aggregation methods
@@ -843,8 +900,10 @@ class DataUtils:
                 "time_series_length": 1000,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing time aggregation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing time aggregation: {e}")
+
             return {}
 
     def _perform_group_aggregation(
@@ -861,8 +920,10 @@ class DataUtils:
                 "group_statistics": "calculated",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing group aggregation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing group aggregation: {e}")
+
             return {}
 
     def _perform_statistical_aggregation(
@@ -879,8 +940,10 @@ class DataUtils:
                 "statistical_summary": "generated",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing statistical aggregation: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing statistical aggregation: {e}")
+
             return {}
 
     def _perform_custom_aggregation(
@@ -897,8 +960,10 @@ class DataUtils:
                 "custom_metrics": "calculated",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing custom aggregation: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error performing custom aggregation: {e}")
+
             return {}
 
     @handle_errors(
@@ -921,8 +986,10 @@ class DataUtils:
 
             self.logger.info("Processing results stored successfully")
 
-        except Exception:
-            self.print(error("Error storing processing results: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error storing processing results: {e}")
+
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -947,8 +1014,10 @@ class DataUtils:
                 return self.processing_results.get(processing_type, {})
             return self.processing_results.copy()
 
-        except Exception:
-            self.print(error("Error getting processing results: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error getting processing results: {e}")
+
             return {}
 
     @handle_errors(
@@ -974,8 +1043,10 @@ class DataUtils:
 
             return history
 
-        except Exception:
-            self.print(error("Error getting processing history: {e}"))
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error getting processing history: {e}")
+
             return []
 
     def get_processing_status(self) -> dict[str, Any]:
@@ -1023,8 +1094,10 @@ class DataUtils:
 
             self.logger.info("✅ Data Utils stopped successfully")
 
-        except Exception:
-            self.print(error("Error stopping data utils: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
+            self.logger.error("Error stopping data utils: {e}")
+
 
 
 # Global data utils instance
@@ -1233,7 +1306,8 @@ def load_klines_data(filename):
         print(f"✅ Successfully loaded {len(df)} high-quality klines records")
         return df
 
-    except Exception:
+    except (KeyError, IndexError, ValueError) as e:
+        self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
         print(
             critical("CRITICAL ERROR: Error loading klines data from {filename}: {e}"),
         )
@@ -1632,6 +1706,7 @@ def create_ethusdt_1h_csv():
 
         return True
 
-    except Exception:
+    except (ValueError, TypeError) as e:
+        self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
         print(warning("Error creating ETHUSDT_1h.csv: {e}"))
         return False

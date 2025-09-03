@@ -1,13 +1,21 @@
+"""Global Portfolio Manager Module.
+
+This module manages portfolio allocation, position sizing, and risk management
+across multiple trading strategies and models. It provides comprehensive
+portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
+"""
+
 # src/supervisor/global_portfolio_manager.py
 
 from datetime import datetime
-from src.utils.logger import system_logger
 from typing import Any
+
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, initialization_error, invalid
 from src.utils.warning_symbols import (
 import copy
 import asyncio
-
     error,
     initialization_error,
     invalid,
@@ -63,7 +71,8 @@ class GlobalPortfolioManager:
         error_handlers={
             ValueError: (False, "Invalid global portfolio manager configuration"),
             AttributeError: (
-                False, "Missing required global portfolio manager parameters",
+                False,
+                "Missing required global portfolio manager parameters",
             ),
             KeyError: (False, "Missing configuration keys"),
         },
@@ -106,7 +115,8 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="portfolio configuration loading",
+        default_return=None,
+        context="portfolio configuration loading",
     )
     async def _load_portfolio_configuration(self) -> None:
         """Load global portfolio manager configuration."""
@@ -122,15 +132,9 @@ class GlobalPortfolioManager:
 
             # Update configuration
             self.management_interval = self.portfolio_config["management_interval"]
-            self.max_management_history = self.portfolio_config[
-                "max_management_history"
-            ]
-            self.enable_portfolio_allocation = self.portfolio_config[
-                "enable_portfolio_allocation"
-            ]
-            self.enable_risk_management = self.portfolio_config[
-                "enable_risk_management"
-            ]
+            self.max_management_history = self.portfolio_config["max_management_history"]
+            self.enable_portfolio_allocation = self.portfolio_config["enable_portfolio_allocation"]
+            self.enable_risk_management = self.portfolio_config["enable_risk_management"]
             self.enable_rebalancing = self.portfolio_config["enable_rebalancing"]
 
             self.logger.info(
@@ -145,7 +149,6 @@ class GlobalPortfolioManager:
         default_return=False,
         context="configuration validation",
     )
-
     def _validate_configuration(self) -> bool:
         """
         Validate global portfolio manager configuration.
@@ -186,7 +189,8 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="portfolio modules initialization",
+        default_return=None,
+        context="portfolio modules initialization",
     )
     async def _initialize_portfolio_modules(self) -> None:
         """Initialize global portfolio manager modules."""
@@ -222,15 +226,18 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="portfolio allocation initialization",
+        default_return=None,
+        context="portfolio allocation initialization",
     )
     async def _initialize_portfolio_allocation(self) -> None:
         """Initialize portfolio allocation module."""
         try:
             # Initialize portfolio allocation components
             self.portfolio_allocation_components = {
-                "asset_allocation": True , "sector_allocation": True,
-                "geographic_allocation": True , "strategy_allocation": True,
+                "asset_allocation": True,
+                "sector_allocation": True,
+                "geographic_allocation": True,
+                "strategy_allocation": True,
             }
 
             self.logger.info("Portfolio allocation module initialized")
@@ -242,7 +249,8 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="risk management initialization",
+        default_return=None,
+        context="risk management initialization",
     )
     async def _initialize_risk_management(self) -> None:
         """Initialize risk management module."""
@@ -261,15 +269,18 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="rebalancing initialization",
+        default_return=None,
+        context="rebalancing initialization",
     )
     async def _initialize_rebalancing(self) -> None:
         """Initialize rebalancing module."""
         try:
             # Initialize rebalancing components
             self.rebalancing_components = {
-                "periodic_rebalancing": True , "threshold_rebalancing": True,
-                "drift_rebalancing": True , "opportunistic_rebalancing": True,
+                "periodic_rebalancing": True,
+                "threshold_rebalancing": True,
+                "drift_rebalancing": True,
+                "opportunistic_rebalancing": True,
             }
 
             self.logger.info("Rebalancing module initialized")
@@ -287,8 +298,10 @@ class GlobalPortfolioManager:
         try:
             # Initialize performance monitoring components
             self.performance_monitoring_components = {
-                "return_monitoring": True , "risk_monitoring": True,
-                "attribution_monitoring": True , "benchmark_monitoring": True,
+                "return_monitoring": True,
+                "risk_monitoring": True,
+                "attribution_monitoring": True,
+                "benchmark_monitoring": True,
             }
 
             self.logger.info("Performance monitoring module initialized")
@@ -300,15 +313,18 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="optimization initialization",
+        default_return=None,
+        context="optimization initialization",
     )
     async def _initialize_optimization(self) -> None:
         """Initialize optimization module."""
         try:
             # Initialize optimization components
             self.optimization_components = {
-                "mean_variance_optimization": True , "black_litterman_optimization": True,
-                "risk_parity_optimization": True , "factor_optimization": True,
+                "mean_variance_optimization": True,
+                "black_litterman_optimization": True,
+                "risk_parity_optimization": True,
+                "factor_optimization": True,
             }
 
             self.logger.info("Optimization module initialized")
@@ -322,10 +338,12 @@ class GlobalPortfolioManager:
             AttributeError: (False, "Missing management components"),
             KeyError: (False, "Missing required management data"),
         },
-        default_return=False, context="global portfolio management execution",
+        default_return=False,
+        context="global portfolio management execution",
     )
     async def execute_portfolio_management(
-        self, management_input: dict[str, Any],
+        self,
+        management_input: dict[str, Any],
     ) -> bool:
         """
         Execute global portfolio management operations.
@@ -345,8 +363,7 @@ class GlobalPortfolioManager:
 
             # Perform portfolio allocation
             if self.enable_portfolio_allocation:
-                allocation_results = await self._perform_portfolio_allocation(
-                    management_input)
+                allocation_results = await self._perform_portfolio_allocation(management_input)
                 self.management_results["portfolio_allocation"] = allocation_results
 
             # Perform risk management
@@ -361,14 +378,12 @@ class GlobalPortfolioManager:
 
             # Perform performance monitoring
             if self.portfolio_config.get("enable_performance_monitoring", True):
-                performance_results = await self._perform_performance_monitoring(
-                    management_input)
+                performance_results = await self._perform_performance_monitoring(management_input)
                 self.management_results["performance_monitoring"] = performance_results
 
             # Perform optimization
             if self.portfolio_config.get("enable_optimization", True):
-                optimization_results = await self._perform_optimization(
-                    management_input)
+                optimization_results = await self._perform_optimization(management_input)
                 self.management_results["optimization"] = optimization_results
 
             # Store management results
@@ -387,9 +402,9 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False, context="management inputs validation",
+        default_return=False,
+        context="management inputs validation",
     )
-
     def _validate_management_inputs(self, management_input: dict[str, Any]) -> bool:
         """
         Validate management inputs.
@@ -427,11 +442,13 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="portfolio allocation",
+        default_return=None,
+        context="portfolio allocation",
     )
     async def _perform_portfolio_allocation(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Perform portfolio allocation.
 
@@ -446,23 +463,19 @@ class GlobalPortfolioManager:
 
             # Perform asset allocation
             if self.portfolio_allocation_components.get("asset_allocation", False):
-                results["asset_allocation"] = self._perform_asset_allocation(
-                    management_input)
+                results["asset_allocation"] = self._perform_asset_allocation(management_input)
 
             # Perform sector allocation
             if self.portfolio_allocation_components.get("sector_allocation", False):
-                results["sector_allocation"] = self._perform_sector_allocation(
-                    management_input)
+                results["sector_allocation"] = self._perform_sector_allocation(management_input)
 
             # Perform geographic allocation
             if self.portfolio_allocation_components.get("geographic_allocation", False):
-                results["geographic_allocation"] = self._perform_geographic_allocation(
-                    management_input)
+                results["geographic_allocation"] = self._perform_geographic_allocation(management_input)
 
             # Perform strategy allocation
             if self.portfolio_allocation_components.get("strategy_allocation", False):
-                results["strategy_allocation"] = self._perform_strategy_allocation(
-                    management_input)
+                results["strategy_allocation"] = self._perform_strategy_allocation(management_input)
 
             self.logger.info("Portfolio allocation completed")
             return results
@@ -473,11 +486,13 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="risk management",
+        default_return=None,
+        context="risk management",
     )
     async def _perform_risk_management(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Perform risk management.
 
@@ -495,19 +510,15 @@ class GlobalPortfolioManager:
 
             # Perform stop loss management
             if self.risk_management_components.get("stop_loss_management", False):
-                results["stop_loss_management"] = self._perform_stop_loss_management(
-                    management_input)
+                results["stop_loss_management"] = self._perform_stop_loss_management(management_input)
 
             # Perform correlation management
             if self.risk_management_components.get("correlation_management", False):
-                results["correlation_management"] = (
-                    self._perform_correlation_management(management_input)
-                )
+                results["correlation_management"] = self._perform_correlation_management(management_input)
 
             # Perform volatility management
             if self.risk_management_components.get("volatility_management", False):
-                results["volatility_management"] = self._perform_volatility_management(
-                    management_input)
+                results["volatility_management"] = self._perform_volatility_management(management_input)
 
             self.logger.info("Risk management completed")
             return results
@@ -518,11 +529,13 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="rebalancing",
+        default_return=None,
+        context="rebalancing",
     )
     async def _perform_rebalancing(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Perform rebalancing.
 
@@ -537,24 +550,19 @@ class GlobalPortfolioManager:
 
             # Perform periodic rebalancing
             if self.rebalancing_components.get("periodic_rebalancing", False):
-                results["periodic_rebalancing"] = self._perform_periodic_rebalancing(
-                    management_input)
+                results["periodic_rebalancing"] = self._perform_periodic_rebalancing(management_input)
 
             # Perform threshold rebalancing
             if self.rebalancing_components.get("threshold_rebalancing", False):
-                results["threshold_rebalancing"] = self._perform_threshold_rebalancing(
-                    management_input)
+                results["threshold_rebalancing"] = self._perform_threshold_rebalancing(management_input)
 
             # Perform drift rebalancing
             if self.rebalancing_components.get("drift_rebalancing", False):
-                results["drift_rebalancing"] = self._perform_drift_rebalancing(
-                    management_input)
+                results["drift_rebalancing"] = self._perform_drift_rebalancing(management_input)
 
             # Perform opportunistic rebalancing
             if self.rebalancing_components.get("opportunistic_rebalancing", False):
-                results["opportunistic_rebalancing"] = (
-                    self._perform_opportunistic_rebalancing(management_input)
-                )
+                results["opportunistic_rebalancing"] = self._perform_opportunistic_rebalancing(management_input)
 
             self.logger.info("Rebalancing completed")
             return results
@@ -569,8 +577,9 @@ class GlobalPortfolioManager:
         context="performance monitoring",
     )
     async def _perform_performance_monitoring(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Perform performance monitoring.
 
@@ -585,28 +594,19 @@ class GlobalPortfolioManager:
 
             # Perform return monitoring
             if self.performance_monitoring_components.get("return_monitoring", False):
-                results["return_monitoring"] = self._perform_return_monitoring(
-                    management_input)
+                results["return_monitoring"] = self._perform_return_monitoring(management_input)
 
             # Perform risk monitoring
             if self.performance_monitoring_components.get("risk_monitoring", False):
-                results["risk_monitoring"] = self._perform_risk_monitoring(
-                    management_input)
+                results["risk_monitoring"] = self._perform_risk_monitoring(management_input)
 
             # Perform attribution monitoring
-            if self.performance_monitoring_components.get(
-                "attribution_monitoring",
-                False):
-                results["attribution_monitoring"] = (
-                    self._perform_attribution_monitoring(management_input)
-                )
+            if self.performance_monitoring_components.get("attribution_monitoring", False):
+                results["attribution_monitoring"] = self._perform_attribution_monitoring(management_input)
 
             # Perform benchmark monitoring
-            if self.performance_monitoring_components.get(
-                "benchmark_monitoring",
-                False):
-                results["benchmark_monitoring"] = self._perform_benchmark_monitoring(
-                    management_input)
+            if self.performance_monitoring_components.get("benchmark_monitoring", False):
+                results["benchmark_monitoring"] = self._perform_benchmark_monitoring(management_input)
 
             self.logger.info("Performance monitoring completed")
             return results
@@ -617,11 +617,13 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="optimization",
+        default_return=None,
+        context="optimization",
     )
     async def _perform_optimization(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Perform optimization.
 
@@ -636,26 +638,19 @@ class GlobalPortfolioManager:
 
             # Perform mean variance optimization
             if self.optimization_components.get("mean_variance_optimization", False):
-                results["mean_variance_optimization"] = (
-                    self._perform_mean_variance_optimization(management_input)
-                )
+                results["mean_variance_optimization"] = self._perform_mean_variance_optimization(management_input)
 
             # Perform Black Litterman optimization
             if self.optimization_components.get("black_litterman_optimization", False):
-                results["black_litterman_optimization"] = (
-                    self._perform_black_litterman_optimization(management_input)
-                )
+                results["black_litterman_optimization"] = self._perform_black_litterman_optimization(management_input)
 
             # Perform risk parity optimization
             if self.optimization_components.get("risk_parity_optimization", False):
-                results["risk_parity_optimization"] = (
-                    self._perform_risk_parity_optimization(management_input)
-                )
+                results["risk_parity_optimization"] = self._perform_risk_parity_optimization(management_input)
 
             # Perform factor optimization
             if self.optimization_components.get("factor_optimization", False):
-                results["factor_optimization"] = self._perform_factor_optimization(
-                    management_input)
+                results["factor_optimization"] = self._perform_factor_optimization(management_input)
 
             self.logger.info("Optimization completed")
             return results
@@ -667,13 +662,15 @@ class GlobalPortfolioManager:
     # Portfolio allocation methods
 
     def _perform_asset_allocation(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform asset allocation."""
         try:
             # Simulate asset allocation
             return {
-                "asset_allocation_completed": True , "allocation_method": "mean_variance",
+                "asset_allocation_completed": True,
+                "allocation_method": "mean_variance",
                 "allocations": {"stocks": 0.6, "bonds": 0.3, "cash": 0.1},
                 "total_allocation": 1.0,
                 "training_time": datetime.now().isoformat(),
@@ -683,13 +680,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_sector_allocation(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform sector allocation."""
         try:
             # Simulate sector allocation
             return {
-                "sector_allocation_completed": True , "allocation_method": "sector_rotation",
+                "sector_allocation_completed": True,
+                "allocation_method": "sector_rotation",
                 "allocations": {
                     "tech": 0.25,
                     "finance": 0.20,
@@ -705,8 +704,9 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_geographic_allocation(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform geographic allocation."""
         try:
             # Simulate geographic allocation
@@ -727,8 +727,9 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_strategy_allocation(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform strategy allocation."""
         try:
             # Simulate strategy allocation
@@ -754,13 +755,15 @@ class GlobalPortfolioManager:
     # This method has been removed to avoid overlap with Tactician responsibilities
 
     def _perform_stop_loss_management(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform stop loss management."""
         try:
             # Simulate stop loss management
             return {
-                "stop_loss_management_completed": True , "stop_loss_method": "trailing_stop",
+                "stop_loss_management_completed": True,
+                "stop_loss_method": "trailing_stop",
                 "stop_loss_levels": [-0.02, -0.03, -0.05],
                 "stop_loss_triggered": 2,
                 "training_time": datetime.now().isoformat(),
@@ -770,13 +773,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_correlation_management(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform correlation management."""
         try:
             # Simulate correlation management
             return {
-                "correlation_management_completed": True , "correlation_threshold": 0.7,
+                "correlation_management_completed": True,
+                "correlation_threshold": 0.7,
                 "high_correlation_pairs": 3,
                 "correlation_reduction": 0.15,
                 "training_time": datetime.now().isoformat(),
@@ -786,13 +791,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_volatility_management(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform volatility management."""
         try:
             # Simulate volatility management
             return {
-                "volatility_management_completed": True , "volatility_target": 0.12,
+                "volatility_management_completed": True,
+                "volatility_target": 0.12,
                 "current_volatility": 0.14,
                 "volatility_adjustment": -0.02,
                 "training_time": datetime.now().isoformat(),
@@ -804,13 +811,15 @@ class GlobalPortfolioManager:
     # Rebalancing methods
 
     def _perform_periodic_rebalancing(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform periodic rebalancing."""
         try:
             # Simulate periodic rebalancing
             return {
-                "periodic_rebalancing_completed": True , "rebalancing_frequency": "monthly",
+                "periodic_rebalancing_completed": True,
+                "rebalancing_frequency": "monthly",
                 "rebalancing_date": datetime.now().isoformat(),
                 "rebalancing_trades": 8,
                 "rebalancing_cost": 0.001,
@@ -821,13 +830,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_threshold_rebalancing(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform threshold rebalancing."""
         try:
             # Simulate threshold rebalancing
             return {
-                "threshold_rebalancing_completed": True , "threshold_level": 0.05,
+                "threshold_rebalancing_completed": True,
+                "threshold_level": 0.05,
                 "threshold_breaches": 2,
                 "rebalancing_trades": 4,
                 "rebalancing_cost": 0.0005,
@@ -838,8 +849,9 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_drift_rebalancing(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform drift rebalancing."""
         try:
             # Simulate drift rebalancing
@@ -855,13 +867,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_opportunistic_rebalancing(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform opportunistic rebalancing."""
         try:
             # Simulate opportunistic rebalancing
             return {
-                "opportunistic_rebalancing_completed": True , "opportunity_detected": True,
+                "opportunistic_rebalancing_completed": True,
+                "opportunity_detected": True,
                 "opportunity_score": 0.75,
                 "rebalancing_trades": 3,
                 "cost_savings": 0.0003,
@@ -874,13 +888,15 @@ class GlobalPortfolioManager:
     # Performance monitoring methods
 
     def _perform_return_monitoring(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform return monitoring."""
         try:
             # Simulate return monitoring
             return {
-                "return_monitoring_completed": True , "current_return": 0.085,
+                "return_monitoring_completed": True,
+                "current_return": 0.085,
                 "target_return": 0.10,
                 "return_deviation": -0.015,
                 "return_ranking": "below_target",
@@ -891,13 +907,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_risk_monitoring(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform risk monitoring."""
         try:
             # Simulate risk monitoring
             return {
-                "risk_monitoring_completed": True , "current_risk": 0.12,
+                "risk_monitoring_completed": True,
+                "current_risk": 0.12,
                 "target_risk": 0.10,
                 "risk_deviation": 0.02,
                 "risk_ranking": "above_target",
@@ -908,13 +926,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_attribution_monitoring(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform attribution monitoring."""
         try:
             # Simulate attribution monitoring
             return {
-                "attribution_monitoring_completed": True , "attribution_factors": [
+                "attribution_monitoring_completed": True,
+                "attribution_factors": [
                     "asset_allocation",
                     "stock_selection",
                     "interaction",
@@ -928,13 +948,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_benchmark_monitoring(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform benchmark monitoring."""
         try:
             # Simulate benchmark monitoring
             return {
-                "benchmark_monitoring_completed": True , "benchmark_return": 0.08,
+                "benchmark_monitoring_completed": True,
+                "benchmark_return": 0.08,
                 "portfolio_return": 0.085,
                 "excess_return": 0.005,
                 "tracking_error": 0.02,
@@ -947,13 +969,15 @@ class GlobalPortfolioManager:
     # Optimization methods
 
     def _perform_mean_variance_optimization(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform mean variance optimization."""
         try:
             # Simulate mean variance optimization
             return {
-                "mean_variance_optimization_completed": True , "optimization_method": "mean_variance",
+                "mean_variance_optimization_completed": True,
+                "optimization_method": "mean_variance",
                 "optimal_weights": [0.4, 0.3, 0.2, 0.1],
                 "expected_return": 0.095,
                 "expected_risk": 0.11,
@@ -964,13 +988,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_black_litterman_optimization(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform Black Litterman optimization."""
         try:
             # Simulate Black Litterman optimization
             return {
-                "black_litterman_optimization_completed": True , "optimization_method": "black_litterman",
+                "black_litterman_optimization_completed": True,
+                "optimization_method": "black_litterman",
                 "optimal_weights": [0.35, 0.25, 0.25, 0.15],
                 "expected_return": 0.09,
                 "expected_risk": 0.105,
@@ -981,13 +1007,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_risk_parity_optimization(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform risk parity optimization."""
         try:
             # Simulate risk parity optimization
             return {
-                "risk_parity_optimization_completed": True , "optimization_method": "risk_parity",
+                "risk_parity_optimization_completed": True,
+                "optimization_method": "risk_parity",
                 "optimal_weights": [0.25, 0.25, 0.25, 0.25],
                 "expected_return": 0.085,
                 "expected_risk": 0.10,
@@ -998,13 +1026,15 @@ class GlobalPortfolioManager:
             return {}
 
     def _perform_factor_optimization(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
+        self,
+        management_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform factor optimization."""
         try:
             # Simulate factor optimization
             return {
-                "factor_optimization_completed": True , "optimization_method": "factor_based",
+                "factor_optimization_completed": True,
+                "optimization_method": "factor_based",
                 "optimal_weights": [0.3, 0.3, 0.2, 0.2],
                 "expected_return": 0.09,
                 "expected_risk": 0.108,
@@ -1016,7 +1046,8 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="management results storage",
+        default_return=None,
+        context="management results storage",
     )
     async def _store_management_results(self) -> None:
         """Store management results."""
@@ -1038,12 +1069,13 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="management results getting",
+        default_return=None,
+        context="management results getting",
     )
-
     def get_management_results(
-        self, management_type: str | None = None,
-    ) -> dict[str , Any]:
+        self,
+        management_type: str | None = None,
+    ) -> dict[str, Any]:
         """
         Get management results.
 
@@ -1055,7 +1087,7 @@ class GlobalPortfolioManager:
         """
         try:
             if management_type:
-                return self.management_results.get(management_type = {})
+                return self.management_results.get(management_type={})
             return self.management_results.copy()
 
         except Exception:
@@ -1064,9 +1096,9 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="management history getting",
+        default_return=None,
+        context="management history getting",
     )
-
     def get_management_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get management history.
@@ -1089,7 +1121,7 @@ class GlobalPortfolioManager:
             self.print(error("Error getting management history: {e}"))
             return []
 
-    def get_management_status(self) -> dict[str , Any]:
+    def get_management_status(self) -> dict[str, Any]:
         """
         Get management status information.
 
@@ -1116,7 +1148,8 @@ class GlobalPortfolioManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="global portfolio manager cleanup",
+        default_return=None,
+        context="global portfolio manager cleanup",
     )
     async def stop(self) -> None:
         """Stop the global portfolio manager."""
@@ -1137,12 +1170,15 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error stopping global portfolio manager: {e}"))
 
+
 # Global portfolio manager instance
 global_portfolio_manager: GlobalPortfolioManager | None = None
 
+
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None, context="global portfolio manager setup",
+    default_return=None,
+    context="global portfolio manager setup",
 )
 async def setup_global_portfolio_manager(
     config: dict[str, Any] | None = None,
@@ -1164,10 +1200,12 @@ async def setup_global_portfolio_manager(
                 "global_portfolio_manager": {
                     "management_interval": 3600,
                     "max_management_history": 100,
-                    "enable_portfolio_allocation": True, "enable_risk_management": True,
+                    "enable_portfolio_allocation": True,
+                    "enable_risk_management": True,
                     "enable_rebalancing": True,
                     "enable_performance_monitoring": True,
-                    "enable_optimization": True},
+                    "enable_optimization": True,
+                },
             }
 
         # Create global portfolio manager

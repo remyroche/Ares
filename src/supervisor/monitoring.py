@@ -1,14 +1,20 @@
+"""Monitoring Module.
+
+This module provides system-wide monitoring capabilities for the trading system,
+including health checks, performance tracking, and alerting functionality.
+"""
+
 # src/supervisor/monitoring.py
 
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
+from datetime import datetime
+from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, failed, invalid
 from src.utils.warning_symbols import (
 import copy
-
     error,
     failed,
     invalid
@@ -37,7 +43,8 @@ class Monitoring:
             AttributeError: (False, "Missing required monitoring parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False, context="monitoring initialization",
+        default_return=False,
+        context="monitoring initialization",
     )
     async def initialize(self) -> bool:
         try:
@@ -54,7 +61,8 @@ class Monitoring:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="monitoring configuration loading",
+        default_return=None,
+        context="monitoring configuration loading",
     )
     async def _load_monitoring_configuration(self) -> None:
         try:
@@ -68,7 +76,8 @@ class Monitoring:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False, context="configuration validation",
+        default_return=False,
+        context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
         try:
@@ -88,7 +97,8 @@ class Monitoring:
         error_handlers={
             Exception: (False, "Monitoring run failed"),
         },
-        default_return=False, context="monitoring run",
+        default_return=False,
+        context="monitoring run",
     )
     async def run(self) -> bool:
         try:
@@ -105,7 +115,8 @@ class Monitoring:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="monitoring step",
+        default_return=None,
+        context="monitoring step",
     )
     async def _perform_monitoring(self) -> None:
         try:
@@ -122,7 +133,8 @@ class Monitoring:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="system health check",
+        default_return=None,
+        context="system health check",
     )
     async def _check_system_health(self) -> None:
         try:
@@ -140,7 +152,8 @@ class Monitoring:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="metrics update",
+        default_return=None,
+        context="metrics update",
     )
     async def _update_metrics(self) -> None:
         try:
@@ -153,7 +166,8 @@ class Monitoring:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="monitoring stop",
+        default_return=None,
+        context="monitoring stop",
     )
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Monitoring...")
@@ -179,11 +193,14 @@ class Monitoring:
     def get_alerts(self) -> list[dict[str, Any]]:
         return self.alerts.copy()
 
+
 monitoring: Monitoring | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None, context="monitoring setup",
+    default_return=None,
+    context="monitoring setup",
 )
 async def setup_monitoring(
     config: dict[str, Any] | None = None,

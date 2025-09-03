@@ -15,7 +15,7 @@ import time
 import glob
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable, Generator
+from typing import Any, Dict, List, Optional, Union, Callable, Generator, Tuple, TypeVar, Awaitable, cast
 from collections import defaultdict, Counter, deque
 import logging
 from copy import copy, deepcopy
@@ -404,7 +404,7 @@ def get_latest_file(directory: Union[str, Path], pattern: str = "*") -> Optional
 # Enhanced data validation
 def validate_dataframe_schema(df: pd.DataFrame, 
                             required_columns: List[str],
-                            column_types: Optional[Dict[str, type]] = None) -> tuple[bool, List[str]]:
+                            column_types: Optional[Dict[str, type]] = None) -> Tuple[bool, List[str]]:
     """Validate DataFrame schema including column types."""
     errors = []
     

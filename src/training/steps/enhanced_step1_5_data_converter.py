@@ -24,21 +24,20 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
-from src.utils.enhanced_data_quality_validator import (
-from src.utils.enhanced_config_management import Step1_5Config
-from src.utils.logger import system_logger
-import shutil
-import pyarrow as pa
-import pyarrow.parquet as pq
-from src.core.decorators import handles_errors, error_boundary
-from src.utils.enhanced_memory_management import (
-        retry_with_backoff, circuit_breaker, categorize_errors,
-        RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
+    from src.utils.enhanced_data_quality_validator import (
+        UnifiedDataQualityValidator, QualityThresholds, QualityResult
     )
+    from src.utils.enhanced_config_management import Step1_5Config
+    from src.utils.logger import system_logger
+    import shutil
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from src.core.decorators import handles_errors, error_boundary
+    from src.utils.enhanced_memory_management import (
+        retry_with_backoff, circuit_breaker, categorize_errors,
+        RetryableError, NonRetryableError, DATA_OPERATION_ERRORS,
         MemoryMonitor, memory_efficient, optimize_dataframe_dtypes,
         MemoryOptimizedProcessor, MemoryConfig
-    )
-        UnifiedDataQualityValidator, QualityThresholds, QualityResult
     )
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
@@ -490,7 +489,7 @@ async def run_enhanced_step1_5(
 # Example usage
 if __name__ == "__main__":
     import asyncio
-import os.path
+    import os.path
     
     # Set up logging
     logging.basicConfig(

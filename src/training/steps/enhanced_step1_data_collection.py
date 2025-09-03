@@ -23,30 +23,26 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
-from src.utils.enhanced_data_quality_validator import (
-from src.utils.enhanced_config_management import Step1Config
-from src.utils.logger import system_logger
-from src.training.steps.data_downloader import download_all_data_with_consolidation
-from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
-from src.core.decorators import handles_errors, error_boundary
-from src.utils.enhanced_memory_management import (
-        retry_with_backoff, circuit_breaker, categorize_errors,
-        RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
+    from src.utils.enhanced_data_quality_validator import (
+        EnhancedDataQualityValidator, QualityThresholds, QualityResult
     )
+    from src.utils.enhanced_config_management import Step1Config
+    from src.utils.logger import system_logger
+    from src.training.steps.data_downloader import download_all_data_with_consolidation
+    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
+    from src.core.decorators import handles_errors, error_boundary
+    from src.utils.enhanced_memory_management import (
+        retry_with_backoff, circuit_breaker, categorize_errors,
+        RetryableError, NonRetryableError, DATA_OPERATION_ERRORS,
         MemoryMonitor, memory_efficient, optimize_dataframe_dtypes,
         MemoryOptimizedProcessor, MemoryConfig
-    )
-        EnhancedDataQualityValidator, QualityThresholds, QualityResult
     )
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
     system_logger = logging.getLogger("EnhancedStep1")
-
-# Import existing utilities with fallbacks
-try:
-except ImportError:
     download_all_data_with_consolidation = None
+    _dl = None
 
 
 class EnhancedStep1DataCollection:
@@ -102,7 +98,7 @@ class EnhancedStep1DataCollection:
         
         try:
             # Initialize directories
-            await self._initialize_directories()
+            self._initialize_directories()
             
             # Download data with enhanced resilience
             download_success = await self._download_data_with_resilience(training_input)
@@ -398,7 +394,7 @@ async def run_enhanced_step1(
 # Example usage
 if __name__ == "__main__":
     import asyncio
-import os.path
+    import os.path
     
     # Set up logging
     logging.basicConfig(

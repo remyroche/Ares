@@ -22,10 +22,10 @@ from .config_driven_architecture import (
     ConfigLoader, PipelineConfig, ConfigBuilder, ConfigFormat
 )
 from .modular_components import (
-    IDataSource, BinanceDataSource, LocalDataSource,
+    IDataSource, ExchangeDataSourceFactory, LocalDataSource,
     IDataValidator, SchemaValidator, DataQualityValidator,
     IFeatureCalculator, PriceFeatureCalculator, VolumeFeatureCalculator,
-    IModelTrainer, LightGBMTrainer
+    IModelTrainer, ModelTrainerFactory
 )
 
 
@@ -191,21 +191,27 @@ class IntegratedPipeline:
         
         # Register data source based on config
         data_source_config = self.config.global_settings.get('data_source', {})
-        if data_source_config.get('type') == 'binance':
-            container.register(
-                'data_source',
-                IDataSource,
-                lambda: BinanceDataSource(
-                    api_key=data_source_config.get('api_key'),
-                    api_secret=data_source_config.get('api_secret')
-                ),
-                singleton=True
-            )
-        else:
+        source_type = data_source_config.get('type', 'local')
+        
+        if source_type == 'local':
             container.register(
                 'data_source',
                 IDataSource,
                 lambda: LocalDataSource(data_source_config.get('data_dir', 'data')),
+                singleton=True
+            )
+        else:
+            # Use factory for exchange data sources
+            exchange = data_source_config.get('exchange', source_type)
+            container.register(
+                'data_source',
+                IDataSource,
+                lambda: ExchangeDataSourceFactory.create(
+                    exchange,
+                    api_key=data_source_config.get('api_key'),
+                    api_secret=data_source_config.get('api_secret'),
+                    testnet=data_source_config.get('testnet', False)
+                ),
                 singleton=True
             )
         
@@ -227,12 +233,17 @@ class IntegratedPipeline:
             ]
         )
         
-        # Register model trainer
+        # Register model trainer using factory
         trainer_config = self.config.global_settings.get('model', {})
+        model_type = trainer_config.get('type', 'lightgbm')
+        
         container.register(
             'model_trainer',
             IModelTrainer,
-            lambda: LightGBMTrainer(**trainer_config.get('hyperparameters', {})),
+            lambda: ModelTrainerFactory.create(
+                model_type,
+                **trainer_config.get('hyperparameters', {})
+            ),
             singleton=False
         )
         

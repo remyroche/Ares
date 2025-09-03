@@ -24,21 +24,20 @@ from src.core.domain import (
     with_tracing_span,
     quality_gate
 )
+from src.core.decorators import handles_errors, traced, validates
 
 logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
 
 @traced(span_name="validate_triple_barrier_method")
 # @quality_gate - removed, handled by validates
-min_quality_score=0.7,
-    max_correlation=0.95,
-    required_grade="C"
-)
+# min_quality_score=0.7,
+# max_correlation=0.95,
+# required_grade="C"
 @validates()
 @handles_errors
 # @memory_efficient - removed
 # @resource_monitor - removed, use log_execution_time
 # @secure_data_processing - removed, handled by validates
-@validates()
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
@@ -85,7 +84,6 @@ async def run_validator(
         # Try to read the file to validate structure
         try:
             import pandas as pd
-from src.core.decorators import handles_errors, traced
             data = pd.read_parquet(triple_barrier_path)
             
             # Check required columns (expect 'triple_barrier_label')
@@ -161,4 +159,4 @@ if __name__ == "__main__":
         result = await run_validator(test_input, test_state)
         print(f"Validation result: {result}")
 
-    asyncio.run( test())
+    asyncio.run(test())

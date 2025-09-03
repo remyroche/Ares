@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Validator for Step 4: Regime Data Splitting."
+"""Validator for Step 4: Regime Data Splitting.
 
-import pandas as pd
 This module validates the regime data splitting step outputs with support for 10+ regimes.
 """
-from src.core.domain import (
-
+import pandas as pd
 from src.core.decorators import validates
+from src.core.domain import (
     smart_validation_cache,
     validate_step4_comprehensive
 )
@@ -100,7 +99,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         try:
             self.logger.info(f"📁 Validating regime file: {regime_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(regime_file), "regime file")
             if not file_exists:
                 return False
@@ -108,7 +107,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             # Load and validate the regime file
             df = pd.read_parquet(regime_file)
 
-            # Use BaseValidator's DataFrame validation'
+            # Use BaseValidator's DataFrame validation
             df_valid, df_metrics = self.validate_dataframe_quality(
                 df=df,
                 min_rows=100,
@@ -149,14 +148,14 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(stats_file), "statistics file")
             if not file_exists:
                 return False
 
             stats_data = safe_json_load(stats_file)
 
-            # Check if it's a dictionary'
+            # Check if it's a dictionary
             if not isinstance(stats_data, dict):
                 self.logger.warning("⚠️ Statistics file should contain a dictionary")
                 return False
@@ -166,7 +165,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 self.logger.warning("⚠️ Empty statistics data")
                 return False
 
-            # Validate each regime's statistics'
+            # Validate each regime's statistics
             for regime_id, stats in stats_data.items():
                 if not isinstance(stats, dict):
                     self.logger.warning(f"⚠️ Invalid statistics format for regime {regime_id}")
@@ -193,7 +192,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate statistics file: {error_context}")
             return False
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 4 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -228,7 +227,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
 
         return validation_result
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_outputs(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 4 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -273,7 +272,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                     if file_path.endswith(".parquet"):
                         try:
                             df = pd.read_parquet(file_path)
-                            # Use BaseValidator's DataFrame validation'
+                            # Use BaseValidator's DataFrame validation
                             df_valid, df_metrics = self.validate_dataframe_quality(
                                 df, min_rows=100, check_data_types=True
                             )
@@ -317,7 +316,7 @@ async def run_validator(
         validator = Step4RegimeDataSplittingValidator(config)
         
         # Validate prerequisites using BaseValidator methods
-        prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
+        prereq_result = validator.validate_prerequisites(symbol, exchange, timeframe)
         
         # Validate step execution
         step_result = await validator.validate_step4_regime_data_splitting(
@@ -325,7 +324,7 @@ async def run_validator(
         )
         
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result = validator.validate_outputs(symbol, exchange, timeframe)
         
         # Combine results
         validation_passed = (
@@ -365,10 +364,10 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-import datetime as datetime
+    import datetime as datetime
     
     test_input = {
-    "symbol": "ETHUSDT",
+        "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",
         "data_dir": "data_cache",

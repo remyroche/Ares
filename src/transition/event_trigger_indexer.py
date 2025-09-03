@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
-from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.training.core.training_manager import create_training_manager
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ class EventTriggerIndexer:
         )
 
         # Load thresholds and reliability
-        self.etm = EnhancedTrainingManager(config)
+        self.etm = TrainingManager(config)
         self.activation_thresholds = self.etm.get_activation_thresholds()
         self.label_reliability = self.etm.get_label_reliability()
 

@@ -245,6 +245,8 @@ class QualityAlertManager:
 
             body = f""""
         except Exception as e:
+            pass  # TODO: Handle exception
+        except Exception as e:
             pass  # TODO: Handle exception properly
 Data Quality Alert
 

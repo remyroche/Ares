@@ -6,12 +6,13 @@ through the queue system and that components interact properly.
 """
 
 import asyncio
-import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock
 from typing import Any, Dict
+from unittest.mock import AsyncMock, MagicMock, Mock
 
+import pytest
+
+from src.supervisor.dependency_container import ComponentBuilder, DependencyContainer
 from src.supervisor.main import Supervisor
-from src.supervisor.dependency_container import DependencyContainer, ComponentBuilder
 from src.utils.state_manager import StateManager
 
 

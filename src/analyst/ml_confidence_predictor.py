@@ -1,6 +1,8 @@
 from src.core.decorators import handles_errors
 
 from src.core.domain import (
+from src.config_optuna import get_parameter_value
+from src.config_optuna import get_parameter_value
     handle_file_operations,
     handle_specific_errors
 )
@@ -60,7 +62,6 @@ class MLConfidencePredictor:
         self.adversarial_models: dict[str, Any] = {}
 
         # Configuration
-        from src.config_optuna import get_parameter_value
 
         self.predictor_config: dict[str, Any] = self.config.get(
             "ml_confidence_predictor",
@@ -136,7 +137,6 @@ class MLConfidencePredictor:
         # Dual model system compatibility
         self.analyst_timeframes: list[str] = ["30m", "15m", "5m"]
         self.tactician_timeframes: list[str] = ["1m"]
-        from src.config_optuna import get_parameter_value
 
         self.analyst_confidence_threshold: float = get_parameter_value(
             "confidence_thresholds.analyst_confidence_threshold",
@@ -781,10 +781,10 @@ class MLConfidencePredictor:
         """Initialize integration with enhanced training manager."""
         try:
             # Import enhanced training manager
-            from src.training.enhanced_training_manager import EnhancedTrainingManager
+            from src.training.core.training_manager import create_training_manager
 
             # Initialize enhanced training manager
-            self.enhanced_training_manager = EnhancedTrainingManager(self.config)
+            self.enhanced_training_manager = TrainingManager(self.config)
             await self.enhanced_training_manager.initialize()
 
             # Load trained models from enhanced training manager

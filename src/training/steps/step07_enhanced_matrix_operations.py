@@ -58,6 +58,7 @@ training_pipeline_decorators = PipelineStandards.safe_import("src.utils.training
 enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
 numpy = PipelineStandards.safe_import("numpy", None)
 pandas = PipelineStandards.safe_import("pandas", None)
+import pandas as pd  # Ensure pd alias is available
 
 # Fallback functions if imports fail
 def create_fallback_logger():
@@ -156,11 +157,7 @@ class Step7EnhancedMatrixOperations:
     @cached(policy=CachePolicy.PER_REQUEST, ttl=3600)  # Cache for 1 hour
     @log_call()
     @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
-    @validates()
-    # @quality_gate - removed, handled by validates
-        model_performance_thresholds={},
-        data_quality_metrics={"completeness": 0.95}
-    )
+    @validates(model_performance_thresholds={}, data_quality_metrics={"completeness": 0.95})
     # @with_enhanced_mlflow_logging - removed, use traced"step07_enhanced_matrix_operations")
     @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(
@@ -199,9 +196,12 @@ class Step7EnhancedMatrixOperations:
             
             self.logger.info(f"📊 Loading engineered features from: {features_train_path}")
             
-            # Load the engineered features (combine train and validation)
+            # Load the engineered features (combine train and validation) with memory optimizations
             df_train = pd.read_parquet(features_train_path)
             df_val = pd.read_parquet(features_val_path)
+            for d in (df_train, df_val):
+                for c in d.select_dtypes(include=["float64"]).columns:
+                    d[c] = d[c].astype("float32")
             df = pd.concat([df_train, df_val], ignore_index=True)
             
             self.logger.info(f"📈 Loaded {len(df)} rows of engineered features")
@@ -212,14 +212,18 @@ class Step7EnhancedMatrixOperations:
             feature_optimizer = FeatureEngineeringOptimizer(self.config)
             timeframe_analyzer = TimeframeRelevanceAnalyzer(self.config)
             
-            # Load HMM regime data if available
+            # Load HMM regime data if available, with unified naming and fallback alias
             hmm_regimes = None
-            hmm_path = f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_regimes.parquet"
-            if os.path.exists(hmm_path):
+            hmm_primary = f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
+            hmm_alias = f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_regimes.parquet"
+            hmm_path = hmm_primary if os.path.exists(hmm_primary) else (hmm_alias if os.path.exists(hmm_alias) else None)
+            if hmm_path:
                 self.logger.info(f"🎭 Loading HMM regimes from: {hmm_path}")
                 hmm_data = pd.read_parquet(hmm_path)
-                if 'regime' in hmm_data.columns:
-                    hmm_regimes = hmm_data['regime']
+                if "composite_cluster_id" in hmm_data.columns:
+                    hmm_regimes = hmm_data["composite_cluster_id"]
+                elif "hmm_regime" in hmm_data.columns:
+                    hmm_regimes = hmm_data["hmm_regime"]
             
             # Prepare target variable for optimization (use returns if available)
             target = None

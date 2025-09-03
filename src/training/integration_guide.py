@@ -226,7 +226,7 @@ def show_migration_steps() -> None:
         "   - Configure memory_management.memory_threshold",
         "",
         "3. Replace training manager import:",
-        "   OLD: from src.training.enhanced_training_manager import EnhancedTrainingManager",
+        "   OLD: from src.training.core.training_manager import create_training_manager
         "   NEW: from src.training.enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized",
         "",
         "4. Use factory for easier component creation:",

@@ -432,4 +432,4 @@ async def test_validator() -> None:
 
 		await run_validator(training_input, pipeline_state)
 
-	_asyncio.run(test_validator())
+_asyncio.run(test_validator())

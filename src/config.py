@@ -5,13 +5,12 @@ Legacy configuration module for backward compatibility.
 This module now uses the new modular configuration structure.
 """
 
-from src.utils.logger import system_logger
-from typing import Any
-from src.config.environment import get_environment_settings, get_env_settings
-from dataclasses import dataclass
-
 # Import the new modular configuration
 import asyncio
+from dataclasses import dataclass
+from typing import Any
+
+from src.config.environment import get_env_settings, get_environment_settings
 from src.config.modular_config import (
     CONFIG,
     AresConfig,
@@ -30,6 +29,7 @@ from src.config.modular_config import (
     get_trading_config_section,
     get_training_config_section,
 )
+from src.utils.logger import system_logger
 
 # Re-export all the functions and classes for backward compatibility
 __all__=[
@@ -162,10 +162,12 @@ class RiskConfig:
     take_profit_pct: float = 0.1
     max_leverage: int = 10
 
+import copy
+
 # Legacy ConfigurationManager class for backward compatibility
 from src.core.decorators import handles_errors
-from src.utils.warning_symbols import invalid, warning, failed
-import copy
+from src.utils.warning_symbols import failed, invalid, warning
+
 
 class ConfigurationManager:
     """

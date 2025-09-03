@@ -1,12 +1,7 @@
 # src/analyst/feature_engineering_orchestrator.py
 
-from src.core.decorators import handles_errors
-
-from src.core.domain import (
-    handle_data_processing_errors,
-    handle_file_operations
-)
-
+import asyncio
+import logging
 import os
 from typing import Any
 
@@ -18,8 +13,8 @@ import pywt
 from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from src.config import CONFIG
-import logging
-import asyncio
+from src.core.decorators import handles_errors
+from src.core.domain import handle_data_processing_errors, handle_file_operations
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -339,7 +334,7 @@ class FeatureEngineeringOrchestrator:
         """Calculate standard technical indicators using price differences."""
         try:
             import pandas_ta as ta
-            
+
             # Convert price data to differences for technical indicators
             close_diff = df["close"].diff().fillna(0)
             high_diff = df["high"].diff().fillna(0)

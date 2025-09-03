@@ -28,7 +28,9 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
-from src.core.domain import validate_feature_engineering_with_lookahead_bias_detection as validate_feature_engineering_with_lookahead_bias_detection_3
+from src.core.domain import (
+    validate_feature_engineering_with_lookahead_bias_detection as validate_feature_engineering_with_lookahead_bias_detection_3,
+)
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 

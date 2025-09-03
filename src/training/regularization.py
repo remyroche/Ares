@@ -1,3 +1,7 @@
+# Import necessary ensemble types for type hinting and applying regularization
+# These imports are here to allow the apply_regularization_to_ensembles method
+# to correctly apply the config to the ensemble instances.
+import asyncio
 from typing import Any
 
 import lightgbm as lgb
@@ -7,12 +11,7 @@ from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import cross_val_score
 from torch import nn
 
-# Import necessary ensemble types for type hinting and applying regularization
-# These imports are here to allow the apply_regularization_to_ensembles method
-# to correctly apply the config to the ensemble instances.
-import asyncio
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
-
     RegimePredictiveEnsembles,
 )
 from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
@@ -20,6 +19,7 @@ from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import Base
 # Ensure these imports are correct relative to the project root
 from src.config import CONFIG
 from src.utils.logger import system_logger
+
 
 class RegularizationManager:
     """Manages the L1-L2 regularization configuration for the Ares Trading Bot's'"
@@ -312,6 +312,8 @@ class RegularizationManager:
 
                 # Train and evaluate the model with real metrics
                 try:
+                    import numpy as np
+                    import torch
                     from sklearn.preprocessing import StandardScaler
 
                     # Prepare data
@@ -325,12 +327,12 @@ class RegularizationManager:
                     # Convert to tensors for PyTorch model
                     import torch
                 except Exception as e:
+                    pass  # TODO: Handle exception
+                except Exception as e:
                     pass  # TODO: Handle exception properly
-import numpy as np
-
-X_tensor = torch.FloatTensor(X_scaled)
-
-if model_type == "classification":
+                    import numpy as np
+                    X_tensor = torch.FloatTensor(X_scaled)
+                    if model_type == "classification":
                         y_tensor = torch.LongTensor(y)
                         criterion = torch.nn.CrossEntropyLoss()
                     else:

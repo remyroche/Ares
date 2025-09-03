@@ -1,0 +1,107 @@
+{
+  "status": "success",
+  "results": {
+    "summary": {
+      "total_files_analyzed": 5,
+      "total_imports": 55,
+      "total_issues": 1,
+      "duplicate_imports": 1,
+      "circular_dependencies": 0,
+      "conflicting_imports": 0
+    },
+    "issues": {
+      "duplicate_imports": [
+        {
+          "file": "tests/test_strategist.py",
+          "line": 494,
+          "type": "duplicate_import",
+          "message": "Duplicate import: time",
+          "severity": "warning",
+          "details": {
+            "import_info": {
+              "type": "import",
+              "module": "time",
+              "as_name": "time",
+              "line": 494
+            }
+          }
+        }
+      ],
+      "circular_dependencies": [],
+      "conflicting_imports": []
+    }
+  },
+  "full_results": {
+    "summary": {
+      "total_files_analyzed": 5,
+      "total_imports": 55,
+      "total_issues": 1,
+      "duplicate_imports": 1,
+      "circular_dependencies": 0,
+      "conflicting_imports": 0
+    },
+    "issues": {
+      "duplicate_imports": [
+        {
+          "file": "tests/test_strategist.py",
+          "line": 494,
+          "type": "duplicate_import",
+          "message": "Duplicate import: time",
+          "severity": "warning",
+          "details": {
+            "import_info": {
+              "type": "import",
+              "module": "time",
+              "as_name": "time",
+              "line": 494
+            }
+          }
+        }
+      ],
+      "circular_dependencies": [],
+      "conflicting_imports": []
+    },
+    "import_graph": {
+      "nodes": [],
+      "edges": [],
+      "has_cycles": false
+    },
+    "files": {
+      "tests/test_strategist.py": {
+        "total_imports": 16,
+        "import_types": {
+          "import": 6,
+          "from_import": 10
+        }
+      },
+      "tests/test_tactician_integration.py": {
+        "total_imports": 15,
+        "import_types": {
+          "import": 4,
+          "from_import": 11
+        }
+      },
+      "tests/integration/supervisor/test_supervisor_data_flow.py": {
+        "total_imports": 11,
+        "import_types": {
+          "import": 2,
+          "from_import": 9
+        }
+      },
+      "tests/integration/supervisor/test_system_coordinator.py": {
+        "total_imports": 13,
+        "import_types": {
+          "import": 2,
+          "from_import": 11
+        }
+      },
+      "tests/integration/supervisor/__init__.py": {
+        "total_imports": 0,
+        "import_types": {
+          "import": 0,
+          "from_import": 0
+        }
+      }
+    }
+  }
+}

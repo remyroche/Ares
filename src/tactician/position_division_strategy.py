@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from src.core.decorators import handles_errors, retry, timeout
-    handle_errors,
+handle_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+import pandas as pd
 Data Optimizer for Ares Trading System.
 Enhances data processing efficiency and memory usage.
 """
@@ -12,7 +13,6 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
-import pandas as pd
 
 from src.core.decorators import (
     handles_errors,

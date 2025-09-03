@@ -299,6 +299,8 @@ class BaseValidator(ABC):
                     import pickle
                 except Exception as e:
                     pass  # TODO: Handle exception properly
+        except Exception as e:
+            pass  # TODO: Handle exception
 import os.path
 
 with open(model_path, "rb") as f:

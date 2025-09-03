@@ -1,10 +1,10 @@
 """
+import functools
 Enhanced Memory Management Utilities
 
 This module provides memory monitoring and optimization capabilities for the training pipeline.
 """
 
-import functools
 
 
 
@@ -165,6 +165,7 @@ def memory_efficient(max_memory_mb: float = 1024.0, optimize_dtypes: bool = True
 
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
+
         async def async_wrapper(*args, **kwargs):
             config = MemoryConfig(max_memory_mb=max_memory_mb)
             monitor = MemoryMonitor(config)

@@ -21,25 +21,25 @@ def _lazy_import_fixers():
 
 def _lazy_import_analyzers():
     from .analyzers.call_graph_analyzer import CallGraphAnalyzer  # noqa: F401
+    from .analyzers.complexity_analyzer import ComplexityAnalyzer  # noqa: F401
     from .analyzers.complexity_analyzer import (
         ClassComplexity,
-        ComplexityAnalyzer,  # noqa: F401
         ComplexityMetrics,
         FunctionComplexity,
         ModuleComplexity,
     )
+    from .analyzers.dead_code_analyzer import DeadCodeAnalyzer  # noqa: F401
     from .analyzers.dead_code_analyzer import (
-        DeadCodeAnalyzer,  # noqa: F401
         DeadCodeIssue,
         DeadCodeReport,
     )
     from .analyzers.dependency_analyzer import DependencyAnalyzer  # noqa: F401
     from .analyzers.import_analyzer import ImportAnalyzer, ImportIssue  # noqa: F401
     from .analyzers.linter_analyzer import LinterAnalyzer  # noqa: F401
+    from .analyzers.signature_analyzer import SignatureAnalyzer  # noqa: F401
     from .analyzers.signature_analyzer import (
         FunctionCall,
         FunctionSignature,
-        SignatureAnalyzer,  # noqa: F401
         SignatureIssue,
     )
     from .analyzers.syntax_validator import SyntaxValidator  # noqa: F401
@@ -47,10 +47,10 @@ def _lazy_import_analyzers():
 
 
 def _lazy_import_reporters():
+    from .reporters.error_reporter import ErrorReporter  # noqa: F401
     from .reporters.error_reporter import (
         ErrorCategory,
         ErrorReport,
-        ErrorReporter,  # noqa: F401
         ErrorSummary,
         FileErrorSummary,
     )

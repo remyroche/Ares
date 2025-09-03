@@ -2,12 +2,12 @@
 Main auto-fixer module that orchestrates all code fixing operations.
 """
 
+import configparser
 import os
 import subprocess
 import sys
 import tempfile
 from typing import Any
-import configparser
 
 try:
     import tomllib as toml  # Python 3.11+
@@ -139,19 +139,21 @@ class AutoFixer:
     def _register_builtin_plugins(self):
         """Register built-in code fixing plugins."""
         try:
-            from code_quality.plugins.autopep8_fixer import Autopep8Fixer as Autopep8Fixer_code_quality_plugins_autopep8_fixer
+            from code_quality.plugins.autoflake_fixer import AutoflakeFixer
+            from code_quality.plugins.autopep8_fixer import (
+                Autopep8Fixer as Autopep8Fixer_code_quality_plugins_autopep8_fixer,
+            )
             from code_quality.plugins.black_fixer import BlackFixer
             from code_quality.plugins.docformatter_fixer import DocformatterFixer as DocformatterFixer_2
+            from code_quality.plugins.flynt_fixer import FlyntFixer
+            from code_quality.plugins.future_annotations_fixer import FutureAnnotationsFixer
+            from code_quality.plugins.import_hygiene_fixer import ImportHygieneFixer
             from code_quality.plugins.isort_fixer import IsortFixer
+            from code_quality.plugins.pyupgrade_fixer import PyupgradeFixer
+            from code_quality.plugins.ruff_fixer import RuffFixer
             from code_quality.plugins.unify_fixer import UnifyFixer
             from code_quality.plugins.yapf_fixer import YapfFixer
-            from code_quality.plugins.ruff_fixer import RuffFixer
-            from code_quality.plugins.pyupgrade_fixer import PyupgradeFixer
-            from code_quality.plugins.flynt_fixer import FlyntFixer
-            from code_quality.plugins.autoflake_fixer import AutoflakeFixer
             from code_quality.plugins.yesqa_fixer import YesqaFixer
-            from code_quality.plugins.import_hygiene_fixer import ImportHygieneFixer
-            from code_quality.plugins.future_annotations_fixer import FutureAnnotationsFixer
 
             # Register plugins with configuration
             black_config = {

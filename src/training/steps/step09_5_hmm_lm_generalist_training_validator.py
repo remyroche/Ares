@@ -1,8 +1,9 @@
 # src/training/steps/step9_5_hmm_lm_generalist_training_validator.py
 
-from src.core.domain import (
 
 from src.core.decorators import validates
+import joblib
+from src.core.domain import (
     validate_dataframe_operation,
     validate_file_operation,
     validate_step2_operation
@@ -90,7 +91,6 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
             # Try to load the model to ensure it's valid
             try:
-                import joblib
                 model = joblib.load(model_file)
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")

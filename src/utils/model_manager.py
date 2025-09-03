@@ -82,12 +82,9 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
         return
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
-    except Exception as e:
-        pass  # TODO: Handle exception properly
-import os.path
-
-original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
-if original_ctor is None:
+        
+        original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
+        if original_ctor is None:
             # Fallback implementation for original_ctor
             _NUMPY_RNG_UNPICKLE_PATCHED = True
             return
@@ -105,9 +102,11 @@ if original_ctor is None:
                     _warn_symbol(
                         f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
                     ),
+                )
             except Exception:
                 logger.warning(
                     f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
+                )
 
 class ModelManager:
     """
@@ -146,6 +145,7 @@ class ModelManager:
         },
         default_return=False,
         context="model manager initialization",
+    )
     async def initialize(self) -> bool:
         """
         Initialize model manager with enhanced error handling.
@@ -176,6 +176,7 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model configuration loading",
+    )
     async def _load_model_configuration(self) -> None:
         """Load model configuration."""
         # Set default model parameters

@@ -5,8 +5,9 @@ This service provides calibrated confidence scores from ML models for both Analy
 It ONLY provides calibrated confidence scores and fails if calibrated confidence doesn't exist.
 """
 
+import asyncio
+import json
 import pickle  # TODO: Replace with joblib for security
-
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -20,7 +21,7 @@ from src.utils.logging_config import get_logger
 from src.utils.performance import performance_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
-import asyncio
+
 
 def _safe_load_model(filepath: Path, logger) -> Any:
     """
@@ -254,8 +255,8 @@ class EnhancedPredictionService:
                 for optimization_file in optimization_path.glob("*.json"):
                     try:
                         import json
-from src.core.decorators import handles_errors
-
+                    except Exception as e:
+                        pass  # TODO: Handle exception
                         with open(optimization_file, "r") as f:
                             optimization_data = json.load(f)
 

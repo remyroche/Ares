@@ -7,22 +7,23 @@ The actual implementations are now in the src/supervisor/loss_functions/ package
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any, Dict
+
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
+from src.utils.logger import system_logger
+
+from .loss_functions.base import PnLLossFunctionsBase
+from .loss_functions.loss_calculator import LossCalculator
+from .loss_functions.optimization_metrics import OptimizationMetricsCalculator
+from .loss_functions.performance_metrics import PerformanceMetricsCalculator
+
 # Import the original factory function
 from .loss_functions.pnl_aware import create_pnl_aware_loss
 
 # Import all calculator classes
 from .loss_functions.pnl_calculator import PnLCalculator
 from .loss_functions.risk_metrics import RiskMetricsCalculator
-from .loss_functions.performance_metrics import PerformanceMetricsCalculator
-from .loss_functions.optimization_metrics import OptimizationMetricsCalculator
-from .loss_functions.loss_calculator import LossCalculator
-from .loss_functions.base import PnLLossFunctionsBase
-
-from typing import Any, Dict
-from datetime import datetime
-
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-from src.utils.logger import system_logger
 
 
 class PnLLossFunctions:

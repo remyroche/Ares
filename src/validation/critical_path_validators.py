@@ -24,7 +24,8 @@ from src.custom_types.validation import (
     validate_model_input,
 )
 from src.utils.structured_logging import get_correlation_id as get_correlation_id_src_utils_structured_logging
-from src.utils.warning_symbols import error as error_src_utils_warning_symbols, failed
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols
+from src.utils.warning_symbols import failed
 
 logger = logging.getLogger(__name__)
 

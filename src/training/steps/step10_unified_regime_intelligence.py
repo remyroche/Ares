@@ -1,6 +1,9 @@
 # src/training/steps/step10_unified_regime_intelligence.py
 
 from src.core.decorators import (
+import logging
+import queue
+import threading
     cached,
     circuit_breaker,
     log_call,
@@ -88,7 +91,6 @@ sklearn = PipelineStandards.safe_import("sklearn", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
-    import logging
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 
@@ -336,8 +338,6 @@ class UnifiedRegimeIntelligenceStep:
             if torch.cuda.is_available():
                 return "cuda"
             # MPS check can occasionally hang; guard with timeout
-            import queue
-            import threading
 
             result_queue: queue.Queue[tuple[str | None, Exception | None]] = queue.Queue()
 

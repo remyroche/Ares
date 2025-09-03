@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger

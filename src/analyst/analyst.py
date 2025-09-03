@@ -10,7 +10,7 @@ from typing import (
 import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
-from src.analyst.unified_regime_classifier_sr_focused import UnifiedRegimeClassifierSRFocused as UnifiedRegimeClassifierFractal
+from src.analyst.unified_regime_classifier_sr_optimized import UnifiedRegimeClassifierSROptimized as UnifiedRegimeClassifierFractal
 from src.core.decorators import (
     handles_errors,
 )

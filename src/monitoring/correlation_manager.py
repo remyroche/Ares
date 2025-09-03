@@ -8,14 +8,14 @@ for the Ares trading bot.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import asyncio
+
 
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
@@ -31,35 +31,35 @@ class CorrelationRequest:
     correlation_id: str
     request_timestamp: datetime
     status: CorrelationStatus
-    component_path: List[str]
-    request_data: Dict[str, Any]
-    response_timestamp: Optional[datetime] = None
-    response_data: Optional[Dict[str, Any]] = None
-    error_info: Optional[Dict[str, Any]] = None
-    performance_metrics: Dict[str, float] = None
-    metadata: Dict[str, Any] = None
+    component_path: list[str]
+    request_data: dict[str, Any]
+    response_timestamp: datetime | None = None
+    response_data: dict[str, Any] | None = None
+    error_info: dict[str, Any] | None = None
+    performance_metrics: dict[str, float] = None
+    metadata: dict[str, Any] = None
 
 class CorrelationManager:
     """
     Centralized correlation ID management and request/response correlation tracking.
     """
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("CorrelationManager")
 
         # Correlation configuration
         self.correlation_config = config.get("correlation_manager", {})
         self.enable_correlation_tracking: bool = bool(
-            self.correlation_config.get("enable_correlation_tracking", True)
+            self.correlation_config.get("enable_correlation_tracking", True),
         )
         self.correlation_timeout: int = int(self.correlation_config.get("correlation_timeout", 300))
         self.max_correlation_history: int = int(
-            self.correlation_config.get("max_correlation_history", 10000)
+            self.correlation_config.get("max_correlation_history", 10000),
         )
 
         # Correlation storage
-        self.correlation_requests: Dict[str, CorrelationRequest] = {}
+        self.correlation_requests: dict[str, CorrelationRequest] = {}
         self.is_tracking: bool = False
 
         self.logger.info("🔗 Correlation Manager initialized")
@@ -84,9 +84,9 @@ class CorrelationManager:
     async def track_correlation_request(
         self,
         correlation_id: str,
-        component_path: List[str],
-        request_data: Dict[str, Any],
-        metadata: Optional[Dict[str, Any]] = None,
+        component_path: list[str],
+        request_data: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         request = CorrelationRequest(
             correlation_id=correlation_id,
@@ -108,8 +108,8 @@ class CorrelationManager:
     async def complete_correlation_request(
         self,
         correlation_id: str,
-        response_data: Optional[Dict[str, Any]] = None,
-        error_info: Optional[Dict[str, Any]] = None,
+        response_data: dict[str, Any] | None = None,
+        error_info: dict[str, Any] | None = None,
     ) -> None:
         req = self.correlation_requests.get(correlation_id)
         if not req:
@@ -119,8 +119,8 @@ class CorrelationManager:
         req.error_info = dict(error_info or {}) if error_info else None
         req.status = CorrelationStatus.FAILED if error_info else CorrelationStatus.COMPLETED
 
-    def get_request(self, correlation_id: str) -> Optional[CorrelationRequest]:
+    def get_request(self, correlation_id: str) -> CorrelationRequest | None:
         return self.correlation_requests.get(correlation_id)
 
-    def list_requests(self) -> List[CorrelationRequest]:
+    def list_requests(self) -> list[CorrelationRequest]:
         return list(self.correlation_requests.values())

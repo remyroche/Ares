@@ -5,21 +5,21 @@ Comprehensive Trade Tracking System
 This module provides detailed tracking of trades with model ensemble data = regime analysis, feature importance, decision paths, and model behavior monitoring.
 """
 
-from dataclasses_json import dataclass_json
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
 import json
 import time
-
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import failed, missing
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import copy
-import asyncio
+from dataclasses_json import dataclass_json
+
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import failed, missing
+
 
 class TradeStatus(Enum):
     """Trade status enumeration."""
@@ -292,7 +292,7 @@ class TradeTracker:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Failed to record trade: {e}"))
+            self.logger.exception(failed(f"❌ Failed to record trade: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -374,7 +374,7 @@ class TradeTracker:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Failed to update trade {trade_id}: {e}"))
+            self.logger.exception(failed(f"❌ Failed to update trade {trade_id}: {e}"))
             return False
 
     def get_trade(self, trade_id: str) -> TradeRecord | None:

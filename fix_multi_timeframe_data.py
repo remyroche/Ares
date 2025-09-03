@@ -8,18 +8,15 @@ This script addresses the following issues:
 3. Data alignment issues between different timeframes
 """
 
-from datetime import datetime, timedelta
-from pathlib import Path
 import glob
 import logging
 import os
 
-import numpy as np
 import pandas as pd
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger=logging.getLogger(__name__)
 
@@ -106,7 +103,7 @@ def fix_timeframe_data():
                                 "low": "min",
                                 "close": "last",
                                 "volume": "sum",
-                            }
+                            },
                         )
                         .dropna()
                     )
@@ -120,7 +117,7 @@ def fix_timeframe_data():
                                 "low": "min",
                                 "close": "last",
                                 "volume": "sum",
-                            }
+                            },
                         )
                         .dropna()
                     )
@@ -134,7 +131,7 @@ def fix_timeframe_data():
                                 "low": "min",
                                 "close": "last",
                                 "volume": "sum",
-                            }
+                            },
                         )
                         .dropna()
                     )
@@ -148,7 +145,7 @@ def fix_timeframe_data():
                                 "low": "min",
                                 "close": "last",
                                 "volume": "sum",
-                            }
+                            },
                         )
                         .dropna()
                     )
@@ -162,7 +159,7 @@ def fix_timeframe_data():
                                 "low": "min",
                                 "close": "last",
                                 "volume": "sum",
-                            }
+                            },
                         )
                         .dropna()
                     )
@@ -176,7 +173,7 @@ def fix_timeframe_data():
                                 "low": "min",
                                 "close": "last",
                                 "volume": "sum",
-                            }
+                            },
                         )
                         .dropna()
                     )
@@ -191,17 +188,17 @@ def fix_timeframe_data():
                 logger.info(f"✅ Created {timeframe} timeframe file: {output_path}")
                 logger.info(f"📊 {timeframe} records: {len(df_resampled)}")
                 logger.info(
-                    f"📅 {timeframe} date range: {df_resampled['timestamp'].min()} to {df_resampled['timestamp'].max()}"
+                    f"📅 {timeframe} date range: {df_resampled['timestamp'].min()} to {df_resampled['timestamp'].max()}",
                 )
 
             except Exception as e:
-                logger.error(f"❌ Error creating {timeframe} timeframe data: {e}")
+                logger.exception(f"❌ Error creating {timeframe} timeframe data: {e}")
                 continue
 
         return True
 
     except Exception as e:
-        logger.error(f"❌ Error fixing timeframe data: {e}")
+        logger.exception(f"❌ Error fixing timeframe data: {e}")
         return False
 
 
@@ -230,7 +227,7 @@ def validate_timeframe_files():
 
                 if "timestamp" not in df.columns:
                     logger.warning(
-                        f"⚠️ {os.path.basename(file_path)} missing timestamp column"
+                        f"⚠️ {os.path.basename(file_path)} missing timestamp column",
                     )
                     corrupted_files.append(file_path)
                     continue
@@ -241,7 +238,7 @@ def validate_timeframe_files():
                 # Check for 1970 timestamps
                 if df["timestamp"].min().year== 1970:
                     logger.error(
-                        f"❌ {os.path.basename(file_path)} has corrupted 1970 timestamps"
+                        f"❌ {os.path.basename(file_path)} has corrupted 1970 timestamps",
                     )
                     corrupted_files.append(file_path)
                     continue
@@ -249,7 +246,7 @@ def validate_timeframe_files():
                 # Check for reasonable date range
                 if df["timestamp"].min().year < 2000:
                     logger.error(
-                        f"❌ {os.path.basename(file_path)} has timestamps before 2000"
+                        f"❌ {os.path.basename(file_path)} has timestamps before 2000",
                     )
                     corrupted_files.append(file_path)
                     continue
@@ -257,15 +254,15 @@ def validate_timeframe_files():
                 valid_files.append(file_path)
                 logger.info(f"✅ {os.path.basename(file_path)} validated successfully")
                 logger.info(
-                    f"📅 Date range: {df['timestamp'].min()} to {df['timestamp'].max()}"
+                    f"📅 Date range: {df['timestamp'].min()} to {df['timestamp'].max()}",
                 )
 
             except Exception as e:
-                logger.error(f"❌ Error validating {file_path}: {e}")
+                logger.exception(f"❌ Error validating {file_path}: {e}")
                 corrupted_files.append(file_path)
 
     logger.info(
-        f"📊 Validation results: {len(valid_files)} valid files={len(corrupted_files)} corrupted files"
+        f"📊 Validation results: {len(valid_files)} valid files={len(corrupted_files)} corrupted files",
     )
 
     if corrupted_files:
@@ -304,15 +301,15 @@ def cleanup_corrupted_files():
                     # Check for 1970 timestamps
                     if df["timestamp"].min().year== 1970:
                         logger.warning(
-                            f"🗑️ Removing corrupted file: {os.path.basename(file_path)}"
+                            f"🗑️ Removing corrupted file: {os.path.basename(file_path)}",
                         )
                         os.remove(file_path)
                         cleaned_files.append(file_path)
                         continue
 
-            except Exception as e:
+            except Exception:
                 logger.warning(
-                    f"🗑️ Removing unreadable file: {os.path.basename(file_path)}"
+                    f"🗑️ Removing unreadable file: {os.path.basename(file_path)}",
                 )
                 os.remove(file_path)
                 cleaned_files.append(file_path)

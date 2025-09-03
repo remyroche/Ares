@@ -14,17 +14,18 @@ Usage:
     python scripts/analyze_timeframe.py --symbol BTCUSDT --timeframe 1m
 """
 
-import traceback
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import ensure_logging_setup, get_logger
 import argparse
 import glob
 import os
 import sys
+import traceback
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from src.utils.logger import ensure_logging_setup, get_logger
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -140,13 +141,13 @@ class PriceActionAnalyzer:
                 df["price"] = pd.to_numeric(df["price"], errors="coerce")
                 valid_prices=df["price"].notna().sum()
                 terminal_log(
-                    f"    💰 Prices converted: {valid_prices:,} valid rows", "INFO"
+                    f"    💰 Prices converted: {valid_prices:,} valid rows", "INFO",
                 )
 
                 # Filter out rows with invalid data
                 df=df.dropna(subset=["timestamp", "price"])
                 terminal_log(
-                    f"    ✅ Clean data: {len(df):,} rows after filtering", "INFO"
+                    f"    ✅ Clean data: {len(df):,} rows after filtering", "INFO",
                 )
 
                 if len(df) == 0:
@@ -382,7 +383,7 @@ class PriceActionAnalyzer:
             "avg_duration_seconds": avg_duration, "occurrences": occurrences,
             "total_attempts": total_attempts, "success_rate": success_rate,
             "durations": durations, "long_successes": long_successes,
-            "short_successes": short_successes
+            "short_successes": short_successes,
         }
 
     def calculate_frequency_score(self, result: dict) -> float:
@@ -572,10 +573,9 @@ class PriceActionAnalyzer:
         # Parse the percentage values
         try:
             target_pct=float(target_str.replace("%", ""))
-            stop_pct=float(stop_str.replace("%", ""))
+            float(stop_str.replace("%", ""))
         except ValueError:
             target_pct=0.5  # Default values
-            stop_pct = 0.2  # Default values
 
         risk_reward = optimal_params.get("risk_reward_ratio", 2.0)
         net_profit=optimal_params.get("net_profit_after_fees", "0.00%")
@@ -801,7 +801,7 @@ def main():
         # Save results
         terminal_log("💾 Saving results...", "INFO")
         analyzer.save_results(
-            display_df=display_df, score_df=score_df, optimal_params=optimal_params, recommendations=recommendations, df_resampled=df_resampled
+            display_df=display_df, score_df=score_df, optimal_params=optimal_params, recommendations=recommendations, df_resampled=df_resampled,
         )
 
         # Print summary

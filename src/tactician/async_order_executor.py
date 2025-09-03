@@ -8,7 +8,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import optuna
@@ -25,11 +25,10 @@ from src.tactician.enhanced_order_manager import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import copy
 from src.utils.warning_symbols import (
-
     failed,
 )
+
 
 class ExecutionStrategy(Enum):
     """Execution strategy types."""
@@ -64,7 +63,7 @@ class ExecutionRequest:
     min_fill_ratio: float = 0.8  # 80% default
     client_order_id: str | None = None
     strategy_id: str | None = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class ExecutionResult:
@@ -81,9 +80,9 @@ class ExecutionResult:
     slippage: float
     execution_time: float
     status: ExecutionStatus
-    orders_placed: List[str]
-    fills: List[Dict[str, Any]]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    orders_placed: list[str]
+    fills: list[dict[str, Any]]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 class AsyncOrderExecutor:
     """
@@ -96,7 +95,7 @@ class AsyncOrderExecutor:
     - Integration with Enhanced Order Manager
     - Advanced reporting and analytics
     """
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize the async order executor.
 
@@ -113,13 +112,13 @@ class AsyncOrderExecutor:
         self.execution_timeout = self.executor_config.get("execution_timeout", 300)
 
         # Component managers
-        self.order_manager: Optional[EnhancedOrderManager] = None
-        self.performance_reporter: Optional[PerformanceReporter] = None
+        self.order_manager: EnhancedOrderManager | None = None
+        self.performance_reporter: PerformanceReporter | None = None
 
         # Execution tracking
-        self.active_executions: Dict[str, ExecutionResult] = {}
-        self.execution_history: List[ExecutionResult] = []
-        self.optimization_trials: List[Dict[str, Any]] = []
+        self.active_executions: dict[str, ExecutionResult] = {}
+        self.execution_history: list[ExecutionResult] = []
+        self.optimization_trials: list[dict[str, Any]] = []
 
         # Performance tracking
         self.total_executions = 0
@@ -131,7 +130,7 @@ class AsyncOrderExecutor:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="order executor initialization"
+        context="order executor initialization",
     )
     async def initialize(self) -> bool:
         """
@@ -159,7 +158,7 @@ class AsyncOrderExecutor:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Async Order Executor initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Async Order Executor initialization failed: {e}"))
             return False
 
     def _validate_configuration(self) -> bool:
@@ -181,15 +180,15 @@ class AsyncOrderExecutor:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="order execution"
+        context="order execution",
     )
-    async def execute_order(self, request: ExecutionRequest) -> Optional[ExecutionResult]:
+    async def execute_order(self, request: ExecutionRequest) -> ExecutionResult | None:
         """
         Execute an order using the specified strategy.
 
@@ -217,7 +216,7 @@ class AsyncOrderExecutor:
                 execution_time=0.0,
                 status=ExecutionStatus.PENDING,
                 orders_placed=[],
-                fills=[]
+                fills=[],
             )
 
             # Add to active executions
@@ -266,7 +265,7 @@ class AsyncOrderExecutor:
             return result
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Order execution failed: {e}"))
+            self.logger.exception(failed(f"❌ Order execution failed: {e}"))
             return None
 
     async def _execute_immediate(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
@@ -288,7 +287,7 @@ class AsyncOrderExecutor:
                 order_type=OrderType.MARKET,
                 quantity=request.quantity,
                 strategy_id=request.strategy_id,
-                order_link_id=request.client_order_id or str(uuid4())
+                order_link_id=request.client_order_id or str(uuid4()),
             )
 
             # Place order
@@ -313,7 +312,7 @@ class AsyncOrderExecutor:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Immediate execution failed: {e}"))
+            self.logger.exception(failed(f"❌ Immediate execution failed: {e}"))
             return False
 
     async def _execute_twap(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
@@ -349,7 +348,7 @@ class AsyncOrderExecutor:
                     order_type=OrderType.MARKET,
                     quantity=slice_qty,
                     strategy_id=request.strategy_id,
-                    order_link_id=f"{request.client_order_id}_slice_{i}" if request.client_order_id else str(uuid4())
+                    order_link_id=f"{request.client_order_id}_slice_{i}" if request.client_order_id else str(uuid4()),
                 )
 
                 # Place order
@@ -374,7 +373,7 @@ class AsyncOrderExecutor:
             return result.executed_quantity >= request.quantity * request.min_fill_ratio
 
         except Exception as e:
-            self.logger.error(failed(f"❌ TWAP execution failed: {e}"))
+            self.logger.exception(failed(f"❌ TWAP execution failed: {e}"))
             return False
 
     async def _execute_vwap(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
@@ -396,7 +395,7 @@ class AsyncOrderExecutor:
             return await self._execute_twap(request, result)
 
         except Exception as e:
-            self.logger.error(failed(f"❌ VWAP execution failed: {e}"))
+            self.logger.exception(failed(f"❌ VWAP execution failed: {e}"))
             return False
 
     async def _execute_iceberg(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
@@ -433,7 +432,7 @@ class AsyncOrderExecutor:
                     price=request.price,
                     iceberg_qty=slice_qty,
                     strategy_id=request.strategy_id,
-                    order_link_id=f"{request.client_order_id}_iceberg_{i}" if request.client_order_id else str(uuid4())
+                    order_link_id=f"{request.client_order_id}_iceberg_{i}" if request.client_order_id else str(uuid4()),
                 )
 
                 # Place order
@@ -457,7 +456,7 @@ class AsyncOrderExecutor:
             return result.executed_quantity >= request.quantity * request.min_fill_ratio
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Iceberg execution failed: {e}"))
+            self.logger.exception(failed(f"❌ Iceberg execution failed: {e}"))
             return False
 
     async def _execute_adaptive(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
@@ -492,10 +491,10 @@ class AsyncOrderExecutor:
             return await self._execute_twap(request, result)
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Adaptive execution failed: {e}"))
+            self.logger.exception(failed(f"❌ Adaptive execution failed: {e}"))
             return False
 
-    def get_active_executions(self) -> Dict[str, ExecutionResult]:
+    def get_active_executions(self) -> dict[str, ExecutionResult]:
         """
         Get all active executions.
 
@@ -504,7 +503,7 @@ class AsyncOrderExecutor:
         """
         return self.active_executions.copy()
 
-    def get_execution_history(self) -> List[ExecutionResult]:
+    def get_execution_history(self) -> list[ExecutionResult]:
         """
         Get execution history.
 
@@ -513,7 +512,7 @@ class AsyncOrderExecutor:
         """
         return self.execution_history.copy()
 
-    def get_performance_metrics(self) -> Dict[str, Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         """
         Get performance metrics.
 
@@ -529,11 +528,11 @@ class AsyncOrderExecutor:
                 "total_volume_executed": self.total_volume_executed,
                 "average_slippage": self.total_slippage / self.total_executions if self.total_executions > 0 else 0.0,
                 "active_executions": len(self.active_executions),
-                "execution_history_size": len(self.execution_history)
+                "execution_history_size": len(self.execution_history),
             }
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Performance metrics calculation failed: {e}"))
+            self.logger.exception(failed(f"❌ Performance metrics calculation failed: {e}"))
             return {}
 
     async def cancel_execution(self, execution_id: str) -> bool:
@@ -566,7 +565,7 @@ class AsyncOrderExecutor:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Execution cancellation failed: {e}"))
+            self.logger.exception(failed(f"❌ Execution cancellation failed: {e}"))
             return False
 
     async def cleanup(self) -> None:
@@ -587,4 +586,4 @@ class AsyncOrderExecutor:
             self.logger.info("✅ Async Order Executor cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Async Order Executor cleanup failed: {e}"))
+            self.logger.exception(failed(f"❌ Async Order Executor cleanup failed: {e}"))

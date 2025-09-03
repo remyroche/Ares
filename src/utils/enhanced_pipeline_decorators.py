@@ -5,16 +5,15 @@ Provides comprehensive decorators, detailed reporting, and consistent storage fo
 
 import asyncio
 import functools
-import hashlib
 import json
-import os
 import time
 import traceback
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any
 
 # Handle optional dependencies
 try:
@@ -41,9 +40,8 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 
+
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import critical, error, success, warning
-import os.path
 
 
 class StepStatus(Enum):
@@ -146,7 +144,7 @@ class EnhancedPipelineDecorator:
                     "message": str(e),
                     "traceback": traceback.format_exc(),
                     "timestamp": datetime.now().isoformat(),
-                }
+                },
             )
 
             # Generate failure report
@@ -155,7 +153,7 @@ class EnhancedPipelineDecorator:
             # Re-raise the exception
             raise
 
-    async def _pre_execution_monitoring(self, step_report: Dict[str, Any], args: tuple, kwargs: dict):
+    async def _pre_execution_monitoring(self, step_report: dict[str, Any], args: tuple, kwargs: dict):
         """Perform pre-execution monitoring and validation."""
 
         self.logger.info(f"🚀 [ENHANCED] Starting {self.step_name} with execution ID: {step_report['execution_id']}")
@@ -190,7 +188,7 @@ class EnhancedPipelineDecorator:
             data_quality_info = await self._check_data_quality(args, kwargs)
             step_report["pre_execution"]["data_quality"] = data_quality_info
 
-    async def _post_execution_monitoring(self, step_report: Dict[str, Any], result: Any, step_start_time: float):
+    async def _post_execution_monitoring(self, step_report: dict[str, Any], result: Any, step_start_time: float):
         """Perform post-execution monitoring and analysis."""
 
         execution_time = time.time() - step_start_time
@@ -217,13 +215,13 @@ class EnhancedPipelineDecorator:
         # Performance recommendations
         if execution_time > 300:  # 5 minutes
             step_report["recommendations"].append(
-                "Consider optimizing step performance - execution time exceeds 5 minutes"
+                "Consider optimizing step performance - execution time exceeds 5 minutes",
             )
 
         if PSUTIL_AVAILABLE and psutil.virtual_memory().percent > 85:
             step_report["recommendations"].append("High memory usage detected - consider memory optimization")
 
-    async def _check_data_quality(self, args: tuple, kwargs: dict) -> Dict[str, Any]:
+    async def _check_data_quality(self, args: tuple, kwargs: dict) -> dict[str, Any]:
         """Check data quality for pandas DataFrames in arguments."""
 
         data_quality_info = {}
@@ -254,7 +252,7 @@ class EnhancedPipelineDecorator:
 
         return data_quality_info
 
-    async def _analyze_result(self, result: Any) -> Dict[str, Any]:
+    async def _analyze_result(self, result: Any) -> dict[str, Any]:
         """Analyze the result of the step execution."""
 
         analysis = {"result_type": type(result).__name__, "result_size": None, "result_summary": None}
@@ -269,7 +267,7 @@ class EnhancedPipelineDecorator:
                             "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2),
                             "null_counts": result.isnull().sum().to_dict(),
                         },
-                    }
+                    },
                 )
             elif isinstance(result, dict):
                 analysis.update(
@@ -279,16 +277,16 @@ class EnhancedPipelineDecorator:
                             "keys": list(result.keys()),
                             "nested_structure": self._analyze_dict_structure(result),
                         },
-                    }
+                    },
                 )
-            elif isinstance(result, (list, tuple)):
+            elif isinstance(result, list | tuple):
                 analysis.update(
                     {
                         "result_size": len(result),
                         "result_summary": {
-                            "element_types": [type(item).__name__ for item in result[:10]]  # First 10 elements
+                            "element_types": [type(item).__name__ for item in result[:10]],  # First 10 elements
                         },
-                    }
+                    },
                 )
             elif isinstance(result, bool):
                 analysis["result_summary"] = {"boolean_value": result}
@@ -333,20 +331,19 @@ class EnhancedPipelineDecorator:
                     "columns": list(result.columns),
                     "sample_data": result.head(5).to_dict() if not result.empty else {},
                 }
-            elif isinstance(result, dict):
+            if isinstance(result, dict):
                 return {"type": "dict", "keys": list(result.keys()), "size": len(result)}
-            elif isinstance(result, (list, tuple)):
+            if isinstance(result, list | tuple):
                 return {
                     "type": type(result).__name__,
                     "size": len(result),
                     "element_types": [type(item).__name__ for item in result[:5]],
                 }
-            else:
-                return {"type": type(result).__name__, "value": str(result)[:200]}  # Truncate long values
+            return {"type": type(result).__name__, "value": str(result)[:200]}  # Truncate long values
         except Exception:
             return {"type": "unserializable", "error": "Failed to serialize result"}
 
-    async def _generate_and_store_report(self, step_report: Dict[str, Any]):
+    async def _generate_and_store_report(self, step_report: dict[str, Any]):
         """Generate and store the detailed step report."""
 
         # Add completion timestamp
@@ -378,14 +375,14 @@ class EnhancedPipelineDecorator:
             await self._store_report_metadata(step_report, report_path, summary_path)
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to save report for {self.step_name}: {e}")
+            self.logger.exception(f"❌ Failed to save report for {self.step_name}: {e}")
 
-    def _generate_summary_report(self, step_report: Dict[str, Any]) -> str:
+    def _generate_summary_report(self, step_report: dict[str, Any]) -> str:
         """Generate a human-readable summary report."""
 
         summary = []
         summary.append("=" * 80)
-        summary.append(f"ENHANCED PIPELINE STEP REPORT")
+        summary.append("ENHANCED PIPELINE STEP REPORT")
         summary.append("=" * 80)
         summary.append(f"Step Name: {step_report['step_name']}")
         summary.append(f"Execution ID: {step_report['execution_id']}")
@@ -463,7 +460,7 @@ class EnhancedPipelineDecorator:
 
         return "\n".join(summary)
 
-    async def _store_report_metadata(self, step_report: Dict[str, Any], report_path: Path, summary_path: Path):
+    async def _store_report_metadata(self, step_report: dict[str, Any], report_path: Path, summary_path: Path):
         """Store metadata about the report for indexing and retrieval."""
 
         metadata = {
@@ -485,7 +482,7 @@ class EnhancedPipelineDecorator:
         metadata_file = self.reports_dir / "reports_metadata.json"
         try:
             if metadata_file.exists():
-                with open(metadata_file, "r", encoding="utf-8") as f:
+                with open(metadata_file, encoding="utf-8") as f:
                     metadata_index = json.load(f)
             else:
                 metadata_index = []
@@ -530,7 +527,7 @@ def debug_pipeline_step(step_name: str):
 
 
 # Utility functions for report management
-async def get_step_reports(step_name: str = None, limit: int = 50) -> List[Dict[str, Any]]:
+async def get_step_reports(step_name: str = None, limit: int = 50) -> list[dict[str, Any]]:
     """Retrieve step reports from the metadata index."""
 
     reports_dir = Path("reports/enhanced_training_pipeline")
@@ -540,7 +537,7 @@ async def get_step_reports(step_name: str = None, limit: int = 50) -> List[Dict[
         return []
 
     try:
-        with open(metadata_file, "r", encoding="utf-8") as f:
+        with open(metadata_file, encoding="utf-8") as f:
             metadata_index = json.load(f)
 
         # Filter by step name if provided
@@ -556,7 +553,7 @@ async def get_step_reports(step_name: str = None, limit: int = 50) -> List[Dict[
         return []
 
 
-async def get_latest_step_report(step_name: str) -> Optional[Dict[str, Any]]:
+async def get_latest_step_report(step_name: str) -> dict[str, Any] | None:
     """Get the latest report for a specific step."""
 
     reports = await get_step_reports(step_name, limit=1)
@@ -576,7 +573,7 @@ async def cleanup_old_reports(days_to_keep: int = 30):
     try:
         metadata_file = reports_dir / "reports_metadata.json"
         if metadata_file.exists():
-            with open(metadata_file, "r", encoding="utf-8") as f:
+            with open(metadata_file, encoding="utf-8") as f:
                 metadata_index = json.load(f)
 
             # Filter out old reports

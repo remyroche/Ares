@@ -1,18 +1,21 @@
 # src/transition/event_trigger_indexer.py
 
 from __future__ import annotations
-from collections.abc import Iterable
-from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
-from src.utils.logger import system_logger
-from typing import TYPE_CHECKING, Any
+
 from dataclasses import dataclass
-from src.training.enhanced_training_manager import EnhancedTrainingManager
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 import pandas as pd
-import copy
+
+from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
+from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
+    from collections.abc import Iterable
+
+
 @dataclass
 class EventConfig:
     pre_window: int

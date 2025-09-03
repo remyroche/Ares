@@ -46,7 +46,7 @@ def fix_function_params(line: str) -> str:
 
     # 2) Default literal fixer: a: T, 123 -> a: T=123 (only for literals/None/True/False/quoted)
     patt_default=re.compile(
-        r"([A-Za-z_]\w*:\s*[^,=()]+)\s*,\s*(\d+(?:\.\d+)?|True|False|None|'[^']*'|\"[^\"]*\")(?=\s*(?:,|\)|$))"
+        r"([A-Za-z_]\w*:\s*[^,=()]+)\s*,\s*(\d+(?:\.\d+)?|True|False|None|'[^']*'|\"[^\"]*\")(?=\s*(?:,|\)|$))",
     )
     params=patt_default.sub(r"\1 = \2", params)
 

@@ -10,9 +10,9 @@ import argparse
 import logging
 import subprocess
 import sys
-
 from dataclasses import dataclass
 from enum import Enum
+
 from src.utils.warning_symbols import error, failed, warning
 
 # Configure logging
@@ -64,13 +64,13 @@ class ScanManager:
                 name="Code Formatting",
                 description="Format code using ruff formatter",
                 command="poetry run ruff format .",
-                enabled=True
+                enabled=True,
             ),
             ScanType.LINTING.value: ScanFeature(
                 name="Code Linting",
                 description="Check code style and potential issues using ruff",
                 command="poetry run ruff check . --fix",
-                enabled=True
+                enabled=True,
             ),
             ScanType.TYPE_CHECKING.value: ScanFeature(
                 name="Static Type Checking",
@@ -230,14 +230,14 @@ class ScanManager:
         passed=sum(1 for result in results.values() if result)
         failed=total - passed
 
-        summary = f"\nScan Summary:\n"
+        summary = "\nScan Summary:\n"
         summary += f"Total scans: {total}\n"
         summary += f"Passed: {passed}\n"
         summary += f"Failed: {failed}\n"
         summary += f"Success rate: {(passed/total)*100:.1f}%\n"
 
         if failed > 0:
-            summary += f"\nFailed scans:\n"
+            summary += "\nFailed scans:\n"
             for scan_type, result in results.items():
                 if not result:
                     summary += f"  - {scan_type}\n"
@@ -248,7 +248,7 @@ class ScanManager:
 def main():
     """Main entry point"""
     parser=argparse.ArgumentParser(
-        description="Run comprehensive code analysis scans"
+        description="Run comprehensive code analysis scans",
     )
     parser.add_argument(
         "scan_type",

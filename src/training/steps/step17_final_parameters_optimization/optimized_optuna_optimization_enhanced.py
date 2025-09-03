@@ -30,7 +30,7 @@ import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Callable, Tuple
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import optuna
@@ -75,8 +75,13 @@ try:
 except Exception:  # pragma: no cover
     gc = None  # type: ignore
 
+import contextlib
+
 from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
 from src.utils.logger import setup_logging
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass
@@ -85,7 +90,7 @@ class OptimizationCache:
 
     data_cache: dict[
         str,
-        Tuple[
+        tuple[
             np.ndarray | None,
             np.ndarray | None,
             np.ndarray | None,
@@ -265,8 +270,9 @@ class VectorizedOptunaOptimizer:
 
             return _RFC(**kwargs)
         except Exception as exc:  # pragma: no cover
+            msg = "scikit-learn is required for random_forest model"
             raise RuntimeError(
-                "scikit-learn is required for random_forest model",
+                msg,
             ) from exc
 
     # Vectorized hyperparameter spaces
@@ -496,7 +502,7 @@ class VectorizedOptunaOptimizer:
     def _vectorized_data_preparation(
         self,
         data_hash: str,
-    ) -> Tuple[
+    ) -> tuple[
         np.ndarray | None,
         np.ndarray | None,
         np.ndarray | None,
@@ -529,22 +535,17 @@ class VectorizedOptunaOptimizer:
                     params.get("level_age_weight", 0.2),
                     params.get("bounce_rate_weight", 0.2),
                     params.get("isolation_score_weight", 0.2),
-                ]
+                ],
             )
             # Adjust to number of features
             weights = weights[: X.shape[1]] if X.ndim == 2 else weights
-            if X.ndim == 2:
-                features = X @ weights[: X.shape[1]]
-            else:
-                features = X.astype(float)
+            features = X @ weights[:X.shape[1]] if X.ndim == 2 else X.astype(float)
         except Exception:
             features = X.astype(float)
         # Convert to GPU if available
         if self.enable_gpu and cp is not None:  # pragma: no cover - runtime dependent
-            try:
+            with contextlib.suppress(Exception):
                 features = cp.asarray(features)
-            except Exception:
-                pass
         return np.asarray(features)
 
     # JIT decorator with safe fallback
@@ -573,10 +574,9 @@ class VectorizedOptunaOptimizer:
         signals = np.where(
             (strength_scores > min_confidence) & (signals == 0), 0.5, signals,
         )
-        signals = np.where(
+        return np.where(
             (strength_scores < -min_confidence) & (signals == 0), -0.5, signals,
         )
-        return signals
 
     def _vectorized_performance_calculation(
         self,
@@ -586,7 +586,7 @@ class VectorizedOptunaOptimizer:
         """Vectorized performance calculation."""
         strategy_returns = signals * returns
         sharpe_ratio = float(
-            np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
+            np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8),
         )
         win_rate = float(np.mean(strategy_returns > 0))
         positive_returns = float(np.sum(strategy_returns[strategy_returns > 0]))
@@ -703,12 +703,12 @@ class VectorizedOptunaOptimizer:
                     ),
                 )
                 perf = self._vectorized_performance_calculation(
-                    signals, y_np.astype(float)
+                    signals, y_np.astype(float),
                 )
                 return float(
                     0.4 * perf["sharpe_ratio"]
                     + 0.3 * perf["win_rate"]
-                    + 0.3 * perf["profit_factor"]
+                    + 0.3 * perf["profit_factor"],
                 )
             except optuna.TrialPruned:
                 raise
@@ -796,7 +796,7 @@ class VectorizedOptunaOptimizer:
         return result
 
     def _evaluate_sr_parameters_vectorized(
-        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray
+        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray,
     ) -> float:
         """Vectorized S/R parameter evaluation."""
         try:
@@ -808,7 +808,7 @@ class VectorizedOptunaOptimizer:
                 high_confidence=float(params["high_confidence_threshold"]),
             )
             performance = self._vectorized_performance_calculation(
-                signals, y.astype(float)
+                signals, y.astype(float),
             )
             score = (
                 0.4 * performance["sharpe_ratio"]
@@ -821,7 +821,7 @@ class VectorizedOptunaOptimizer:
             return 0.0
 
     def _evaluate_autoencoder_vectorized(
-        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray
+        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray,
     ) -> float:
         """Vectorized autoencoder evaluation."""
         try:
@@ -847,7 +847,7 @@ class VectorizedOptunaOptimizer:
             return float("-inf")
 
     def _evaluate_order_execution_vectorized(
-        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray
+        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray,
     ) -> float:
         """Vectorized order execution evaluation."""
         try:
@@ -879,7 +879,8 @@ class VectorizedOptunaOptimizer:
             config = self._model_configs[model_type]
             model_cls = config["model"]
             if model_cls is None:
-                raise RuntimeError(f"Model class not available for {model_type}")
+                msg = f"Model class not available for {model_type}"
+                raise RuntimeError(msg)
             params = config["space"](trial)
             model = model_cls(**params)
 
@@ -894,8 +895,9 @@ class VectorizedOptunaOptimizer:
             try:
                 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
             except Exception as exc:  # pragma: no cover
+                msg = "scikit-learn is required for ML evaluation"
                 raise RuntimeError(
-                    "scikit-learn is required for ML evaluation",
+                    msg,
                 ) from exc
 
             if self.overfitting_prevention["time_series_split"]:
@@ -913,7 +915,7 @@ class VectorizedOptunaOptimizer:
                 y_train, y_val = y[train_idx], y[val_idx]
 
                 model.fit(X_train, y_train)
-                score = float(getattr(model, "score")(X_val, y_val))
+                score = float(model.score(X_val, y_val))
                 scores.append(score)
 
             return float(np.mean(scores)) if scores else 0.0
@@ -952,10 +954,8 @@ class VectorizedOptunaOptimizer:
 
             # Clear GPU memory if available
             if self.enable_gpu and cp is not None:  # pragma: no cover - runtime
-                try:
+                with contextlib.suppress(Exception):
                     cp.get_default_memory_pool().free_all_blocks()
-                except Exception:
-                    pass
         except Exception as e:  # pragma: no cover
             self.logger.warning(f"Error in memory cleanup: {e}")
 

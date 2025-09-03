@@ -3,21 +3,18 @@ Lifecycle manager for pipeline components (minimal scaffold).
 """
 from __future__ import annotations
 
-from typing import Any, Dict
-import asyncio
+from typing import Any
 
 from src.utils.centralized_decorators import (
-
-    performance_monitor,
     PerformanceLevel,
-    handle_errors,
     handle_specific_errors,
+    performance_monitor,
 )
 from src.utils.logger import system_logger
 
 
 class LifecycleManager:
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("LifecycleManager")
 

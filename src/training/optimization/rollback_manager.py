@@ -17,6 +17,7 @@ from src.utils.warning_symbols import (
     missing,
 )
 
+
 @dataclass
 class RollbackPoint:
     """Rollback point for parameter configuration."""

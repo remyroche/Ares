@@ -31,7 +31,10 @@ import pandas as pd
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
+from src.tactician.sr_breakout_predictor import (
+    ensure_optimized_sr_config,
+    setup_sr_breakout_predictor,
+)
 from src.tactician.sr_weight_optimizer import SRWeightOptimizer
 from src.utils.logger import setup_logging
 
@@ -83,7 +86,7 @@ class SROptunaOptimizer:
     """
 
     def __init__(
-        self, config: dict[str, Any], storage_url: str = "sqlite:///sr_optuna_studies.db", study_name_prefix: str = "sr_optimization"
+        self, config: dict[str, Any], storage_url: str = "sqlite:///sr_optuna_studies.db", study_name_prefix: str = "sr_optimization",
     ):
         """
         Initialize the S/R Optuna optimizer.
@@ -232,7 +235,7 @@ class SROptunaOptimizer:
         }
 
     async def optimize_sr_parameters(
-        self, price_data: pd.DataFrame, target_returns: pd.Series, study_name: str | None = None
+        self, price_data: pd.DataFrame, target_returns: pd.Series, study_name: str | None = None,
     ) -> SROptimizationResult:
         """
         Optimize S/R parameters using Optuna.
@@ -279,7 +282,7 @@ class SROptunaOptimizer:
 
             def objective(trial: optuna.Trial):
                 return self._evaluate_sr_parameters(
-                    trial, price_data, target_returns
+                    trial, price_data, target_returns,
                 )
 
             # Run optimization
@@ -304,7 +307,7 @@ class SROptunaOptimizer:
 
             # Create result object
             result = self._create_optimization_result(
-                study, best_trial, optimization_time, study_name
+                study, best_trial, optimization_time, study_name,
             )
 
             self.logger.info(
@@ -320,7 +323,7 @@ class SROptunaOptimizer:
             return None
 
     async def _evaluate_sr_parameters(
-        self, trial: optuna.Trial, price_data: pd.DataFrame, target_returns: pd.Series
+        self, trial: optuna.Trial, price_data: pd.DataFrame, target_returns: pd.Series,
     ) -> float:
         """
         Evaluate S/R parameters for a given trial.
@@ -355,14 +358,14 @@ class SROptunaOptimizer:
 
             # Generate SR features with new parameters
             sr_features = self.sr_predictor.calculate_comprehensive_sr_features(
-                price_sample
+                price_sample,
             )
             if not sr_features:
                 return 0.0
 
             # Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(
-                sr_features, target_sample, level_params, breakout_params, zone_params, confidence_params
+                sr_features, target_sample, level_params, breakout_params, zone_params, confidence_params,
             )
 
             # Report intermediate values for pruning
@@ -387,20 +390,20 @@ class SROptunaOptimizer:
             # Extract key features
             strength_scores = sr_features.get(
                 "strength_score",
-                pd.Series(0.5, index=target_returns.index)
+                pd.Series(0.5, index=target_returns.index),
             )
             sr_proximity = sr_features.get(
                 "sr_proximity_score",
-                pd.Series(0.5, index=target_returns.index)
+                pd.Series(0.5, index=target_returns.index),
             )
             directional_pressure = sr_features.get(
                 "directional_pressure",
-                pd.Series(0.0, index=target_returns.index)
+                pd.Series(0.0, index=target_returns.index),
             )
 
             # Calculate trading signals
             signals = self._calculate_trading_signals(
-                strength_scores, sr_proximity, directional_pressure, confidence_params
+                strength_scores, sr_proximity, directional_pressure, confidence_params,
             )
 
             # Calculate returns
@@ -525,7 +528,7 @@ class SROptunaOptimizer:
         return positive_returns / (negative_returns + 1e-8)
 
     def _calculate_signal_clarity(
-        self, signals: pd.Series, target_returns: pd.Series | None = None
+        self, signals: pd.Series, target_returns: pd.Series | None = None,
     ) -> float:
         """Calculate signal clarity (correlation between signals and future returns)."""
         if len(signals) < 2 or target_returns is None or len(target_returns) < 2:
@@ -549,7 +552,7 @@ class SROptunaOptimizer:
             return 0.0
 
     def _create_optimization_result(
-        self, study: optuna.Study, best_trial: optuna.Trial, optimization_time: float, study_name: str = "sr_optimization"
+        self, study: optuna.Study, best_trial: optuna.Trial, optimization_time: float, study_name: str = "sr_optimization",
     ) -> SROptimizationResult:
         """Create optimization result object."""
         try:
@@ -661,7 +664,7 @@ class SROptunaOptimizer:
             return None
 
     def generate_optimization_report(
-        self, result: SROptimizationResult, save_path: str | None = None
+        self, result: SROptimizationResult, save_path: str | None = None,
     ) -> str:
         """Generate comprehensive optimization report."""
         try:
@@ -726,7 +729,7 @@ class SROptunaOptimizer:
             return f"Error generating report: {e}"
 
     def create_visualizations(
-        self, study: optuna.Study, save_dir: str | None = None
+        self, study: optuna.Study, save_dir: str | None = None,
     ) -> dict[str, str]:
         """Create optimization visualizations."""
         try:

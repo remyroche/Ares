@@ -8,9 +8,9 @@ These parameters are used throughout the codebase and should be referenced from 
 instead of being hardcoded in individual components.
 """
 
-from typing import Any
 from dataclasses import asdict, dataclass
 from enum import Enum
+from typing import Any
 
 
 class EnsembleMethod(Enum):

@@ -19,9 +19,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import json
-
 logger = logging.getLogger(__name__)
 
 
@@ -111,7 +108,7 @@ class IntelligentFeatureCache:
         """
         if isinstance(obj, dict):
             return {k: self._make_pickle_safe(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
+        if isinstance(obj, list | tuple):
             return type(obj)(self._make_pickle_safe(item) for item in obj)
         if hasattr(obj, "__await__") or asyncio.iscoroutine(obj):
             # Replace coroutines with a placeholder

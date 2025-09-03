@@ -17,6 +17,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 
+
 @dataclass
 class ParallelConfig:
     """Configuration for parallel optimization."""

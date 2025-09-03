@@ -14,17 +14,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import sys
-import time
 
 import pandas as pd
 
 from src.config import CONFIG
-from src.utils.logger import setup_logging, system_logger
-from src.utils.error_handler import handle_errors
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.training.steps.data_preparation_components.aggtrades_data_formatting import (
     auto_reformat_aggtrades_files_for_exchange,
@@ -33,6 +31,8 @@ from src.training.steps.data_preparation_components.training_validation_config i
     validate_data_format,
     validate_data_quality,
 )
+from src.utils.error_handler import handle_errors
+from src.utils.logger import setup_logging, system_logger
 
 # Ensure project root in path
 project_root=Path(__file__).parent.parent
@@ -176,11 +176,11 @@ async def main() -> bool:
     result: dict[str, Any] = {}
     if hasattr(training_manager, "execute_optimized_training"):
         result=await training_manager.execute_optimized_training(
-            args.symbol, args.exchange, timeframe="1m"
+            args.symbol, args.exchange, timeframe="1m",
         )
     elif hasattr(training_manager, "execute_enhanced_training"):
         result_success=await training_manager.execute_enhanced_training(
-            {"symbol": args.symbol, "exchange": args.exchange, "training_mode": "blank"}
+            {"symbol": args.symbol, "exchange": args.exchange, "training_mode": "blank"},
         )
         result={"success": bool(result_success)}
 

@@ -8,21 +8,24 @@ This script runs training across multiple timeframes with ensemble creation
 and cross-timeframe validation.
 """
 
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import system_logger
 import argparse
 import asyncio
 import sys
-from typing import Any, Dict
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
+from src.utils.logger import system_logger
+
 # Add project root to path)
 project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
+from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import (
+    MultiTimeframeTrainingManager,
+)
 from src.utils.error_handler import handle_errors
 
 
@@ -33,7 +36,7 @@ async def run_multi_timeframe_training(
     lookback_days: int=730,
     enable_ensemble: bool=True,
     parallel: bool=True,
-) -> Dict[str, Any] | None:
+) -> dict[str, Any] | None:
     """Run multi-timeframe training."""
     logger=system_logger.getChild("MultiTimeframeTrainingRunner")
 
@@ -57,7 +60,7 @@ async def run_multi_timeframe_training(
         mtf_manager.multi_timeframe_config["enable_parallel_training"] = False
 
     # Prepare input for execution based on available manager API
-    multi_timeframe_training_input: Dict[str, Any] = {
+    multi_timeframe_training_input: dict[str, Any] = {
         "symbol": symbol,
         "exchange": "BINANCE",
         "timeframes": timeframes,
@@ -68,15 +71,15 @@ async def run_multi_timeframe_training(
 
     # Execute multi-timeframe training via manager
     success=await mtf_manager.execute_multi_timeframe_training(
-        multi_timeframe_training_input
+        multi_timeframe_training_input,
     )
 
-    results: Dict[str, Any] = {
+    results: dict[str, Any] = {
         "summary": {
             "status": "success" if success else "failed",
             "symbol": symbol,
             "timeframes": timeframes,
-        }
+        },
     }
 
     # Display results
@@ -158,7 +161,7 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
     await mtf_manager.initialize()
 
     # Simulate successful timeframe results (in real scenario, these would be loaded)
-    timeframe_results: Dict[str, Any] = {}
+    timeframe_results: dict[str, Any] = {}
     for timeframe in timeframes:
         timeframe_results[timeframe] = {
             "status": "success",
@@ -170,22 +173,22 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
     # The following internal methods may exist; guard calls if present
     ensemble_results={}
     if hasattr(mtf_manager, "_create_ensemble_models"):
-        ensemble_results=await getattr(mtf_manager, "_create_ensemble_models")(
+        ensemble_results=await mtf_manager._create_ensemble_models(
             symbol=symbol,
             timeframe_results=timeframe_results,
         )
 
     validation_results={}
     if hasattr(mtf_manager, "_cross_timeframe_validation"):
-        validation_results=await getattr(mtf_manager, "_cross_timeframe_validation")(
+        validation_results=await mtf_manager._cross_timeframe_validation(
             symbol=symbol,
             timeframe_results=timeframe_results,
             ensemble_results=ensemble_results,
         )
 
-    final_results: Dict[str, Any] = {}
+    final_results: dict[str, Any] = {}
     if hasattr(mtf_manager, "_generate_multi_timeframe_report"):
-        final_results=await getattr(mtf_manager, "_generate_multi_timeframe_report")(
+        final_results=await mtf_manager._generate_multi_timeframe_report(
             symbol=symbol,
             timeframe_results=timeframe_results,
             ensemble_results=validation_results,
@@ -212,7 +215,7 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
     await mtf_manager.initialize()
 
     # Simulate successful timeframe results
-    successful_timeframes: Dict[str, Any] = {}
+    successful_timeframes: dict[str, Any] = {}
     for timeframe in timeframes:
         successful_timeframes[timeframe] = {
             "status": "success",
@@ -221,11 +224,9 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
             "timestamp": datetime.now().isoformat(),
         }
 
-    analysis_results: Dict[str, Any] = {}
+    analysis_results: dict[str, Any] = {}
     if hasattr(mtf_manager, "_analyze_cross_timeframe_performance"):
-        analysis_results=await getattr(
-            mtf_manager, "_analyze_cross_timeframe_performance"
-        )(
+        analysis_results=await mtf_manager._analyze_cross_timeframe_performance(
             symbol=symbol,
             timeframe_results=successful_timeframes,
             ensemble_results={},

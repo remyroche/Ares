@@ -4,20 +4,19 @@ Script to rename existing data files in data_cache to include exchange name pref
 This script renames files from the old format to the new format that includes exchange names.
 """
 
-from pathlib import Path
-from typing import List, Tuple
 import glob
 import shutil
+from pathlib import Path
 
 from src.utils.warning_symbols import failed, missing, warning
 
 
-def _find_files(base_dir: Path, pattern: str) -> List[Path]:
+def _find_files(base_dir: Path, pattern: str) -> list[Path]:
 	"""Find files in base_dir matching pattern."""
 	return [Path(p) for p in glob.glob(str(base_dir / pattern))]
 
 
-def _build_new_name(exchange_name: str, old_path: Path, kind: str) -> Tuple[bool, str]:
+def _build_new_name(exchange_name: str, old_path: Path, kind: str) -> tuple[bool, str]:
 	"""Build new file name based on kind and original name.
 
 	Returns (ok, new_name)

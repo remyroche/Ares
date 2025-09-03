@@ -5,21 +5,22 @@ ML Target Updater for continuously updating ML targets based on real-time condit
 """
 
 import asyncio
+import contextlib
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
 from src.core.decorators import handles_errors
+from src.utils.centralized_decorators import validate_data_quality
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     warning,
 )
-from src.utils.centralized_decorators import validate_data_quality
-import copy
+
 
 class MLTargetUpdater:
     """
@@ -37,7 +38,7 @@ class MLTargetUpdater:
         ml_target_predictor: MLDynamicTargetPredictor,
         exchange_client: Any,
         state_manager: Any,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ):
         """
         Initialize the ML Target Updater.
@@ -61,9 +62,9 @@ class MLTargetUpdater:
         self.confidence_threshold = self.updater_config.get("confidence_threshold", 0.6)
 
         # State tracking
-        self.active_positions: Dict[str, Dict[str, Any]] = {}
-        self.target_history: List[Dict[str, Any]] = []
-        self.update_task: Optional[asyncio.Task] = None
+        self.active_positions: dict[str, dict[str, Any]] = {}
+        self.target_history: list[dict[str, Any]] = []
+        self.update_task: asyncio.Task | None = None
         self.is_running = False
 
     @handles_errors(fallback=False)
@@ -91,7 +92,7 @@ class MLTargetUpdater:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ ML Target Updater initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ ML Target Updater initialization failed: {e}"))
             return False
 
     def _validate_configuration(self) -> bool:
@@ -117,7 +118,7 @@ class MLTargetUpdater:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -140,7 +141,7 @@ class MLTargetUpdater:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Failed to start ML target updating: {e}"))
+            self.logger.exception(failed(f"❌ Failed to start ML target updating: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -160,16 +161,14 @@ class MLTargetUpdater:
 
             if self.update_task:
                 self.update_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self.update_task
-                except asyncio.CancelledError:
-                    pass
 
             self.logger.info("✅ ML target updating stopped")
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Failed to stop ML target updating: {e}"))
+            self.logger.exception(failed(f"❌ Failed to stop ML target updating: {e}"))
             return False
 
     async def _update_loop(self) -> None:
@@ -187,7 +186,7 @@ class MLTargetUpdater:
         except asyncio.CancelledError:
             self.logger.info("ML target update loop cancelled")
         except Exception as e:
-            self.logger.error(failed(f"❌ Error in update loop: {e}"))
+            self.logger.exception(failed(f"❌ Error in update loop: {e}"))
 
     async def _update_all_targets(self) -> None:
         """
@@ -198,9 +197,9 @@ class MLTargetUpdater:
                 await self._update_position_target(position_id, position_data)
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error updating targets: {e}"))
+            self.logger.exception(failed(f"❌ Error updating targets: {e}"))
 
-    async def _update_position_target(self, position_id: str, position_data: Dict[str, Any]) -> None:
+    async def _update_position_target(self, position_id: str, position_data: dict[str, Any]) -> None:
         """
         Update target for a specific position.
 
@@ -246,9 +245,9 @@ class MLTargetUpdater:
             self.logger.info(f"Updated target for position {position_id}: {current_target} -> {new_target}")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error updating target for position {position_id}: {e}"))
+            self.logger.exception(failed(f"❌ Error updating target for position {position_id}: {e}"))
 
-    def _should_update_target(self, position_data: Dict[str, Any], current_target: float) -> bool:
+    def _should_update_target(self, position_data: dict[str, Any], current_target: float) -> bool:
         """
         Determine if target should be updated.
 
@@ -264,19 +263,16 @@ class MLTargetUpdater:
             target_updated_at = position_data.get("target_updated_at")
             if target_updated_at:
                 if isinstance(target_updated_at, str):
-                    target_updated_at = datetime.fromisoformat(target_updated_at.replace('Z', '+00:00'))
+                    target_updated_at = datetime.fromisoformat(target_updated_at)
                 target_age = (datetime.now() - target_updated_at).total_seconds()
                 if target_age < self.max_target_age:
                     return False
 
             # Check if position is still active
-            if not position_data.get("is_active", True):
-                return False
-
-            return True
+            return position_data.get("is_active", True)
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error checking if target should be updated: {e}"))
+            self.logger.exception(failed(f"❌ Error checking if target should be updated: {e}"))
             return False
 
     @validate_data_quality(
@@ -285,14 +281,14 @@ class MLTargetUpdater:
         max_null_ratio=0.1,
         check_duplicates=True,
         check_timestamps=True,
-        context="ML target prediction generation"
+        context="ML target prediction generation",
     )
     async def _generate_target_prediction(
         self,
         symbol: str,
         market_data: pd.DataFrame,
-        position_data: Dict[str, Any]
-    ) -> Optional[float]:
+        position_data: dict[str, Any],
+    ) -> float | None:
         """
         Generate a new target prediction.
 
@@ -309,7 +305,7 @@ class MLTargetUpdater:
             prediction = await self.ml_target_predictor.predict_target(
                 symbol=symbol,
                 market_data=market_data,
-                position_data=position_data
+                position_data=position_data,
             )
 
             if prediction is None:
@@ -322,17 +318,17 @@ class MLTargetUpdater:
             # Check confidence threshold
             if confidence < self.confidence_threshold:
                 self.logger.warning(
-                    f"Low confidence target prediction for {symbol}: {confidence:.3f}"
+                    f"Low confidence target prediction for {symbol}: {confidence:.3f}",
                 )
                 return None
 
             return target_value
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error generating target prediction: {e}"))
+            self.logger.exception(failed(f"❌ Error generating target prediction: {e}"))
             return None
 
-    def _validate_target(self, target: float, position_data: Dict[str, Any]) -> bool:
+    def _validate_target(self, target: float, position_data: dict[str, Any]) -> bool:
         """
         Validate a target value.
 
@@ -344,7 +340,7 @@ class MLTargetUpdater:
             bool: True if target is valid
         """
         try:
-            if not isinstance(target, (int, float)):
+            if not isinstance(target, int | float):
                 return False
 
             # Check if target is reasonable based on position
@@ -359,7 +355,7 @@ class MLTargetUpdater:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error validating target: {e}"))
+            self.logger.exception(failed(f"❌ Error validating target: {e}"))
             return False
 
     @validate_data_quality(
@@ -368,9 +364,9 @@ class MLTargetUpdater:
         max_null_ratio=0.0,
         check_duplicates=False,
         check_timestamps=True,
-        context="ML target updater market data retrieval"
+        context="ML target updater market data retrieval",
     )
-    async def _get_market_data(self, symbol: str) -> Optional[pd.DataFrame]:
+    async def _get_market_data(self, symbol: str) -> pd.DataFrame | None:
         """
         Get current market data for a symbol.
 
@@ -389,18 +385,18 @@ class MLTargetUpdater:
                 "high": [101.0],
                 "low": [99.0],
                 "close": [100.5],
-                "volume": [1000]
+                "volume": [1000],
             })
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting market data for {symbol}: {e}"))
+            self.logger.exception(failed(f"❌ Error getting market data for {symbol}: {e}"))
             return None
 
     def _record_target_update(
         self,
         position_id: str,
         old_target: float,
-        new_target: float
+        new_target: float,
     ) -> None:
         """
         Record a target update in history.
@@ -417,7 +413,7 @@ class MLTargetUpdater:
                 "old_target": old_target,
                 "new_target": new_target,
                 "target_change": new_target - old_target,
-                "target_change_pct": ((new_target - old_target) / old_target * 100) if old_target != 0 else 0
+                "target_change_pct": ((new_target - old_target) / old_target * 100) if old_target != 0 else 0,
             }
 
             self.target_history.append(update_record)
@@ -427,9 +423,9 @@ class MLTargetUpdater:
                 self.target_history = self.target_history[-1000:]
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error recording target update: {e}"))
+            self.logger.exception(failed(f"❌ Error recording target update: {e}"))
 
-    def add_position(self, position_id: str, position_data: Dict[str, Any]) -> None:
+    def add_position(self, position_id: str, position_data: dict[str, Any]) -> None:
         """
         Add a position for target updating.
 
@@ -442,7 +438,7 @@ class MLTargetUpdater:
             self.logger.info(f"Added position for target updating: {position_id}")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error adding position: {e}"))
+            self.logger.exception(failed(f"❌ Error adding position: {e}"))
 
     def remove_position(self, position_id: str) -> None:
         """
@@ -459,9 +455,9 @@ class MLTargetUpdater:
                 self.logger.warning(warning(f"Position not found: {position_id}"))
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error removing position: {e}"))
+            self.logger.exception(failed(f"❌ Error removing position: {e}"))
 
-    def get_target_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_target_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get target update history.
 
@@ -477,10 +473,10 @@ class MLTargetUpdater:
             return self.target_history.copy()
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting target history: {e}"))
+            self.logger.exception(failed(f"❌ Error getting target history: {e}"))
             return []
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """
         Get target update statistics.
 
@@ -493,7 +489,7 @@ class MLTargetUpdater:
                     "total_updates": 0,
                     "average_target_change": 0.0,
                     "average_target_change_pct": 0.0,
-                    "active_positions": len(self.active_positions)
+                    "active_positions": len(self.active_positions),
                 }
 
             total_updates = len(self.target_history)
@@ -504,11 +500,11 @@ class MLTargetUpdater:
                 "total_updates": total_updates,
                 "average_target_change": np.mean(target_changes) if target_changes else 0.0,
                 "average_target_change_pct": np.mean(target_change_pcts) if target_change_pcts else 0.0,
-                "active_positions": len(self.active_positions)
+                "active_positions": len(self.active_positions),
             }
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating statistics: {e}"))
+            self.logger.exception(failed(f"❌ Error calculating statistics: {e}"))
             return {}
 
     async def cleanup(self) -> None:
@@ -528,4 +524,4 @@ class MLTargetUpdater:
             self.logger.info("✅ ML Target Updater cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ ML Target Updater cleanup failed: {e}"))
+            self.logger.exception(failed(f"❌ ML Target Updater cleanup failed: {e}"))

@@ -17,9 +17,6 @@ from typing import Any, TypeVar
 import psutil
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
-import asyncio
 
 # Type variables
 T = TypeVar("T")
@@ -153,11 +150,10 @@ def performance_monitor(func: F) -> F:
         try:
             result = func(*args, **kwargs)
             success = True
-            error_msg = None
         except Exception as e:
             result = None
             success = False
-            error_msg = str(e)
+            str(e)
 
         end_time = time.time()
         end_memory = psutil.Process().memory_info().rss

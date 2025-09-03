@@ -8,17 +8,17 @@ error handling across different transports.
 # Base error types
 from .base import (
     AppError,
-    ErrorCode,
-    ValidationError,
     AuthenticationError,
     AuthorizationError,
-    NotFoundError,
-    ConflictError,
-    RateLimitError,
-    TimeoutError,
-    ServiceUnavailableError,
     BusinessRuleError,
+    ConflictError,
     DataIntegrityError,
+    ErrorCode,
+    NotFoundError,
+    RateLimitError,
+    ServiceUnavailableError,
+    TimeoutError,
+    ValidationError,
 )
 
 # Error mapping utilities
@@ -43,7 +43,7 @@ __all__ = [
     "ServiceUnavailableError",
     "BusinessRuleError",
     "DataIntegrityError",
-    
+
     # Mapping
     "ErrorMapper",
     "error_mapper",

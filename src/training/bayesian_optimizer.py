@@ -1,5 +1,6 @@
 # src/training/bayesian_optimizer.py
 
+import datetime as datetime
 from collections.abc import Callable
 from typing import Any, Number
 
@@ -9,7 +10,7 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import datetime as datetime
+
 
 class AdvancedHyperparameterOptimizer:
     """Advanced hyperparameter optimization with decomposed search spaces and proper constraints.

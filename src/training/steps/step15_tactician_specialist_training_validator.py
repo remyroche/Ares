@@ -31,7 +31,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         super().__init__("step9_tactician_specialist_training", config)
 
     async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> bool:
         """Validate the tactician specialist training step.
 
@@ -116,7 +116,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         return True
 
     def _validate_tactician_model_files(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate that tactician model files exist.
 
@@ -157,7 +157,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _validate_tactician_model_performance(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate tactician model performance metrics.
 
@@ -245,7 +245,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _validate_tactician_training_metrics(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate tactician training metrics and convergence.
 
@@ -296,7 +296,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                     train_acc - val_acc > 0.1
                 ):  # Overfitting if train > val by more than 10%
                     self.logger.warning(
-                        f"⚠️ Potential overfitting: train_acc={train_acc:.3f}, val_acc={val_acc:.3f}"
+                        f"⚠️ Potential overfitting: train_acc={train_acc:.3f}, val_acc={val_acc:.3f}",
                     )
 
             # Check for training time
@@ -334,7 +334,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _validate_tactician_model_quality(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate tactician model quality characteristics.
 
@@ -436,7 +436,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
                     # Check model attributes
                     if hasattr(model, "feature_importances_"):
-                        importances = getattr(model, "feature_importances_")
+                        importances = model.feature_importances_
                         if len(importances) > 0:
                             non_zero_features = int(np.sum(np.array(importances) > 0))
                             if non_zero_features < 5:
@@ -483,7 +483,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                 inner = getattr(artifact, "best_estimator_", None)
                 if callable(getattr(inner, "predict", None)):
                     return inner
-            if isinstance(artifact, (list, tuple)) and artifact:
+            if isinstance(artifact, list | tuple) and artifact:
                 first = artifact[0]
                 if callable(getattr(first, "predict", None)):
                     return first
@@ -493,7 +493,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
 
 async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the step9_tactician_specialist_training validator.
 

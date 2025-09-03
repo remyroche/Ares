@@ -6,17 +6,17 @@ This script identifies specific files that are too small and provides detailed a
 of the file size distribution across partitioned datasets.
 """
 
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Any
 import argparse
 import os
 import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
 
 
 class SmallFileAnalyzer:
@@ -27,9 +27,9 @@ class SmallFileAnalyzer:
         self.small_file_threshold_mb=1.0  # Files smaller than 1MB are considered small
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    def analyze_small_files(self) -> Dict[str, Any]:
+    def analyze_small_files(self) -> dict[str, Any]:
         """Analyze all partitioned datasets to identify small files."""
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "analysis_timestamp": datetime.now().isoformat(),
             "datasets": {},
             "summary": {
@@ -64,7 +64,7 @@ class SmallFileAnalyzer:
             results["summary"]["small_files"] += analysis.get("small_files", 0)
             results["summary"]["total_size_gb"] += analysis.get("total_size_gb", 0.0)
             results["summary"]["small_files_size_gb"] += analysis.get(
-                "small_files_size_gb", 0.0
+                "small_files_size_gb", 0.0,
             )
 
         # Calculate percentage
@@ -77,9 +77,9 @@ class SmallFileAnalyzer:
 
         return results
 
-    def _find_partitioned_datasets(self) -> List[Path]:
+    def _find_partitioned_datasets(self) -> list[Path]:
         """Find all partitioned dataset directories."""
-        partitioned_dirs: List[Path] = []
+        partitioned_dirs: list[Path] = []
 
         # Look for unified directory structure
         unified_path=self.data_cache_path / "unified"
@@ -99,7 +99,7 @@ class SmallFileAnalyzer:
 
         return partitioned_dirs
 
-    def _parse_dataset_path(self, dataset_path: Path) -> Dict[str, str] | None:
+    def _parse_dataset_path(self, dataset_path: Path) -> dict[str, str] | None:
         """Parse dataset path to extract exchange, symbol, and timeframe."""
         # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
         parts=dataset_path.parts
@@ -111,7 +111,7 @@ class SmallFileAnalyzer:
             }
         return None
 
-    def _analyze_dataset_small_files(self, dataset_path: Path) -> Dict[str, Any]:
+    def _analyze_dataset_small_files(self, dataset_path: Path) -> dict[str, Any]:
         """Analyze the given dataset directory for small files."""
         total_files=0
         small_files = 0

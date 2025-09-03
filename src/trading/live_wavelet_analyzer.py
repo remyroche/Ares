@@ -5,19 +5,21 @@ This module provides a lightweight = real-time wavelet analysis system
 optimized for live trading with strict performance constraints.
 """
 
-from collections import deque
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
 import threading
 import time
-
+from collections import deque
 from dataclasses import dataclass
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import error, initialization_error, timeout, warning
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pywt
+
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import initialization_error, warning
+
 
 @dataclass
 class WaveletSignal:
@@ -143,7 +145,7 @@ class LiveWaveletAnalyzer:
             self.logger.info("✅ Pre-computed wavelet coefficients")
 
         except Exception as e:
-            self.logger.error(f"Error pre-computing wavelet coefficients: {e}")
+            self.logger.exception(f"Error pre-computing wavelet coefficients: {e}")
 
     def _get_decomposition_level(self, data_len: int) -> int:
         try:
@@ -157,7 +159,7 @@ class LiveWaveletAnalyzer:
     @handles_errors(fallback=None)
     async def generate_signal(
         self, price_data: pd.DataFrame,
-        volume_data: pd.DataFrame | None = None
+        volume_data: pd.DataFrame | None = None,
     ) -> WaveletSignal | None:
         """
         Generate trading signal using computationally-aware wavelet analysis.
@@ -210,12 +212,12 @@ class LiveWaveletAnalyzer:
             return signal
 
         except Exception as e:
-            self.logger.error(f"Error generating wavelet signal: {e}")
+            self.logger.exception(f"Error generating wavelet signal: {e}")
             return None
 
     def _update_sliding_windows(
         self, price_data: pd.DataFrame,
-        volume_data: pd.DataFrame | None = None
+        volume_data: pd.DataFrame | None = None,
     ) -> None:
         """Update sliding windows with new data."""
         try:
@@ -223,9 +225,9 @@ class LiveWaveletAnalyzer:
             if len(price_data) > 0:
                 latest_close = price_data["close"].iloc[-1]
                 if len(self.price_window) > 0:
-                    price_diff = latest_close - self.price_window[-1]
+                    latest_close - self.price_window[-1]
                 else:
-                    price_diff = 0.0
+                    pass
 
                 self.price_window.append(latest_close)
 
@@ -235,7 +237,7 @@ class LiveWaveletAnalyzer:
                 self.volume_window.append(latest_volume)
 
         except Exception as e:
-            self.logger.error(f"Error updating sliding windows: {e}")
+            self.logger.exception(f"Error updating sliding windows: {e}")
 
     async def _perform_fast_wavelet_analysis(self) -> WaveletSignal | None:
         """Perform fast wavelet analysis with timeout."""
@@ -247,7 +249,7 @@ class LiveWaveletAnalyzer:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None, self._compute_wavelet_features,
-                price_array
+                price_array,
             )
 
             if result is None:
@@ -257,10 +259,10 @@ class LiveWaveletAnalyzer:
             return self._generate_trading_signal(result)
 
         except TimeoutError:
-            self.logger.error("Wavelet computation timeout")
+            self.logger.exception("Wavelet computation timeout")
             return None
         except Exception as e:
-            self.logger.error(f"Error in fast wavelet analysis: {e}")
+            self.logger.exception(f"Error in fast wavelet analysis: {e}")
             return None
 
     def _compute_wavelet_features(
@@ -319,7 +321,7 @@ class LiveWaveletAnalyzer:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error computing wavelet features: {e}")
+            self.logger.exception(f"Error computing wavelet features: {e}")
             return None
 
     def _generate_trading_signal(self, features: dict[str, float]) -> WaveletSignal:
@@ -368,7 +370,7 @@ class LiveWaveletAnalyzer:
             )
 
         except Exception as e:
-            self.logger.error(f"Error generating trading signal: {e}")
+            self.logger.exception(f"Error generating trading signal: {e}")
             return WaveletSignal(
                 timestamp=time.time(),
                 signal_type="hold",
@@ -405,7 +407,7 @@ class LiveWaveletAnalyzer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting performance stats: {e}")
+            self.logger.exception(f"Error getting performance stats: {e}")
             return {}
 
     def get_latest_signal(self) -> WaveletSignal | None:

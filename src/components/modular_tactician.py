@@ -1,12 +1,12 @@
 # src/components/modular_tactician.py
 
 from datetime import datetime
-from src.utils.logger import system_logger
 from typing import Any
+
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, invalid, missing
-import copy
-import asyncio
+
 
 class ModularTactician:
     """
@@ -102,7 +102,7 @@ class ModularTactician:
             self.logger.info("Tactician configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error loading tactician configuration: {e}"))
+            self.logger.exception(error(f"Error loading tactician configuration: {e}"))
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
@@ -139,7 +139,7 @@ class ModularTactician:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating configuration: {e}"))
+            self.logger.exception(error(f"Error validating configuration: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -165,7 +165,7 @@ class ModularTactician:
             self.logger.info("Tactician modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing tactician modules: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing tactician modules: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_entry_monitoring(self) -> None:
@@ -182,7 +182,7 @@ class ModularTactician:
             self.logger.info("Entry monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing entry monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing entry monitoring: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_exit_monitoring(self) -> None:
@@ -199,7 +199,7 @@ class ModularTactician:
             self.logger.info("Exit monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing exit monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing exit monitoring: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_position_monitoring(self) -> None:
@@ -216,7 +216,7 @@ class ModularTactician:
             self.logger.info("Position monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing position monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing position monitoring: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_risk_monitoring(self) -> None:
@@ -233,7 +233,7 @@ class ModularTactician:
             self.logger.info("Risk monitoring module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk monitoring: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing risk monitoring: {e}"))
 
     @handles_errors(
         error_handlers={
@@ -306,7 +306,7 @@ class ModularTactician:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error executing tactician: {e}"))
+            self.logger.exception(error(f"Error executing tactician: {e}"))
             self.is_tactician_active = False
             return False
 
@@ -342,18 +342,18 @@ class ModularTactician:
                     return False
 
             # Validate data types
-            if not isinstance(market_data["price"], (int, float)):
+            if not isinstance(market_data["price"], int | float):
                 self.logger.error(invalid("Invalid price data type"))
                 return False
 
-            if not isinstance(strategy_data["position_size"], (int, float)):
+            if not isinstance(strategy_data["position_size"], int | float):
                 self.logger.error(invalid("Invalid position size data type"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating tactician inputs: {e}"))
+            self.logger.exception(error(f"Error validating tactician inputs: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -407,7 +407,7 @@ class ModularTactician:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing entry monitoring: {e}"))
+            self.logger.exception(error(f"Error performing entry monitoring: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -461,7 +461,7 @@ class ModularTactician:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing exit monitoring: {e}"))
+            self.logger.exception(error(f"Error performing exit monitoring: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -515,7 +515,7 @@ class ModularTactician:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing position monitoring: {e}"))
+            self.logger.exception(error(f"Error performing position monitoring: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -569,7 +569,7 @@ class ModularTactician:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing risk monitoring: {e}"))
+            self.logger.exception(error(f"Error performing risk monitoring: {e}"))
             return {}
 
     # Entry monitoring analysis methods
@@ -589,7 +589,7 @@ class ModularTactician:
                 "entry_signal": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error analyzing price action: {e}"))
+            self.logger.exception(error(f"Error analyzing price action: {e}"))
             return {}
 
     def _analyze_volume(
@@ -606,7 +606,7 @@ class ModularTactician:
                 "volume_signal": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error analyzing volume: {e}"))
+            self.logger.exception(error(f"Error analyzing volume: {e}"))
             return {}
 
     def _analyze_momentum_indicators(
@@ -623,7 +623,7 @@ class ModularTactician:
                 "momentum_signal": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error analyzing momentum indicators: {e}"))
+            self.logger.exception(error(f"Error analyzing momentum indicators: {e}"))
             return {}
 
     def _analyze_support_resistance(
@@ -640,7 +640,7 @@ class ModularTactician:
                 "resistance_distance": 0.05,
             }
         except Exception as e:
-            self.logger.error(error(f"Error analyzing support resistance: {e}"))
+            self.logger.exception(error(f"Error analyzing support resistance: {e}"))
             return {}
 
     # Exit monitoring tracking methods
@@ -659,7 +659,7 @@ class ModularTactician:
                 "stop_loss_level": 98.0,
             }
         except Exception as e:
-            self.logger.error(error(f"Error tracking stop loss: {e}"))
+            self.logger.exception(error(f"Error tracking stop loss: {e}"))
             return {}
 
     def _track_take_profit(
@@ -676,7 +676,7 @@ class ModularTactician:
                 "take_profit_level": 104.0,
             }
         except Exception as e:
-            self.logger.error(error(f"Error tracking take profit: {e}"))
+            self.logger.exception(error(f"Error tracking take profit: {e}"))
             return {}
 
     def _track_trailing_stop(
@@ -693,7 +693,7 @@ class ModularTactician:
                 "trailing_stop_level": 98.5,
             }
         except Exception as e:
-            self.logger.error(error(f"Error tracking trailing stop: {e}"))
+            self.logger.exception(error(f"Error tracking trailing stop: {e}"))
             return {}
 
     def _track_time_based_exit(
@@ -710,7 +710,7 @@ class ModularTactician:
                 "max_time_limit": 7200,  # seconds
             }
         except Exception as e:
-            self.logger.error(error(f"Error tracking time based exit: {e}"))
+            self.logger.exception(error(f"Error tracking time based exit: {e}"))
             return {}
 
     # Position monitoring methods
@@ -729,7 +729,7 @@ class ModularTactician:
                 "position_size_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error tracking position size: {e}"))
+            self.logger.exception(error(f"Error tracking position size: {e}"))
             return {}
 
     def _monitor_exposure_limits(
@@ -746,7 +746,7 @@ class ModularTactician:
                 "exposure_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring exposure limits: {e}"))
+            self.logger.exception(error(f"Error monitoring exposure limits: {e}"))
             return {}
 
     def _monitor_correlation(
@@ -763,7 +763,7 @@ class ModularTactician:
                 "correlation_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring correlation: {e}"))
+            self.logger.exception(error(f"Error monitoring correlation: {e}"))
             return {}
 
     def _monitor_concentration_limits(
@@ -780,7 +780,7 @@ class ModularTactician:
                 "concentration_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring concentration limits: {e}"))
+            self.logger.exception(error(f"Error monitoring concentration limits: {e}"))
             return {}
 
     # Risk monitoring methods
@@ -799,7 +799,7 @@ class ModularTactician:
                 "var_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring VaR: {e}"))
+            self.logger.exception(error(f"Error monitoring VaR: {e}"))
             return {}
 
     def _track_drawdown(
@@ -816,7 +816,7 @@ class ModularTactician:
                 "drawdown_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error tracking drawdown: {e}"))
+            self.logger.exception(error(f"Error tracking drawdown: {e}"))
             return {}
 
     def _monitor_volatility(
@@ -833,7 +833,7 @@ class ModularTactician:
                 "volatility_ok": True,
             }
         except Exception as e:
-            self.logger.error(error(f"Error monitoring volatility: {e}"))
+            self.logger.exception(error(f"Error monitoring volatility: {e}"))
             return {}
 
     def _perform_stress_testing(
@@ -850,7 +850,7 @@ class ModularTactician:
                 "stress_test_score": 0.85,
             }
         except Exception as e:
-            self.logger.error(error(f"Error performing stress testing: {e}"))
+            self.logger.exception(error(f"Error performing stress testing: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -870,7 +870,7 @@ class ModularTactician:
             self.logger.info("Tactician results stored successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error storing tactician results: {e}"))
+            self.logger.exception(error(f"Error storing tactician results: {e}"))
 
     @handles_errors(fallback=None)
     def get_tactician_results(
@@ -892,7 +892,7 @@ class ModularTactician:
             return self.tactician_results.copy()
 
         except Exception as e:
-            self.logger.error(error(f"Error getting tactician results: {e}"))
+            self.logger.exception(error(f"Error getting tactician results: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -915,7 +915,7 @@ class ModularTactician:
             return history
 
         except Exception as e:
-            self.logger.error(error(f"Error getting tactician history: {e}"))
+            self.logger.exception(error(f"Error getting tactician history: {e}"))
             return []
 
     def get_tactician_status(self) -> dict[str, Any]:
@@ -960,7 +960,7 @@ class ModularTactician:
             self.logger.info("✅ Modular Tactician stopped successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error stopping modular tactician: {e}"))
+            self.logger.exception(error(f"Error stopping modular tactician: {e}"))
 
 # Global modular tactician instance
 modular_tactician: ModularTactician | None = None

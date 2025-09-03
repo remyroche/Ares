@@ -4,13 +4,14 @@ Script to fix corrupted consolidated CSV files by regenerating them from raw CSV
 The issue is that the consolidated files have wrong column mapping and corrupted data.
 """
 
-from pathlib import Path
 import glob
 import os
 import sys
+from pathlib import Path
 
-from src.utils.warning_symbols import warning, failed
 import pandas as pd
+
+from src.utils.warning_symbols import failed, warning
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent

@@ -9,17 +9,17 @@ This script will:
 
 from __future__ import annotations
 
+import os
+import pickle
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-import os
-import sys
-import pickle
 
 import pandas as pd
 
-from src.utils.warning_symbols import missing, warning
 from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import missing, warning
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent
@@ -77,7 +77,7 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float=3000.0) -> pd.Da
     print(f"  New median: ${new_median:.2f}")
     print(
         f"  Price range: ${pd.to_numeric(fixed_df['close'], errors='coerce').min():.2f} "
-        f"to ${pd.to_numeric(fixed_df['close'], errors='coerce').max():.2f}"
+        f"to ${pd.to_numeric(fixed_df['close'], errors='coerce').max():.2f}",
     )
 
     return fixed_df

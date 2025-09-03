@@ -12,16 +12,21 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from src.config import CONFIG  # noqa: E402
-from src.utils.warning_symbols import error, failed, initialization_error, warning  # noqa: E402
 from src.training.bayesian_optimizer import AdvancedBayesianOptimizer  # noqa: E402
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer  # noqa: E402
 from src.training.optimized_backtester import OptimizedBacktester  # noqa: E402
+from src.utils.warning_symbols import (  # noqa: E402
+    error,
+    failed,
+    initialization_error,
+    warning,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -48,9 +53,9 @@ class ConfigurationUsageExample:
     """Example class demonstrating configuration usage"""
 
     def __init__(self) -> None:
-        self.config: Dict[str, Any] = CONFIG
-        self.hpo_config: Dict[str, Any] = CONFIG["hyperparameter_optimization"]
-        self.comp_config: Dict[str, Any] = CONFIG["computational_optimization"]
+        self.config: dict[str, Any] = CONFIG
+        self.hpo_config: dict[str, Any] = CONFIG["hyperparameter_optimization"]
+        self.comp_config: dict[str, Any] = CONFIG["computational_optimization"]
 
     @safe_call
     def validate_configuration(self) -> bool:  # type: ignore[override]
@@ -120,7 +125,7 @@ class ConfigurationUsageExample:
         )
         if hpo_config["adaptive_optimization"]["enabled"]:
             regimes=list(
-                hpo_config["adaptive_optimization"]["regime_specific_constraints"].keys()
+                hpo_config["adaptive_optimization"]["regime_specific_constraints"].keys(),
             )
             print(f"    Regimes: {regimes}")
 
@@ -326,7 +331,7 @@ class ConfigurationUsageExample:
         print("=" * 60)
 
         # Mock market data for demonstration
-        mock_market_data: Dict[str, Any] = {"symbol": "ETHUSDT", "data": []}
+        mock_market_data: dict[str, Any] = {"symbol": "ETHUSDT", "data": []}
 
         # Example 1: Multi-objective optimization
         print("\n📊 Example 1: Multi-Objective Optimization")
@@ -340,7 +345,7 @@ class ConfigurationUsageExample:
             print(
                 initialization_error(
                     f"Error initializing multi-objective optimizer: {exc}",
-                )
+                ),
             )
 
         # Example 2: Bayesian optimization
@@ -420,7 +425,7 @@ class ConfigurationUsageExample:
 
         # Modify parallelization settings
         modified_comp_config.setdefault("parallelization", {}).setdefault(
-            "max_workers", 8
+            "max_workers", 8,
         )
         old_workers=modified_comp_config["parallelization"]["max_workers"]
         modified_comp_config["parallelization"]["max_workers"] = 4

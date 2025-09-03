@@ -11,13 +11,12 @@ from typing import Any
 import joblib
 import numpy as np
 
+from src.utils.common_operations import safe_json_load
 from src.utils.warning_symbols import (
     error,
     failed,
     missing,
 )
-
-from src.utils.common_operations import safe_json_load
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -34,7 +33,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         super().__init__("step6_hmm_based_enhancement", config)
 
     async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> bool:
         """Validate the HMM-based enhancement step.
 
@@ -208,7 +207,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         return validation_result
 
     def _validate_enhanced_model_files(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate that enhanced HMM model files exist.
 
@@ -272,7 +271,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             return False
 
     def _validate_performance_improvement(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate that HMM performance has improved after enhancement.
 
@@ -312,7 +311,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             for timeframe_models in enhanced_summary.values():
                 for model_info in timeframe_models.values():
                     acc = model_info.get("accuracy")
-                    if isinstance(acc, (int, float)):
+                    if isinstance(acc, int | float):
                         enhanced_accuracies.append(float(acc))
 
             improvements: list[tuple[str, float]] = []
@@ -352,7 +351,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             return False
 
     def _validate_enhancement_quality(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate the quality of the HMM enhancement process.
 
@@ -478,7 +477,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 if callable(getattr(inner, "predict", None)):
                     return inner
 
-            if isinstance(artifact, (list, tuple)) and artifact:
+            if isinstance(artifact, list | tuple) and artifact:
                 first = artifact[0]
                 if callable(getattr(first, "predict", None)):
                     return first
@@ -489,7 +488,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
 
 async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the step6_hmm_based_enhancement validator.
 

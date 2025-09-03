@@ -514,11 +514,8 @@ class RayModelTrainer:
             data_dir = training_input.get("data_dir", "data/training")
             labeled_path = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
 
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-if os.path.exists(labeled_path):
-    try:
+            if os.path.exists(labeled_path):
+                try:
                     feat_cols = training_input.get(
                         "model_feature_columns",
                     ) or training_input.get("feature_columns")

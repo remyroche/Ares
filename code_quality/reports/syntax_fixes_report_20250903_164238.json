@@ -1,0 +1,9 @@
+{
+  "dry_run": true,
+  "files_with_errors": 4,
+  "error_types": {
+    "invalid syntax": 2,
+    "unmatched ')'": 1,
+    "expected an indented block after 'try' statement on line 98": 1
+  }
+}

@@ -6,7 +6,7 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, retry, timeout
 
 from src.core.domain import handle_specific_errors
 
@@ -17,19 +17,12 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-<<<<<<< HEAD
-=======
-from src.core.decorators import handles_errors, retry, timeout
-    handle_errors,
     handle_specific_errors,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     invalid,
     missing,
-)
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
@@ -66,19 +59,15 @@ class Strategist:
         self.strategist_config: dict[str, Any] = self.config.get("strategist", {})
         self.strategy_interval: int = (
             self.strategist_config.get("strategy_interval", 1800)
-        )
         self.max_strategy_history: int = (
             self.strategist_config.get("max_strategy_history", 50)
-        )
         # Risk management (excluding position sizing which is handled by Tactician)
         self.enable_risk_management: bool = (
             self.strategist_config.get("enable_risk_management", True)
-        )
 
         # Strategy parameters (position sizing handled by Tactician)
         self.min_confidence_threshold: float = (
             self.strategist_config.get("min_confidence_threshold", 0.6)
-        )
 
         # Technical indicator thresholds and strategy type (for profile/reference only)
         tech_cfg = self.strategist_config.get("technical_indicator_thresholds", {})
@@ -92,7 +81,6 @@ class Strategist:
 
         self.strategy_type: str = (
             self.strategist_config.get("strategy_type", "technical_analysis")
-        )
 
         # Component references (will be set during initialization)
         self.analyst: Analyst | None = None
@@ -106,7 +94,6 @@ class Strategist:
         },
         default_return=False,
         context="strategist initialization",
-    )
     async def initialize(self) -> bool:
         """
         Initialize strategist with enhanced error handling.
@@ -134,7 +121,6 @@ class Strategist:
 
     @handles_errors(ValueError, AttributeError, fallback=None,
         context="strategy components initialization",
-    )
     async def _initialize_strategy_components(self) -> None:
         """Initialize strategy components."""
         try:
@@ -186,7 +172,6 @@ class Strategist:
         },
         default_return=None,
         context="strategy generation",
-    )
     async def generate_strategy(
         self,
         market_data: pd.DataFrame,
@@ -269,7 +254,6 @@ class Strategist:
 
     @handles_errors(ValueError, TypeError, fallback={},
         context="market indicators extraction",
-    )
     def _extract_market_indicators(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
         """Extract key market indicators from market data."""
         try:
@@ -283,7 +267,6 @@ class Strategist:
             volatility_window = max(2, int(self.price_volatility_window))
             indicators["price_volatility"] = (
                 market_data["close"].pct_change().rolling(window=volatility_window).std().iloc[-1]
-            )
 
             # Volume indicators
             indicators["volume_ma"] = market_data["volume"].rolling(window=20).mean().iloc[-1]
@@ -308,7 +291,6 @@ class Strategist:
 
     @handles_errors(ValueError, TypeError, fallback=0.0,
         context="RSI calculation",
-    )
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
         """Calculate Relative Strength Index."""
         try:
@@ -325,7 +307,6 @@ class Strategist:
 
     @handles_errors(ValueError, TypeError, fallback={},
         context="base strategy generation",
-    )
     async def _generate_base_strategy(self, indicators: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Generate base trading strategy from market indicators."""
         try:
@@ -410,7 +391,6 @@ class Strategist:
 
     @handles_errors(ValueError, TypeError, fallback={},
         context="risk management application",
-    )
     async def _apply_risk_management(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Apply risk management to strategy."""
         try:
@@ -448,7 +428,6 @@ class Strategist:
 
     @handles_errors(ValueError, TypeError, fallback=None,
         context="strategy results storage",
-    )
     async def _store_strategy_results(self, strategy: dict[str, Any]) -> None:
         """Store strategy results in history."""
         try:
@@ -507,7 +486,6 @@ class Strategist:
 
     @handles_errors(Exception,, fallback=None,
         context="strategist stop",
-    )
     async def stop(self) -> None:
         """Stop the strategist and cleanup resources."""
         try:

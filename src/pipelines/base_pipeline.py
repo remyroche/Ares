@@ -5,7 +5,6 @@ from src.core.decorators import (
     cached,
     handles_errors,
     log_execution_time
-)
 
 from src.core.domain import PerformanceLevel
 
@@ -15,18 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-<<<<<<< HEAD
-=======
-from src.core.decorators import handles_errors, validates, traced, cached, compose
-    PerformanceLevel,
-    handle_errors,
-    handle_specific_errors,
-    memory_efficient,
-    performance_monitor,
-    pipeline_checkpoint,
-    resource_monitor,
-)
->>>>>>> origin/main
+
 from src.utils.logger import system_logger
 
 @dataclass
@@ -105,7 +93,6 @@ class BasePipeline:
         },
         default_return=False,
         context="base_pipeline.initialize",
-    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing BasePipeline ...")
         self.is_running = True

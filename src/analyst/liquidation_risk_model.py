@@ -1,6 +1,10 @@
 # src/analyst/liquidation_risk_model.py
-<<<<<<< HEAD
-from src.core.decorators import handles_errors
+from src.core.decorators import (
+    handles_errors,
+    retry,
+    timeout,
+    validate_data_quality,
+    with_tracing_span
 
 from src.core.domain import handle_specific_errors
 
@@ -8,20 +12,9 @@ from src.utils.logger import system_logger
 from typing import Any
 import pandas as pd
 import logging
-=======
->>>>>>> origin/main
 import datetime as datetime
-import logging
-from typing import Any
 
-import pandas as pd
 
-from src.core.decorators import (
-    validates as validate_data_quality,
-    traced as with_tracing_span,
-)
-from src.core.decorators import handles_errors, retry, timeout
-from src.utils.logger import system_logger
 
 
 class LiquidationRiskModel:
@@ -53,7 +46,6 @@ class LiquidationRiskModel:
         self.safe_leverage_multiplier: float = self.risk_config.get(
             "safe_leverage_multiplier",
             0.8,
-        )
         self.max_leverage: int = self.risk_config.get(
             "max_leverage",
             100,
@@ -85,7 +77,6 @@ class LiquidationRiskModel:
         },
         default_return=False,
         context="liquidation risk model initialization",
-    )
     async def initialize(self) -> bool:
         """
         Initialize Liquidation Risk Model with enhanced error handling.
@@ -114,7 +105,6 @@ class LiquidationRiskModel:
 
     @handles_errors(ValueError, AttributeError, fallback=None,
         context="risk configuration loading",
-    )
     async def _load_risk_configuration(self) -> None:
         """Load risk model configuration."""
         self.logger.info("Loading liquidation risk model configuration...")
@@ -124,7 +114,6 @@ class LiquidationRiskModel:
 
     @handles_errors(ValueError, AttributeError, fallback=False,
         context="configuration validation",
-    )
     def _validate_configuration(self) -> bool:
         """Validate risk model configuration."""
         try:
@@ -158,7 +147,6 @@ class LiquidationRiskModel:
         },
         default_return=None,
         context="liquidation risk calculation",
-    )
     async def calculate_liquidation_risk(
         self, ml_predictions: dict[str, Any], current_price: float, target_direction: str = "long",
     ) -> dict[str, Any]:
@@ -240,14 +228,12 @@ class LiquidationRiskModel:
                     sum(decrease_probs.values()) / len(decrease_probs)
                     if decrease_probs
                     else 0.5
-                )
             else:
                 # For short positions, adverse risk is probability of significant increase
                 adverse_risk = (
                     sum(increase_probs.values()) / len(increase_probs)
                     if increase_probs
                     else 0.5
-                )
 
             # Adjust based on confidence
             if confidence < 0.3:
@@ -290,7 +276,6 @@ class LiquidationRiskModel:
             # Ensure within bounds
             return max(
                 self.min_leverage, min(self.max_leverage, safe_leverage),
-            )
 
         except Exception:
             self.logger.exception("Error calculating safe leverage: {e}")
@@ -419,7 +404,6 @@ class LiquidationRiskModel:
 
     @handles_errors(Exception,, fallback=None,
         context="liquidation risk model cleanup",
-    )
     async def stop(self) -> None:
         """Clean up liquidation risk model resources."""
         try:

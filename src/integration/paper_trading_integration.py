@@ -5,14 +5,12 @@ Paper Trading Integration Module
 Integrates the `PaperTrader` with the `PaperTradingReporter` and provides
 helper methods to execute trades and generate reports in real time.
 """
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, validates as secure_data_processing
 
 from src.core.domain import (
     PerformanceLevel,
     comprehensive_validation,
-    handle_specific_errors,
     performance_monitor
-)
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -29,9 +27,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     invalid,
     warning,
-)
 from src.paper_trader import PaperTrader, setup_paper_trader
-from src.core.decorators import validates as secure_data_processing
 
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
     from src.reports.paper_trading_reporter import PaperTradingReporter
@@ -63,7 +59,6 @@ class PaperTradingIntegration:
         self.enable_detailed_reporting = self.integration_config.get(
             "enable_detailed_reporting",
             True,
-        )
         self.enable_real_time_reporting = self.integration_config.get(
             "enable_real_time_reporting",
             True,
@@ -78,7 +73,6 @@ class PaperTradingIntegration:
         },
         default_return=False,
         context="integration initialization",
-    )
     async def initialize(self) -> bool:
         """
         Initialize paper trading integration with enhanced reporting.
@@ -104,20 +98,17 @@ import os
                     pass  # TODO: Handle exception properly
 
 setup_paper_trading_reporter as _setup_reporter,
-)
 
                     self.reporter = await _setup_reporter(self.config)
                     if not self.reporter:
                         self.logger.warning(
                             "Failed to initialize detailed reporter, continuing without detailed reporting",
-                        )
                         self.enable_detailed_reporting = False
                 except Exception as e:
                     self.logger.warning(
                         warning(
                             f"Detailed reporter unavailable, continuing without it: {e}",
                         ),
-                    )
                     self.enable_detailed_reporting = False
 
             # Validate integration
@@ -132,14 +123,12 @@ setup_paper_trading_reporter as _setup_reporter,
         except Exception as e:
             self.logger.exception(
                 f"❌ Paper Trading Integration initialization failed: {e}",
-            )
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="integration validation",
-    )
     def _validate_integration(self) -> bool:
         """Validate integration components."""
         try:
@@ -153,7 +142,6 @@ setup_paper_trading_reporter as _setup_reporter,
                     warning(
                         "Detailed reporter not initialized; proceeding without detailed reporting",
                     ),
-                )
                 self.enable_detailed_reporting = False
 
             return True
@@ -172,7 +160,6 @@ setup_paper_trading_reporter as _setup_reporter,
         },
         default_return=False,
         context="integrated trade execution",
-    )
     async def execute_trade(
         self,
         symbol: str,
@@ -224,7 +211,6 @@ setup_paper_trading_reporter as _setup_reporter,
                     "risk_metrics": trade_metadata.get("risk_metrics", {}),
                     "notes": trade_metadata.get("notes"),
                 },
-            )
 
             # Execute trade
             side_lower = side.lower()
@@ -234,14 +220,12 @@ setup_paper_trading_reporter as _setup_reporter,
                     quantity=quantity,
                     price=price,
                     timestamp=timestamp,
-                )
             elif side_lower == "sell":
                 success = await self.paper_trader.execute_sell_order(
                     symbol=symbol,
                     quantity=quantity,
                     price=price,
                     timestamp=timestamp,
-                )
             else:
                 self.logger.error(invalid(f"Invalid trade side: {side}"))
                 return False
@@ -249,7 +233,6 @@ setup_paper_trading_reporter as _setup_reporter,
             if success:
                 self.logger.info(
                     f"✅ Integrated trade executed: {side} {quantity} {symbol} @ ${price:.4f}",
-                )
 
                 # Also write to dedicated trades log (optional)
                 try:
@@ -257,7 +240,6 @@ setup_paper_trading_reporter as _setup_reporter,
                     if cl:
                         cl.log_trade(
                             f"{side.upper()} {quantity} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}",
-                        )
                 except Exception:
                     # Trade logging should not affect execution
                     pass
@@ -277,7 +259,6 @@ setup_paper_trading_reporter as _setup_reporter,
         exceptions=(Exception,),
         default_return=None,
         context="real-time report generation",
-    )
     async def _generate_real_time_report(self) -> None:
         """Generate real-time performance report."""
         try:
@@ -293,7 +274,6 @@ setup_paper_trading_reporter as _setup_reporter,
             # Get basic performance metrics
             basic_metrics = (
                 self.paper_trader.calculate_performance() if self.paper_trader else {}
-            )
 
             # Get detailed metrics if reporter is available
             detailed_metrics: dict[str, Any] = {}
@@ -315,7 +295,6 @@ setup_paper_trading_reporter as _setup_reporter,
                         "enable_real_time_reporting": self.enable_real_time_reporting,
                     },
                 },
-            )
 
             return combined_metrics
 
@@ -371,7 +350,6 @@ setup_paper_trading_reporter as _setup_reporter,
                 return await self.reporter.generate_detailed_report(
                     report_type,
                     export_formats,
-                )
             # Fallback to basic report
             return await self._generate_basic_report(report_type, export_formats)
 
@@ -384,7 +362,6 @@ setup_paper_trading_reporter as _setup_reporter,
         exceptions=(Exception,),
         default_return=None,
         context="basic report generation",
-    )
     async def _generate_basic_report(
         self,
         report_type: str,
@@ -444,7 +421,6 @@ setup_paper_trading_reporter as _setup_reporter,
         exceptions=(Exception,),
         default_return=None,
         context="integration cleanup",
-    )
     async def stop(self) -> None:
         """Stop paper trading integration."""
         try:
@@ -466,7 +442,6 @@ setup_paper_trading_reporter as _setup_reporter,
     exceptions=(Exception,),
     default_return=None,
     context="paper trading integration setup",
-)
 async def setup_paper_trading_integration(
     config: dict[str, Any] | None = None,
 ) -> PaperTradingIntegration | None:
@@ -493,5 +468,4 @@ async def setup_paper_trading_integration(
     except Exception as e:
         system_logger.exception(
             error(f"Error setting up paper trading integration: {e}"),
-        )
         return None

@@ -85,7 +85,9 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         # Get models to calibrate
         models = self._get_models_for_validation(pipeline_state)
         
-        # Calibrate each model
+        # Calibrate each model using time-aware CV (TimeSeriesSplit)
+        from sklearn.model_selection import TimeSeriesSplit
+        tscv = TimeSeriesSplit(n_splits=max(2, int(self.calibration_config["cv_folds"])) )
         for model_name, model in models.items():
             if not hasattr(model, 'predict_proba'):
                 self.logger.info(f"Skipping {model_name} - no probability prediction")
@@ -95,7 +97,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             
             # Apply calibration
             calibrated_model, metrics = await self._calibrate_model(
-                model, X_val, y_val, model_name
+                model, X_val, y_val, model_name, tscv
             )
             
             if calibrated_model is not None:
@@ -132,7 +134,8 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         model: Any,
         X: pd.DataFrame,
         y: pd.Series,
-        model_name: str
+        model_name: str,
+        tscv=None
     ) -> Tuple[Optional[Any], Dict[str, float]]:
         """Calibrate a single model.
         
@@ -153,19 +156,25 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             metrics["pre_calibration_brier"] = brier_score_loss(y, y_pred_proba)
             metrics["pre_calibration_log_loss"] = log_loss(y, y_pred_proba)
             
-            # Apply calibration
+            # Apply calibration using time-aware CV
             calibrated = CalibratedClassifierCV(
                 model,
                 method=self.calibration_config["method"],
-                cv=self.calibration_config["cv_folds"]
+                cv=tscv if tscv is not None else self.calibration_config["cv_folds"]
             )
             
             calibrated.fit(X, y)
             
             # Calculate post-calibration metrics
-            y_cal_proba = calibrated.predict_proba(X)[:, 1]
-            metrics["post_calibration_brier"] = brier_score_loss(y, y_cal_proba)
-            metrics["post_calibration_log_loss"] = log_loss(y, y_cal_proba)
+            # Evaluate on a holdout tail slice to avoid train reuse
+            holdout_frac = 0.2
+            n = len(X)
+            split_idx = int(n * (1.0 - holdout_frac))
+            X_holdout = X.iloc[split_idx:]
+            y_holdout = y.iloc[split_idx:]
+            y_cal_proba = calibrated.predict_proba(X_holdout)[:, 1]
+            metrics["post_calibration_brier"] = brier_score_loss(y_holdout, y_cal_proba)
+            metrics["post_calibration_log_loss"] = log_loss(y_holdout, y_cal_proba)
             
             # Calculate improvement
             metrics["brier_improvement"] = (

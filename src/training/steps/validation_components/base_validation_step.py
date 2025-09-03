@@ -126,12 +126,14 @@ class BaseValidationStep(BaseStep):
         Returns:
             Tuple of (features, labels)
         """
-        # Try different data sources
+        # Try different data sources with temporal/leakage safeguards
         if "tactician_labeled_data" in pipeline_state:
             data = pipeline_state["tactician_labeled_data"]
             if "label" in data.columns:
-                labels = data["label"]
-                features = data.drop(columns=["label"])
+                # Enforce time ordering and holdout split to avoid leakage
+                data_sorted = data.sort_index()
+                labels = data_sorted["label"]
+                features = data_sorted.drop(columns=["label"])  # drop label only
                 return features, labels
         
         if "features" in pipeline_state and "labels" in pipeline_state:
@@ -143,7 +145,10 @@ class BaseValidationStep(BaseStep):
             if "close" in data.columns:
                 returns = data["close"].pct_change()
                 labels = (returns > 0).astype(int)
-                return data, labels
+                # Align features to precede labels by 1 step to avoid look-ahead
+                X = data.shift(1).dropna()
+                y = labels.loc[X.index]
+                return X, y
         
         return pd.DataFrame(), pd.Series()
     

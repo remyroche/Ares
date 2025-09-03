@@ -239,6 +239,7 @@ class FullyMigratedTactician:
                     "timeframe": timeframe,
                     "generation_timestamp": datetime.now().isoformat(),
                     "model_type": "fully_migrated_tactician",
+                    "active_tactician_path": "fully_migrated_scenario_tactician",
                     "analyst_confidence": analyst_confidence,
                     "n_scenarios": len(self.scenario_predictor.scenarios),
                 },

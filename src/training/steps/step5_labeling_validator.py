@@ -17,6 +17,7 @@ from src.utils.enhanced_validation_decorators import (
     validate_step5_comprehensive,
     smart_validation_cache
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step5LabelingValidator")
 
@@ -156,8 +157,7 @@ class Step5LabelingValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_file)
 
             # Check if metadata is a dictionary
             if not isinstance(metadata, dict):

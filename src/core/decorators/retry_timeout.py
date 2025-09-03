@@ -12,7 +12,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Set, Type, Union
+from typing import Any, Callable, Dict, Optional, Set, Type, Union, List
 
 from ..errors.base import TimeoutError as AppTimeoutError, ServiceUnavailableError
 from .compose import uniform_wrapper, P, R

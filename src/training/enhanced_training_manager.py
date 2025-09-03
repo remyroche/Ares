@@ -17,6 +17,12 @@ import pandas as pd
 import psutil
 import asyncio
 
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_json_dump, safe_json_load, safe_read_parquet, safe_to_parquet,
+    generate_cache_key, safe_copy
+)
+
 # Optional dependency: pyarrow is used for efficient parquet streaming; import lazily in methods
 try:
     import pyarrow.parquet as pq  # type: ignore
@@ -593,7 +599,7 @@ class EnhancedTrainingManager:
 
         try:
             checkpoint_data = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "current_step": step_name,
                 "pipeline_state": pipeline_state,
                 "training_mode": "blank" if self.blank_training_mode else "full",
@@ -1230,7 +1236,7 @@ class EnhancedTrainingManager:
             )
             self.logger.info("=" * 80)
             self.logger.info(
-                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
             )
             self.logger.info(
                 f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
@@ -1247,7 +1253,7 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 N Trials: {self.n_trials}")
 
             # Initialize enhanced reporting
-            self.current_pipeline_execution_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
+            self.current_pipeline_execution_id = f"pipeline_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
             self.step_reports = {}
 
             self.is_training = True
@@ -1271,7 +1277,7 @@ class EnhancedTrainingManager:
                 )
                 self.logger.info("=" * 80)
                 self.logger.info(
-                    f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    f"📅 Completed at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
                 )
                 self.logger.info(
                     f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
@@ -1479,7 +1485,7 @@ class EnhancedTrainingManager:
             self.logger.info("🚀 COMPREHENSIVE 15-STEP TRAINING PIPELINE START")
             self.logger.info("=" * 100)
             self.logger.info(
-                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
             )
             self.logger.info(f"🎯 Symbol: {symbol}")
             self.logger.info(f"🏢 Exchange: {exchange}")
@@ -3386,7 +3392,7 @@ class EnhancedTrainingManager:
                 )
                 self.logger.info("=" * 100)
                 self.logger.info(
-                    f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    f"📅 Completed at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
                 )
                 self.logger.info(
                     f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)",
@@ -4290,7 +4296,7 @@ class EnhancedTrainingManager:
         try:
             # Add to training history
             history_entry = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "training_input": enhanced_training_input,
                 "results": self.enhanced_training_results,
             }
@@ -4322,7 +4328,7 @@ class EnhancedTrainingManager:
 
             # Store results in a format that can be retrieved later
             results_key = (
-                f"enhanced_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                f"enhanced_training_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}"
             )
 
             # This would typically store to database or file system
@@ -4689,7 +4695,7 @@ class EnhancedTrainingManager:
                     / len(features_df.columns)
                     * 100
                 ),
-                "selection_timestamp": datetime.now().isoformat(),
+                "selection_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "selection_config": selection_tiers,
             }
 
@@ -5491,7 +5497,7 @@ import os.path
                 "errors": step_errors or [],
                 "warnings": step_warnings or [],
                 "system_resources": await self._get_system_resources(),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
             }
             
             # Load existing shared report or create new one

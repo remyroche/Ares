@@ -23,6 +23,10 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_copy, safe_fillna, safe_read_parquet, safe_to_parquet
+)
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
@@ -177,11 +181,11 @@ class VectorizedLabellingOrchestrator:
     def _log_feature_sample(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
         try:
             ensure_directory("log/features_samples")
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}.log"
             # Merge raw/returns for visibility when available
-            sample = df.copy()
+            sample = safe_copy(df)
             if self._debug_raw_ohlcv is not None:
                 for c in ["open", "high", "low", "close", "volume"]:
                     if c in self._debug_raw_ohlcv.columns and c not in sample.columns:
@@ -373,7 +377,7 @@ class VectorizedLabellingOrchestrator:
 
             # Capture raw and returns for logging
             try:
-                self._debug_raw_ohlcv = price_data[["open", "high", "low", "close", "volume"]].copy()  # noqa: E501
+                self._debug_raw_ohlcv = safe_copy(price_data[["open", "high", "low", "close", "volume"]])  # noqa: E501
             except Exception:
                 self._debug_raw_ohlcv = None
             try:
@@ -1246,11 +1250,11 @@ class VectorizedLabellingOrchestrator:
             output_dir = "data/vectorized_features"
             ensure_directory(output_dir)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             filename = f"vectorized_features_{timestamp}.parquet"
             filepath = os.path.join(output_dir, filename)
 
-            data.to_parquet(filepath, index=True, compression="snappy")
+            safe_to_parquet(data, filepath, index=True, compression="snappy")
             self.logger.info(f"💾 Data saved as Parquet: {filepath}")
         except Exception as e:
             self.logger.exception(f"Error saving data as Parquet: {e}")
@@ -1258,7 +1262,7 @@ class VectorizedLabellingOrchestrator:
     def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
         try:
             ensure_directory("log/features_samples")
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Features.txt"
             total = len(features)
@@ -1302,7 +1306,7 @@ class VectorizedLabellingOrchestrator:
     def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
         try:
             ensure_directory("log/features_samples")
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Columns.txt"
             cols = df.columns.tolist()
@@ -1509,7 +1513,7 @@ class VectorizedLabellingOrchestrator:
     def _log_feature_format_report(self, stage: str, report: dict[str, Any], step_no: str) -> None:
         try:
             ensure_directory("log/features_samples")
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_FormatReport.json"
             with open(fname, "w") as f:
@@ -1601,8 +1605,7 @@ class VectorizedLabellingOrchestrator:
                 return
 
             ensure_directory("log/mi")
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
+            ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
             meta_label_cols: list[str] = [
                 c
                 for c in df.columns

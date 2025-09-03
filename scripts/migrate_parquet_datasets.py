@@ -41,6 +41,11 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from src.utils.logger import system_logger  # noqa: E402
+from src.utils.common_operations import (  # noqa: E402
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_read_parquet, safe_to_parquet, list_parquet_files,
+    format_bytes
+)
 from src.training.enhanced_training_manager_optimized import (  # noqa: E402
     ParquetDatasetManager,
 )
@@ -107,7 +112,7 @@ class EnhancedParquetManager:
     def analyze_partitions(self) -> Dict[str, Any]:
         """Analyze all partitioned datasets in the data cache."""
         results: Dict[str, Any] = {
-            "analysis_timestamp": datetime.now().isoformat(),
+            "analysis_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
             "datasets": {},
             "summary": {
                 "total_datasets": 0,

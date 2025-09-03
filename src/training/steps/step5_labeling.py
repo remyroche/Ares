@@ -22,6 +22,9 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -242,8 +245,7 @@ class LabelingStep:
                 return False
 
             # Save results under standardized labeled_data directory
-            labeled_dir = Path(data_dir) / "training" / "labeled_data"
-            labeled_dir.mkdir(parents=True, exist_ok=True)
+            labeled_dir = ensure_directory(Path(data_dir) / "training" / "labeled_data")
             output_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
             
             labeled_data.to_parquet(output_path)
@@ -262,9 +264,7 @@ class LabelingStep:
                 "labeling_config": self.config.get("labeling", {})
             }
             
-            import json
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+            safe_json_dump(metadata, metadata_path, indent=2)
             
             self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 

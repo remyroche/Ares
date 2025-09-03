@@ -16,6 +16,7 @@ import pandas as pd
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
@@ -113,8 +114,7 @@ async def run_validator(
 				# Validate JSON metadata
 				elif artifact.endswith(".json"):
 					try:
-						with open(artifact_path) as f:
-							meta = json.load(f)
+						meta = safe_json_load(artifact_path)
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields

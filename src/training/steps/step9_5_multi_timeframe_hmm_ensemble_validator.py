@@ -17,6 +17,7 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.validator_base import BaseValidator
 import asyncio
+from src.utils.common_operations import safe_json_load
 
 
 class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
@@ -89,8 +90,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             metadata_path = models_dir / "ensemble_metadata.json"
             if metadata_path.exists():
                 try:
-                    with open(metadata_path, 'r') as f:
-                        metadata = json.load(f)
+                    metadata = safe_json_load(metadata_path)
                     
                     # Validate metadata structure
                     required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]
@@ -260,8 +260,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             for tf in found_timeframes:
                 rf_file = rf_dir / f"{exchange}_{symbol}_{tf}_regime_forecasting.json"
                 try:
-                    with open(rf_file, 'r') as f:
-                        rf_data = json.load(f)
+                    rf_data = safe_json_load(rf_file)
                     
                     # Check required keys
                     required_keys = ["timeframe", "current_regime", "next_regime_probabilities"]
@@ -350,8 +349,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             
             if metadata_path.exists():
                 try:
-                    with open(metadata_path, 'r') as f:
-                        metadata = json.load(f)
+                    metadata = safe_json_load(metadata_path)
                     
                     # Check training time
                     training_time = metadata.get("training_time", 0)

@@ -17,6 +17,7 @@ sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
+from src.utils.common_operations import safe_json_load
 
 
 class Step12FinalParametersOptimizationValidator(BaseValidator):
@@ -163,10 +164,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             results_file = f"{data_dir}/{exchange}_{symbol}_optimization_results.json"
 
             if os.path.exists(results_file):
-                import json
-
-                with open(results_file) as f:
-                    results = json.load(f)
+                results = safe_json_load(results_file)
 
                 # Check optimization objective value
                 if "best_objective_value" in results:
@@ -227,10 +225,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             history_file = f"{data_dir}/{exchange}_{symbol}_optimization_history.json"
 
             if os.path.exists(history_file):
-                import json
-
-                with open(history_file) as f:
-                    history = json.load(f)
+                history = safe_json_load(history_file)
 
                 # Check number of iterations
                 if "iterations" in history:
@@ -313,10 +308,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             params_file = f"{data_dir}/{exchange}_{symbol}_optimized_parameters.json"
 
             if os.path.exists(params_file):
-                import json
-
-                with open(params_file) as f:
-                    params = json.load(f)
+                params = safe_json_load(params_file)
 
                 # Check parameter count
                 param_count = len(params)

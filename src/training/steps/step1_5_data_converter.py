@@ -608,7 +608,7 @@ class ParquetDatasetManager:
 		auto_add_date_columns: bool = True,
 	) -> None:
 		self._ensure_pyarrow()
-		os.makedirs(base_dir, exist_ok=True)
+		ensure_directory(base_dir)
 
 		if min_rows_per_group >= max_rows_per_file:
 			min_rows_per_group = max(1000, max_rows_per_file // 10)
@@ -831,7 +831,7 @@ class ParquetDatasetManager:
 		metadata: Optional[dict[str, Any]] = None,
 	) -> None:
 		self._ensure_pyarrow()
-		os.makedirs(os.path.dirname(file_path), exist_ok=True)
+		ensure_directory(os.path.dirname(file_path))
 		if schema_name:
 			df = self.enforce_schema(df, schema_name)
 		table = pa.Table.from_pandas(df, preserve_index=False)
@@ -881,9 +881,7 @@ class ParquetDatasetManager:
 										latest_ts = candidate if latest_ts is None else max(latest_ts, candidate)
 			manifest["file_count"] = file_count
 			manifest["latest_timestamp"] = latest_ts
-			import json
-			with open(manifest_path, "w") as f:
-				json.dump(manifest, f, indent=2, default=str)
+			safe_json_dump(manifest, manifest_path, indent=2, default=str)
 			if self.logger:
 				self.logger.info(f"Updated manifest: {manifest_path}")
 		except Exception as e:
@@ -894,9 +892,7 @@ class ParquetDatasetManager:
 		try:
 			manifest_path = os.path.join(base_dir, "_manifest.json")
 			if os.path.exists(manifest_path):
-				import json
-				with open(manifest_path) as f:
-					manifest = json.load(f)
+				manifest = safe_json_load(manifest_path)
 				return manifest.get("latest_timestamp")
 		except Exception:
 			return None
@@ -919,8 +915,8 @@ class UnifiedDataConverter:
 		self.data_cache_dir = "data_cache"
 		self.unified_dir = os.path.join(self.data_cache_dir, "unified")
 		self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
-		os.makedirs(self.unified_dir, exist_ok=True)
-		os.makedirs(self.backup_dir, exist_ok=True)
+		ensure_directory(self.unified_dir)
+		ensure_directory(self.backup_dir)
 	
 	def _validate_environment(self) -> None:
 		"""Validate environment dependencies."""
@@ -952,8 +948,8 @@ class UnifiedDataConverter:
 			self.data_cache_dir = self.standards.build_path("raw_data", exchange, symbol)
 			self.unified_dir = self.standards.build_path("unified_data", exchange, symbol)
 			self.backup_dir = self.standards.build_path("backup", exchange, symbol)
-			os.makedirs(self.unified_dir, exist_ok=True)
-			os.makedirs(self.backup_dir, exist_ok=True)
+			ensure_directory(self.unified_dir)
+			ensure_directory(self.backup_dir)
 
 			self.logger.info("=" * 80)
 			self.logger.info("🔄 STEP 1.5: Unified Data Converter")
@@ -1181,7 +1177,7 @@ class UnifiedDataConverter:
 				self.logger.info(f"📅 Processing {total_days} days from {min_date} to {max_date}")
 
 			base_dir = os.path.join(self.unified_dir, exchange.lower(), symbol, timeframe)
-			os.makedirs(base_dir, exist_ok=True)
+			ensure_directory(base_dir)
 
 			processed_days = 0
 			total_rows_processed = 0
@@ -1423,7 +1419,7 @@ class UnifiedDataConverter:
 				f"month={partition_month:02d}",
 				f"day={partition_day:02d}",
 			)
-			os.makedirs(partition_path, exist_ok=True)
+			ensure_directory(partition_path)
 			file_path = os.path.join(partition_path, "part-0.parquet")
 			daily_data.to_parquet(file_path, compression="snappy", index=False)
 			return True
@@ -1446,9 +1442,7 @@ class UnifiedDataConverter:
 				"created_at": datetime.now(UTC).isoformat(),
 			}
 			config_path = os.path.join(self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
-			import json
-			with open(config_path, "w") as f:
-				json.dump(future_config, f, indent=2)
+			safe_json_dump(future_config, config_path, indent=2)
 			self.logger.info(f"✅ Future infrastructure config saved to: {config_path}")
 			return True
 		except Exception as e:

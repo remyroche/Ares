@@ -18,6 +18,7 @@ from src.utils.enhanced_validation_decorators import (
     validate_step3_5_comprehensive,
     smart_validation_cache
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step3_5FinalRegimeClusteringValidator")
 
@@ -167,8 +168,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(analysis_report, 'r') as f:
-                report_data = json.load(f)
+            report_data = safe_json_load(analysis_report)
 
             # Check required fields
             required_fields = ["regime_count", "clustering_metrics", "regime_analysis"]
@@ -219,8 +219,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(characteristics_file, 'r') as f:
-                characteristics_data = json.load(f)
+            characteristics_data = safe_json_load(characteristics_file)
 
             # Check if it's a dictionary
             if not isinstance(characteristics_data, dict):

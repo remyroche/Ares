@@ -50,19 +50,8 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
+from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 
-
-from src.utils.enhanced_mlflow_integration import (
-import copy
-import os.path
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
@@ -506,18 +495,16 @@ class RegimeSpecificMultiTimeframeEnsemble:
             for regime, ensemble in self.regime_ensembles.items():
                 if ensemble:
                     regime_save_path = f"{data_dir}/regime_ensembles/{symbol}/regime_{regime}"
-                    os.makedirs(regime_save_path, exist_ok=True)
+                    ensure_directory(regime_save_path)
                     
                     # Save ensemble configuration
                     ensemble_config_path = f"{regime_save_path}/ensemble_config.json"
-                    with open(ensemble_config_path, 'w') as f:
-                        json.dump(ensemble, f, indent=2, default=str)
+                    safe_json_dump(ensemble, ensemble_config_path, indent=2, default=str)
                     
                     # Save validation results
                     if regime in self.regime_validation_results:
                         validation_path = f"{regime_save_path}/validation_results.json"
-                        with open(validation_path, 'w') as f:
-                            json.dump(self.regime_validation_results[regime], f, indent=2, default=str)
+                        safe_json_dump(self.regime_validation_results[regime], validation_path, indent=2, default=str)
                     
                     self.logger.info(f"✅ Saved regime {regime} ensemble to {regime_save_path}")
                     
@@ -683,8 +670,7 @@ async def run_step(
             
             if os.path.exists(rf_path):
                 try:
-                    with open(rf_path, 'r') as f:
-                        rf_data = json.load(f)
+                    rf_data = safe_json_load(rf_path)
                     
                     # Convert to DataFrame format expected by ensemble
                     # Create a simple DataFrame with regime data
@@ -829,8 +815,7 @@ async def validate_step(
         # Load and validate ensemble metadata
         metadata_path = os.path.join(models_dir, "ensemble_metadata.json")
         try:
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_path)
             
             # Validate metadata structure
             required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]

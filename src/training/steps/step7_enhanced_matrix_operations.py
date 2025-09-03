@@ -16,6 +16,9 @@ project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -122,8 +125,7 @@ class Step7EnhancedMatrixOperations:
         
         # Step-specific configuration
         self.step_config = config.get("step7_enhanced_matrix_operations", {})
-        self.output_dir = Path(self.step_config.get("output_dir", "data/matrix_operations"))
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = ensure_directory(self.step_config.get("output_dir", "data/matrix_operations"))
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -1594,20 +1596,17 @@ class Step7EnhancedMatrixOperations:
         
         # Save configuration
         config_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
-        with open(config_file, 'w') as f:
-            json.dump(config, f, indent=2, default=str)
+        safe_json_dump(config, config_file, indent=2, default=str)
         output_files["config"] = str(config_file)
         
         # Save results
         results_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
-        with open(results_file, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+        safe_json_dump(results, results_file, indent=2, default=str)
         output_files["results"] = str(results_file)
         
         # Save quality metrics
         quality_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_quality_metrics.json"
-        with open(quality_file, 'w') as f:
-            json.dump(quality_metrics, f, indent=2, default=str)
+        safe_json_dump(quality_metrics, quality_file, indent=2, default=str)
         output_files["quality_metrics"] = str(quality_file)
         
         # Generate and save detailed quality report
@@ -1639,8 +1638,7 @@ class Step7EnhancedMatrixOperations:
         }
         
         summary_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
-        with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2, default=str)
+        safe_json_dump(summary, summary_file, indent=2, default=str)
         output_files["summary"] = str(summary_file)
         
         self.logger.info(f"💾 Saved matrix operations results to {self.output_dir}")

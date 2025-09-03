@@ -26,10 +26,7 @@ A focused tool specifically for function-related validation:
 ### 3. Runner Script (`run_validation.py`)
 A convenient wrapper that runs both tools with easy configuration.
 
-### 4. Test Suite (`tests/`)
-Comprehensive unit tests for code quality utilities:
-- **test_common_operations.py** - 90+ tests for common_operations module
-- Run with: `python code_quality/run_common_operations_tests.py`
+
 
 ## Installation
 
@@ -44,7 +41,13 @@ pip install astroid mypy bandit
 
 ### Quick Start
 
-Run both validation tools on the current directory:
+Run comprehensive code quality checks using the unified pipeline:
+```bash
+cd /workspace/code_quality/pipelines
+python pipeline_unified_enhanced.py --project-root /workspace/src
+```
+
+Or run the basic validation tools:
 ```bash
 python code_quality/run_validation.py
 ```

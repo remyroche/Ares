@@ -19,7 +19,8 @@ import pandas as pd
 import pywt
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import warning
+from src.utils.warning_symbols import warning, initialization_error
+from src.core.decorators import handles_errors
 
 
 @dataclass
@@ -106,21 +107,17 @@ class LiveWaveletAnalyzer:
             return True
 
         except Exception:
-            self.print(
-                initialization_error(
-                    "❌ Error initializing Live Wavelet Analyzer: {e}",
-                ),
-            )
+            self.logger.error(initialization_error("❌ Error initializing Live Wavelet Analyzer"))
             return False
 
     def _validate_config(self) -> None:
         """Validate configuration parameters."""
         if self.max_computation_time > 0.5:
-            self.print(warning("Max computation time too high for live trading"))
+            self.logger.warning(warning("Max computation time too high for live trading"))
             self.max_computation_time = 0.1
 
         if self.sliding_window_size > 512:
-            self.print(warning("Sliding window too large for live trading"))
+            self.logger.warning(warning("Sliding window too large for live trading"))
             self.sliding_window_size = 256
 
         # Ensure window size is power of 2 for efficient wavelet computation

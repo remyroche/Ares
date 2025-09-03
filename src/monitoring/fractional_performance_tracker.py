@@ -10,6 +10,7 @@ from src.config.fractional_implementations_config import FractionalImplementatio
 from src.utils.logger import get_logger
 from copy import copy
 
+
 class FractionalPerformanceTracker:
     """Comprehensive performance tracking for fractional implementations."""
 

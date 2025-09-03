@@ -5,8 +5,10 @@ This module now uses the new modular configuration structure.
 """
 from dataclasses import dataclass
 from typing import Any
+
 from copy import copy
 import asyncio
+
 from src.config.environment import get_env_settings, get_environment_settings
 from src.config.modular_config import CONFIG, AresConfig, get_complete_config, get_dual_model_config, get_enhanced_training_config, get_environment_config, get_leverage_sizing_config, get_lookback_window, get_ml_confidence_predictor_config, get_position_closing_config, get_position_division_config, get_position_monitoring_config, get_position_sizing_config, get_system_config_section, get_trading_config_section, get_training_config_section
 from src.utils.logger import system_logger

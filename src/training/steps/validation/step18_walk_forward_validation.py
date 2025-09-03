@@ -9,7 +9,9 @@ from datetime import datetime
 from typing import Any, Dict
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import validation_error
+from src.utils.warning_symbols import (
+    validation_error,
+)
 from src.core.domain import ParquetDatasetManager
 from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
@@ -191,9 +193,15 @@ from src.utils.enhanced_mlflow_integration import (
         "required_columns": ["timestamp", "features", "targets"],
     },
     context="Walk Forward Validation",
+    backup_before=True, 
+    integrity_checks=True, 
+    memory_cleanup=True, 
+    data_validation=True,
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True,
 )
-# @secure_data_processing - removed, handled by validates
-# @prevent_data_leakage - removed, handled by validates
 @log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
@@ -224,8 +232,10 @@ from src.utils.enhanced_mlflow_integration import (
     },
     performance_thresholds={"validation_time_minutes": 120.0, "memory_usage_gb": 8.0},
     format_validation=True,
+    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"wfv_score": 0.6},
 )
-# @quality_gate - removed, handled by validates
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

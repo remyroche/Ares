@@ -262,7 +262,37 @@ class DecisionPolicy:
             action = self._determine_action(sizing_decision, leverage_decision, sr_decision, ml_decision)
             if not action:
                 return None
-            return TradeDecision(action=action, confidence=combined_confidence, position_size=sizing_decision.get('position_size', 0.0) if sizing_decision else 0.0, leverage=leverage_decision.get('leverage', 1.0) if leverage_decision else 1.0, price=sr_decision.get('breakout_price') if sr_decision else None, metadata={'analyst_confidence': analyst_confidence, 'tactician_confidence': tactician_confidence, 'sizing_decision': sizing_decision, 'leverage_decision': leverage_decision, 'sr_decision': sr_decision, 'ml_decision': ml_decision, 'timestamp': datetime.now().isoformat()})
+
+            # Create trade decision
+            return TradeDecision(
+                action=action,
+                confidence=combined_confidence,
+                position_size=(
+                    sizing_decision.get("position_size", 0.0)
+                    if sizing_decision
+                    else 0.0
+                ),
+                leverage=(
+                    leverage_decision.get("leverage", 1.0) if leverage_decision else 1.0
+                ),
+                price=sr_decision.get("breakout_price") if sr_decision else None,
+                metadata={
+                    "analyst_confidence": analyst_confidence,
+                    "tactician_confidence": tactician_confidence,
+                    "sizing_decision": sizing_decision,
+                    "leverage_decision": leverage_decision,
+                    "sr_decision": sr_decision,
+                    "ml_decision": ml_decision,
+                    # Clarify active tactician path in production
+                    # If FullyMigratedTactician is used upstream, this flag can be set in config
+                    "active_tactician_path": self.config.get(
+                        "active_tactician_path",
+                        "ml_tactics_manager",  # default to specialist/ML tactics path
+                    ),
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+
         except Exception as e:
             self.logger.exception(failed(f'❌ Decision aggregation failed: {e}'))
             return None

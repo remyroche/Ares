@@ -174,7 +174,12 @@ class MainSupervisor:
     @handles_errors(error_handlers={ValueError: (False, 'Invalid main supervisor configuration'), AttributeError: (False, 'Missing required main supervisor parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='main supervisor initialization')
     async def initialize(self) -> bool:
         try:
-            self.logger.info('Initializing Main Supervisor...')
+            self.logger.info("Initializing Main Supervisor...")
+            
+            # Load optimized S/R parameters from step 2.5
+            self.logger.info("Loading optimized S/R parameters...")
+            initialize_sr_parameters(self.config)
+            
             await self._load_supervisor_configuration()
             if not self._validate_configuration():
                 self.logger.error('Invalid configuration for main supervisor')

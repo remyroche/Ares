@@ -231,6 +231,7 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="directory initialization",
+    )
     async def _initialize_directories(self) -> None:
         """Initialize directories."""
         # Create models directory
@@ -251,6 +252,7 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="existing models loading",
+    )
     async def _load_existing_models(self) -> None:
         """Load existing models and metadata."""
         # Load metadata if exists
@@ -272,6 +274,7 @@ class ModelManager:
         supported_formats: list[str] = self.model_config.get(
             "supported_formats",
             [".joblib", ".pkl", ".h5"],
+        )
         if os.path.isdir(self.models_dir):
             for file in os.listdir(self.models_dir):
                 if any(file.endswith(fmt) for fmt in supported_formats):
@@ -300,6 +303,7 @@ class ModelManager:
         },
         default_return=False,
         context="model registration",
+    )
     async def register_model(
         self,
         model_name: str,
@@ -364,6 +368,7 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model loading",
+    )
     async def load_model(self, model_name: str) -> Any | None:
         """
         Load a model.
@@ -402,6 +407,7 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="model saving",
+    )
     async def save_model(
         self,
         model: Any,

@@ -82,12 +82,17 @@ class BinanceExchange:
         await self._initialize_connection()
 
         self.logger.info(
-            "✅ Binance Exchange initialization completed successfully",
+            "✅ Binance Exchange initialization completed successfully"
         )
         return True
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
-        context="exchange configuration loading",
+    @handles_errors(
+        error_handlers={
+            ValueError: (None, "Invalid exchange configuration"),
+            AttributeError: (None, "Missing exchange attributes")
+        },
+        default_return=None,
+        context="exchange configuration loading"
     )
     async def _load_exchange_configuration(self) -> None:
         """Load exchange configuration."""
@@ -108,8 +113,13 @@ class BinanceExchange:
 
         self.logger.info("Exchange configuration loaded successfully")
 
-    @handles_errors(ValueError, AttributeError, fallback=False,
-        context="configuration validation",
+    @handles_errors(
+        error_handlers={
+            ValueError: (False, "Invalid configuration values"),
+            AttributeError: (False, "Missing configuration attributes")
+        },
+        default_return=False,
+        context="configuration validation"
     )
     def _validate_configuration(self) -> bool:
         """
@@ -150,7 +160,7 @@ class BinanceExchange:
         try:
             # Create session
             self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
             )
 
             # Test connection
@@ -158,7 +168,7 @@ class BinanceExchange:
             if server_time:
                 self.is_connected = True
                 self.logger.info(
-                    f"Connected to Binance API (Server time: {server_time})",
+                    f"Connected to Binance API (Server time: {server_time})"
                 )
                 return True
             self.print(failed("Failed to connect to Binance API"))
@@ -172,7 +182,6 @@ class BinanceExchange:
         max_retries=3,
         default_return=None,
     )
-
     async def _get_server_time(self) -> int | None:
         """
         Get server time from Binance.

@@ -198,16 +198,7 @@ class ConfigurationManager:
             100,
         )
 
-    @handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid configuration manager configuration"),
-            AttributeError: (
-                False, "Missing required configuration manager parameters",
-            ),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False, context="configuration manager initialization",
-    )
+    @handles_errors(error_handlers={ ValueError: (False, "Invalid configuration manager configuration"), AttributeError: ( False, "Missing required configuration manager parameters", ), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="configuration manager initialization", )
     async def initialize(self) -> bool:
         """
         Initialize configuration manager.
@@ -252,9 +243,7 @@ class ConfigurationManager:
             )
             return False
 
-    @handles_errors
-        default_return=None, context="config manager configuration loading",
-    )
+    @handles_errors(default_return=None, context="config manager configuration loading", )
     async def _load_config_manager_configuration(self) -> None:
         """Load configuration manager specific configuration."""
         try:
@@ -272,9 +261,7 @@ class ConfigurationManager:
             )
             raise
 
-    @handles_errors
-        default_return=False, context="configuration validation",
-    )
+    @handles_errors(default_return=False, context="configuration validation", )
 
     def _validate_configuration(self) -> bool:
         """
@@ -300,9 +287,7 @@ class ConfigurationManager:
             )
             return False
 
-    @handles_errors
-        default_return=None, context="config sections initialization",
-    )
+    @handles_errors(default_return=None, context="config sections initialization", )
     async def _initialize_config_sections(self) -> None:
         """Initialize configuration sections."""
         try:
@@ -322,9 +307,7 @@ class ConfigurationManager:
             )
             raise
 
-    @handles_errors
-        default_return=None, context="config service initialization",
-    )
+    @handles_errors(default_return=None, context="config service initialization", )
     async def _initialize_config_service(self) -> None:
         """Initialize configuration service."""
         try:
@@ -335,12 +318,7 @@ class ConfigurationManager:
             self.print(failed("❌ Failed to initialize configuration service: {e}"))
             raise
 
-    @handles_errors(
-        error_handlers={
-            Exception: (False, "Configuration manager run failed"),
-        },
-        default_return=False, context="configuration manager run",
-    )
+    @handles_errors(error_handlers={ Exception: (False, "Configuration manager run failed"), }, default_return=False, context="configuration manager run", )
     async def run(self) -> bool:
         """
         Run the configuration manager.
@@ -367,9 +345,7 @@ class ConfigurationManager:
             self.print(failed("❌ Configuration Manager run failed: {e}"))
             return False
 
-    @handles_errors
-        default_return=None, context="configuration update",
-    )
+    @handles_errors(default_return=None, context="configuration update", )
     async def _update_configuration(self) -> None:
         """Update configuration."""
         try:
@@ -392,9 +368,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to update configuration: {e}"))
 
-    @handles_errors
-        default_return=None, context="configuration reload",
-    )
+    @handles_errors(default_return=None, context="configuration reload", )
     async def _reload_configuration(self) -> None:
         """Reload configuration."""
         try:
@@ -406,9 +380,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to reload configuration: {e}"))
 
-    @handles_errors
-        default_return=None, context="configuration sections validation",
-    )
+    @handles_errors(default_return=None, context="configuration sections validation", )
     async def _validate_configuration_sections(self) -> None:
         """Validate configuration sections."""
         try:
@@ -426,9 +398,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to validate configuration sections: {e}"))
 
-    @handles_errors
-        default_return=None, context="config service update",
-    )
+    @handles_errors(default_return=None, context="config service update", )
     async def _update_config_service(self) -> None:
         """Update configuration service."""
         try:
@@ -438,9 +408,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to update configuration service: {e}"))
 
-    @handles_errors
-        default_return=None, context="configuration manager stop",
-    )
+    @handles_errors(default_return=None, context="configuration manager stop", )
     async def stop(self) -> None:
         """Stop the configuration manager and cleanup resources."""
         try:
@@ -511,9 +479,7 @@ class ConfigurationManager:
         return get_complete_config()
 
 # Legacy setup function
-@handles_errors
-    default_return=None, context="configuration manager setup",
-)
+@handles_errors(default_return=None, context="configuration manager setup", )
 async def setup_configuration_manager(
     config: dict[str, Any] | None=None,
 ) -> ConfigurationManager | None:

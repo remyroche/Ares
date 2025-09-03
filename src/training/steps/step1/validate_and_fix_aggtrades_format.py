@@ -100,21 +100,7 @@ class AggtradesFormatValidator:
 
     @validates()
     @traced(span_name="validate_file_format")
-    @handles_errors
-        default_return={
-            "valid": False,
-            "issues": ["Validation failed"],
-            "warnings": [],
-            "file_size": 0,
-            "row_count": 0,
-            "memory_usage_mb": 0.0,
-            "step1_5_compatible": False,
-            "step2_compatible": False,
-            "step3_compatible": False,
-            "step4_compatible": False,
-        },
-        context="aggtrades_format_validator.validate_file_format"
-    )
+    @handles_errors(default_return={ "valid": False, "issues": ["Validation failed"], "warnings": [], "file_size": 0, "row_count": 0, "memory_usage_mb": 0.0, "step1_5_compatible": False, "step2_compatible": False, "step3_compatible": False, "step4_compatible": False, }, context="aggtrades_format_validator.validate_file_format" )
     def validate_file_format(self, file_path: Path) -> Dict[str, Any]:
         """Validate a single aggtrades file format for pipeline compatibility.
 
@@ -435,16 +421,7 @@ class AggtradesFormatValidator:
             return False
 
     @traced(span_name="validate_all_aggtrades")
-    @handles_errors
-        default_return={
-            "total_files": 0,
-            "valid_files": 0,
-            "invalid_files": 0,
-            "fixed_files": 0,
-            "errors": [],
-        },
-        context="aggtrades_format_validator.validate_all_aggtrades"
-    )
+    @handles_errors(default_return={ "total_files": 0, "valid_files": 0, "invalid_files": 0, "fixed_files": 0, "errors": [], }, context="aggtrades_format_validator.validate_all_aggtrades" )
     def validate_all_aggtrades(
         self, symbol: str, exchange: str, auto_fix: bool = True
     ) -> Dict[str, Any]:

@@ -53,10 +53,7 @@ class FinalParametersOptimizationStepNew:
             "✅ Final Parameters Optimization Step initialized successfully",
         )
 
-    @handles_errors
-        default_return={"status": "FAILED", "error": "Execution failed"},
-        context="final parameters optimization step execution",
-    )
+    @handles_errors(default_return={"status": "FAILED", "error": "Execution failed"}, context="final parameters optimization step execution", )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
         """Execute final parameters optimization with categorized parameters.

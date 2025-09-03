@@ -42,7 +42,7 @@ class UnifiedRegimeClassifier:
     ):
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
-        self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
+        self.config = config.get("analystf", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
         self.exchange = exchange

@@ -16,7 +16,6 @@ from src.utils.logger import system_logger
 import asyncio
 import os.path
 
-
 class MemoryProfiler:
     """Comprehensive memory profiler for detecting memory leaks and optimizing memory usage
     during training processes.
@@ -541,7 +540,6 @@ class MemoryProfiler:
         self.stop_continuous_monitoring()
         if self.enable_tracemalloc and tracemalloc.is_tracing():
             tracemalloc.stop()
-
 
 class MemoryLeakDetector:
     """Specialized memory leak detector for long-running training processes."""

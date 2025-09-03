@@ -51,7 +51,6 @@ except ImportError:
     RegimeSpecificTripleBarrierOptimizer = None
     create_regime_specific_triple_barrier_optimizer = None
 
-
 class EarlyStageOptimizer:
     """
     Early stage optimizer for parameters that must be set before ML trading begins.
@@ -711,13 +710,11 @@ class EarlyStageOptimizer:
         
         return summary
 
-
 # Factory function for creating early stage optimizer
 def create_early_stage_optimizer(config: Dict[str, Any], training_manager=None):
     """Create early stage optimizer instance."""
     
     return EarlyStageOptimizer(config, training_manager)
-
 
 if __name__ == "__main__":
     # Example usage

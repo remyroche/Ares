@@ -20,7 +20,6 @@ import os.path
 
 logger = logging.getLogger(__name__)
 
-
 def save_model_with_probabilities(
     model_data: Dict[str, Any],
     model_path: str,
@@ -82,7 +81,6 @@ def save_model_with_probabilities(
     except Exception as e:
         logger.error(f"Error saving model with probabilities: {e}")
         raise
-
 
 def save_multi_output_model_with_probabilities(
     model_data: Dict[str, Any],
@@ -163,7 +161,6 @@ def save_multi_output_model_with_probabilities(
         logger.error(f"Error saving multi-output model: {e}")
         raise
 
-
 def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
     """
     Load model with probability outputs from file.
@@ -224,7 +221,6 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
         logger.error(f"Error loading model with probabilities: {e}")
         raise
 
-
 def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any]:
     """
     Load multi-output model with probability outputs from file.
@@ -256,7 +252,6 @@ def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any
     except Exception as e:
         logger.error(f"Error loading multi-output model: {e}")
         raise
-
 
 def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
     """
@@ -318,7 +313,6 @@ def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
         logger.error(f"Error validating model probabilities: {e}")
         return False
 
-
 def update_model_probabilities(
     model_path: str,
     new_probabilities: Dict[str, float],
@@ -354,7 +348,6 @@ def update_model_probabilities(
     except Exception as e:
         logger.error(f"Error updating model probabilities: {e}")
         return False
-
 
 def generate_and_save_model_probabilities(
     model_data: Dict[str, Any],
@@ -401,7 +394,6 @@ def generate_and_save_model_probabilities(
         logger.error(f"Error generating and saving model probabilities: {e}")
         raise
 
-
 def list_models_with_probabilities(directory: str) -> list:
     """
     List all models in a directory that have probability outputs.
@@ -430,7 +422,6 @@ def list_models_with_probabilities(directory: str) -> list:
     except Exception as e:
         logger.error(f"Error listing models with probabilities: {e}")
         return []
-
 
 def get_model_probability_summary(model_path: str) -> Dict[str, Any]:
     """
@@ -466,7 +457,6 @@ def get_model_probability_summary(model_path: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting model probability summary: {e}")
         return {"error": str(e)}
-
 
 def batch_validate_models(directory: str) -> Dict[str, Any]:
     """

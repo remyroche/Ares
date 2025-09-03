@@ -1,5 +1,15 @@
 # src/monitoring/performance_dashboard.py
 
+from src.core.decorators import (
+    cached,
+    log_execution_time
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    PerformanceLevel
+)
+
 """
 Performance Dashboard for Dual Model System
 Real-time monitoring and visualization of system performance metrics.
@@ -14,12 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-    resource_monitor,
-    memory_efficient,
-)
+
 from src.utils.logger import system_logger
 
 @dataclass
@@ -68,9 +73,9 @@ class PerformanceDashboard:
         self.export_dir = Path("dashboard_exports")
         self.export_dir.mkdir(exist_ok=True)
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @resource_monitor()
-    @memory_efficient()
+    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @log_execution_time()
+    @cached()
     @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize performance dashboard."""

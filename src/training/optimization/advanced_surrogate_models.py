@@ -10,6 +10,8 @@ This module provides advanced surrogate models including:
 - Transfer learning capabilities
 """
 
+from src.core.decorators import handles_errors
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional, Union
@@ -51,9 +53,8 @@ except ImportError:
 
 # Utilities
 from src.utils.logger import system_logger
-from src.utils.decorators import handle_errors
-import copy
 
+import copy
 
 class BaseSurrogateModel(ABC):
     """Base class for all surrogate models."""
@@ -102,7 +103,6 @@ class BaseSurrogateModel(ABC):
         self.training_time = data['training_time']
         self.is_fitted = True
         self.logger.info(f"Model loaded from {filepath}")
-
 
 class EnsembleSurrogateModel(BaseSurrogateModel):
     """Ensemble of multiple surrogate models for robust predictions."""
@@ -241,7 +241,6 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
             'training_time': self.training_time,
             'prediction_time': self.prediction_time
         }
-
 
 class DeepSurrogateModel(BaseSurrogateModel):
     """Deep learning surrogate model using PyTorch."""
@@ -403,7 +402,6 @@ class DeepSurrogateModel(BaseSurrogateModel):
             'prediction_time': self.prediction_time
         }
 
-
 class AdvancedGaussianProcessModel(BaseSurrogateModel):
     """Advanced Gaussian Process with specialized kernels."""
     
@@ -485,7 +483,6 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
             'training_time': self.training_time,
             'prediction_time': self.prediction_time
         }
-
 
 class MultiTaskSurrogateModel(BaseSurrogateModel):
     """Multi-task surrogate model for related optimization problems."""
@@ -595,7 +592,6 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
             'training_time': self.training_time,
             'prediction_time': self.prediction_time
         }
-
 
 class SurrogateModelFactory:
     """Factory for creating different types of surrogate models."""

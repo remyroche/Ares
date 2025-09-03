@@ -4,6 +4,17 @@ Centralized CSV Export System for Monitoring Data
 
 Provides CSV export capabilities for monitoring data.
 """
+from src.core.decorators import (
+    cached,
+    handles_errors,
+    log_execution_time
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    PerformanceLevel
+)
+
 from __future__ import annotations
 
 import csv
@@ -12,16 +23,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors
 import asyncio
-from src.utils.centralized_decorators import (
 
-    performance_monitor,
-    PerformanceLevel,
-    memory_efficient,
-)
 from src.utils.logger import system_logger
-
 
 class CSVExporter:
     """Centralized CSV export system for monitoring data."""
@@ -50,9 +54,9 @@ class CSVExporter:
         # Export history
         self.export_history: List[Dict[str, Any]] = []
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @memory_efficient()
-    @handle_errors(exceptions=(Exception,), default_return=False, context="csv_exporter.initialize")
+    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @cached()
+    @handles_errors(exceptions=(Exception,), default_return=False, context="csv_exporter.initialize")
     async def initialize(self) -> bool:
         """Initialize CSV exporter."""
         self.logger.info("📊 Initializing CSV Exporter...")
@@ -73,9 +77,9 @@ class CSVExporter:
         self.logger.info("✅ CSV Exporter initialized successfully")
         return True
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @memory_efficient()
-    @handle_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
+    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @cached()
+    @handles_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
     async def export_performance_metrics(
         self,
         data: List[Dict[str, Any]],

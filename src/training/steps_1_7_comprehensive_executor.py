@@ -52,7 +52,6 @@ from src.training.steps.step5_labeling_validator import run_validator as validat
 from src.training.steps.step6_feature_engineering_validator import run_validator as validate_step6
 from src.training.steps.step7_enhanced_matrix_operations_validator import run_validator as validate_step7
 
-
 class Steps1To7ComprehensiveExecutor:
     """
     Comprehensive executor for steps 1-7 with enhanced data quality management.
@@ -594,7 +593,6 @@ class Steps1To7ComprehensiveExecutor:
         except Exception as e:
             self.logger.error(f"❌ Failed to log pipeline report: {e}")
 
-
 async def main():
     """Main execution function."""
     # Example configuration
@@ -639,7 +637,6 @@ async def main():
         print("\nErrors:")
         for error in result['errors_encountered']:
             print(f"  - {error}")
-
 
 if __name__ == "__main__":
     asyncio.run( main())

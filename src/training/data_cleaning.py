@@ -4,7 +4,6 @@ from typing import Any
 import pandas as pd
 import numpy as np
 
-
 def handle_missing_data(
     df: pd.DataFrame,
     strategy: str = "fill",

@@ -1,5 +1,16 @@
 # src/training/optimization/computational_optimization_manager.py
 
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    enforce_ndarray
+)
+
 """Computational Optimization Manager for Enhanced Training Pipeline."
 Implements all optimization strategies from computational_optimization_strategies.md.
 """
@@ -28,14 +39,6 @@ from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 import asyncio
 
-from src.utils.decorators import (
-
-    enforce_ndarray,
-    guard_array_nan_inf,
-    guard_dataframe_nulls,
-    with_tracing_span,
-)
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -44,7 +47,6 @@ from src.utils.warning_symbols import (
 
 import time
 from scipy.stats import norm
-
 
 @dataclass
 class ComputationalOptimizationConfig:
@@ -130,7 +132,6 @@ class ComputationalOptimizationConfig:
                 "medium": {"n_estimators": 100, "max_depth": 6},
                 "heavy": {"n_estimators": 200, "max_depth": 10},
             }
-
 
 class CachedBacktester:
     """Cached backtesting to avoid redundant calculations."""
@@ -285,7 +286,6 @@ class CachedBacktester:
             for key in oldest_keys:
                 del self.cache[key]
 
-
 class ProgressiveEvaluator:
     """Progressive evaluation to stop unpromising trials early."""
 
@@ -366,7 +366,6 @@ class ProgressiveEvaluator:
 
         # Calculate Sharpe ratio
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
-
 
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
@@ -470,7 +469,6 @@ class ParallelBacktester:
 
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
 
-
 class IncrementalTrainer:
     """Incremental training to reuse model states."""
 
@@ -537,7 +535,6 @@ class IncrementalTrainer:
             random_state=42,
         )
 
-
 class AdaptiveModelComplexity:
     """Adaptive model complexity based on data size and performance."""
 
@@ -568,7 +565,6 @@ class AdaptiveModelComplexity:
             return self.complexity_levels["medium"]
         self.logger.debug("Using heavy complexity model")
         return self.complexity_levels["heavy"]
-
 
 class PrecomputedFeatureEngine:
     """Precompute all possible features once."""
@@ -643,8 +639,8 @@ class PrecomputedFeatureEngine:
         return ema12 - ema26
 
     @enforce_ndarray(arg_index=1, forbid_lists=True, require_vector=True)
-    @guard_array_nan_inf(mode="warn", arg_indices=(1,))
-    @with_tracing_span("FeatureCache.get_features", log_args=False)
+    @validates(mode="warn", arg_indices=(1,))
+    @traced("FeatureCache.get_features", log_args=False)
     def get_features(self, feature_selection: list[str]) -> np.ndarray:
         """Get selected features from cache."""
         selected_features = []
@@ -653,7 +649,6 @@ class PrecomputedFeatureEngine:
                 selected_features.append(self.feature_cache[feature_name].values)
 
         return np.column_stack(selected_features)
-
 
 class FeatureSelectionCache:
     """Cache feature selection results."""
@@ -686,7 +681,6 @@ class FeatureSelectionCache:
         # Simplified feature selection - in practice this would use
         # correlation analysis, mutual information, etc.
         return np.array(feature_list[: int(len(feature_list) * threshold)])
-
 
 class SurrogateOptimizer:
     """Advanced surrogate model optimization for expensive evaluations."""
@@ -1474,7 +1468,6 @@ class SurrogateOptimizer:
             'uncertainty_threshold': self.uncertainty_threshold
         }
 
-
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
@@ -1525,7 +1518,6 @@ class AdaptiveSampler:
 
         return perturbed
 
-
 class MemoryEfficientData:
     """Memory-efficient data structures for large datasets."""
 
@@ -1538,7 +1530,7 @@ class MemoryEfficientData:
         self.logger = system_logger.getChild("MemoryEfficientData")
         self.data = self._optimize_dataframe(market_data)
 
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates(mode="warn", arg_index=1)
     def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
         # Use appropriate dtypes
@@ -1556,7 +1548,6 @@ class MemoryEfficientData:
     def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:
         """Get numpy array subset for efficient computation."""
         return self.data.iloc[start_idx:end_idx].values
-
 
 class MemoryManager:
     """Manage memory usage during optimization."""
@@ -1586,7 +1577,6 @@ class MemoryManager:
         gc.collect()
         self.logger.info("Memory cleanup completed")
 
-
 class ComputationalOptimizationManager:
     """Main computational optimization manager that integrates all strategies."""
 
@@ -1609,7 +1599,7 @@ class ComputationalOptimizationManager:
 
         self.logger.info("Computational Optimization Manager initialized")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="computational optimization manager initialization",
@@ -1658,7 +1648,7 @@ class ComputationalOptimizationManager:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="optimized parameter optimization",
@@ -1742,7 +1732,6 @@ class ComputationalOptimizationManager:
 
         except Exception:
             self.print(failed("Cleanup failed: {e}"))
-
 
 # Factory function for easy integration
 async def create_computational_optimization_manager(

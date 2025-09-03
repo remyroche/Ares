@@ -13,7 +13,6 @@ from src.training.memory_profiler import MemoryLeakDetector, MemoryProfiler
 from src.training.steps.optimized_step_executor import OptimizedStepExecutor
 from src.utils.logger import system_logger
 
-
 class OptimizedTrainingFactory:
     """Factory for creating optimized training components."""
 
@@ -146,7 +145,6 @@ class OptimizedTrainingFactory:
 
         return summary
 
-
 def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
     """Convenience function to create a complete optimized training system."
 
@@ -159,7 +157,6 @@ def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
     """
     factory = OptimizedTrainingFactory(config)
     return factory.create_training_pipeline()
-
 
 def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     """Get optimization recommendations based on system resources and configuration."

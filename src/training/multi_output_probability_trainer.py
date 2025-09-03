@@ -5,6 +5,18 @@ This module implements multi-output training for probability outputs, replacing
 the post-training calculation approach with direct training on probability targets.
 """
 
+from src.core.decorators import (
+    handles_errors,
+    log_execution_time
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    PerformanceLevel,
+    ValidationLevel,
+    comprehensive_validation
+)
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Union, Optional, Tuple, List
@@ -24,13 +36,6 @@ from .advanced_neural_models import (
     NeuralNetworkWrapper
 )
 
-from src.utils.centralized_decorators import (
-    handle_errors,
-    comprehensive_validation,
-    performance_monitor,
-    PerformanceLevel,
-    ValidationLevel
-)
 from src.utils.logger import system_logger
 
 logger = system_logger
@@ -375,7 +380,7 @@ class MultiOutputModel:
                 objective='binary'
             )
     
-    @performance_monitor()
+    @log_execution_time()
     def fit(
         self, 
         X_train: np.ndarray, 
@@ -672,7 +677,7 @@ from src.core.decorators import handles_errors
         self.logger.info("Preparing multi-output targets for training")
         return self.target_generator.generate_all_targets(X, y, market_data)
     
-    @performance_monitor()
+    @log_execution_time()
     def train_multi_output_model(
         self, 
         X_train: np.ndarray, 

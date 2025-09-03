@@ -4,15 +4,12 @@ This module provides checkpointing functionality for pipeline stages,
 allowing for resuming from failures and maintaining state across
 pipeline executions.
 """
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any
 import asyncio
 
-from src.utils.error_handler import (
-
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -24,7 +21,6 @@ from src.utils.warning_symbols import (
     invalid,
     validation_error,
 )
-
 
 class CheckpointManager:
     """Checkpoint manager with comprehensive error handling and type safety."""
@@ -66,7 +62,7 @@ class CheckpointManager:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid checkpoint manager configuration"),
             AttributeError: (False, "Missing required checkpoint manager parameters"),
@@ -100,7 +96,7 @@ class CheckpointManager:
         )
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint configuration loading",
@@ -129,7 +125,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint configuration loaded successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -166,7 +162,7 @@ class CheckpointManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint modules initialization",
@@ -191,7 +187,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint modules initialized successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint saving initialization",
@@ -208,7 +204,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint saving module initialized")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint loading initialization",
@@ -225,7 +221,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint loading module initialized")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint validation initialization",
@@ -242,7 +238,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint validation module initialized")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint cleanup initialization",
@@ -259,7 +255,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint cleanup module initialized")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid checkpoint parameters"),
             AttributeError: (False, "Missing checkpoint components"),
@@ -323,7 +319,7 @@ class CheckpointManager:
         finally:
             self.is_managing = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="checkpoint inputs validation",
@@ -358,7 +354,7 @@ class CheckpointManager:
 
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint saving",
@@ -405,7 +401,7 @@ class CheckpointManager:
         self.logger.info("Checkpoint saving completed")
         return results
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint loading",
@@ -455,7 +451,7 @@ class CheckpointManager:
         self.logger.info("Checkpoint loading completed")
         return results
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint validation",
@@ -505,7 +501,7 @@ class CheckpointManager:
         self.logger.info("Checkpoint validation completed")
         return results
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint cleanup",
@@ -764,7 +760,7 @@ class CheckpointManager:
             "training_time": datetime.now().isoformat(),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint results storage",
@@ -783,7 +779,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint results stored successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint results getting",
@@ -805,7 +801,7 @@ class CheckpointManager:
             return self.checkpoint_results.get(checkpoint_type, {})
         return self.checkpoint_results.copy()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="checkpoint history getting",
@@ -852,7 +848,7 @@ class CheckpointManager:
             "checkpoint_history_count": len(self.checkpoint_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="checkpoint manager cleanup",
@@ -872,12 +868,10 @@ class CheckpointManager:
 
         self.logger.info("✅ Checkpoint Manager stopped successfully")
 
-
 # Global checkpoint manager instance
 checkpoint_manager: CheckpointManager | None = None
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="checkpoint manager setup",

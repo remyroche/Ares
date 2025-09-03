@@ -20,9 +20,7 @@ from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
 import asyncio
 
-
 logger = logging.getLogger(__name__)
-
 
 class ScenarioBasedPredictor:
     """

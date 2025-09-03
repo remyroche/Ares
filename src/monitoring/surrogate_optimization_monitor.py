@@ -10,6 +10,8 @@ This module provides comprehensive monitoring capabilities for surrogate optimiz
 - Dashboard integration
 """
 
+from src.core.decorators import handles_errors
+
 import asyncio
 import numpy as np
 import pandas as pd
@@ -26,9 +28,8 @@ import queue
 
 # Utilities
 from src.utils.logger import system_logger
-from src.utils.decorators import handle_errors
-import os.path
 
+import os.path
 
 @dataclass
 class OptimizationMetrics:
@@ -45,7 +46,6 @@ class OptimizationMetrics:
     memory_usage: float
     cpu_usage: float
 
-
 @dataclass
 class PerformanceAlert:
     """Data class for performance alerts."""
@@ -54,7 +54,6 @@ class PerformanceAlert:
     severity: str
     message: str
     metrics: Dict[str, Any]
-
 
 class SurrogateOptimizationMonitor:
     """Comprehensive monitoring system for surrogate optimization."""

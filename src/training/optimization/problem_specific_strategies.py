@@ -11,6 +11,8 @@ to different problem characteristics:
 - Multi-objective strategies
 """
 
+from src.core.decorators import handles_errors
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional, Callable
@@ -30,8 +32,6 @@ from scipy.optimize import differential_evolution, minimize
 
 # Utilities
 from src.utils.logger import system_logger
-from src.utils.decorators import handle_errors
-
 
 class ProblemType(Enum):
     """Enumeration of different problem types."""
@@ -45,7 +45,6 @@ class ProblemType(Enum):
     HIGH_DIMENSIONAL = "high_dimensional"
     SPARSE = "sparse"
     TIME_SERIES = "time_series"
-
 
 @dataclass
 class ProblemCharacteristics:
@@ -61,7 +60,6 @@ class ProblemCharacteristics:
     correlation_structure: Dict[str, float]
     complexity_score: float
     optimization_difficulty: str  # "easy", "medium", "hard"
-
 
 class ProblemAnalyzer:
     """Analyzes optimization problems to determine their characteristics."""
@@ -391,7 +389,6 @@ class ProblemAnalyzer:
         else:
             return "hard"
 
-
 class BaseOptimizationStrategy(ABC):
     """Base class for optimization strategies."""
     
@@ -412,7 +409,6 @@ class BaseOptimizationStrategy(ABC):
     def get_strategy_name(self) -> str:
         """Get the name of this strategy."""
         pass
-
 
 class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for continuous optimization problems."""
@@ -451,7 +447,6 @@ class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "continuous_optimization"
 
-
 class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for discrete optimization problems."""
     
@@ -479,7 +474,6 @@ class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
     
     def get_strategy_name(self) -> str:
         return "discrete_optimization"
-
 
 class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for multi-objective optimization problems."""
@@ -510,7 +504,6 @@ class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "multi_objective_optimization"
 
-
 class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for constrained optimization problems."""
     
@@ -539,7 +532,6 @@ class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
     
     def get_strategy_name(self) -> str:
         return "constrained_optimization"
-
 
 class NoisyOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for noisy optimization problems."""
@@ -570,7 +562,6 @@ class NoisyOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "noisy_optimization"
 
-
 class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for high-dimensional optimization problems."""
     
@@ -600,7 +591,6 @@ class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
     
     def get_strategy_name(self) -> str:
         return "high_dimensional_optimization"
-
 
 class StrategySelector:
     """Selects and applies appropriate optimization strategies."""

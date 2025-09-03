@@ -1,5 +1,17 @@
 # src/training/gpu_acceleration_m1.py
 
+from src.core.decorators import (
+    cached,
+    log_call,
+    validates
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    quality_gate,
+    secure_data_processing
+)
+
 """
 GPU Acceleration for Mac M1 (Apple Silicon) using Metal Performance Shaders.
 Provides optimized matrix operations leveraging Apple's Metal framework.
@@ -13,13 +25,6 @@ import torch
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
-    debug_training_step,
-    memory_efficient,
-    quality_gate,
-    secure_data_processing,
-    validate_step_output,
-)
 
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
@@ -50,7 +55,7 @@ class GPUAccelerationM1:
             f"GPU Acceleration initialized - MPS available: {self.mps_available}",
         )
 
-    @validate_step_output(required_files=[], data_quality_checks={"min_rows": 100})
+    @validates(required_files=[], data_quality_checks={"min_rows": 100})
     @quality_gate(
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
@@ -118,8 +123,8 @@ class GPUAccelerationM1:
             raise
 
     @secure_data_processing(encryption_level="high", data_validation=True)
-    @memory_efficient(chunk_size=3000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @cached(chunk_size=3000, streaming_processing=True)
+    @log_call(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handles_errors(fallback=None)
     def gpu_svd_decomposition(

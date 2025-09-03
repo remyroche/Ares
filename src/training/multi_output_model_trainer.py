@@ -5,6 +5,19 @@ This module provides intelligent multi-output prediction capabilities for both
 price direction and expected profit using the triple barrier method and
 profit-based feature engineering.
 """
+from src.core.decorators import (
+    cached,
+    handles_errors,
+    log_execution_time,
+    validate_dataframe
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    comprehensive_validation,
+    secure_data_processing
+)
+
 import json
 import os
 import pickle
@@ -60,16 +73,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
     ProfitBasedFeatureEngineering
 )
-from src.utils.centralized_decorators import (
-    handle_errors,
-    comprehensive_validation,
-    performance_monitor,
-    validate_data_structure,
-    memory_efficient,
-    secure_data_processing,
-)
-from src.utils.logger import system_logger
 
+from src.utils.logger import system_logger
 
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
@@ -145,7 +150,6 @@ class MultiOutputModelConfig:
         else:
             self.supported_model_types = supported_model_types
 
-
 class MultiOutputNeuralNetwork(nn.Module):
     """Neural network for multi-output prediction (direction + profit)."""
     
@@ -201,7 +205,6 @@ class MultiOutputNeuralNetwork(nn.Module):
         profit_pred = self.profit_head(shared_features)
         return direction_pred, profit_pred
 
-
 class MultiOutputModelTrainer:
     """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
     
@@ -246,7 +249,7 @@ class MultiOutputModelTrainer:
         
         self.logger.info("🔧 Multi-output model trainer initialized with comprehensive SR feature integration")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
         default_return=False,
         context="step7_features_loading"
@@ -307,7 +310,7 @@ class MultiOutputModelTrainer:
             self.logger.error(f"❌ Error loading step07 features: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
         default_return=False,
         context="step2_5_sr_levels_loading"
@@ -656,7 +659,7 @@ class MultiOutputModelTrainer:
             self.logger.error(f"❌ Error analyzing SR features: {e}")
             return {"sr_feature_count": 0, "error": str(e)}
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=None,
         context="multi_output_data_preparation"
@@ -957,13 +960,13 @@ class MultiOutputModelTrainer:
             }
         }
     
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=None,
         context="multi_output_model_training"
     )
-    @performance_monitor
-    @memory_efficient
+    @log_execution_time
+    @cached
     async def train_multi_output_model(
         self,
         features: pd.DataFrame,
@@ -1622,7 +1625,7 @@ class MultiOutputModelTrainer:
             raise FileNotFoundError(f"Model files not found in {load_path}")
     
     # NEW: Probability target generation methods
-    @handle_errors(default_return={}, context="generate_probability_targets")
+    @handles_errors(default_return={}, context="generate_probability_targets")
     def generate_probability_targets(
         self, 
         X: np.ndarray, 
@@ -1647,7 +1650,7 @@ class MultiOutputModelTrainer:
         self.logger.info("🔧 Generating probability targets for multi-output training")
         return self.probability_target_generator.generate_all_targets(X, y, market_data)
     
-    @handle_errors(default_return={}, context="train_with_probability_targets")
+    @handles_errors(default_return={}, context="train_with_probability_targets")
     def train_with_probability_targets(
         self,
         X_train: np.ndarray,
@@ -2049,7 +2052,6 @@ class_weights = compute_class_weight(
             "model_type": "standard_multi_output",
             "note": "Standard training used (probability outputs disabled)"
         }
-
 
 def create_multi_output_trainer(
     model_type: str = "LightGBM",

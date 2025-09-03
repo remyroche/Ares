@@ -1,16 +1,13 @@
+from src.core.decorators import (
+    traced,
+    validates
+)
+
 from collections.abc import Callable
 
 import pandas as pd
 import numpy as np
 import os
-
-from src.utils.centralized_decorators import (
-
-    guard_dataframe_nulls,
-    validate_call_or_runtime_types,
-    with_tracing_span,
-)
-
 
 class FeatureGenerator:
     def __init__(
@@ -26,9 +23,9 @@ class FeatureGenerator:
         if custom_features:
             self.feature_functions.extend(custom_features)
 
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.generate", log_args=False)
+    @validates
+    @validates(mode="warn", arg_index=1)
+    @traced("FeatureGenerator.generate", log_args=False)
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
         features = pd.DataFrame(index=data.index)
         for func in self.feature_functions:
@@ -41,9 +38,9 @@ class FeatureGenerator:
         labels = (data["close"].shift(-1) > data["close"]).astype(int)
         return labels.fillna(0)
 
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.price_features", log_args=False)
+    @validates
+    @validates(mode="warn", arg_index=1)
+    @traced("FeatureGenerator.price_features", log_args=False)
     def price_features(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
@@ -54,9 +51,9 @@ class FeatureGenerator:
             index=data.index,
         )
 
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.moving_averages", log_args=False)
+    @validates
+    @validates(mode="warn", arg_index=1)
+    @traced("FeatureGenerator.moving_averages", log_args=False)
     def moving_averages(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
@@ -67,9 +64,9 @@ class FeatureGenerator:
             index=data.index,
         )
 
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.volatility_features", log_args=False)
+    @validates
+    @validates(mode="warn", arg_index=1)
+    @traced("FeatureGenerator.volatility_features", log_args=False)
     def volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
@@ -79,9 +76,9 @@ class FeatureGenerator:
             index=data.index,
         )
 
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.volume_features", log_args=False)
+    @validates
+    @validates(mode="warn", arg_index=1)
+    @traced("FeatureGenerator.volume_features", log_args=False)
     def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         vol_ma_5 = data["volume"].rolling(5).mean()
         return pd.DataFrame(
@@ -92,9 +89,9 @@ class FeatureGenerator:
             index=data.index,
         )
 
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.technical_indicators", log_args=False)
+    @validates
+    @validates(mode="warn", arg_index=1)
+    @traced("FeatureGenerator.technical_indicators", log_args=False)
     def technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {

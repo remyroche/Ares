@@ -1,5 +1,11 @@
 # src/tactician/ml_target_updater.py
 
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    validate_data_quality
+)
+
 """
 ML Target Updater for continuously updating ML targets based on real-time conditions.
 """
@@ -18,7 +24,7 @@ from src.utils.warning_symbols import (
     failed,
     warning,
 )
-from src.utils.centralized_decorators import validate_data_quality
+
 import copy
 
 class MLTargetUpdater:

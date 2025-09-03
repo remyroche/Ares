@@ -1,5 +1,11 @@
 # src/tactician/enhanced_prediction_integrator.py
 
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates
+)
+
 import asyncio
 import numpy as np
 import pandas as pd
@@ -8,11 +14,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple, Optional
 
-from src.utils.centralized_decorators import (
-    guard_dataframe_nulls,
-    handle_errors,
-    with_tracing_span,
-)
 from src.utils.logger import get_logger
 from src.utils.warning_symbols import error, warning
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
@@ -94,7 +95,7 @@ class TacticianEnhancedPredictionIntegrator:
         return models
 
     @handles_errors
-    @with_tracing_span("Tactician.generateEnhancedPredictions")
+    @traced("Tactician.generateEnhancedPredictions")
     async def generate_tactician_predictions(
         self,
         market_data: pd.DataFrame,

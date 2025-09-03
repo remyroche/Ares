@@ -10,6 +10,19 @@ The pipeline ensures all ML models are trained on the complete feature set
 including extensive SR features and optimized SR levels.
 """
 
+from src.core.decorators import (
+    cached,
+    handles_errors,
+    log_execution_time,
+    validate_dataframe
+)
+
+# TODO: These decorators need to be migrated to core decorators or removed
+from src.utils.centralized_decorators import (
+    comprehensive_validation,
+    secure_data_processing
+)
+
 import asyncio
 import json
 import os
@@ -23,14 +36,6 @@ import pandas as pd
 from src.training.multi_output_model_trainer import MultiOutputModelTrainer, MultiOutputModelConfig
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    handle_errors,
-    comprehensive_validation,
-    performance_monitor,
-    validate_data_structure,
-    memory_efficient,
-    secure_data_processing,
-)
 
 class ComprehensiveSRTrainingPipeline:
     """Comprehensive training pipeline with full SR feature integration."""
@@ -55,8 +60,8 @@ class ComprehensiveSRTrainingPipeline:
         self.logger.info("🔧 Comprehensive SR Training Pipeline initialized")
 
     @handles_errors(fallback=False)
-    @performance_monitor
-    @memory_efficient
+    @log_execution_time
+    @cached
     async def execute_comprehensive_training(
         self,
         training_data: pd.DataFrame,

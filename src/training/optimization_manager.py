@@ -1,14 +1,11 @@
 # src/training/optimization_manager.py
 
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any
 import asyncio
 
-from src.utils.error_handler import (
-
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -17,7 +14,6 @@ from src.utils.warning_symbols import (
     failed,
     invalid,
 )
-
 
 class OptimizationManager:
     """Optimization manager responsible for hyperparameter optimization and model tuning."
@@ -59,7 +55,7 @@ class OptimizationManager:
         """Proxy print to logger to keep output consistent in terminal."""
         self.logger.info(message)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid optimization manager configuration"),
             AttributeError: (False, "Missing required optimization parameters"),
@@ -93,7 +89,7 @@ class OptimizationManager:
             self.print(failed(f"❌ Optimization Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -123,7 +119,7 @@ class OptimizationManager:
             self.print(failed(f"Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="optimization components initialization",
@@ -151,7 +147,7 @@ class OptimizationManager:
             )
             raise
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid optimization parameters"),
             AttributeError: (False, "Missing optimization components"),
@@ -228,7 +224,7 @@ class OptimizationManager:
             self.is_optimizing = False
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="optimization inputs validation",
@@ -272,7 +268,7 @@ class OptimizationManager:
             self.print(failed(f"Optimization inputs validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="hyperparameter optimization",
@@ -346,7 +342,7 @@ class OptimizationManager:
             self.print(failed(f"❌ Hyperparameter optimization failed: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="single model hyperparameter optimization",
@@ -395,7 +391,7 @@ class OptimizationManager:
             )
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature selection optimization",
@@ -446,7 +442,7 @@ class OptimizationManager:
             self.print(failed(f"❌ Feature selection optimization failed: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble optimization",
@@ -509,7 +505,7 @@ class OptimizationManager:
             self.print(failed(f"❌ Ensemble optimization failed: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analyst ensemble optimization",
@@ -550,7 +546,7 @@ class OptimizationManager:
             self.print(failed(f"❌ Failed to optimize analyst ensembles: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactician ensemble optimization",
@@ -590,7 +586,7 @@ class OptimizationManager:
             self.print(failed(f"❌ Failed to optimize tactician ensembles: {e}"))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="optimization results storage",
@@ -641,7 +637,7 @@ class OptimizationManager:
         """
         return self.optimization_results.copy()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="optimization manager cleanup",
@@ -655,8 +651,7 @@ class OptimizationManager:
         except Exception as e:
             self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="optimization manager setup",

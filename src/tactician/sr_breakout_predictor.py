@@ -1,19 +1,16 @@
 """Refactored SR Breakout Predictor using modular components."""
 
-import json
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
-from src.core.domain import validate_data_quality
 from src.utils.logger import system_logger
 
 # Import modular components
-from .sr_modules import SRAnalyzer, SRFeatureExtractor, SRLevelDetector, SRMetricsCalculator, SRReportGenerator
+from .sr_modules import SRFeatureExtractor, SRLevelDetector, SRMetricsCalculator
 
 
 class SRBreakoutPredictor:

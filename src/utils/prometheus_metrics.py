@@ -24,7 +24,6 @@ except Exception as e:  # pragma: no cover - optional dependency fallback
     _PROM_IMPORT_ERROR = e
     _PROM_AVAILABLE = False
 
-from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols
 
 logger = logging.getLogger(__name__)
 

@@ -10,9 +10,7 @@ import inspect
 import logging
 import types
 from functools import wraps
-from typing import A, Callableny, TypeVar, Union, get_args, get_origin
-
-from src.utils.warning_symbols import validation_error as validation_error_src_utils_warning_symbols
+from typing import TypeVar, Union, get_args, get_origin
 
 from .base_types import Price, Symbol, Volume
 from .config_types import ConfigDict

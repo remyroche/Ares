@@ -8,16 +8,11 @@ Coordinates data collection processes for step01. This orchestrator focuses on:
 Note: Data conversion and formatting is handled by step1_5_data_converter.py
 """
 
-import asyncio
-import os.path
 import sys
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-
 from src.core.decorators import handles_errors, traced
-from src.core.domain import handle_errors, with_tracing_span
 from src.utils.logger import system_logger
 
 from .aggtrades_validator import AggtradesValidator

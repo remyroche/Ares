@@ -2,20 +2,18 @@
 """Real-time Regime Monitoring Dashboard and Infrastructure."""
 
 import asyncio
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
-import pandas as pd
-import numpy as np
 import json
 from collections import defaultdict, deque
-import websocket
-import threading
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from src.utils.logger import system_logger
-from src.utils.common_operations import ensure_directory, safe_json_dump
+import numpy as np
+
 from src.monitoring.regime_performance_tracker import RegimePerformanceTracker
+from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("RegimeMonitoring")
 

@@ -4,17 +4,17 @@ Standard Interfaces for ML Pipeline Components
 This module defines the standard interfaces that all pipeline steps must implement,
 ensuring consistency and predictability across the system.
 """
+import asyncio
+import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, TypeVar, Generic, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import pandas as pd
-import numpy as np
 from pathlib import Path
-import asyncio
-import time
+from typing import Any, Dict, Optional, TypeVar, Union
 
+import numpy as np
+import pandas as pd
 
 # Type definitions
 T = TypeVar('T')
@@ -79,13 +79,11 @@ class IPipelineStep(ABC):
     @abstractmethod
     def name(self) -> str:
         """Unique name for this step."""
-        pass
     
     @property
     @abstractmethod
     def version(self) -> str:
         """Version of this step implementation."""
-        pass
     
     @abstractmethod
     async def validate_inputs(self, **kwargs) -> bool:
@@ -95,7 +93,6 @@ class IPipelineStep(ABC):
         Returns:
             True if inputs are valid, False otherwise
         """
-        pass
     
     @abstractmethod
     async def execute(self, **kwargs) -> StepResult:
@@ -105,12 +102,10 @@ class IPipelineStep(ABC):
         Returns:
             StepResult containing output data and metadata
         """
-        pass
     
     @abstractmethod
     async def cleanup(self) -> None:
         """Clean up any resources used by this step."""
-        pass
 
 
 class IDataStep(IPipelineStep):
@@ -119,12 +114,10 @@ class IDataStep(IPipelineStep):
     @abstractmethod
     async def load_data(self, source: str) -> pd.DataFrame:
         """Load data from specified source."""
-        pass
     
     @abstractmethod
     async def validate_data(self, data: pd.DataFrame) -> bool:
         """Validate loaded data meets requirements."""
-        pass
 
 
 class ILabelingStep(IPipelineStep):
@@ -133,12 +126,10 @@ class ILabelingStep(IPipelineStep):
     @abstractmethod
     async def create_labels(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create labels for the input data."""
-        pass
     
     @abstractmethod
     def get_label_distribution(self, labels: pd.Series) -> Dict[str, int]:
         """Get distribution of labels."""
-        pass
 
 
 class IFeatureStep(IPipelineStep):
@@ -147,12 +138,10 @@ class IFeatureStep(IPipelineStep):
     @abstractmethod
     async def engineer_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Engineer features from input data."""
-        pass
     
     @abstractmethod
     def get_feature_importance(self) -> Dict[str, float]:
         """Get feature importance scores."""
-        pass
 
 
 class ITrainingStep(IPipelineStep):
@@ -161,17 +150,14 @@ class ITrainingStep(IPipelineStep):
     @abstractmethod
     async def train_model(self, features: pd.DataFrame, labels: pd.Series) -> Any:
         """Train a model on the provided features and labels."""
-        pass
     
     @abstractmethod
     async def save_model(self, model: Any, path: Path) -> None:
         """Save trained model to disk."""
-        pass
     
     @abstractmethod
     async def load_model(self, path: Path) -> Any:
         """Load model from disk."""
-        pass
 
 
 class IValidationStep(IPipelineStep):
@@ -180,12 +166,10 @@ class IValidationStep(IPipelineStep):
     @abstractmethod
     async def validate_model(self, model: Any, test_data: pd.DataFrame) -> Dict[str, float]:
         """Validate model performance on test data."""
-        pass
     
     @abstractmethod
     def get_validation_report(self) -> Dict[str, Any]:
         """Get detailed validation report."""
-        pass
 
 
 class BasePipelineStep(IPipelineStep):
@@ -271,7 +255,6 @@ class BasePipelineStep(IPipelineStep):
         
         Subclasses must implement this method.
         """
-        pass
     
     async def cleanup(self) -> None:
         """Default cleanup - override if needed."""

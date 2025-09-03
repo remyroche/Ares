@@ -13,9 +13,6 @@ from typing import Any
 
 import numpy as np
 
-from copy import copy
-import asyncio
-
 from src.config.constants import (
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,
@@ -26,7 +23,6 @@ from src.core.decorators import (
     handles_errors,
     log_call,
     log_execution_time,
-    retry,
     traced,
 )
 from src.core.domain import handle_specific_errors

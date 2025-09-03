@@ -10,7 +10,7 @@ monitoring, and processing requirements in the trading system.
 import logging
 from datetime import datetime
 from functools import wraps
-from typing import A, Callable, Callableny, Dict, List, Optional, TypeVar, Union
+from typing import Callable, Dict, List, Optional, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,7 @@ from src.core.decorators import (
     traced,
     validates,
 )
-from src.core.errors import DataIntegrityError, ValidationError
+from src.core.errors import ValidationError
 
 # Type variables
 F = TypeVar("F", bound=Callable[..., Any])

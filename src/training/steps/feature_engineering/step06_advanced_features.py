@@ -4,9 +4,8 @@ This module generates advanced features including technical indicators,
 wavelet features, and market microstructure features.
 """
 
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -18,7 +17,6 @@ from src.training.base_step import BaseStep
 from src.training.utils.feature_engineering.resampling import OptimizedResampler
 from src.training.utils.feature_engineering.technical_indicators import TechnicalIndicatorCalculator
 from src.training.utils.feature_engineering.wavelet_features import WaveletTransformAnalyzer
-from src.utils.logger import system_logger
 
 
 class AdvancedFeatureEngineeringStep(BaseStep):

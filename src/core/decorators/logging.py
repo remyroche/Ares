@@ -11,7 +11,6 @@ import logging
 import time
 import uuid
 from contextvars import ContextVar
-from typing import A, Callableny
 
 from .compose import P, R, uniform_wrapper
 

@@ -1,6 +1,6 @@
 """Support/Resistance Level Detection Module."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd

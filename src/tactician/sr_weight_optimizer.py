@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-
 # src/tactician/sr_weight_optimizer.py
 
 
 """
 SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
 """
-import datetime as datetime
 import json
 from dataclasses import dataclass
 from typing import Any

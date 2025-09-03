@@ -29,7 +29,7 @@ logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
 
 @traced(span_name="validate_triple_barrier_method")
 # @quality_gate - removed, handled by validates
-    min_quality_score=0.7,
+min_quality_score=0.7,
     max_correlation=0.95,
     required_grade="C"
 )

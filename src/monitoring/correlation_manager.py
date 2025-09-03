@@ -13,9 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
-import asyncio
 
 
 class CorrelationStatus(Enum):

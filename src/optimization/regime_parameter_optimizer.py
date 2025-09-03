@@ -2,19 +2,18 @@
 """Regime-Specific Parameter Optimization System."""
 
 import asyncio
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Callable
-import pandas as pd
-import numpy as np
 import json
 from dataclasses import dataclass
-from concurrent.futures import ProcessPoolExecutor
-import optuna
-from sklearn.model_selection import TimeSeriesSplit
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from src.utils.logger import system_logger
+import numpy as np
+import optuna
+import pandas as pd
+
 from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
 from src.validation.walk_forward_validator import WalkForwardValidator
 
 logger = system_logger.getChild("RegimeParameterOptimizer")
@@ -287,7 +286,9 @@ class RegimeParameterOptimizer:
             # This is a simplified example - would integrate with actual strategy
             
             # Apply triple barrier labeling
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+                OptimizedTripleBarrierLabeling,
+            )
             
             labeler = OptimizedTripleBarrierLabeling()
             labeler.profit_target = params.profit_target

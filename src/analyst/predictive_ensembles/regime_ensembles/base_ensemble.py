@@ -26,8 +26,6 @@ except ImportError:
         def fit_resample(self, X: Any, y: Any) -> tuple[Any, Any]:
             return X, y
 
-import copy
-import datetime as datetime
 import os.path
 
 from lightgbm import LGBMClassifier

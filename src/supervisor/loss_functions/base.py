@@ -70,7 +70,6 @@ class PnLLossFunctionsBase:
 
     async def _load_configuration(self) -> None:
         """Load configuration (to be overridden by subclasses)."""
-        pass
 
     def _validate_configuration(self) -> bool:
         """Validate configuration (to be overridden by subclasses)."""

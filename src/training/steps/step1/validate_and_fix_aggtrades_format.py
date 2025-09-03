@@ -5,7 +5,6 @@ Validates and fixes aggtrades data format to ensure compatibility with all pipel
 """
 
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -17,7 +16,6 @@ from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.core.decorators import handles_errors, traced
-from src.core.domain import handle_errors, validate_data_quality, validate_data_structure, with_tracing_span
 
 logger = system_logger.getChild("AggtradesFormatValidator")
 

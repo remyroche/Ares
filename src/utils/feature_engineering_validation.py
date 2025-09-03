@@ -7,7 +7,6 @@ This module provides comprehensive validation for engineered features,
 including value range checks, NaN propagation analysis, and feature correctness verification.
 """
 
-from typing import A, Callableny
 
 import numpy as np
 import pandas as pd

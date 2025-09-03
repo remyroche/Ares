@@ -8,11 +8,11 @@ Tactician, etc.) for health, performance, and feature extraction.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, warning
+from src.utils.warning_symbols import error
 
 
 class ComponentMonitor:

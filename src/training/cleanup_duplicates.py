@@ -5,7 +5,6 @@ This script helps identify files that should be removed or consolidated.
 
 import hashlib
 import json
-import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 

@@ -15,8 +15,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
-
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence

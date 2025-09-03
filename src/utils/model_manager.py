@@ -202,6 +202,7 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """
         Validate model configuration.

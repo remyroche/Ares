@@ -4,15 +4,15 @@ Modular Components with Single Responsibility
 This module demonstrates the Single Responsibility Principle (SRP) by breaking down
 complex pipeline components into focused, single-purpose modules.
 """
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
-import pandas as pd
-import numpy as np
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+import pandas as pd
 
 # ============================================================================
 # Data Loading Components - Single Responsibility: Load data from sources
@@ -24,12 +24,10 @@ class IDataSource(ABC):
     @abstractmethod
     async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
         """Fetch data from the source."""
-        pass
     
     @abstractmethod
     def validate_connection(self) -> bool:
         """Validate connection to data source."""
-        pass
 
 
 class IExchangeDataSource(IDataSource):
@@ -39,17 +37,14 @@ class IExchangeDataSource(IDataSource):
     @abstractmethod
     def exchange_name(self) -> str:
         """Name of the exchange."""
-        pass
     
     @abstractmethod
     def get_supported_symbols(self) -> List[str]:
         """Get list of supported trading symbols."""
-        pass
     
     @abstractmethod
     def get_supported_timeframes(self) -> List[str]:
         """Get list of supported timeframes."""
-        pass
 
 
 class BaseExchangeDataSource(IExchangeDataSource):
@@ -65,7 +60,6 @@ class BaseExchangeDataSource(IExchangeDataSource):
     @abstractmethod
     def exchange_name(self) -> str:
         """Must be implemented by subclasses."""
-        pass
     
     def validate_connection(self) -> bool:
         """Base connection validation - can be overridden."""
@@ -263,7 +257,6 @@ class IDataValidator(ABC):
     @abstractmethod
     def validate(self, data: pd.DataFrame) -> ValidationResult:
         """Validate the data."""
-        pass
 
 
 class SchemaValidator(IDataValidator):
@@ -403,12 +396,10 @@ class IFeatureCalculator(ABC):
     @abstractmethod
     def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate features from data."""
-        pass
     
     @abstractmethod
     def get_feature_names(self) -> List[str]:
         """Get list of features this calculator produces."""
-        pass
 
 
 class PriceFeatureCalculator(IFeatureCalculator):
@@ -533,22 +524,18 @@ class IModel(ABC):
     @abstractmethod
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions on input data."""
-        pass
     
     @abstractmethod
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Get prediction probabilities (for classifiers)."""
-        pass
     
     @abstractmethod
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        pass
     
     @abstractmethod
     def load(self, path: Path) -> None:
         """Load model from disk."""
-        pass
 
 
 class IModelTrainer(ABC):
@@ -558,27 +545,22 @@ class IModelTrainer(ABC):
     @abstractmethod
     def model_type(self) -> str:
         """Type/name of the model."""
-        pass
     
     @abstractmethod
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train a model on the data."""
-        pass
     
     @abstractmethod
     def get_hyperparameters(self) -> Dict[str, Any]:
         """Get current hyperparameters."""
-        pass
     
     @abstractmethod
     def set_hyperparameters(self, **hyperparameters) -> None:
         """Update hyperparameters."""
-        pass
     
     @abstractmethod
     def get_feature_importance(self) -> Optional[pd.DataFrame]:
         """Get feature importance if available."""
-        pass
 
 
 class BaseModelTrainer(IModelTrainer):
@@ -593,7 +575,6 @@ class BaseModelTrainer(IModelTrainer):
     @abstractmethod
     def _get_default_hyperparameters(self) -> Dict[str, Any]:
         """Get default hyperparameters for this model type."""
-        pass
     
     def get_hyperparameters(self) -> Dict[str, Any]:
         """Get current hyperparameters."""
@@ -656,7 +637,7 @@ class LightGBMTrainer(BaseModelTrainer):
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train LightGBM model."""
         import lightgbm as lgb
-        
+
         # Create model
         self.model = lgb.LGBMClassifier(**self.hyperparameters)
         
@@ -729,7 +710,7 @@ class XGBoostTrainer(BaseModelTrainer):
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train XGBoost model."""
         import xgboost as xgb
-        
+
         # Create model
         self.model = xgb.XGBClassifier(**self.hyperparameters)
         
@@ -804,7 +785,7 @@ class RandomForestTrainer(BaseModelTrainer):
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train Random Forest model."""
         from sklearn.ensemble import RandomForestClassifier
-        
+
         # Create and train model
         self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
@@ -828,7 +809,7 @@ class NeuralNetworkModel(IModel):
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
         import torch
-        
+
         # Scale input if scaler provided
         X_scaled = self.scaler.transform(X) if self.scaler else X.values
         
@@ -846,7 +827,7 @@ class NeuralNetworkModel(IModel):
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Get prediction probabilities."""
         import torch
-        
+
         # Scale input if scaler provided
         X_scaled = self.scaler.transform(X) if self.scaler else X.values
         
@@ -864,8 +845,8 @@ class NeuralNetworkModel(IModel):
     
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        import torch
         import joblib
+        import torch
         
         path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -878,9 +859,9 @@ class NeuralNetworkModel(IModel):
     
     def load(self, path: Path) -> None:
         """Load model from disk."""
-        import torch
         import joblib
-        
+        import torch
+
         # Load model
         self.model.load_state_dict(torch.load(path.with_suffix('.pth')))
         
@@ -915,7 +896,7 @@ class NeuralNetworkTrainer(BaseModelTrainer):
         import torch.nn as nn
         import torch.optim as optim
         from sklearn.preprocessing import StandardScaler
-        
+
         # Scale features
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)

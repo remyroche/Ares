@@ -29,7 +29,6 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import classification_report
 from sklearn.model_selection import cross_val_score
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
@@ -399,7 +398,7 @@ class WaveletFeatureSelectionWorkflow:
             try:
                 from shap.explainers import TreeExplainer
             except ImportError:
-                from shap import TreeExplainer as TreeExplainer_shap
+                pass
             explainer = TreeExplainer(model)
             shap_values = explainer.shap_values(X_test)
 

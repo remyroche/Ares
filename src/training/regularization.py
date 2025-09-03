@@ -1,7 +1,6 @@
 # Import necessary ensemble types for type hinting and applying regularization
 # These imports are here to allow the apply_regularization_to_ensembles method
 # to correctly apply the config to the ensemble instances.
-import asyncio
 from typing import Any
 
 import lightgbm as lgb
@@ -312,7 +311,6 @@ class RegularizationManager:
 
                 # Train and evaluate the model with real metrics
                 try:
-                    import numpy as np
                     import torch
                     from sklearn.preprocessing import StandardScaler
 
@@ -330,7 +328,6 @@ class RegularizationManager:
                     pass  # TODO: Handle exception
                 except Exception as e:
                     pass  # TODO: Handle exception properly
-                    import numpy as np
                     X_tensor = torch.FloatTensor(X_scaled)
                     if model_type == "classification":
                         y_tensor = torch.LongTensor(y)

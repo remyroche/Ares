@@ -8,7 +8,6 @@ from typing import Any
 
 # Temporarily commented out due to syntax errors
 # from src.config_optuna import get_optuna_config, update_parameter_value
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,

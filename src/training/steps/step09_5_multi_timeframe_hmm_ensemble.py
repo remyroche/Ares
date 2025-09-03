@@ -332,6 +332,17 @@ async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h
             return {'status': 'FAILED', 'error': 'ensemble_training_failed', 'success': False}
         per_regime_status: dict[str, Any] = {}
         if per_regime_enabled:
+            # Use shared regime accessor to robustly determine regimes present
+            try:
+                from src.utils.regime_data_access import get_regime_column, get_regime_ids
+                sample_tf = next(iter(regime_forecasting_data.keys())) if regime_forecasting_data else None
+                if sample_tf is not None:
+                    sample_df = regime_forecasting_data[sample_tf]
+                    regime_col = get_regime_column(sample_df)
+                    if regime_col:
+                        regime_list = get_regime_ids(sample_df, regime_col)
+            except Exception:
+                pass
             for regime_name in regime_list:
                 try:
                     logger.info(f'🎯 Training per-regime ensemble for regime {regime_name}')

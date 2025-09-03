@@ -4,15 +4,16 @@ This module handles hyperparameter optimization, backtesting,
 and performance evaluation.
 """
 
-from typing import Any, Dict, List, Optional, Callable
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+import joblib
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import joblib
-from datetime import datetime
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 
 
 class OptimizationManager:
@@ -86,7 +87,7 @@ class OptimizationManager:
     ) -> Dict[str, Any]:
         """Optimize using Optuna."""
         import optuna
-        
+
         # Create study
         study = optuna.create_study(
             direction="maximize",
@@ -190,7 +191,7 @@ class OptimizationManager:
     ) -> List[Dict[str, Any]]:
         """Generate parameter grid for search."""
         import itertools
-        
+
         # Create parameter lists
         param_lists = {}
         for param_name, param_config in param_space.items():

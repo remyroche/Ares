@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from ..analyzers.import_analyzer import ImportAnalyzer
-from ..analyzers.linter_analyzer import LinterAnalyzer
 from ..analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer as SignatureAnalyzer
+from ..analyzers.linter_analyzer import LinterAnalyzer
 from ..analyzers.syntax_validator import SyntaxValidator
 from ..core.config import CodeQualityConfig, get_default_config
 from ..fixers.auto_fixer import AutoFixer
@@ -311,8 +311,8 @@ class SequentialFixer:
     def _run_pre_commit(self, files: list[str]) -> dict[str, Any]:
         """Run pre-commit hooks across repository or scoped directory."""
         try:
-            import subprocess
             import os as _os
+            import subprocess
 
             if len(files) == 1:
                 target_dir = str(Path(files[0]).parent)

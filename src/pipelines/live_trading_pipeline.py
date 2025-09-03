@@ -1,13 +1,12 @@
-""""
+"""
 Live trading pipeline implementation (minimal scaffold).
-""""
-
+"""
 from __future__ import annotations
 
 from typing import Any, Dict
+import asyncio
 
 from src.utils.centralized_decorators import (
-import asyncio
 
     performance_monitor,
     PerformanceLevel,

@@ -1,16 +1,15 @@
 # src/tactician/ml_target_validator.py
 
-""""
+"""
 ML Target Validator for validating machine learning targets and predictions.
-""""
-
+"""
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     invalid,
@@ -20,17 +19,16 @@ from src.utils.centralized_decorators import validate_data_quality
 import copy
 
 class MLTargetValidator:
-    """"
+    """
     Enhanced ML Target Validator component with DI, type hints, and robust error handling.
-    """"
-
+    """
     def __init__(self, config: Dict[str, Any]) -> None:
-        """"
+        """
         Initialize the ML Target Validator.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("MLTargetValidator")
 
@@ -56,12 +54,12 @@ class MLTargetValidator:
         context="ML target validator initialization"
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize the ML Target Validator.
 
         Returns:
             bool: True if initialization successful
-        """"
+        """
         try:
             self.logger.info("Initializing ML Target Validator...")
 
@@ -82,12 +80,12 @@ class MLTargetValidator:
             return False
 
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate ML target validator configuration.
 
         Returns:
             bool: True if configuration is valid
-        """"
+        """
         try:
             if self.validation_interval <= 0:
                 self.logger.error(invalid("Validation interval must be positive"))
@@ -133,7 +131,7 @@ class MLTargetValidator:
         context="target validation"
     )
     async def validate_target(self, target_data: Dict[str, Any]) -> bool:
-        """"
+        """
         Validate a target value and its associated metadata.
 
         Args:
@@ -141,7 +139,7 @@ class MLTargetValidator:
 
         Returns:
             bool: True if target is valid
-        """"
+        """
         try:
             self.logger.info("Validating ML target...")
 
@@ -236,7 +234,7 @@ class MLTargetValidator:
         context="prediction validation"
     )
     async def validate_prediction(self, prediction_data: Dict[str, Any]) -> bool:
-        """"
+        """
         Validate a prediction and its associated metadata.
 
         Args:
@@ -244,7 +242,7 @@ class MLTargetValidator:
 
         Returns:
             bool: True if prediction is valid
-        """"
+        """
         try:
             self.logger.info("Validating ML prediction...")
 
@@ -321,12 +319,12 @@ class MLTargetValidator:
             return False
 
     def _add_to_history(self, record: Dict[str, Any]) -> None:
-        """"
+        """
         Add a validation record to history.
 
         Args:
             record: Validation record to add
-        """"
+        """
         try:
             self.history.append(record)
 
@@ -338,7 +336,7 @@ class MLTargetValidator:
             self.logger.error(failed(f"❌ Error adding to history: {e}"))
 
     def get_validation_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """"
+        """
         Get validation history.
 
         Args:
@@ -346,7 +344,7 @@ class MLTargetValidator:
 
         Returns:
             List[Dict[str, Any]]: Validation history
-        """"
+        """
         try:
             if limit:
                 return self.history[-limit:]
@@ -357,12 +355,12 @@ class MLTargetValidator:
             return []
 
     def get_validation_statistics(self) -> Dict[str, Any]:
-        """"
+        """
         Get validation statistics.
 
         Returns:
             Dict[str, Any]: Validation statistics
-        """"
+        """
         try:
             if not self.history:
                 return {
@@ -395,12 +393,12 @@ class MLTargetValidator:
             return {}
 
     def get_status(self) -> Dict[str, Any]:
-        """"
+        """
         Get current status.
 
         Returns:
             Dict[str, Any]: Current status
-        """"
+        """
         return {
             "is_running": self.is_running,
             "validation_interval": self.validation_interval,
@@ -410,9 +408,9 @@ class MLTargetValidator:
         }
 
     async def cleanup(self) -> None:
-        """"
+        """
         Cleanup resources.
-        """"
+        """
         try:
             self.logger.info("Cleaning up ML Target Validator...")
 

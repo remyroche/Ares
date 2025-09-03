@@ -1,7 +1,6 @@
 """Training validation configuration and rules."
 Defines error thresholds, validation criteria, and step progression rules.
-""""
-
+"""
 import os
 from typing import Any
 

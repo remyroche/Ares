@@ -1,36 +1,34 @@
 # src/tactician/position_closing.py
 
-""""
+"""
 Position Closing Module for Tactician.
 Handles position closure based on dual model confidence scores and ATR-based exit rules.
-""""
-
+"""
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
 import asyncio
+from src.utils.warning_symbols import (
 
     failed,
     invalid,
 )
 
 class PositionCloser:
-    """"
+    """
     Position Closer that handles position closure based on dual model confidence scores
     and ATR-based exit rules.
-    """"
-
+    """
     def __init__(self, config: Dict[str, Any]) -> None:
-        """"
+        """
         Initialize Position Closer.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("PositionCloser")
 
@@ -63,12 +61,12 @@ class PositionCloser:
         context="position closer initialization"
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize the position closer.
 
         Returns:
             bool: True if initialization successful
-        """"
+        """
         try:
             self.logger.info("Initializing Position Closer...")
 
@@ -85,12 +83,12 @@ class PositionCloser:
             return False
 
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate position closer configuration.
 
         Returns:
             bool: True if configuration is valid
-        """"
+        """
         try:
             if self.atr_multiplier <= 0:
                 self.logger.error(invalid("ATR multiplier must be positive"))
@@ -111,13 +109,13 @@ class PositionCloser:
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """"
+        """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
         
         Args:
             step17_results: Step17 optimization results
-        """"
+        """
         try:
             if "tpsl" in step17_results:
                 tpsl_optimization = step17_results["tpsl"]
@@ -151,7 +149,7 @@ class PositionCloser:
         atr_value: float,
         current_price: float
     ) -> bool:
-        """"
+        """
         Determine if a position should be closed based on model confidence and ATR.
 
         Args:
@@ -162,7 +160,7 @@ class PositionCloser:
 
         Returns:
             bool: True if position should be closed
-        """"
+        """
         try:
             # Check confidence threshold
             if model_confidence < self.confidence_threshold:
@@ -191,7 +189,7 @@ class PositionCloser:
         atr_value: float,
         current_price: float
     ) -> bool:
-        """"
+        """
         Check if position should be closed based on ATR.
 
         Args:
@@ -201,7 +199,7 @@ class PositionCloser:
 
         Returns:
             bool: True if should close by ATR
-        """"
+        """
         try:
             entry_price = position_data.get("entry_price", 0)
             if entry_price <= 0:
@@ -227,7 +225,7 @@ class PositionCloser:
             return False
 
     def _should_close_by_time(self, position_data: Dict[str, Any]) -> bool:
-        """"
+        """
         Check if position should be closed based on minimum hold time.
 
         Args:
@@ -235,7 +233,7 @@ class PositionCloser:
 
         Returns:
             bool: True if should close by time
-        """"
+        """
         try:
             entry_time = position_data.get("entry_time")
             if not entry_time:
@@ -261,7 +259,7 @@ class PositionCloser:
         position_data: Dict[str, Any],
         close_reason: str
     ) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Execute position closure.
 
         Args:
@@ -270,7 +268,7 @@ class PositionCloser:
 
         Returns:
             Dict: Closure result or None if failed
-        """"
+        """
         try:
             self.logger.info(f"Closing position: {close_reason}")
 
@@ -298,7 +296,7 @@ class PositionCloser:
             return None
 
     def _calculate_pnl(self, position_data: Dict[str, Any]) -> float:
-        """"
+        """
         Calculate position PnL.
 
         Args:
@@ -306,7 +304,7 @@ class PositionCloser:
 
         Returns:
             float: Calculated PnL
-        """"
+        """
         try:
             entry_price = position_data.get("entry_price", 0)
             current_price = position_data.get("current_price", 0)
@@ -328,30 +326,30 @@ class PositionCloser:
             return 0.0
 
     def get_closed_positions(self) -> List[Dict[str, Any]]:
-        """"
+        """
         Get list of closed positions.
 
         Returns:
             List[Dict[str, Any]]: Closed positions
-        """"
+        """
         return self.closed_positions.copy()
 
     def get_position_history(self) -> List[Dict[str, Any]]:
-        """"
+        """
         Get complete position history.
 
         Returns:
             List[Dict[str, Any]]: Position history
-        """"
+        """
         return self.position_history.copy()
 
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """"
+        """
         Get performance metrics for closed positions.
 
         Returns:
             Dict[str, Any]: Performance metrics
-        """"
+        """
         try:
             if not self.closed_positions:
                 return {
@@ -382,9 +380,9 @@ class PositionCloser:
             return {}
 
     async def cleanup(self) -> None:
-        """"
+        """
         Cleanup resources.
-        """"
+        """
         try:
             self.logger.info("Cleaning up Position Closer...")
 

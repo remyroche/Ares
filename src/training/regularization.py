@@ -10,8 +10,8 @@ from torch import nn
 # Import necessary ensemble types for type hinting and applying regularization
 # These imports are here to allow the apply_regularization_to_ensembles method
 # to correctly apply the config to the ensemble instances.
-from src.analyst.predictive_ensembles.ensemble_orchestrator import (
 import asyncio
+from src.analyst.predictive_ensembles.ensemble_orchestrator import (
 
     RegimePredictiveEnsembles,
 )
@@ -23,11 +23,10 @@ from src.utils.logger import system_logger
 
 
 class RegularizationManager:
-    """Manages the L1-L2 regularization configuration for the Ares Trading Bot's'
+    """Manages the L1-L2 regularization configuration for the Ares Trading Bot's'"
     machine learning models. It extracts, applies, and validates regularization
     parameters from the global configuration.
-    """"
-
+    """
     def __init__(self) -> None:
         self.logger = system_logger.getChild("RegularizationManager")
         self.regularization_config = self._get_regularization_config()
@@ -72,7 +71,7 @@ class RegularizationManager:
     ) -> None:
         """Applies the loaded L1-L2 regularization configuration to all ensemble instances."
         This method is called by TrainingManager.
-        """"
+        """
         try:
             for (
                 regime_name,
@@ -131,7 +130,7 @@ class RegularizationManager:
         Returns:
             bool: True if regularization is properly configured, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("=== L1-L2 Regularization Validation Report ===")
 
@@ -233,7 +232,7 @@ class RegularizationManager:
         Returns:
             Dict containing optimized regularization parameters
 
-        """"
+        """
         try:
             if architecture == "LightGBM":
                 return await self._optimize_lightgbm_regularization(features_df, target, model_type)
@@ -332,7 +331,7 @@ import numpy as np
 
 X_tensor = torch.FloatTensor(X_scaled)
 
-                    if model_type == "classification":
+if model_type == "classification":
                         y_tensor = torch.LongTensor(y)
                         criterion = torch.nn.CrossEntropyLoss()
                     else:

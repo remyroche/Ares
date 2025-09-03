@@ -91,14 +91,13 @@ class AnalystCreationStep:
     This step creates the initial analyst models for each regime using the
     regime-specific data and features. It focuses on creating robust base models
     that will be enhanced in subsequent steps.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         """Initializes the AnalystCreationStep."
 
         Args:
             config (Dict[str, Any]): Configuration dictionary for the step.
-        """"
+        """
         self.config = config
         self.standards = pipeline_standards
         self.logger = system_logger
@@ -153,7 +152,7 @@ import os.path
 
 result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
-            def check_mps() -> None:
+def check_mps() -> None:
                 try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
@@ -208,7 +207,7 @@ result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
         Returns:
             Dict[str, Any]: A dictionary containing the results of the creation process.
-        """"
+        """
         self.logger.info(
             "🚀 Starting Step 11: Analyst Creation - Base Model Creation for Each Regime",
         )
@@ -675,7 +674,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     logger = system_logger.getChild("Step11AnalystCreation")
     
     logger.info("=" * 80)

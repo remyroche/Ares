@@ -3,8 +3,7 @@
 
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
-""""
-
+"""
 import json
 import os
 from pathlib import Path
@@ -44,7 +43,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """"
+        """
         self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
 
         try:
@@ -468,7 +467,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     logger.info("🔍 Validating Step 3: Parameter Optimization")
     
     try:

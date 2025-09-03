@@ -1,16 +1,15 @@
 # src/paper_trader.py
-""""
+"""
 PaperTrader for training and testnet trading.
 Uses Binance testnet via BinanceExchange for all operations.
-""""
-
+"""
 from datetime import datetime
 from typing import Any
 
 import numpy as np
+import asyncio
 
 from src.config.constants import (
-import asyncio
 
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,
@@ -27,8 +26,8 @@ from src.utils.trading_decorators import (
     comprehensive_trading_decorator,
     get_trade_tracker,
 )
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     execution_error,
     initialization_error,
@@ -38,17 +37,16 @@ import copy
 
 
 class PaperTrader:
-    """"
+    """
     Enhanced paper trader with comprehensive error handling and type safety.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize paper trader with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger=system_logger.getChild("PaperTrader")
 
@@ -91,12 +89,12 @@ class PaperTrader:
         default_return=False, context="paper trader initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize paper trader with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("Initializing Paper Trader...")
 
@@ -153,12 +151,12 @@ class PaperTrader:
         default_return=False, context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate trader configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """"
+        """
         try:
             # Validate initial balance
             if self.initial_balance <= 0:
@@ -231,7 +229,7 @@ class PaperTrader:
         timestamp: datetime,
         trade_context: Any=None,
     ) -> bool:
-        """"
+        """
         Execute a buy order.
 
         Args:
@@ -243,7 +241,7 @@ class PaperTrader:
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         try:
             if not self._validate_order(symbol, quantity, price):
                 return False
@@ -343,7 +341,7 @@ class PaperTrader:
         timestamp: datetime,
         trade_context: Any=None,
     ) -> bool:
-        """"
+        """
         Execute a sell order.
 
         Args:
@@ -355,7 +353,7 @@ class PaperTrader:
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         try:
             if not self._validate_order(symbol, quantity, price):
                 return False
@@ -451,7 +449,7 @@ class PaperTrader:
         default_return=False, context="order validation",
     )
     def _validate_order(self, symbol: str, quantity: float, price: float) -> bool:
-        """"
+        """
         Validate order parameters.
 
         Args:
@@ -461,7 +459,7 @@ class PaperTrader:
 
         Returns:
             bool: True if valid, False otherwise
-        """"
+        """
         try:
             # Validate symbol
             if not symbol or len(symbol) == 0:
@@ -499,7 +497,7 @@ class PaperTrader:
         default_return=None, context="position getting",
     )
     def get_position(self, symbol: str) -> dict[str, Any] | None:
-        """"
+        """
         Get current position for a symbol.
 
         Args:
@@ -507,7 +505,7 @@ class PaperTrader:
 
         Returns:
             Optional[Dict[str, Any]]: Position information or None
-        """"
+        """
         try:
             return self.positions.get(symbol, None)
 
@@ -548,12 +546,12 @@ class PaperTrader:
         default_return=None, context="all positions getting",
     )
     def get_all_positions(self) -> dict[str, dict[str, Any]]:
-        """"
+        """
         Get all current positions.
 
         Returns:
             Dict[str, Dict[str, Any]]: All positions
-        """"
+        """
         try:
             return self.positions.copy()
 
@@ -566,12 +564,12 @@ class PaperTrader:
         default_return=None, context="balance getting",
     )
     def get_balance(self) -> float:
-        """"
+        """
         Get current balance.
 
         Returns:
             float: Current balance
-        """"
+        """
         try:
             return self.balance
 
@@ -584,7 +582,7 @@ class PaperTrader:
         default_return=None, context="trade history getting",
     )
     def get_trade_history(self, symbol: str | None=None) -> list[dict[str, Any]]:
-        """"
+        """
         Get trade history.
 
         Args:
@@ -592,7 +590,7 @@ class PaperTrader:
 
         Returns:
             List[Dict[str, Any]]: Trade history
-        """"
+        """
         try:
             if symbol:
                 return [
@@ -610,12 +608,12 @@ class PaperTrader:
         context="performance calculation",
     )
     def calculate_performance(self) -> dict[str, Any]:
-        """"
+        """
         Calculate trading performance metrics.
 
         Returns:
             Dict[str, Any]: Performance metrics
-        """"
+        """
         try:
             if not self.trade_history:
                 return {
@@ -691,12 +689,12 @@ class PaperTrader:
             return {}
 
     def get_trader_status(self) -> dict[str, Any]:
-        """"
+        """
         Get paper trader status information.
 
         Returns:
             Dict[str, Any]: Trader status
-        """"
+        """
         return {
             "is_trading": self.is_trading,
             "balance": self.balance,
@@ -741,7 +739,7 @@ paper_trader: PaperTrader | None=None
 async def setup_paper_trader(
     config: dict[str, Any] | None=None,
 ) -> PaperTrader | None:
-    """"
+    """
     Setup global paper trader.
 
     Args:
@@ -749,7 +747,7 @@ async def setup_paper_trader(
 
     Returns:
         Optional[PaperTrader]: Global paper trader instance
-    """"
+    """
     try:
         global paper_trader
 

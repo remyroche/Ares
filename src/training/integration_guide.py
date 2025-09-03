@@ -2,8 +2,7 @@
 
 """Integration guide showing how to integrate the optimized enhanced training manager"
 with the existing Ares training system.
-""""
-
+"""
 import asyncio
 import sys
 from pathlib import Path
@@ -19,8 +18,8 @@ from src.training.enhanced_training_manager_optimized import (
 )
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     failed,
 )
@@ -29,8 +28,7 @@ import copy
 class OptimizedTrainingIntegration:
     """Integration class that shows how to replace the existing training manager"
     with the optimized version while maintaining compatibility.
-    """"
-
+    """
     def __init__(self, base_config: dict[str, Any]) -> None:
         self.base_config = base_config
         self.logger = system_logger.getChild("OptimizedTrainingIntegration")
@@ -48,7 +46,7 @@ class OptimizedTrainingIntegration:
     ) -> EnhancedTrainingManagerOptimized:
         """Replace the existing enhanced training manager with the optimized version."
         This method shows how to maintain the same interface while adding optimizations.
-        """"
+        """
         self.logger.info("Creating optimized enhanced training manager...")
 
         # Create optimized training manager
@@ -69,7 +67,7 @@ class OptimizedTrainingIntegration:
     ) -> dict[str, Any]:
         """Execute regime training with optimizations."
         Compatible with the existing regime training command.
-        """"
+        """
         self.logger.info(
             f"🎯 Starting optimized regime training for {symbol} on {exchange}",
         )

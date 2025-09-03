@@ -3,8 +3,7 @@
 """Pre-computation script for wavelet features."
 Generates and caches expensive wavelet calculations once for the entire dataset,
 enabling fast loading during backtesting without recalculation.
-""""
-
+"""
 import asyncio
 import time
 from datetime import datetime
@@ -31,8 +30,7 @@ from src.utils.warning_symbols import (
 class WaveletFeaturePrecomputer:
     """Pre-computation system for wavelet features."
     Processes entire datasets and caches results for fast backtesting.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeaturePrecomputer")
@@ -99,7 +97,7 @@ class WaveletFeaturePrecomputer:
 
         Returns: True if successful = False otherwise
 
-        """"
+        """
         try:
             self.logger.info(f"📊 Starting pre-computation for dataset: {data_path}")
 
@@ -164,7 +162,7 @@ class WaveletFeaturePrecomputer:
 import copy
 
 with log_io_operation(self.logger, "read_csv", data_path):
-                    dataset, pd.read_csv(data_path, parse_dates=True)
+    dataset, pd.read_csv(data_path, parse_dates=True)
             elif file_path.suffix.lower() == ".h5":
                 dataset = pd.read_hdf(data_path)
             else:
@@ -363,7 +361,7 @@ with log_io_operation(self.logger, "read_csv", data_path):
 
         Returns: True if all successful = False otherwise
 
-        """"
+        """
         try:
             self.logger.info(
                 f"🚀 Starting pre-computation for {len(dataset_configs)} datasets",

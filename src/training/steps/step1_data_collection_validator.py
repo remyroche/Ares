@@ -45,7 +45,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		Returns:
 			Dict containing validation results with detailed information
 
-		""""
+		"""
 		symbol = training_input.get("symbol", "ETHUSDT")
 		exchange = training_input.get("exchange", "BINANCE")
 		timeframe = training_input.get("timeframe", "1m")
@@ -156,7 +156,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 		Returns:
 			Dictionary with file information
-		""""
+		"""
 		files_found: List[str] = []
 
 		# Check for klines consolidated files
@@ -207,7 +207,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 		Returns:
 			bool: True if validation passed
-		""""
+		"""
 		try:
 			validation_result = {
 				"valid": True,
@@ -307,7 +307,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		Returns:
 			bool: True if characteristics are valid
 
-		""""
+		"""
 		try:
 			# Check minimum data size (more lenient for ML training)
 			if len(data) < self.min_records:
@@ -402,7 +402,7 @@ async def run_validator(
 	Returns:
 		Dictionary containing validation results
 
-	""""
+	"""
 	validator = Step1DataCollectionValidator(CONFIG)
 	validation_passed = await validator.validate(training_input, pipeline_state)
 

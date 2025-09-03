@@ -1,0 +1,237 @@
+{
+  "total_modules": 497,
+  "total_imports": 721,
+  "circular_imports": {
+    "count": 0,
+    "cycles": []
+  },
+  "import_depths": {
+    "max_depth": 4,
+    "average_depth": 0.4716981132075472,
+    "deep_modules": []
+  },
+  "highly_imported": [
+    {
+      "module": "src.utils.logger",
+      "imported_by_count": 156,
+      "imported_by": [
+        "training.comprehensive_sr_training_pipeline",
+        "training.steps.step17_final_parameters_optimization.optimized_optuna_optimization_enhanced",
+        "transition.baseline_rf",
+        "supervisor.optimizer",
+        "ares_pipeline"
+      ]
+    },
+    {
+      "module": "src.utils.error_handler",
+      "imported_by_count": 78,
+      "imported_by": [
+        "supervisor.optimizer",
+        "ares_pipeline",
+        "trading.live_wavelet_integration",
+        "supervisor.risk_allocator",
+        "components.modular_strategist"
+      ]
+    },
+    {
+      "module": "src.utils.warning_symbols",
+      "imported_by_count": 54,
+      "imported_by": [
+        "training.steps.analyst_training_components",
+        "training.launcher_integration_patch",
+        "database.sqlite_manager",
+        "training.steps.step17_final_parameters_optimization_validator",
+        "custom_types.validation"
+      ]
+    },
+    {
+      "module": "src.utils.pipeline_standards",
+      "imported_by_count": 43,
+      "imported_by": [
+        "utils.model_performance_monitor",
+        "utils.domain_errors",
+        "training.steps.step3_hmm_regime_discovery",
+        "utils.hmm_composite_manager",
+        "utils.feature_engineering_validation"
+      ]
+    },
+    {
+      "module": "src.utils.centralized_decorators",
+      "imported_by_count": 32,
+      "imported_by": [
+        "utils.model_performance_monitor",
+        "training.comprehensive_sr_training_pipeline",
+        "training.steps.step9_hmm_based_training_validator",
+        "training.steps.step1.step1_orchestrator",
+        "training.steps.fractional_differentiation"
+      ]
+    },
+    {
+      "module": "src.config",
+      "imported_by_count": 21,
+      "imported_by": [
+        "database.influxdb_manager",
+        "training.steps.step2_feature_engineering_validator",
+        "training.steps.step17_final_parameters_optimization_validator",
+        "core.di_launcher",
+        "utils.signal_handler"
+      ]
+    },
+    {
+      "module": "core.decorators.logging",
+      "imported_by_count": 18,
+      "imported_by": [
+        "training.steps.vectorized_advanced_feature_engineering_refactored",
+        "training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer",
+        "training.steps.step17_final_parameters_optimization.optimized_optuna_optimization",
+        "training.steps.step17_final_parameters_optimization.optimized_optuna_optimization_enhanced",
+        "core.decorators.logging"
+      ]
+    },
+    {
+      "module": "src.utils.common_operations",
+      "imported_by_count": 17,
+      "imported_by": [
+        "training.steps.step11_analyst_creation_validator",
+        "training.steps.step9_5_multi_timeframe_hmm_ensemble_validator",
+        "training.steps.step19_monte_carlo_validation_validator",
+        "training.steps.step1.aggtrades_validator",
+        "training.steps.step7_enhanced_matrix_operations_validator"
+      ]
+    },
+    {
+      "module": "src.utils.base_validator",
+      "imported_by_count": 11,
+      "imported_by": [
+        "utils.enhanced_validation_decorators",
+        "training.steps.step19_monte_carlo_validation_validator",
+        "training.steps.step2_feature_engineering_validator",
+        "training.steps.step7_enhanced_matrix_operations_validator",
+        "training.steps.step17_final_parameters_optimization_validator"
+      ]
+    },
+    {
+      "module": "custom_types.base_types",
+      "imported_by_count": 7,
+      "imported_by": [
+        "custom_types.data_types",
+        "custom_types",
+        "custom_types.trading_types",
+        "custom_types.validation",
+        "custom_types.config_types"
+      ]
+    }
+  ],
+  "highly_importing": [
+    {
+      "module": "ares_pipeline",
+      "imports_count": 19,
+      "imports": [
+        "src.utils.observability",
+        "src.config",
+        "src.interfaces.event_bus",
+        "src.analyst.analyst",
+        "src.core.dependency_injection"
+      ]
+    },
+    {
+      "module": "training.steps_1_7_comprehensive_executor",
+      "imports_count": 18,
+      "imports": [
+        "src.utils.logger",
+        "src.training.steps.step7_enhanced_matrix_operations_validator",
+        "src.training.steps.step3_hmm_regime_discovery",
+        "src.training.steps.step1_data_collection",
+        "src.training.steps.step5_labeling_validator"
+      ]
+    },
+    {
+      "module": "training.steps.vectorized_advanced_feature_engineering",
+      "imports_count": 15,
+      "imports": [
+        "src.utils.data_preprocessing",
+        "src.utils.logger",
+        "src.utils.intelligent_feature_cache",
+        "src.utils.lookahead_bias_detector",
+        "src.utils.data_type_optimizer"
+      ]
+    },
+    {
+      "module": "core.service_registry",
+      "imports_count": 12,
+      "imports": [
+        "src.components.modular_tactician",
+        "src.training.training_manager",
+        "src.utils.logger",
+        "src.supervisor.supervisor",
+        "src.core.dependency_injection"
+      ]
+    },
+    {
+      "module": "supervisor.main",
+      "imports_count": 11,
+      "imports": [
+        "src.utils.model_manager",
+        "src.utils.logger",
+        "src.sentinel.sentinel",
+        "src.utils.error_handler",
+        "src.supervisor.monitoring"
+      ]
+    },
+    {
+      "module": "training.steps.step17_final_parameters_optimization",
+      "imports_count": 9,
+      "imports": [
+        "training.steps.step17_final_parameters_optimization.evaluation_engine",
+        "training.steps.step17_final_parameters_optimization.optimized_optuna_optimization",
+        "training.steps.step17_final_parameters_optimization.step17_probabilistic_bayesian_optimization",
+        "training.steps.step17_final_parameters_optimization.efficiency_optimizer",
+        "training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config"
+      ]
+    },
+    {
+      "module": "core.di_launcher",
+      "imports_count": 8,
+      "imports": [
+        "src.exchange.binance",
+        "src.utils.logger",
+        "src.core.enhanced_factories",
+        "src.config",
+        "src.core.service_registry"
+      ]
+    },
+    {
+      "module": "supervisor.enhanced_prediction_service",
+      "imports_count": 7,
+      "imports": [
+        "src.utils.tracing",
+        "src.config.enhanced_prediction_service_config",
+        "src.utils.caching",
+        "src.utils.validation",
+        "src.utils.logging_config"
+      ]
+    },
+    {
+      "module": "training.launcher_integration_patch",
+      "imports_count": 7,
+      "imports": [
+        "src.utils.logger",
+        "src.training.enhanced_training_manager_optimized",
+        "src.database.sqlite_manager",
+        "src.training.factory",
+        "src.utils.error_handler"
+      ]
+    },
+    {
+      "module": "core.decorators",
+      "imports_count": 7,
+      "imports": [
+        "core.decorators.logging",
+        "core.decorators.validate",
+        "core.decorators.compose",
+        "core.decorators.errors",
+        "core.decorators.cache"
+      ]
+    }
+  ]
+}

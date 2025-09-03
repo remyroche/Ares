@@ -2,8 +2,7 @@
 """Validator for Step 5: Labeling."
 
 This module validates the labeling step outputs.
-""""
-
+"""
 import json
 import os
 from pathlib import Path
@@ -43,7 +42,7 @@ class Step5LabelingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """"
+        """
         self.logger.info("🔍 Starting Step 5: Labeling validation")
 
         try:
@@ -304,7 +303,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     logger.info("🔍 Validating Step 5: Labeling")
     
     try:

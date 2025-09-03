@@ -2,9 +2,9 @@ from src.utils.logger import system_logger
 from typing import Any
 import numpy as np
 import pandas as pd
-from src.utils.centralized_decorators_simple import (
 import logging
 import copy
+from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
@@ -17,8 +17,7 @@ class OrderBookAnalyzer:
     Assumptions:
     - Input snapshots as DataFrame with columns: ['bid_price','bid_size','ask_price','ask_size'] or aggregated ladders
     - For correlation, S/R zones provided as DataFrame or dict with centers and scores
-    """"
-
+    """
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config or {}

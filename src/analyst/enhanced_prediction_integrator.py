@@ -14,9 +14,9 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, missing
-from src.utils.centralized_decorators import (
 import logging
 import copy
+from src.utils.centralized_decorators import (
     validate_data_quality,
     with_tracing_span,
     comprehensive_validation,
@@ -28,7 +28,7 @@ import copy
 
 
 class EnhancedPredictionIntegrator:
-    """"
+    """
     Enhanced Prediction Integrator for Analyst that integrates price and confidence predictions
     from the enhanced training manager steps 6-14.
     
@@ -37,15 +37,14 @@ class EnhancedPredictionIntegrator:
     - Analyst enhancement predictions (step 9)
     - Confidence calibration results (step 11)
     - Final parameter optimization results (step 12-14)
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize the enhanced prediction integrator.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("EnhancedPredictionIntegrator")
@@ -78,12 +77,12 @@ class EnhancedPredictionIntegrator:
     @comprehensive_validation(validation_level=ValidationLevel.STRICT)
     @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize the enhanced prediction integrator.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         try:
             self.logger.info("🚀 Initializing Enhanced Prediction Integrator...")
 
@@ -279,7 +278,7 @@ class EnhancedPredictionIntegrator:
         exchange: str,
         timeframe: str
     ) -> dict[str, Any]:
-        """"
+        """
         Generate enhanced predictions using all loaded models and calibration.
 
         Args:
@@ -291,7 +290,7 @@ class EnhancedPredictionIntegrator:
 
         Returns:
             dict: Enhanced predictions with confidence scores
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(error("❌ Enhanced Prediction Integrator not initialized"))

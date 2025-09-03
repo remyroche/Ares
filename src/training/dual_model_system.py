@@ -10,8 +10,8 @@ import pandas as pd
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.utils.confidence import aggregate_directional_confidences
-from src.utils.error_handler import (
 import asyncio
+from src.utils.error_handler import (
 
     handle_errors,
     handle_specific_errors,
@@ -44,15 +44,14 @@ class DualModelSystem:
     Tactician Model: Decides WHEN we enter/exit a trade (1m timeframe)
 
     Both models use ml_confidence_predictor.py for predictions.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Dual Model System."
 
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("DualModelSystem")
         # Backward-compatibility shim for legacy self.print calls
@@ -147,7 +146,7 @@ class DualModelSystem:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Dual Model System...")
 
@@ -247,7 +246,7 @@ class DualModelSystem:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate analyst timeframes
             if not self.analyst_timeframes:
@@ -541,7 +540,7 @@ class DualModelSystem:
         Returns:
             Dictionary with trading decision
 
-        """"
+        """
         try:
             if not self.is_initialized:
                 msg = "Dual Model System not initialized"
@@ -1516,7 +1515,7 @@ class DualModelSystem:
         Returns:
             Dictionary containing training results
 
-        """"
+        """
         try:
             if not self.ml_confidence_predictor:
                 return {
@@ -1706,7 +1705,7 @@ async def setup_dual_model_system(
     Returns:
         Optional[DualModelSystem]: Global dual model system instance
 
-    """"
+    """
     try:
         global dual_model_system
 

@@ -5,8 +5,8 @@ from src.utils.logger import system_logger
 from typing import Any, TypeVar
 
 from dataclasses import dataclass
-from src.interfaces import (
 import asyncio
+from src.interfaces import (
 
     IAnalyst,
     IStrategist,
@@ -43,10 +43,9 @@ class ServiceRegistration:
 
 
 class DependencyContainer:
-    """"
+    """
     Enhanced dependency injection container with configuration management.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any] | None = None):
         self._services: dict[Any, ServiceRegistration] = {}
         self._instances: dict[Any, Any] = {}

@@ -1,12 +1,11 @@
 # src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
 
-""""
+"""
 Multi-Timeframe Ensemble Integration
 
 This integrates multi-timeframe training into the existing ensemble system,
 making each individual model (XGBoost, LSTM, etc.) a multi-timeframe ensemble.
-""""
-
+"""
 import os
 import time
 from datetime import datetime
@@ -22,8 +21,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import logging
+from src.utils.warning_symbols import (
     error,
     failed,
     warning,
@@ -31,12 +30,11 @@ import logging
 
 
 class MultiTimeframeEnsemble:
-    """"
+    """
     Multi-timeframe ensemble that integrates into existing ensemble system.
 
     Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
-    """"
-
+    """
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
         self,
@@ -82,7 +80,7 @@ class MultiTimeframeEnsemble:
         prepared_data: dict[str, pd.DataFrame],
         model_type: str = "xgboost",
     ) -> bool:
-        """"
+        """
         Train multi-timeframe ensemble for this specific model type.
 
         Args:
@@ -91,7 +89,7 @@ class MultiTimeframeEnsemble:
 
         Returns:
             bool: Success status
-        """"
+        """
         start_time = time.time()
 
         try:
@@ -336,7 +334,7 @@ import copy
 import os.path
 
 model = MLPClassifier(
-                hidden_layer_sizes=(100, 50),
+hidden_layer_sizes=(100, 50),
                 max_iter=200,
                 random_state=42,
             )
@@ -628,7 +626,7 @@ model = MLPClassifier(
         current_features: pd.DataFrame,
         **kwargs,
     ) -> dict[str, Any]:
-        """"
+        """
         Get prediction from multi-timeframe ensemble.
 
         Args:
@@ -637,7 +635,7 @@ model = MLPClassifier(
 
         Returns:
             Dict with prediction, confidence, and timeframe details
-        """"
+        """
         try:
             if not self.trained:
                 self.logger.warning("⚠️ Multi-timeframe ensemble not trained")

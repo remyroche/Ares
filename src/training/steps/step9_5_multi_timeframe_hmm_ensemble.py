@@ -8,8 +8,7 @@ to improve regime forecasting accuracy and reduce MAPE, with regime-specific opt
 
 The ensemble predicts REGIME TRANSITIONS only, not price direction.
 Price direction predictions are made in other components.
-""""
-
+"""
 import asyncio
 import json
 import os
@@ -26,9 +25,9 @@ from copy import copy
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
+from src.config.multi_timeframe_hmm_ensemble_config import (
 from src.training.steps.multi_timeframe_hmm_ensemble import (
 )
-from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
 )
 from src.utils.logger import system_logger
@@ -596,7 +595,7 @@ async def run_step(
     lookback_days: int = 365,
     **kwargs,
 ) -> Dict[str, Any]:
-    """"
+    """
     Run multi-timeframe HMM ensemble training step.
 
     Args:
@@ -609,7 +608,7 @@ async def run_step(
 
     Returns:
         Dict containing step results
-    """"
+    """
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsemble")
     
     try:
@@ -773,7 +772,7 @@ async def validate_step(
     data_dir: str,
     **kwargs,
 ) -> Dict[str, Any]:
-    """"
+    """
     Validate multi-timeframe HMM ensemble training step.
 
     Args:
@@ -784,7 +783,7 @@ async def validate_step(
 
     Returns:
         Dict containing validation results
-    """"
+    """
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
     
     try:

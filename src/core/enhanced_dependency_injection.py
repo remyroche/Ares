@@ -1,12 +1,11 @@
 # src/core/enhanced_dependency_injection.py
 
-""""
+"""
 Deprecated: Forward to src.core.dependency_injection
 This module remains for backward compatibility and forwards to the canonical DI container.
-""""
-
-from src.core.dependency_injection import (
+"""
 import asyncio
+from src.core.dependency_injection import (
 
     DependencyContainer as _DependencyContainer,
     ServiceLifetime as _ServiceLifetime,

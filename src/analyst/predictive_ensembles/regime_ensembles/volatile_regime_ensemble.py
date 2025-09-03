@@ -1,6 +1,6 @@
 import numpy as np
-from src.utils.warning_symbols import (
 import logging
+from src.utils.warning_symbols import (
     error,
     warning,
     critical,
@@ -33,11 +33,10 @@ from .base_ensemble import BaseEnsemble
 
 
 class VolatileRegimeEnsemble(BaseEnsemble):
-    """"
+    """
     This ensemble specializes in detecting and predicting during volatile market conditions.
     It combines signals from multiple models optimized for high volatility periods.
-    """"
-
+    """
     def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
         self.logger = logging.getLogger(self.__class__.__name__)
         super().__init__(config, ensemble_name)

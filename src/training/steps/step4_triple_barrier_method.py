@@ -3,8 +3,7 @@
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
-""""
-
+"""
 import asyncio
 import sys
 from pathlib import Path
@@ -78,6 +77,8 @@ class TripleBarrierMethodStep:
         """Initialize triple barrier method components."""
         self.logger.info("🔧 Initializing triple barrier method components...")
         try:
+from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+import copy
             from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
@@ -137,7 +138,7 @@ class TripleBarrierMethodStep:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         step_start = time.time()
         self.logger.info(f"🚀 Executing Triple Barrier Method for {symbol} on {exchange}")
 
@@ -330,13 +331,11 @@ class TripleBarrierMethodStep:
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
             # Create triple barrier labeler with configuration
-            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
         except Exception as e:
             pass  # TODO: Handle exception properly
-import copy
 
 OptimizedTripleBarrierLabeling
-            )
+)
             
             labeler = OptimizedTripleBarrierLabeling(
                 profit_take_multiplier=profit_take_multiplier,
@@ -454,7 +453,7 @@ OptimizedTripleBarrierLabeling
             
         Returns:
             DataFrame with enhanced label columns
-        """"
+        """
         try:
             enhanced_data = data.copy()
             
@@ -522,7 +521,7 @@ async def run_step(
 
     Returns:
         True if successful, False otherwise
-    """"
+    """
     if config is None:
         config = {}
 

@@ -11,9 +11,9 @@ from src.training.bayesian_optimizer import AdvancedBayesianOptimizer
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -28,8 +28,7 @@ class EnhancedOptimizationOrchestrator:
     - Bayesian optimization with advanced sampling
     - Adaptive optimization based on market regimes
     - Performance tracking and analysis
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedOptimizationOrchestrator")
@@ -87,7 +86,7 @@ class EnhancedOptimizationOrchestrator:
                 - "adaptive": Only adaptive optimization
                 - "quick": Quick optimization with reduced trials
 
-        """"
+        """
         self.logger.info(f"Starting {optimization_type} optimization...")
 
         results = {

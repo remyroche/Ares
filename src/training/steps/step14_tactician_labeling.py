@@ -10,8 +10,7 @@ Enhanced for high precision completion of Analyst signals with:
 - Per-regime precision thresholds
 - Regime-specific quality filters
 - Regime-aware multi-outcome prediction structure
-""""
-
+"""
 import asyncio
 import contextlib
 import os
@@ -618,6 +617,11 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
+from src.training.enhanced_training_manager_optimized import (
+from src.utils.logger import log_dataframe_overview, log_io_operation
+from src.training.enhanced_training_manager_optimized import (
+from src.utils.logger import log_dataframe_overview, log_io_operation
+from src.utils.centralized_decorators import (
             from src.config.constants import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
@@ -810,7 +814,7 @@ class TacticianLabelingStep:
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
         """Placeholder for your market regime detection logic."
         This should be consistent with the logic from step4_regime_specific_training.
-        """"
+        """
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
         # It is NOT used by the Tactician's labeler.'
@@ -843,7 +847,6 @@ class TacticianLabelingStep:
         )
         try:
             try:
-                from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
@@ -856,7 +859,6 @@ class TacticianLabelingStep:
                     row_group_size=128_000,
                 )
             except Exception:
-                from src.utils.logger import log_dataframe_overview, log_io_operation
 
                 with log_io_operation(
                     self.logger,
@@ -886,7 +888,6 @@ class TacticianLabelingStep:
             # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
             try:
-                from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
@@ -899,7 +900,6 @@ class TacticianLabelingStep:
                     row_group_size=128_000,
                 )
             except Exception:
-                from src.utils.logger import log_dataframe_overview, log_io_operation
 
                 with log_io_operation(
                     self.logger,
@@ -923,7 +923,6 @@ class TacticianLabelingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.centralized_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -940,9 +939,9 @@ from src.utils.centralized_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+import copy
 
 from src.utils.enhanced_mlflow_integration import (
-import copy
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -1031,7 +1030,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

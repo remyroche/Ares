@@ -12,8 +12,8 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.analyst.predictive_ensembles.ensemble_orchestrator import (
 import logging
+from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
 )
 from src.analyst.regime_runtime import get_current_regime_info
@@ -22,11 +22,10 @@ from src.analyst.regime_runtime import get_current_regime_info
 
 
 class RegimeExpertOrchestrator:
-    """"
+    """
     Orchestrates regime detection and expert selection using composite_cluster_id.
     Integrates with Step 9.5 (HMM-LM Generalist) and Step 10 (Event Transition Modeling).
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config

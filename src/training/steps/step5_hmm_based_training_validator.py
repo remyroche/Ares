@@ -49,7 +49,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
-        """"
+        """
         self.logger.info("🔍 Validating Step 5 HMM-based training...")
 
         # Extract parameters
@@ -224,7 +224,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if all files exist
-        """"
+        """
         try:
             # Expected HMM model file patterns - updated to match artifacts
             expected_files: list[str] = []
@@ -281,7 +281,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if performance is acceptable
-        """"
+        """
         try:
             # Load training history - use composite meta file if present
             history_file = f"{data_dir}/{exchange}_{symbol}_hmm_composite_meta_1m.json"
@@ -372,7 +372,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if training metrics are acceptable
-        """"
+        """
         try:
             history_file = (
                 f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
@@ -593,7 +593,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             Tuple[bool, Dict[str, Any]]: (passed, metrics)
-        """"
+        """
         try:
             # For loss metrics, lower is better; for accuracy-like metrics,
             # higher is better
@@ -641,7 +641,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         - Objects with 'best_estimator_'
         - First element of tuple/list
         - Returns original if it already has a callable predict
-        """"
+        """
         try:
             # If already looks like an estimator
             if callable(getattr(artifact, "predict", None)):
@@ -690,7 +690,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     validator = Step5HMMBasedTrainingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
 

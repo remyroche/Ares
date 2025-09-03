@@ -2,20 +2,19 @@
 
 This module provides the main orchestrator that coordinates the execution
 of pipeline stages, handles dependencies, and manages the overall pipeline flow.
-""""
-
+"""
 from datetime import datetime
 from typing import Any
+import asyncio
 
 from src.utils.error_handler import (
-import asyncio
 
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     execution_error,
@@ -35,7 +34,7 @@ class PipelineOrchestrator:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PipelineOrchestrator")
 
@@ -84,7 +83,7 @@ class PipelineOrchestrator:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Pipeline Orchestrator...")
 
@@ -153,7 +152,7 @@ class PipelineOrchestrator:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate pipeline interval
             if self.pipeline_interval <= 0:
@@ -315,7 +314,7 @@ class PipelineOrchestrator:
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         try:
             if not self._validate_pipeline_inputs(pipeline_input):
                 return False
@@ -377,7 +376,7 @@ class PipelineOrchestrator:
         Returns:
             bool: True if valid, False otherwise
 
-        """"
+        """
         try:
             # Check required pipeline input fields
             required_fields = ["pipeline_type", "pipeline_steps", "timestamp"]
@@ -418,7 +417,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline execution results
 
-        """"
+        """
         try:
             results = {}
 
@@ -468,7 +467,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline monitoring results
 
-        """"
+        """
         try:
             results = {}
 
@@ -520,7 +519,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline optimization results
 
-        """"
+        """
         try:
             results = {}
 
@@ -584,7 +583,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline validation results
 
-        """"
+        """
         try:
             results = {}
 
@@ -932,7 +931,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline results
 
-        """"
+        """
         try:
             if pipeline_type:
                 return self.pipeline_results.get(pipeline_type, {})
@@ -956,7 +955,7 @@ class PipelineOrchestrator:
         Returns:
             List[Dict[str, Any]]: Pipeline history
 
-        """"
+        """
         try:
             history = self.pipeline_history.copy()
 
@@ -975,7 +974,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline status
 
-        """"
+        """
         return {
             "is_orchestrating": self.is_orchestrating,
             "pipeline_interval": self.pipeline_interval,
@@ -1038,7 +1037,7 @@ async def setup_pipeline_orchestrator(
     Returns:
         Optional[PipelineOrchestrator]: Global pipeline orchestrator instance
 
-    """"
+    """
     try:
         global pipeline_orchestrator
 

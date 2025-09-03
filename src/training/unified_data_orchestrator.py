@@ -12,8 +12,7 @@ This module provides a centralized, unified approach to all data operations incl
 
 This serves as the single source of truth for all data operations across the training pipeline.
 Enhanced with comprehensive security and troubleshooting decorators.
-""""
-
+"""
 import asyncio
 import contextlib
 import gc
@@ -35,8 +34,8 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for security and troubleshooting
-from src.utils.training_pipeline_decorators import (
 import copy
+from src.utils.training_pipeline_decorators import (
 
     circuit_breaker_protection,
     debug_training_step,
@@ -60,8 +59,7 @@ class UnifiedDataOrchestrator:
     - Quality validation and repair
     - Memory-efficient processing
     - Comprehensive logging and monitoring
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         start_time = time.time()
 
@@ -367,7 +365,7 @@ class UnifiedDataOrchestrator:
         Returns:
             DataFrame with unified data or None if loading fails
 
-        """"
+        """
         start_time = time.time()
         request_id = f"{exchange}_{symbol}_{timeframe}_{int(start_time)}"
 
@@ -593,7 +591,7 @@ class UnifiedDataOrchestrator:
         Returns:
             Dictionary mapping timeframes to DataFrames
 
-        """"
+        """
         start_time = time.time()
         request_id = f"multi_{exchange}_{symbol}_{int(start_time)}"
 
@@ -806,7 +804,7 @@ class UnifiedDataOrchestrator:
         Returns:
             Resampled DataFrame or None if resampling fails
 
-        """"
+        """
         start_time = time.time()
         request_id = f"resample_{from_timeframe}_{to_timeframe}_{int(start_time)}"
 
@@ -1033,7 +1031,7 @@ class UnifiedDataOrchestrator:
         Returns:
             Validated and repaired DataFrame
 
-        """"
+        """
         start_time = time.time()
         request_id = f"validate_{data.shape[0]}_{int(start_time)}"
 

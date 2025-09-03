@@ -35,8 +35,7 @@ class DataEfficiencyOptimizer:
     4. Progressive data processing
     5. Database-backed feature storage
     6. Checkpoint and resume capabilities
-    """"
-
+    """
     def __init__(
         self,
         db_manager: SQLiteManager,
@@ -233,7 +232,7 @@ class DataEfficiencyOptimizer:
         Returns:
             Dictionary containing klines, agg_trades, and futures DataFrames
 
-        """"
+        """
         cache_key = f"{self.exchange}_{self.symbol}_{self.timeframe}_{lookback_days}"
         cache_dir = self.cache_dir / f"{cache_key}_cached_data"
 
@@ -402,8 +401,7 @@ class DataEfficiencyOptimizer:
                     AND exchange = '{self.exchange}'
                     AND timestamp BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
                     ORDER BY timestamp
-                    """"
-
+                    """
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(klines_query))
                         if result:
@@ -420,8 +418,7 @@ class DataEfficiencyOptimizer:
                     AND exchange = '{self.exchange}'
                     AND timestamp BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
                     ORDER BY timestamp
-                    """"
-
+                    """
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(trades_query))
                         if result:
@@ -536,7 +533,7 @@ class DataEfficiencyOptimizer:
         Returns:
             List of tuples: (start_date, end_date, segment_data)
 
-        """"
+        """
         if data.empty:
             return []
 
@@ -581,7 +578,7 @@ class DataEfficiencyOptimizer:
         Returns:
             Processed DataFrame
 
-        """"
+        """
         if chunk_size is None:
             chunk_size = self.chunk_size
 
@@ -682,7 +679,7 @@ class DataEfficiencyOptimizer:
             features: DataFrame with features (timestamp index + feature columns)
             feature_type: Type of features ('technical', 'price', 'volume', 'regime')
 
-        """"
+        """
         if features.empty:
             return
 
@@ -750,7 +747,7 @@ class DataEfficiencyOptimizer:
         Returns:
             DataFrame with features in wide format
 
-        """"
+        """
         with self.Session() as session:
             # Try wide format first (more efficient)
             query = text(""""
@@ -907,7 +904,7 @@ class DataEfficiencyOptimizer:
         Returns:
             Memory-optimized DataFrame
 
-        """"
+        """
         # Check if input is actually a DataFrame
         if not isinstance(df, pd.DataFrame):
             self.logger.warning(
@@ -1009,7 +1006,7 @@ class DataEfficiencyOptimizer:
         Returns:
             True if migration was successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
 
@@ -1021,7 +1018,7 @@ import asyncio
 import copy
 
 with open(pickle_file_path, "rb") as f:
-                data = pickle.load(f)
+    data = pickle.load(f)
 
             if not isinstance(data, dict):
                 self.print(error("Pickle file does not contain a dictionary"))

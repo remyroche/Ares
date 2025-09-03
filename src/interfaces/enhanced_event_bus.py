@@ -15,8 +15,8 @@ import uuid
 from src.utils.logger import system_logger
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
 import copy
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -415,10 +415,9 @@ class EventVersionManager:
 
 
 class EnhancedEventBus:
-    """"
+    """
     Enhanced Event Bus with event sourcing, versioning, and persistence capabilities
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("EnhancedEventBus")

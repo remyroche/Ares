@@ -1,10 +1,9 @@
 # src/training/enhanced_matrix_gpu_integration.py
 
-""""
+"""
 Enhanced Matrix Operations with M1 GPU Integration.
 Combines advanced matrix operations with Mac M1 GPU acceleration.
-""""
-
+"""
 from __future__ import annotations
 
 import asyncio
@@ -21,8 +20,8 @@ from src.training.steps.step7_enhanced_matrix_operations import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
 import copy
+from src.utils.training_pipeline_decorators import (
 
     circuit_breaker_protection,
     debug_training_step,
@@ -36,13 +35,12 @@ import copy
 
 
 class EnhancedMatrixGPUIntegration:
-    """"
+    """
     Enhanced matrix operations with M1 GPU integration.
 
     Combines advanced matrix operations with Mac M1 GPU acceleration
     for maximum performance and efficiency.
-    """"
-
+    """
     def __init__(self, config: dict[str, Any]):
         """Initialize enhanced matrix GPU integration."""
         self.config = config
@@ -75,7 +73,7 @@ class EnhancedMatrixGPUIntegration:
         features_df: pd.DataFrame,
         target: pd.Series | None = None,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """"
+        """
         Apply enhanced matrix operations with GPU acceleration.
 
         Args:
@@ -84,7 +82,7 @@ class EnhancedMatrixGPUIntegration:
 
         Returns:
             Enhanced features DataFrame and comprehensive metadata
-        """"
+        """
         try:
             start_time = time.time()
             self.logger.info("🚀 Starting Enhanced GPU Matrix Operations...")
@@ -210,7 +208,7 @@ class EnhancedMatrixGPUIntegration:
         self,
         training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """"
+        """
         GPU-optimized training pipeline with enhanced matrix operations.
 
         Args:
@@ -218,7 +216,7 @@ class EnhancedMatrixGPUIntegration:
 
         Returns:
             Enhanced training data and metadata
-        """"
+        """
         try:
             start_time = time.time()
             self.logger.info("🚀 Starting GPU-Optimized Training Pipeline...")
@@ -309,7 +307,7 @@ class EnhancedMatrixGPUIntegration:
         features_df: pd.DataFrame,
         target: pd.Series | None = None,
     ) -> dict[str, Any]:
-        """"
+        """
         Benchmark GPU vs CPU performance for matrix operations.
 
         Args:
@@ -318,7 +316,7 @@ class EnhancedMatrixGPUIntegration:
 
         Returns:
             Benchmark results and performance comparison
-        """"
+        """
         try:
             self.logger.info("📊 Benchmarking GPU vs CPU Performance...")
 

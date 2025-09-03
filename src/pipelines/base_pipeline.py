@@ -1,15 +1,14 @@
-""""
+"""
 Base pipeline framework for Ares trading bot (minimal scaffold).
-""""
-
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import asyncio
 
 from src.utils.centralized_decorators import (
-import asyncio
 
     performance_monitor,
     PerformanceLevel,

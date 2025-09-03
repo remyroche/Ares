@@ -6,8 +6,7 @@ Prepares data for step1_5_data_converter.py processing. This module focuses on:
 3. Optimizing data storage and access patterns
 
 Note: Actual resampling is handled by step1_5_data_converter.py
-""""
-
+"""
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,9 +18,9 @@ from src.utils.logger import system_logger
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+import copy
 
 from src.utils.centralized_decorators import (
-import copy
 
     ValidationLevel,
     comprehensive_data_validation,
@@ -114,7 +113,7 @@ class DataPreparation:
         Returns:
             Combined DataFrame with all klines data
 
-        """"
+        """
         logger.info(f"📊 Loading klines data for {exchange}_{symbol}")
 
         klines_files = self.get_klines_files(symbol, exchange)
@@ -197,7 +196,7 @@ class DataPreparation:
         Returns:
             Dictionary with preparation results
 
-        """"
+        """
         logger.info(f"🔧 Preparing data for step1_5 processing: {exchange}_{symbol}")
 
         preparation_result = {
@@ -279,7 +278,7 @@ class DataPreparation:
         Returns:
             Path to saved file
 
-        """"
+        """
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for saving")
             return None
@@ -351,7 +350,7 @@ class DataPreparation:
         Returns:
             Path to partitioned dataset
 
-        """"
+        """
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for partitioning")
             return None
@@ -428,7 +427,7 @@ class DataPreparation:
         Returns:
             Dictionary with resampling results
 
-        """"
+        """
         resampling_start = datetime.now()
         
         if timeframes is None:
@@ -567,7 +566,7 @@ class DataPreparation:
         Returns:
             Dictionary with validation results
 
-        """"
+        """
         logger.info(f"🔍 Validating {timeframe} resampled data for {exchange}_{symbol}")
 
         # Find resampled file
@@ -660,7 +659,7 @@ class DataPreparation:
         Returns:
             Resampled DataFrame
 
-        """"
+        """
         if timeframe not in self.SUPPORTED_TIMEFRAMES:
             logger.error(f"❌ Unsupported timeframe: {timeframe}")
             return pd.DataFrame()
@@ -724,7 +723,7 @@ class DataPreparation:
         Returns:
             Dictionary with validation results
 
-        """"
+        """
         validation_result = {
             "valid": True,
             "issues": [],
@@ -795,10 +794,9 @@ class DataPreparation:
 
 📊 AVAILABLE TIMEFRAMES:
     pass
-""""
-
+"""
 for timeframe in self.SUPPORTED_TIMEFRAMES:
-            # Check if resampled file exists
+    # Check if resampled file exists
             output_dir = self.data_cache_path / "resampled" / exchange / symbol
             filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
             file_path = output_dir / filename
@@ -814,8 +812,7 @@ for timeframe in self.SUPPORTED_TIMEFRAMES:
 
         report += f""""
 {'='*60}
-""""
-
+"""
 return report
 
     @with_tracing_span("create_1m_consolidated_data")
@@ -850,7 +847,7 @@ return report
         Returns:
             Dictionary with consolidation results
 
-        """"
+        """
         logger.info(f"🔧 Creating 1m consolidated data for {exchange}_{symbol}")
 
         consolidation_result = {

@@ -1,12 +1,11 @@
 # src/tactician/position_monitor.py
-""""
+"""
 Position Monitor for real-time position monitoring and confidence assessment.
 
 This module provides continuous monitoring of open positions with confidence score
 re-assessment and position decision logic every 10 seconds, using the existing
 PositionDivisionStrategy for consistency.
-""""
-
+"""
 import asyncio
 import yaml
 from datetime import datetime
@@ -72,7 +71,7 @@ class PositionAlert:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class PositionMonitor:
-    """"
+    """
     Real-time position monitor with confidence assessment and decision logic.
 
     Features:
@@ -81,15 +80,14 @@ class PositionMonitor:
     - Position action recommendations
     - Alert generation for critical conditions
     - Integration with PositionDivisionStrategy
-    """"
-
+    """
     def __init__(self, config: Dict[str, Any]) -> None:
-        """"
+        """
         Initialize the position monitor.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("PositionMonitor")
 
@@ -127,12 +125,12 @@ class PositionMonitor:
         context="position monitor initialization"
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize the position monitor.
 
         Returns:
             bool: True if initialization successful
-        """"
+        """
         try:
             self.logger.info("Initializing Position Monitor...")
 
@@ -157,12 +155,12 @@ class PositionMonitor:
             return False
 
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate position monitor configuration.
 
         Returns:
             bool: True if configuration is valid
-        """"
+        """
         try:
             if self.monitoring_interval <= 0:
                 self.logger.error(invalid("Monitoring interval must be positive"))
@@ -188,12 +186,12 @@ class PositionMonitor:
         context="position monitoring start"
     )
     async def start_monitoring(self) -> bool:
-        """"
+        """
         Start continuous position monitoring.
 
         Returns:
             bool: True if monitoring started successfully
-        """"
+        """
         try:
             if self.is_monitoring:
                 self.logger.warning(warning("Position monitoring already active"))
@@ -215,12 +213,12 @@ class PositionMonitor:
         context="position monitoring stop"
     )
     async def stop_monitoring(self) -> bool:
-        """"
+        """
         Stop continuous position monitoring.
 
         Returns:
             bool: True if monitoring stopped successfully
-        """"
+        """
         try:
             if not self.is_monitoring:
                 self.logger.warning(warning("Position monitoring not active"))
@@ -243,9 +241,9 @@ class PositionMonitor:
             return False
 
     async def _monitoring_loop(self) -> None:
-        """"
+        """
         Main monitoring loop that runs continuously.
-        """"
+        """
         try:
             while self.is_monitoring:
                 # Monitor all active positions
@@ -263,9 +261,9 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error in monitoring loop: {e}"))
 
     async def _monitor_positions(self) -> None:
-        """"
+        """
         Monitor all active positions and generate assessments.
-        """"
+        """
         try:
             for position_id, position_data in self.active_positions.items():
                 # Get current market data
@@ -298,7 +296,7 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error monitoring positions: {e}"))
 
     async def _assess_position(self, position_id: str, position_data: Dict[str, Any]) -> Optional[PositionAssessment]:
-        """"
+        """
         Assess a single position and determine recommended action.
 
         Args:
@@ -307,7 +305,7 @@ class PositionMonitor:
 
         Returns:
             PositionAssessment: Assessment result or None if failed
-        """"
+        """
         try:
             # Get confidence scores from position strategy
             analyst_confidence = position_data.get("analyst_confidence", 0.5)
@@ -345,7 +343,7 @@ class PositionMonitor:
         position_data: Dict[str, Any],
         combined_confidence: float
     ) -> tuple[PositionAction, str]:
-        """"
+        """
         Determine recommended position action based on current conditions.
 
         Args:
@@ -354,7 +352,7 @@ class PositionMonitor:
 
         Returns:
             tuple: (PositionAction, reason)
-        """"
+        """
         try:
             unrealized_pnl = position_data["unrealized_pnl"]
             entry_time = position_data.get("entry_time")
@@ -392,7 +390,7 @@ class PositionMonitor:
             return PositionAction.STAY, f"Error: {e}"
 
     def _calculate_unrealized_pnl(self, position_data: Dict[str, Any]) -> float:
-        """"
+        """
         Calculate unrealized PnL for a position.
 
         Args:
@@ -400,7 +398,7 @@ class PositionMonitor:
 
         Returns:
             float: Unrealized PnL
-        """"
+        """
         try:
             entry_price = position_data["entry_price"]
             current_price = position_data["current_price"]
@@ -419,7 +417,7 @@ class PositionMonitor:
             return 0.0
 
     async def _get_current_price(self, symbol: str) -> Optional[float]:
-        """"
+        """
         Get current price for a symbol.
 
         Args:
@@ -427,7 +425,7 @@ class PositionMonitor:
 
         Returns:
             float: Current price or None if failed
-        """"
+        """
         try:
             # In a real implementation, this would fetch from exchange
             # For now, return a placeholder
@@ -438,12 +436,12 @@ class PositionMonitor:
             return None
 
     async def _check_position_alerts(self, assessment: PositionAssessment) -> None:
-        """"
+        """
         Check for conditions that require alerts.
 
         Args:
             assessment: Position assessment
-        """"
+        """
         try:
             # Check for critical PnL
             if assessment.unrealized_pnl <= -0.1:  # -10%
@@ -482,7 +480,7 @@ class PositionMonitor:
         severity: str,
         message: str
     ) -> None:
-        """"
+        """
         Create a position alert.
 
         Args:
@@ -490,7 +488,7 @@ class PositionMonitor:
             alert_type: Type of alert
             severity: Alert severity
             message: Alert message
-        """"
+        """
         try:
             alert = PositionAlert(
                 alert_id=f"alert_{len(self.position_alerts) + 1}",
@@ -507,9 +505,9 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error creating alert: {e}"))
 
     async def _cleanup_old_positions(self) -> None:
-        """"
+        """
         Clean up old positions that are no longer active.
-        """"
+        """
         try:
             current_time = datetime.now()
             positions_to_remove = []
@@ -532,10 +530,10 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error cleaning up old positions: {e}"))
 
     async def _auto_refresh_step12_config(self) -> None:
-        """"
+        """
         Automatically refresh step12 configuration and confidence thresholds.
         This method is called periodically to check for new step12 results.
-        """"
+        """
         try:
             # Check if auto-refresh is enabled
             step12_config = self.config.get("step12_confidence_optimization", {})
@@ -570,12 +568,12 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error in step12 auto-refresh: {e}"))
 
     def _load_updated_step12_config(self) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Load updated step12 configuration from results files.
         
         Returns:
             Dict: Updated configuration or None if no updates found
-        """"
+        """
         try:
             step12_config = self.config.get("step12_confidence_optimization", {})
             result_paths = step12_config.get("step12_results_paths", [])
@@ -591,7 +589,7 @@ import copy
 
 updated_config = yaml.safe_load(f)
                             
-                        # Check if this is newer than our current config
+# Check if this is newer than our current config
                         if "timestamp" in updated_config:
                             config_time = datetime.fromisoformat(updated_config["timestamp"])
                             if hasattr(self, '_last_step12_refresh'):
@@ -613,12 +611,12 @@ updated_config = yaml.safe_load(f)
             return None
 
     def add_position(self, position_data: Dict[str, Any]) -> None:
-        """"
+        """
         Add a position to monitoring.
 
         Args:
             position_data: Position data
-        """"
+        """
         try:
             position_id = position_data.get("position_id")
             if not position_id:
@@ -632,12 +630,12 @@ updated_config = yaml.safe_load(f)
             self.logger.error(failed(f"❌ Error adding position: {e}"))
 
     def remove_position(self, position_id: str) -> None:
-        """"
+        """
         Remove a position from monitoring.
 
         Args:
             position_id: Position ID to remove
-        """"
+        """
         try:
             if position_id in self.active_positions:
                 del self.active_positions[position_id]
@@ -649,16 +647,16 @@ updated_config = yaml.safe_load(f)
             self.logger.error(failed(f"❌ Error removing position: {e}"))
 
     def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
-        """"
+        """
         Get all active positions.
 
         Returns:
             Dict[str, Dict[str, Any]]: Active positions
-        """"
+        """
         return self.active_positions.copy()
 
     def get_position_assessments(self, limit: Optional[int] = None) -> List[PositionAssessment]:
-        """"
+        """
         Get position assessments.
 
         Args:
@@ -666,13 +664,13 @@ updated_config = yaml.safe_load(f)
 
         Returns:
             List[PositionAssessment]: Position assessments
-        """"
+        """
         if limit:
             return self.position_assessments[-limit:]
         return self.position_assessments.copy()
 
     def get_position_alerts(self, unresolved_only: bool = True) -> List[PositionAlert]:
-        """"
+        """
         Get position alerts.
 
         Args:
@@ -680,13 +678,13 @@ updated_config = yaml.safe_load(f)
 
         Returns:
             List[PositionAlert]: Position alerts
-        """"
+        """
         if unresolved_only:
             return [alert for alert in self.position_alerts if not alert.resolved]
         return self.position_alerts.copy()
 
     def resolve_alert(self, alert_id: str) -> bool:
-        """"
+        """
         Mark an alert as resolved.
 
         Args:
@@ -694,7 +692,7 @@ updated_config = yaml.safe_load(f)
 
         Returns:
             bool: True if alert was resolved
-        """"
+        """
         try:
             for alert in self.position_alerts:
                 if alert.alert_id == alert_id:
@@ -710,9 +708,9 @@ updated_config = yaml.safe_load(f)
             return False
 
     async def cleanup(self) -> None:
-        """"
+        """
         Cleanup resources.
-        """"
+        """
         try:
             self.logger.info("Cleaning up Position Monitor...")
 

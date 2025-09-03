@@ -179,7 +179,7 @@ class PriceReturnConverter:
     def convert_price_features_to_returns(
         self, features_df: pd.DataFrame
     ) -> pd.DataFrame:
-        """"
+        """
         Convert price features to returns (price differences) to improve autoencoder training.
         Optimized to select only one representative price feature and one volume feature
         to avoid redundancy.
@@ -189,7 +189,7 @@ class PriceReturnConverter:
 
         Returns:
             DataFrame with optimized price features converted to returns
-        """"
+        """
         if not self.use_price_returns:
             self.logger.info(
                 "📊 Price return conversion disabled, using original features"
@@ -1684,7 +1684,7 @@ class AutoencoderFeatureAnalyzer:
         original_features: pd.DataFrame | None = None,
         regime_labels: np.ndarray | None = None,
     ) -> dict[str, Any]:
-        """"
+        """
         Comprehensive analysis of autoencoder feature importance.
 
         Args:
@@ -1695,7 +1695,7 @@ class AutoencoderFeatureAnalyzer:
 
         Returns:
             Dictionary containing all analysis results
-        """"
+        """
         try:
             self.logger.info(
                 "🔍 Starting comprehensive autoencoder feature importance analysis..."
@@ -1931,7 +1931,7 @@ import copy
 import os.path
 
 perm_model = LogisticRegression(random_state=42, max_iter=1000)
-                perm_model.fit(X_train, y_train)
+perm_model.fit(X_train, y_train)
 
                 # Compute permutation importance
                 perm_importance = permutation_importance(
@@ -2429,12 +2429,12 @@ class AutoencoderFeatureGenerator:
         regime_labels: np.ndarray | None = None,
         enable_analysis: bool | None = None,
     ) -> pd.DataFrame:
-        """"
+        """
         Generate autoencoder features from input features.
 
         CRITICAL: This method should only receive engineered features, not raw OHLCV data.
         Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
-        """"
+        """
         # CRITICAL: Filter out raw OHLCV data that should not be used as features
         raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
         raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]

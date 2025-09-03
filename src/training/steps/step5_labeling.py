@@ -9,8 +9,7 @@ Key Enhancements:
 - Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
 - Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available'
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
-""""
-
+"""
 import asyncio
 import sys
 from pathlib import Path
@@ -152,6 +151,10 @@ class LabelingStep:
         
         try:
             # Try to import and initialize RegimeSpecificTripleBarrierOptimizer
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+import copy
+import numpy as np
+import pandas as pd
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
                 RegimeSpecificTripleBarrierOptimizer
             )
@@ -222,7 +225,7 @@ class LabelingStep:
 
         Returns:
             True if successful, False otherwise
-        """"
+        """
         step_start = time.time()
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
@@ -427,7 +430,7 @@ class LabelingStep:
         Primary Path: Attempts regime-aware labeling using RegimeSpecificTripleBarrierOptimizer
         Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
         Data Source Flexibility: Can work with unified data or step04 output depending on configuration
-        """"
+        """
         try:
             result_data = data.copy()
             
@@ -601,15 +604,11 @@ class LabelingStep:
             # Generate regime-aware labels
             try:
                 # Use the regime-aware triple barrier labeling
-                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
             except Exception as e:
                 pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-import pandas as pd
 
 RegimeAwareTripleBarrierLabeling
-                )
+)
                 
                 regime_labeler = RegimeAwareTripleBarrierLabeling(
                     default_profit_take_multiplier=0.002,
@@ -661,7 +660,7 @@ async def run_step(
 
     Returns:
         True if successful, False otherwise
-    """"
+    """
     if config is None:
         config = {}
 

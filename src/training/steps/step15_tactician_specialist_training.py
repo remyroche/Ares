@@ -4,8 +4,7 @@
 
 This step performs tactician specialist model training with S/R level integration
 using standardized data quality management patterns.
-""""
-
+"""
 import asyncio
 import contextlib
 import json
@@ -355,7 +354,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     def _get_timeframe_minutes(self, timeframe: str) -> int:
         """Convert timeframe string to minutes for adaptive processing."
         Step9 only supports 1m and 5m timeframes.
-        """"
+        """
         tf = timeframe.lower()
         if tf == "1m":
             return 1
@@ -1141,10 +1140,10 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-from src.utils.enhanced_mlflow_integration import (
 import copy
 import numpy as np
 import pandas as pd
+from src.utils.enhanced_mlflow_integration import (
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -1272,7 +1271,7 @@ async def run_step(
     Returns:
         bool: True if successful = False otherwise
 
-    """"
+    """
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

@@ -51,7 +51,7 @@ class WalkForwardValidationStep:
 
         Returns:
             Dict containing validation results
-        """"
+        """
         try:
             self.logger.info("🔄 Executing Walk-Forward Validation...")
 
@@ -93,6 +93,8 @@ class WalkForwardValidationStep:
 
             # Persist WFV results as Parquet partitioned by fold/horizon for pruning
             try:
+import pandas as pd  # local import to keep optional
+from src.utils.training_pipeline_decorators import (
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
@@ -102,7 +104,6 @@ class WalkForwardValidationStep:
                 os.makedirs(os.path.join(wfv_base, "summary"), exist_ok=True)
 
                 # Materialize summary metrics table for fast reads
-                import pandas as pd  # local import to keep optional
 
                 summary_rows: list[dict[str, Any]] = []
                 for fold_idx, fold in enumerate(wfv_results.get("fold_results", [])):
@@ -143,7 +144,6 @@ class WalkForwardValidationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -160,8 +160,8 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-from src.utils.enhanced_mlflow_integration import (
 import os.path
+from src.utils.enhanced_mlflow_integration import (
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -252,7 +252,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

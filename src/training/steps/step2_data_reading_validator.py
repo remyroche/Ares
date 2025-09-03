@@ -2,8 +2,7 @@
 """Validator for Step 2: Data Reading."
 
 This module validates the data reading step outputs with comprehensive quality checks.
-""""
-
+"""
 import asyncio
 import sys
 from pathlib import Path
@@ -53,7 +52,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     logger.info("🔍 Validating Step 2: Data Reading")
     
     try:
@@ -96,7 +95,7 @@ async def run_validator(
 import numpy as np
             
 # Read the most recent data file
-            latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
+latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
             data = pd.read_parquet(latest_file)
             
             # Check data quality

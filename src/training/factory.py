@@ -156,7 +156,7 @@ def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary containing all optimized training components
 
-    """"
+    """
     factory = OptimizedTrainingFactory(config)
     return factory.create_training_pipeline()
 
@@ -170,7 +170,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary containing optimization recommendations
 
-    """"
+    """
     recommendations = {
         "memory_optimizations": [],
         "parallelization_optimizations": [],

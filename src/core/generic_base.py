@@ -1,13 +1,12 @@
 # src/core/generic_base.py
 
-""""
+"""
 Generic base classes with proper type constraints for reusable components.
-""""
-
+"""
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import (
 import asyncio
+from typing import (
 
     AsyncContextManager,
     Generic,
@@ -15,8 +14,8 @@ import asyncio
     TypeVar,
     runtime_checkable,
 )
-from src.custom_types import (
 import copy
+from src.custom_types import (
 
     ConfigDict,
     PerformanceMetrics,
@@ -60,10 +59,9 @@ class Validatable(Protocol):
 
 # Generic base classes
 class GenericTradingComponent(Generic[ConfigT], ABC):
-    """"
+    """
     Generic base class for trading components with type-safe configuration.
-    """"
-
+    """
     def __init__(self, config: ConfigT) -> None:
         self._config = config
         self._is_running = False
@@ -100,10 +98,9 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
 
 
 class GenericDataProcessor(Generic[DataT, ResultT], ABC):
-    """"
+    """
     Generic base class for data processors with input/output type constraints.
-    """"
-
+    """
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._processing_stats = {"processed": 0, "errors": 0}
@@ -119,10 +116,9 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
 
 
 class GenericErrorHandler(Generic[ErrorT], ABC):
-    """"
+    """
     Generic base class for error handlers with type-safe error handling.
-    """"
-
+    """
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._error_count = 0
@@ -138,10 +134,9 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
 
 
 class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
-    """"
+    """
     Generic base class for async context managers that manage components.
-    """"
-
+    """
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._components: list[ComponentT] = []
@@ -185,10 +180,9 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
 
 
 class GenericFactory(Generic[ComponentT], ABC):
-    """"
+    """
     Generic base class for component factories.
-    """"
-
+    """
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._created_components: list[ComponentT] = []
@@ -208,10 +202,9 @@ class GenericFactory(Generic[ComponentT], ABC):
 
 
 class GenericValidator(Generic[DataT], ABC):
-    """"
+    """
     Generic base class for data validators.
-    """"
-
+    """
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._validation_rules: list[Callable[[DataT], bool]] = []

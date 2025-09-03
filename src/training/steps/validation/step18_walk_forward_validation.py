@@ -10,10 +10,10 @@ from typing import Any, Dict
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-from src.core.domain import ParquetDatasetManager
-from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
     validation_error,
 )
+from src.core.domain import ParquetDatasetManager
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
 
 class WalkForwardValidationStep:
@@ -190,11 +190,10 @@ from src.utils.enhanced_mlflow_integration import (
         "required_columns": ["timestamp", "features", "targets"],
     },
     context="Walk Forward Validation",
-)
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
-# @prevent_data_leakage - removed, handled by validates
+    backup_before=True, 
+    integrity_checks=True, 
+    memory_cleanup=True, 
+    data_validation=True,
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -230,8 +229,6 @@ from src.utils.enhanced_mlflow_integration import (
     },
     performance_thresholds={"validation_time_minutes": 120.0, "memory_usage_gb": 8.0},
     format_validation=True,
-)
-# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"wfv_score": 0.6},

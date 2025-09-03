@@ -732,9 +732,12 @@ class EnhancedHMMBasedTrainingStep:
             # Compute PR-AUC for primary head if available
             pr_auc_scores = {}
             try:
-                if "price_direction_proba" in price_action_probabilities and "direction_target" in prepared_data:
+                if "direction_probability" in price_action_probabilities and "direction_target" in prepared_data:
                     y_true = prepared_data["direction_target"].values[split_idx:]
-                    y_proba = price_action_probabilities["price_direction_proba"]
+                    y_proba = price_action_probabilities["direction_probability"]
+                    # If scalar provided, replicate to match length
+                    if np.isscalar(y_proba):
+                        y_proba = np.full_like(y_true, float(y_proba), dtype=float)
                     pr_auc_scores["direction_pr_auc"] = float(average_precision_score(y_true, y_proba))
             except Exception:
                 pass
@@ -746,10 +749,13 @@ class EnhancedHMMBasedTrainingStep:
                     costs_bps = float(self.config.get("costs_bps", 8.0))  # 0.08% per round-trip
                     entry_prices = market_data.iloc[split_idx:]["close"].values
                     # Simple threshold on direction probability
-                    if "price_direction_proba" in price_action_probabilities:
-                        prob = price_action_probabilities["price_direction_proba"]
+                    if "direction_probability" in price_action_probabilities:
+                        prob = price_action_probabilities["direction_probability"]
                         threshold = float(self.config.get("prob_threshold", 0.6))
-                        positions = (prob > threshold).astype(int)  # 1 long, 0 flat
+                        if np.isscalar(prob):
+                            positions = np.ones_like(entry_prices, dtype=int) if float(prob) > threshold else np.zeros_like(entry_prices, dtype=int)
+                        else:
+                            positions = (np.asarray(prob) > threshold).astype(int)  # 1 long, 0 flat
                         # Entry/exit when position changes
                         returns = []
                         wins = 0

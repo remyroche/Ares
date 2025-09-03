@@ -428,9 +428,21 @@ class PositionMonitor:
             float: Current price or None if failed
         """
         try:
-            # In a real implementation, this would fetch from exchange
-            # For now, return a placeholder
-            return 100.0  # Placeholder
+            # Attempt to use an injected price provider callable from config
+            price_provider = self.monitor_config.get("price_provider")
+            if callable(price_provider):
+                return float(await price_provider(symbol)) if asyncio.iscoroutinefunction(price_provider) else float(price_provider(symbol))
+
+            # Attempt exchange client from config
+            exchange_client = self.monitor_config.get("exchange_client")
+            if exchange_client is not None:
+                # Expecting a method get_current_price(symbol) possibly async
+                if hasattr(exchange_client, "get_current_price"):
+                    func = getattr(exchange_client, "get_current_price")
+                    return float(await func(symbol)) if asyncio.iscoroutinefunction(func) else float(func(symbol))
+
+            self.logger.error(missing("No price provider configured for PositionMonitor"))
+            return None
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error getting current price for {symbol}: {e}"))

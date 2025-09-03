@@ -461,6 +461,12 @@ class DecisionPolicy:
                     "leverage_decision": leverage_decision,
                     "sr_decision": sr_decision,
                     "ml_decision": ml_decision,
+                    # Clarify active tactician path in production
+                    # If FullyMigratedTactician is used upstream, this flag can be set in config
+                    "active_tactician_path": self.config.get(
+                        "active_tactician_path",
+                        "ml_tactics_manager",  # default to specialist/ML tactics path
+                    ),
                     "timestamp": datetime.now().isoformat(),
                 },
             )

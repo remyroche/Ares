@@ -25,7 +25,7 @@ I have successfully enhanced the `common_operations` module with comprehensive t
 
 ### 2. Comprehensive Unit Tests
 
-Created `tests/test_common_operations.py` with **600+ lines** of tests covering:
+Created `code_quality/tests/test_common_operations.py` with **600+ lines** of tests covering:
 
 #### Test Categories:
 1. **DateTime Operations** (4 tests)
@@ -130,17 +130,17 @@ The test suite covers:
 
 ### Basic Test Run:
 ```bash
-python run_common_operations_tests.py
+python code_quality/run_common_operations_tests.py
 ```
 
 ### With Coverage Report:
 ```bash
-python run_common_operations_tests.py --coverage
+python code_quality/run_common_operations_tests.py --coverage
 ```
 
 ### Direct unittest execution:
 ```bash
-python -m unittest tests.test_common_operations -v
+python -m unittest code_quality.tests.test_common_operations -v
 ```
 
 ## 💡 Benefits Achieved

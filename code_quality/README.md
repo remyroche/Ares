@@ -26,6 +26,11 @@ A focused tool specifically for function-related validation:
 ### 3. Runner Script (`run_validation.py`)
 A convenient wrapper that runs both tools with easy configuration.
 
+### 4. Test Suite (`tests/`)
+Comprehensive unit tests for code quality utilities:
+- **test_common_operations.py** - 90+ tests for common_operations module
+- Run with: `python code_quality/run_common_operations_tests.py`
+
 ## Installation
 
 The tools use only Python standard library modules, so no additional installation is required beyond Python 3.7+.

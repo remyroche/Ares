@@ -41,7 +41,6 @@ class EnhancedExecutionManager:
         """Load configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-from src.core.decorators import handles_errors
         
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
@@ -82,7 +81,7 @@ from src.core.decorators import handles_errors
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
         self.logger.info(f"   Position Size Multiplier: {self.position_size_multiplier}")
 
-    @handles_errors
+    @handles_errors(
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.validate_analyst_signal"
     )
@@ -185,7 +184,7 @@ from src.core.decorators import handles_errors
             return False
         return analyst_direction == tactician_direction
 
-    @handles_errors
+    @handles_errors(
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.calculate_execution_parameters"
     )
@@ -226,11 +225,11 @@ from src.core.decorators import handles_errors
             adaptive_lower = current_price * (1 - dynamic_lower)
             
             # Calculate position sizing with precision multiplier
-            base_position_size = analyst_signal.get("position_size", 0.1)
+            base_position_size = validation.get("position_size", 0.1)
             precision_position_size = base_position_size * self.position_size_multiplier
             
             # Calculate leverage with precision multiplier
-            base_leverage = analyst_signal.get("leverage", 1.0)
+            base_leverage = validation.get("leverage", 1.0)
             precision_leverage = base_leverage * self.leverage_multiplier
             
             # Calculate risk-adjusted parameters
@@ -239,7 +238,7 @@ from src.core.decorators import handles_errors
             )
             
             # Calculate execution timing
-            entry_timing = self._calculate_entry_timing(market_data, tactician_confidence)
+            entry_timing = self._calculate_entry_timing(market_data, validation["tactician_confidence"])
             
             # Calculate precision score (no volatility adjustment - ML model handles it)
             precision_score = self._calculate_precision_score(
@@ -356,7 +355,7 @@ from src.core.decorators import handles_errors
             self.logger.warning(f"⚠️ Error calculating precision score: {e}")
             return combined_confidence
 
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "reason": "error"},
         context="enhanced_execution_manager.execute_trade"
     )

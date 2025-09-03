@@ -1,7 +1,5 @@
 from src.core.decorators import handles_errors
 
-from src.core.domain import handle_specific_errors
-
 import asyncio
 import time
 from collections import defaultdict
@@ -11,7 +9,6 @@ from typing import Any, Dict
 import pandas as pd
 
 from src.utils.logger import system_logger
-import pandas as pd
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -19,7 +16,6 @@ from src.utils.warning_symbols import (
     invalid,
 )
 from src.utils.tracing import with_tracing_span
-from src.utils.warning_symbols import error, failed, initialization_error, invalid
 
 DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
@@ -93,8 +89,8 @@ class OnlineLearningManager:
 
             self.logger.info(f"Updated performance for model {model_id}: {performance}")
 
-        except Exception:
-            self.print(error("Error updating model performance: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error updating model performance: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
@@ -132,8 +128,8 @@ class OnlineLearningManager:
 
             self.logger.info(f"Recalculated weights: {self.model_weights}")
 
-        except Exception:
-            self.print(error("Error recalculating weights: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error recalculating weights: {e}"))
 
     def get_model_weights(self) -> dict[str, float]:
         """Get current model weights."""
@@ -196,8 +192,18 @@ class SystemCoordinator:
         self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get(
             "max_confidence_threshold", 0.9
         )
+        
+        # Health monitoring
+        self.critical_components = ["database", "exchange", "analyst", "strategist", "tactician", "enhanced_training_manager"]
+        self.health_checks: dict[str, bool] = {}
+        self.component_monitors: dict[str, dict[str, bool]] = {
+            "analyst": {},
+            "strategist": {},
+            "tactician": {},
+            "enhanced_training_manager": {}
+        }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid supervisor configuration"),
             AttributeError: (False, "Missing required supervisor parameters"),
@@ -211,7 +217,7 @@ class SystemCoordinator:
             self.logger.info("Initializing Supervisor...")
             await self._load_supervisor_configuration()
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for supervisor"))
+                self.logger.error(invalid("Invalid configuration for supervisor"))
                 return False
             await self._initialize_components()
             await self._setup_circuit_breakers()
@@ -220,8 +226,8 @@ class SystemCoordinator:
             self.logger.info("✅ Supervisor initialization completed successfully")
             self.is_initialized = True
             return True
-        except Exception:
-            self.print(failed("❌ Supervisor initialization failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Supervisor initialization failed: {e}"))
             return False
 
     @handles_errors(
@@ -240,8 +246,8 @@ class SystemCoordinator:
             self.max_recovery_attempts = self.supervisor_config["max_recovery_attempts"]
             self.recovery_cooldown = self.supervisor_config["recovery_cooldown"]
             self.logger.info("Supervisor configuration loaded successfully")
-        except Exception:
-            self.print(error("Error loading supervisor configuration: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error loading supervisor configuration: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -251,21 +257,21 @@ class SystemCoordinator:
     def _validate_configuration(self) -> bool:
         try:
             if self.supervision_interval <= 0:
-                self.print(invalid("Invalid supervision interval"))
+                self.logger.error(invalid("Invalid supervision interval"))
                 return False
             if self.max_history <= 0:
-                self.print(invalid("Invalid max history"))
+                self.logger.error(invalid("Invalid max history"))
                 return False
             if self.max_recovery_attempts <= 0:
-                self.print(invalid("Invalid max recovery attempts"))
+                self.logger.error(invalid("Invalid max recovery attempts"))
                 return False
             if self.recovery_cooldown <= 0:
-                self.print(invalid("Invalid recovery cooldown"))
+                self.logger.error(invalid("Invalid recovery cooldown"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
     @handles_errors(
@@ -294,8 +300,8 @@ class SystemCoordinator:
             await self._initialize_enhanced_prediction_service()
 
             self.logger.info("Components initialized successfully")
-        except Exception:
-            self.print(initialization_error("Error initializing components: {e}"))
+        except Exception as e:
+            self.logger.error(initialization_error(f"Error initializing components: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -319,8 +325,8 @@ class SystemCoordinator:
             }
 
             self.logger.info("Circuit breakers setup complete")
-        except Exception:
-            self.print(error("Error setting up circuit breakers: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error setting up circuit breakers: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -335,8 +341,8 @@ class SystemCoordinator:
             self.online_learning = OnlineLearningManager(online_learning_config)
 
             self.logger.info("Online learning setup complete")
-        except Exception:
-            self.print(error("Error setting up online learning: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error setting up online learning: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -352,8 +358,8 @@ class SystemCoordinator:
                     monitors[monitor_name] = False
 
             self.logger.info("Component monitors setup complete")
-        except Exception:
-            self.print(error("Error setting up component monitors: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error setting up component monitors: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -384,7 +390,7 @@ class SystemCoordinator:
         default_return={},
         context="getting analyst predictions",
     )
-    @traced("get_analyst_predictions")
+    @with_tracing_span("get_analyst_predictions")
     async def get_analyst_predictions(
         self,
         market_data: pd.DataFrame,
@@ -443,7 +449,7 @@ class SystemCoordinator:
         default_return={},
         context="getting tactician predictions",
     )
-    @traced("get_tactician_predictions")
+    @with_tracing_span("get_tactician_predictions")
     async def get_tactician_predictions(
         self,
         market_data: pd.DataFrame,
@@ -504,7 +510,7 @@ class SystemCoordinator:
         default_return={},
         context="analyst deciding position entry",
     )
-    @traced("analyst_decide_position_entry")
+    @with_tracing_span("analyst_decide_position_entry")
     async def _analyst_decide_position_entry(
         self,
         market_data: pd.DataFrame,
@@ -602,7 +608,7 @@ class SystemCoordinator:
         default_return={},
         context="tactician calculating execution parameters",
     )
-    @traced("tactician_calculate_execution_parameters")
+    @with_tracing_span("tactician_calculate_execution_parameters")
     async def _tactician_calculate_execution_parameters(
         self,
         market_data: pd.DataFrame,
@@ -619,12 +625,10 @@ class SystemCoordinator:
         try:
             # Import enhanced execution manager
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import numpy as np
-# Initialize enhanced execution manager
-enhanced_manager = EnhancedExecutionManager(self.config)
+            import copy
+            import numpy as np
+            # Initialize enhanced execution manager
+            enhanced_manager = EnhancedExecutionManager(self.config)
 
             # Check if Analyst wants to enter
             analyst_decision = analyst_signals.get("analyst_decision", {})
@@ -1285,7 +1289,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             self.logger.error(error(f"❌ Error calculating analyst risk metrics: {e}"))
             return {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Supervisor run failed"),
         },
@@ -1340,7 +1344,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
                 self.health_checks[component] = health_status
 
                 if not health_status:
-                    self.print(failed("⚠️ Component {component} health check failed"))
+                    self.logger.warning(failed(f"⚠️ Component {component} health check failed"))
                     await self._trigger_recovery(component)
 
             # Log overall health status
@@ -1352,8 +1356,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
                 f"System health: {health_percentage:.1f}% ({healthy_components}/{total_components} components healthy)",
             )
 
-        except Exception:
-            self.print(error("Error monitoring system health: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error monitoring system health: {e}"))
 
     def _monitor_analyst_features(self) -> None:
         """Monitor Analyst component features."""
@@ -1472,8 +1476,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Log component feature status
             self._log_component_feature_status()
 
-        except Exception:
-            self.print(error("Error monitoring component features: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error monitoring component features: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1519,8 +1523,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Coordinate Training Manager
             await self._coordinate_training_manager()
 
-        except Exception:
-            self.print(error("Error coordinating components: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error coordinating components: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1548,8 +1552,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
 
             self.logger.info("Analyst-Strategist coordination completed")
 
-        except Exception:
-            self.print(error("Error coordinating Analyst-Strategist: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error coordinating Analyst-Strategist: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1586,8 +1590,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
 
             self.logger.info("Strategist-Tactician coordination completed")
 
-        except Exception:
-            self.print(error("Error coordinating Strategist-Tactician: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error coordinating Strategist-Tactician: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1617,8 +1621,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
 
             self.logger.info("Training Manager coordination completed")
 
-        except Exception:
-            self.print(error("Error coordinating Training Manager: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error coordinating Training Manager: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1681,8 +1685,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
 
             self.logger.info(f"Online learning updated: {updated_weights}")
 
-        except Exception:
-            self.print(error("Error updating online learning: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error updating online learning: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1693,7 +1697,7 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         """Trigger recovery for a failed component."""
         try:
             current_time = time.time()
-            last_attempt = self.last_recovery_attempt.get(component=0)
+            last_attempt = self.last_recovery_attempt.get(component, 0)
 
             # Check if we can attempt recovery
             if (
@@ -1718,8 +1722,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
 
             self.last_recovery_attempt[component] = current_time
 
-        except Exception:
-            self.print(error("Error triggering recovery for {component}: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error triggering recovery for {component}: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1745,8 +1749,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Generic recovery
             return await self._generic_recovery(component)
 
-        except Exception:
-            self.print(error("Error attempting recovery for {component}: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error attempting recovery for {component}: {e}"))
             return False
 
     @handles_errors(
@@ -1762,8 +1766,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual database reconnection logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Database recovery failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Database recovery failed: {e}"))
             return False
 
     @handles_errors(
@@ -1779,8 +1783,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual exchange reconnection logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Exchange recovery failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Exchange recovery failed: {e}"))
             return False
 
     @handles_errors(
@@ -1796,8 +1800,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual analyst restart logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Analyst recovery failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Analyst recovery failed: {e}"))
             return False
 
     @handles_errors(
@@ -1813,8 +1817,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual strategist restart logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Strategist recovery failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Strategist recovery failed: {e}"))
             return False
 
     @handles_errors(
@@ -1830,8 +1834,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual tactician restart logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Tactician recovery failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Tactician recovery failed: {e}"))
             return False
 
     @handles_errors(
@@ -1847,8 +1851,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual training manager restart logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Enhanced training manager recovery failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Enhanced training manager recovery failed: {e}"))
             return False
 
     @handles_errors(
@@ -1863,8 +1867,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             # Mock recovery - replace with actual restart logic
             await asyncio.sleep(1)
             return True
-        except Exception:
-            self.print(failed("Generic recovery failed for {component}: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Generic recovery failed for {component}: {e}"))
             return False
 
     @handles_errors(
@@ -1879,8 +1883,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
                 if not health_status:
                     await self._trigger_recovery(component)
 
-        except Exception:
-            self.print(error("Error checking recovery needs: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error checking recovery needs: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1911,8 +1915,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
             if len(self.history) > self.max_history:
                 self.history.pop(0)
 
-        except Exception:
-            self.print(error("Error updating supervision results: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error updating supervision results: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1924,8 +1928,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
         try:
             self.is_running = False
             self.logger.info("✅ Supervisor stopped successfully")
-        except Exception:
-            self.print(error("Error stopping supervisor: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error stopping supervisor: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return {
@@ -2010,8 +2014,8 @@ enhanced_manager = EnhancedExecutionManager(self.config)
                     "daily_return": daily_return,
                     "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
                 }
-        except Exception:
-            self.print(error("Error enforcing portfolio guards: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error enforcing portfolio guards: {e}"))
             return
 
 

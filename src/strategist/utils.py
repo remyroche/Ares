@@ -1,13 +1,18 @@
 from __future__ import annotations
-'\nUtility functions and common patterns for the Strategist module.\n'
+
+"""
+Utility functions and common patterns for the Strategist module.
+"""
+
 import asyncio
 import functools
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from typing import TypeVar
+from typing import TypeVar, Any, Callable
 import numpy as np
 import pandas as pd
+
 T = TypeVar('T')
 
 class StrategistError(Exception):

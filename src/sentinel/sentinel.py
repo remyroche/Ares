@@ -1,5 +1,4 @@
 import asyncio
-import copy
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -7,9 +6,7 @@ from typing import Any
 from src.core.decorators import handles_errors, log_execution_time
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
     failed,
-    initialization_error,
     invalid,
     missing,
     warning,

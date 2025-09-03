@@ -11,12 +11,10 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
-
 from src.core.decorators import handles_errors
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, initialization_error, invalid
+from src.utils.warning_symbols import error, failed
 
 from .circuit_breaker import CircuitBreaker
 from .component_monitor import ComponentMonitor

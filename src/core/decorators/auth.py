@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
-from typing import A, Callableny, Optional
+from typing import Optional
 
 from src.core.errors.base import AuthenticationError, AuthorizationError
 

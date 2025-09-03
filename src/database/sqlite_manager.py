@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Any
 
 from src.config.constants import *
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,

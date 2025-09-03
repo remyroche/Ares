@@ -25,14 +25,7 @@ from .probabilistic_bayesian_optimizer import (
 
 # Import existing model components
 try:
-    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
-    from src.analyst.momentum_predictor import MomentumPredictor
-    from src.analyst.regime_predictor import RegimePredictor
-    from src.analyst.trend_predictor import TrendPredictor
-    from src.analyst.volatility_predictor import VolatilityPredictor
-    from src.tactician.enhanced_prediction_integrator import (
-        TacticianEnhancedPredictionIntegrator,
-    )
+    pass
 except ImportError:
     # Fallback for testing
     pass

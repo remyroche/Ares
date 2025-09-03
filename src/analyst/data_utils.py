@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import copy
 import logging
 import os
 from datetime import datetime
@@ -12,17 +10,14 @@ import pandas as pd
 from scipy.signal import find_peaks  # For volume profile peaks
 
 # src/analyst/data_utils.py
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     critical,
-    error,
     failed,
     initialization_error,
     invalid,
     missing,
-    validation_error,
     warning,
 )
 

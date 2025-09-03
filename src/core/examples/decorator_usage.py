@@ -182,7 +182,6 @@ async def get_user_from_db(user_id: str) -> dict:
     await asyncio.sleep(0.05)
 
     # Add trace events
-    from src.core.decorators import span_attribute as span_attribute_src_core_decorators
     from src.core.decorators import span_event
 
     span_event("query_started", {"user_id": user_id})
@@ -196,7 +195,6 @@ async def get_user_from_db(user_id: str) -> dict:
 
 
 # Example 9: Method decorator on a class
-from src.core.decorators import trace_method as trace_method_src_core_decorators
 
 
 @trace_method(span_prefix="UserService")
@@ -297,17 +295,15 @@ async def main():
     print(f"9. User from service: {user}")
 
     # Show cache stats
-    from src.core.decorators import cache_stats as cache_stats_src_core_decorators
 
     stats = cache_stats()
     print(f"\nCache statistics: {stats}")
 
     # Show trace summary (if any traces were created)
-    from src.core.decorators import get_current_trace as get_current_trace_src_core_decorators
 
     trace = get_current_trace()
     if trace:
-        from src.core.decorators import get_trace_summary as get_trace_summary_src_core_decorators
+        pass
 
         summary = get_trace_summary(trace.trace_id)
         print(f"\nTrace summary: {summary}")

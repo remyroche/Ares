@@ -6,8 +6,6 @@ import asyncio
 from typing import Any
 
 from src.config import CONFIG
-from src.utils.base_validator import BaseValidator as BaseValidator_src_utils_base_validator
-from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols
 
 
 class Step20ABTestingValidator(BaseValidator):

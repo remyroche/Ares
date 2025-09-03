@@ -7,7 +7,7 @@ and their initialization, reducing coupling and improving testability.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from src.config import CONFIG
 from src.utils.logger import system_logger

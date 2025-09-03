@@ -30,7 +30,7 @@ except Exception as e:
     pass  # TODO: Handle exception properly
 import os.path
 
-    MLFLOW_AVAILABLE = True
+MLFLOW_AVAILABLE = True
     except ImportError:
     MLFLOW_AVAILABLE = False
 

@@ -12,11 +12,10 @@ This module provides advanced surrogate models including:
 
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import joblib
 import numpy as np
-import pandas as pd
 
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -29,8 +28,6 @@ from sklearn.gaussian_process.kernels import (
 )
 from sklearn.model_selection import cross_val_score
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-
 # Advanced ML libraries
 try:
     import torch
@@ -41,20 +38,17 @@ except ImportError:
     TORCH_AVAILABLE = False
 
 try:
-    import xgboost as xgb
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
 
 try:
-    import lightgbm as lgb
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
 
 # Utilities
 
-import copy
 
 from src.utils.logger import system_logger
 

@@ -12,7 +12,6 @@ It optimizes both model hyperparameters and probabilistic output calibration.
 import logging
 import warnings
 from dataclasses import dataclass
-from typing import A, Callableny
 
 import numpy as np
 import optuna

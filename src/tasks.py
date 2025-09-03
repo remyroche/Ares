@@ -7,7 +7,6 @@ from celery import Celery
 from celery.schedules import crontab
 
 from src.ares_pipeline import AresPipeline
-from src.config import get_environment_settings as get_environment_settings_src_config
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 

@@ -68,7 +68,6 @@ class OptimizationManager:
         
         # Try to use Optuna if available
         try:
-            import optuna
             return await self._optimize_with_optuna(
                 objective_function, param_space, market_data, n_trials
             )

@@ -1,0 +1,46 @@
+{
+  "files_fixed": 0,
+  "files_failed": 8,
+  "fixes_applied": [
+    {
+      "file": "/workspace/src/monitoring/performance_dashboard.py",
+      "error": "unterminated string literal (detected at line 4) (performance_dashboard.py, line 4)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/monitoring/performance_monitor.py",
+      "error": "unterminated string literal (detected at line 4) (performance_monitor.py, line 4)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+      "error": "unterminated string literal (detected at line 7) (enhanced_trading_launcher.py, line 7)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "error": "unterminated string literal (detected at line 425) (enhanced_event_bus.py, line 425)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "error": "unterminated string literal (detected at line 6) (enhanced_prediction_service.py, line 6)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/supervisor/supervisor.py",
+      "error": "unexpected unindent (supervisor.py, line 43)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/tactician.py",
+      "error": "unterminated string literal (detected at line 20) (tactician.py, line 20)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/analyst.py",
+      "error": "unterminated string literal (detected at line 44) (analyst.py, line 44)",
+      "status": "failed"
+    }
+  ]
+}

@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 """
 Live trading pipeline implementation (minimal scaffold).
 """
-from __future__ import annotations
 
 from src.core.decorators import (
     cached,
@@ -20,7 +21,6 @@ from src.utils.logger import system_logger
 
 class LiveTradingPipeline:
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
         self.logger = system_logger.getChild("LiveTradingPipeline")
 
     @log_execution_time(level=PerformanceLevel.DETAILED)

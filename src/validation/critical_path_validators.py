@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/validation/critical_path_validators.py
 
 """
@@ -39,7 +40,9 @@ class CriticalPathValidator:
         """Validate trading signal with comprehensive checks."""
         try:
             validated_signal = TypeValidator.validate_type(
-                signal, TradingSignal, "trading_signal",
+                signal,
+                TradingSignal,
+                "trading_signal",
             )
 
             # Additional business logic validation
@@ -71,7 +74,9 @@ class CriticalPathValidator:
         """Validate trade decision with risk checks."""
         try:
             validated_decision = TypeValidator.validate_type(
-                decision, TradeDecision, "trade_decision",
+                decision,
+                TradeDecision,
+                "trade_decision",
             )
 
             # Risk validation
@@ -127,7 +132,9 @@ class CriticalPathValidator:
         """Validate order request for execution safety."""
         try:
             validated_order = TypeValidator.validate_type(
-                order, OrderRequest, "order_request",
+                order,
+                OrderRequest,
+                "order_request",
             )
 
             # Order validation
@@ -166,7 +173,9 @@ class CriticalPathValidator:
         """Validate position information."""
         try:
             validated_position = TypeValidator.validate_type(
-                position, PositionInfo, "position_info",
+                position,
+                PositionInfo,
+                "position_info",
             )
 
             # Position validation

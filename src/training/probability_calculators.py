@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Probability Calculation Framework
 
@@ -15,6 +16,7 @@ from sklearn.metrics import accuracy_score
 
 logger = logging.getLogger(__name__)
 
+
 class BaseProbabilityCalculator:
     """Base class for probability calculations across different model types."""
 
@@ -24,7 +26,9 @@ class BaseProbabilityCalculator:
     def validate_probability(self, prob: float, name: str) -> float:
         """Validate that probability is between 0.0 and 1.0."""
         if not 0.0 <= prob <= 1.0:
-            self.logger.warning(f"{name} probability {prob} out of range [0,1], clamping")
+            self.logger.warning(
+                f"{name} probability {prob} out of range [0,1], clamping"
+            )
             return np.clip(prob, 0.0, 1.0)
         return prob
 
@@ -35,6 +39,7 @@ class BaseProbabilityCalculator:
             return np.mean(np.maximum(y_pred_proba, 1 - y_pred_proba))
         # Multi-class classification
         return np.mean(np.max(y_pred_proba, axis=1))
+
 
 class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for classification models."""
@@ -208,8 +213,11 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(avoidance_prob, "barrier_avoidance")
 
         except Exception as e:
-            self.logger.exception(f"Error calculating barrier avoidance probability: {e}")
+            self.logger.exception(
+                f"Error calculating barrier avoidance probability: {e}"
+            )
             return 0.5  # Default fallback
+
 
 class RegressionProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for regression models."""
@@ -395,10 +403,15 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(avoidance_prob, "barrier_avoidance")
 
         except Exception as e:
-            self.logger.exception(f"Error calculating barrier avoidance probability: {e}")
+            self.logger.exception(
+                f"Error calculating barrier avoidance probability: {e}"
+            )
             return 0.5
 
-def get_probability_calculator(model_type: str) -> Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator]:
+
+def get_probability_calculator(
+    model_type: str,
+) -> Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator]:
     """
     Factory function to get appropriate probability calculator.
 

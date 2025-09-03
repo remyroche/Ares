@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/utils/async_utils.py
 
 import asyncio
 import contextlib
@@ -12,6 +11,8 @@ import aiofiles
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+# src/utils/async_utils.py
 
 
 class AsyncFileManager:
@@ -38,7 +39,9 @@ class AsyncFileManager:
         self.file_config: dict[str, Any] = self.config.get("async_file_manager", {})
         self.max_cache_size = int(self.file_config.get("max_cache_size", 100))
         self.cache_enabled = bool(self.file_config.get("cache_enabled", True))
-        self.default_encoding: str = str(self.file_config.get("default_encoding", "utf-8"))
+        self.default_encoding: str = str(
+            self.file_config.get("default_encoding", "utf-8")
+        )
 
     @handles_errors(
         error_handlers={
@@ -111,7 +114,9 @@ class AsyncFileManager:
         default_return=None,
         context="file reading",
     )
-    async def read_file(self, file_path: str, encoding: str | None = None) -> str | None:
+    async def read_file(
+        self, file_path: str, encoding: str | None = None
+    ) -> str | None:
         """
         Read file asynchronously.
 
@@ -143,7 +148,9 @@ class AsyncFileManager:
         default_return=False,
         context="file writing",
     )
-    async def write_file(self, file_path: str, content: str, encoding: str | None = None) -> bool:
+    async def write_file(
+        self, file_path: str, content: str, encoding: str | None = None
+    ) -> bool:
         """
         Write file asynchronously.
 
@@ -197,7 +204,9 @@ class AsyncFileManager:
         default_return=False,
         context="JSON file writing",
     )
-    async def write_json(self, file_path: str, data: dict[str, Any], indent: int = 2) -> bool:
+    async def write_json(
+        self, file_path: str, data: dict[str, Any], indent: int = 2
+    ) -> bool:
         """
         Write JSON file asynchronously.
 
@@ -262,6 +271,7 @@ class AsyncFileManager:
         self.clear_cache()
         self.logger.info("✅ Async File Manager stopped successfully")
 
+
 class AsyncTaskManager:
     """
     Enhanced async task manager with comprehensive error handling and type safety.
@@ -284,7 +294,9 @@ class AsyncTaskManager:
 
         # Configuration
         self.task_config: dict[str, Any] = self.config.get("async_task_manager", {})
-        self.max_concurrent_tasks = int(self.task_config.get("max_concurrent_tasks", 10))
+        self.max_concurrent_tasks = int(
+            self.task_config.get("max_concurrent_tasks", 10)
+        )
         self.task_timeout: int = int(self.task_config.get("task_timeout", 300))
 
     @handles_errors(
@@ -467,9 +479,11 @@ class AsyncTaskManager:
         self.task_results.clear()
         self.logger.info("✅ Async Task Manager stopped successfully")
 
+
 # Global instances
 async_file_manager: AsyncFileManager | None = None
 async_task_manager: AsyncTaskManager | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_async_utils(
@@ -516,6 +530,7 @@ async def setup_async_utils(
         return async_file_manager, async_task_manager
     return None, None
 
+
 class AsyncProcessesManager:
     """
     Manager for async processes with comprehensive error handling.
@@ -535,7 +550,9 @@ class AsyncProcessesManager:
     ) -> asyncio.subprocess.Process | None:
         """Start an async process."""
         if len(self.processes) >= self.max_processes:
-            self.logger.warning(warning(f"Maximum processes ({self.max_processes}) reached"))
+            self.logger.warning(
+                warning(f"Maximum processes ({self.max_processes}) reached")
+            )
             return None
 
         try:
@@ -585,9 +602,11 @@ class AsyncProcessesManager:
             "total_processes": len(self.processes),
             "max_processes": self.max_processes,
             "processes": {
-                name: {"pid": proc.pid, "returncode": proc.returncode} for name, proc in self.processes.items()
+                name: {"pid": proc.pid, "returncode": proc.returncode}
+                for name, proc in self.processes.items()
             },
         }
+
 
 # Create a global instance for backward compatibility
 async_processes_manager = AsyncProcessesManager()

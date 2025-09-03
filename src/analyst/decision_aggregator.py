@@ -15,7 +15,7 @@ def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
         return float(default)
 
 
-def _normalize(weights: dict[str , float]) -> dict[str, float]:
+def _normalize(weights: dict[str, float]) -> dict[str, float]:
     vals = np.array([max(0.0, float(v)) for v in weights.values()], dtype=float)
     s = float(vals.sum())
     if s <= 0:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/core/di_launcher.py
 
 """
@@ -62,15 +63,20 @@ class DILauncher:
 
             # Create exchange client
             from src.exchange.binance import BinanceClient
+
             exchange_client = BinanceClient(trading_config.get("exchange", {}))
 
             # Create state manager
             from src.utils.state_manager import StateManager
+
             state_manager = StateManager(trading_config.get("state", {}))
 
             # Create performance reporter
             from src.supervisor.performance_reporter import PerformanceReporter
-            performance_reporter = PerformanceReporter(trading_config.get("performance", {}))
+
+            performance_reporter = PerformanceReporter(
+                trading_config.get("performance", {})
+            )
 
             # Create trading components
             self.system_components = await self.factory.create_complete_trading_system(
@@ -113,15 +119,20 @@ class DILauncher:
 
             # Create exchange client
             from src.exchange.binance import BinanceClient
+
             exchange_client = BinanceClient(trading_config.get("exchange", {}))
 
             # Create state manager
             from src.utils.state_manager import StateManager
+
             state_manager = StateManager(trading_config.get("state", {}))
 
             # Create performance reporter
             from src.supervisor.performance_reporter import PerformanceReporter
-            performance_reporter = PerformanceReporter(trading_config.get("performance", {}))
+
+            performance_reporter = PerformanceReporter(
+                trading_config.get("performance", {})
+            )
 
             # Create trading components
             self.system_components = await self.factory.create_complete_trading_system(
@@ -142,7 +153,9 @@ class DILauncher:
             self.logger.exception(f"Failed to launch live trading: {e}")
             raise
 
-    def _create_paper_trading_config(self, symbol: str, exchange: str) -> dict[str, Any]:
+    def _create_paper_trading_config(
+        self, symbol: str, exchange: str
+    ) -> dict[str, Any]:
         """Create configuration for paper trading mode."""
         return {
             "mode": "paper_trading",

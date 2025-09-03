@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Refactored DataCollectionStep with reduced complexity and type hints.
 This version breaks down the massive _log_detailed_data_extract method into smaller,
@@ -18,6 +19,7 @@ import pandas as pd
 
 class DataType(Enum):
     """Types of data to analyze"""
+
     KLINES = "klines"
     AGGTRADES = "aggtrades"
     FUTURES = "futures"
@@ -27,6 +29,7 @@ class DataType(Enum):
 @dataclass
 class DataQualityMetrics:
     """Container for data quality metrics"""
+
     shape: tuple[int, int]
     file_size: int
     columns: list[str]
@@ -42,6 +45,7 @@ class DataQualityMetrics:
 @dataclass
 class DataExtractConfig:
     """Configuration for data extraction logging"""
+
     show_sample_rows: int = 5
     check_duplicates: bool = True
     check_missing: bool = True
@@ -59,7 +63,9 @@ class DataAnalyzer(ABC):
         """Analyze the dataframe and return quality metrics"""
 
     @abstractmethod
-    def format_report(self, metrics: DataQualityMetrics, logger: logging.Logger) -> None:
+    def format_report(
+        self, metrics: DataQualityMetrics, logger: logging.Logger
+    ) -> None:
         """Format and log the analysis report"""
 
 
@@ -122,7 +128,9 @@ class KlinesDataAnalyzer(DataAnalyzer):
 
         return metrics
 
-    def format_report(self, metrics: DataQualityMetrics, logger: logging.Logger) -> None:
+    def format_report(
+        self, metrics: DataQualityMetrics, logger: logging.Logger
+    ) -> None:
         """Format and log klines analysis report"""
         logger.info("📊 Klines Data Analysis:")
         logger.info(f"   Shape: {metrics.shape}")
@@ -163,7 +171,9 @@ class KlinesDataAnalyzer(DataAnalyzer):
         if metrics.value_ranges:
             logger.info("   📈 Value ranges:")
             for col, (min_val, max_val, mean_val) in metrics.value_ranges.items():
-                logger.info(f"      - {col}: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}")
+                logger.info(
+                    f"      - {col}: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}"
+                )
 
 
 class AggtradesDataAnalyzer(DataAnalyzer):
@@ -223,7 +233,9 @@ class AggtradesDataAnalyzer(DataAnalyzer):
 
         return metrics
 
-    def format_report(self, metrics: DataQualityMetrics, logger: logging.Logger) -> None:
+    def format_report(
+        self, metrics: DataQualityMetrics, logger: logging.Logger
+    ) -> None:
         """Format and log aggtrades analysis report"""
         logger.info("📊 Aggtrades Data Analysis:")
         logger.info(f"   Shape: {metrics.shape}")
@@ -242,13 +254,17 @@ class AggtradesDataAnalyzer(DataAnalyzer):
             logger.info("   ✅ No duplicate trades")
 
         if metrics.zero_price_count:
-            logger.warning(f"   ⚠️ Found {metrics.zero_price_count['price']} zero prices")
+            logger.warning(
+                f"   ⚠️ Found {metrics.zero_price_count['price']} zero prices"
+            )
 
         # Report trade statistics
         if metrics.value_ranges:
             logger.info("   📈 Trade statistics:")
             for col, (min_val, max_val, mean_val) in metrics.value_ranges.items():
-                logger.info(f"      - {col}: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}")
+                logger.info(
+                    f"      - {col}: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}"
+                )
 
 
 class DataCollectionLoggerRefactored:
@@ -304,7 +320,10 @@ class DataCollectionLoggerRefactored:
 
         # Define files to analyze
         files_to_analyze = [
-            (DataType.KLINES, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"),
+            (
+                DataType.KLINES,
+                f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
+            ),
             (DataType.AGGTRADES, f"aggtrades_{exchange}_{symbol}_consolidated.parquet"),
         ]
 
@@ -434,5 +453,9 @@ class DataCollectionStepAdapter:
     ) -> None:
         """Delegate to refactored logger"""
         await self.logger.log_detailed_data_extract(
-            symbol, exchange, timeframe, data_dir, logger,
+            symbol,
+            exchange,
+            timeframe,
+            data_dir,
+            logger,
         )

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Validator for Step 9: Tactician Specialist Training."""
 
 import asyncio
@@ -32,7 +33,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         super().__init__("step9_tactician_specialist_training", config)
 
     async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
     ) -> bool:
         """Validate the tactician specialist training step.
 
@@ -117,7 +120,10 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         return True
 
     def _validate_tactician_model_files(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate that tactician model files exist.
 
@@ -147,7 +153,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                     missing_files.append(file_path)
 
             if missing_files:
-                self.print(missing(f"❌ Missing tactician model files: {missing_files}"))
+                self.print(
+                    missing(f"❌ Missing tactician model files: {missing_files}")
+                )
                 return False
 
             self.logger.info("✅ All tactician model files exist")
@@ -158,7 +166,10 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _validate_tactician_model_performance(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate tactician model performance metrics.
 
@@ -246,7 +257,10 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _validate_tactician_training_metrics(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate tactician training metrics and convergence.
 
@@ -335,7 +349,10 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _validate_tactician_model_quality(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate tactician model quality characteristics.
 
@@ -494,7 +511,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
 
 async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any],
+    training_input: dict[str, Any],
+    pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the step9_tactician_specialist_training validator.
 
@@ -534,4 +552,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( test_validator())
+    _asyncio.run(test_validator())

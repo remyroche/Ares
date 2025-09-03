@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Probabilistic Model Integration for Tactician and Analyst
 
@@ -36,6 +37,7 @@ except ImportError:
     # Fallback for testing
     pass
 
+
 @dataclass
 class ModelOptimizationTarget:
     """Defines what aspects of a model to optimize."""
@@ -46,6 +48,7 @@ class ModelOptimizationTarget:
     hyperparameter_ranges: dict[str, tuple]  # Parameter search spaces
     calibration_methods: list[str]  # Available calibration methods
     uncertainty_methods: list[str]  # Uncertainty estimation methods
+
 
 class ProbabilisticModelIntegrator:
     """
@@ -97,7 +100,12 @@ class ProbabilisticModelIntegrator:
             "analyst": ModelOptimizationTarget(
                 model_type="analyst",
                 model_name="ensemble_predictor",
-                optimization_objectives=["calibration", "sharpness", "discrimination", "regime_accuracy"],
+                optimization_objectives=[
+                    "calibration",
+                    "sharpness",
+                    "discrimination",
+                    "regime_accuracy",
+                ],
                 hyperparameter_ranges={
                     "regime_detection": {
                         "regime_threshold": (0.5, 0.8),
@@ -105,9 +113,19 @@ class ProbabilisticModelIntegrator:
                         "regime_transition_smoothing": (0.1, 0.5),
                     },
                     "prediction_calibration": {
-                        "calibration_method": ["isotonic", "sigmoid", "platt", "temperature"],
+                        "calibration_method": [
+                            "isotonic",
+                            "sigmoid",
+                            "platt",
+                            "temperature",
+                        ],
                         "calibration_cv_folds": (5, 15),
-                        "uncertainty_estimation": ["ensemble", "gaussian", "conformal", "mc_dropout"],
+                        "uncertainty_estimation": [
+                            "ensemble",
+                            "gaussian",
+                            "conformal",
+                            "mc_dropout",
+                        ],
                     },
                 },
                 calibration_methods=["isotonic", "sigmoid", "platt", "temperature"],
@@ -129,7 +147,9 @@ class ProbabilisticModelIntegrator:
             objectives=target.optimization_objectives,
             n_trials=self.config.get("optimization", {}).get("n_trials", 100),
             n_jobs=self.config.get("optimization", {}).get("n_jobs", 1),
-            early_stopping_patience=self.config.get("optimization", {}).get("early_stopping_patience", 10),
+            early_stopping_patience=self.config.get("optimization", {}).get(
+                "early_stopping_patience", 10
+            ),
             sampler_type=self.config.get("optimization", {}).get("sampler_type", "tpe"),
         )
 
@@ -161,7 +181,8 @@ class ProbabilisticModelIntegrator:
 
         # Prepare data for optimization
         X, y = self._prepare_tactician_optimization_data(
-            market_data, historical_predictions,
+            market_data,
+            historical_predictions,
         )
 
         # Run optimization
@@ -199,7 +220,8 @@ class ProbabilisticModelIntegrator:
 
         # Prepare data for optimization
         X, y = self._prepare_analyst_optimization_data(
-            market_data, historical_predictions,
+            market_data,
+            historical_predictions,
         )
 
         # Run optimization
@@ -241,7 +263,9 @@ class ProbabilisticModelIntegrator:
 
         # Technical indicators
         if "high" in market_data.columns and "low" in market_data.columns:
-            features.append((market_data["high"] - market_data["low"]) / market_data["close"])
+            features.append(
+                (market_data["high"] - market_data["low"]) / market_data["close"]
+            )
 
         # Historical prediction accuracy
         if "prediction_accuracy" in historical_predictions.columns:
@@ -308,7 +332,6 @@ class ProbabilisticModelIntegrator:
                 n_jobs=1,
             )
 
-
         return factory
 
     def _create_analyst_model_factory(self):
@@ -326,7 +349,6 @@ class ProbabilisticModelIntegrator:
                 n_jobs=1,
             )
 
-
         return factory
 
     async def _apply_tactician_optimization_results(self, results: dict[str, Any]):
@@ -334,7 +356,11 @@ class ProbabilisticModelIntegrator:
 
         try:
             # Get best hyperparameters
-            best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
+            best_params = (
+                results.get("best_solutions", {})
+                .get("calibration", {})
+                .get("params", {})
+            )
 
             if not best_params:
                 self.logger.warning("No best parameters found for Tactician")
@@ -343,17 +369,25 @@ class ProbabilisticModelIntegrator:
             # Apply barrier system parameters
             if "upper_barrier_multiplier" in best_params:
                 # Update your Tactician configuration
-                self.logger.info(f"Updating Tactician upper barrier multiplier: {best_params['upper_barrier_multiplier']}")
+                self.logger.info(
+                    f"Updating Tactician upper barrier multiplier: {best_params['upper_barrier_multiplier']}"
+                )
 
             if "lower_barrier_multiplier" in best_params:
-                self.logger.info(f"Updating Tactician lower barrier multiplier: {best_params['lower_barrier_multiplier']}")
+                self.logger.info(
+                    f"Updating Tactician lower barrier multiplier: {best_params['lower_barrier_multiplier']}"
+                )
 
             if "confidence_threshold" in best_params:
-                self.logger.info(f"Updating Tactician confidence threshold: {best_params['confidence_threshold']}")
+                self.logger.info(
+                    f"Updating Tactician confidence threshold: {best_params['confidence_threshold']}"
+                )
 
             # Apply calibration method
             if "calibration_method" in best_params:
-                self.logger.info(f"Updating Tactician calibration method: {best_params['calibration_method']}")
+                self.logger.info(
+                    f"Updating Tactician calibration method: {best_params['calibration_method']}"
+                )
 
             self.logger.info("✅ Tactician optimization results applied successfully!")
 
@@ -365,7 +399,11 @@ class ProbabilisticModelIntegrator:
 
         try:
             # Get best hyperparameters
-            best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
+            best_params = (
+                results.get("best_solutions", {})
+                .get("calibration", {})
+                .get("params", {})
+            )
 
             if not best_params:
                 self.logger.warning("No best parameters found for Analyst")
@@ -373,14 +411,20 @@ class ProbabilisticModelIntegrator:
 
             # Apply regime detection parameters
             if "regime_threshold" in best_params:
-                self.logger.info(f"Updating Analyst regime threshold: {best_params['regime_threshold']}")
+                self.logger.info(
+                    f"Updating Analyst regime threshold: {best_params['regime_threshold']}"
+                )
 
             if "regime_confidence_threshold" in best_params:
-                self.logger.info(f"Updating Analyst regime confidence threshold: {best_params['regime_confidence_threshold']}")
+                self.logger.info(
+                    f"Updating Analyst regime confidence threshold: {best_params['regime_confidence_threshold']}"
+                )
 
             # Apply calibration method
             if "calibration_method" in best_params:
-                self.logger.info(f"Updating Analyst calibration method: {best_params['calibration_method']}")
+                self.logger.info(
+                    f"Updating Analyst calibration method: {best_params['calibration_method']}"
+                )
 
             self.logger.info("✅ Analyst optimization results applied successfully!")
 
@@ -401,7 +445,8 @@ class ProbabilisticModelIntegrator:
         # Optimize Tactician
         try:
             tactician_results = await self.optimize_tactician_model(
-                market_data, historical_predictions,
+                market_data,
+                historical_predictions,
             )
             results["tactician"] = tactician_results
         except Exception as e:
@@ -411,7 +456,8 @@ class ProbabilisticModelIntegrator:
         # Optimize Analyst
         try:
             analyst_results = await self.optimize_analyst_model(
-                market_data, historical_predictions,
+                market_data,
+                historical_predictions,
             )
             results["analyst"] = analyst_results
         except Exception as e:
@@ -511,6 +557,7 @@ class ProbabilisticModelIntegrator:
         optimizer = self.optimizers[model_type]
         optimizer.plot_optimization_results(save_path)
 
+
 # Example usage
 async def main():
     """Example usage of the ProbabilisticModelIntegrator."""
@@ -529,21 +576,26 @@ async def main():
     integrator = ProbabilisticModelIntegrator(config)
 
     # Create sample data
-    market_data = pd.DataFrame({
-        "close": np.random.randn(1000).cumsum() + 100,
-        "volume": np.random.uniform(1000, 10000, 1000),
-        "high": np.random.randn(1000).cumsum() + 101,
-        "low": np.random.randn(1000).cumsum() + 99,
-    })
+    market_data = pd.DataFrame(
+        {
+            "close": np.random.randn(1000).cumsum() + 100,
+            "volume": np.random.uniform(1000, 10000, 1000),
+            "high": np.random.randn(1000).cumsum() + 101,
+            "low": np.random.randn(1000).cumsum() + 99,
+        }
+    )
 
-    historical_predictions = pd.DataFrame({
-        "prediction_accuracy": np.random.uniform(0.5, 0.9, 1000),
-        "regime_prediction": np.random.uniform(0, 1, 1000),
-    })
+    historical_predictions = pd.DataFrame(
+        {
+            "prediction_accuracy": np.random.uniform(0.5, 0.9, 1000),
+            "regime_prediction": np.random.uniform(0, 1, 1000),
+        }
+    )
 
     # Run comprehensive optimization
     results = await integrator.run_comprehensive_optimization(
-        market_data, historical_predictions,
+        market_data,
+        historical_predictions,
     )
 
     # Get status
@@ -553,6 +605,7 @@ async def main():
     print(f"Results: {results}")
     print(f"Status: {status}")
 
+
 if __name__ == "__main__":
     # Run example
-    asyncio.run( main())
+    asyncio.run(main())

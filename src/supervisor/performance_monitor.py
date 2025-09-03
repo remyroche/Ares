@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Performance Monitor Module."
 
 This module provides comprehensive performance monitoring for trading models,
@@ -6,10 +7,6 @@ including real-time tracking, drift detection, statistical analysis, and
 performance metrics calculation. It integrates with the model behavior tracker
 to provide holistic performance insights.
 """
-from src.core.decorators import handles_errors
-
-from src.core.domain import handle_specific_errors
-
 import asyncio
 import json
 from datetime import datetime
@@ -19,6 +16,8 @@ import numpy as np
 import yaml
 from scipy import stats
 
+from src.core.decorators import handles_errors
+from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid, warning
 
@@ -27,6 +26,7 @@ class PerformanceMonitor:
     """
     Enhanced Performance Monitor component with DI = type hints, and robust error handling.
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PerformanceMonitor")
@@ -56,10 +56,18 @@ class PerformanceMonitor:
         self.drift_alerts: list[dict[str, Any]] = []
 
         # Real-time performance tracking
-        self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
-        self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
-        self.performance_window: int = self.real_time_config.get("performance_window", 100)
-        self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
+        self.real_time_config: dict[str, Any] = self.monitor_config.get(
+            "real_time_tracking", {}
+        )
+        self.enable_real_time_tracking: bool = self.real_time_config.get(
+            "enable_real_time_tracking", True
+        )
+        self.performance_window: int = self.real_time_config.get(
+            "performance_window", 100
+        )
+        self.retraining_threshold: float = self.real_time_config.get(
+            "retraining_threshold", 0.1
+        )
 
         # Performance tracking state
         self.model_predictions: dict[str, list] = {}
@@ -89,11 +97,19 @@ class PerformanceMonitor:
             )
             return True
         except (ValueError, AttributeError, KeyError) as e:
-            self.print(failed(f"❌ Performance Monitor initialization failed: {type(e).__name__}: {e}"))
+            self.print(
+                failed(
+                    f"❌ Performance Monitor initialization failed: {type(e).__name__}: {e}"
+                )
+            )
             return False
         except Exception as e:
             self.logger.exception("Unexpected error during initialization")
-            self.print(failed(f"❌ Performance Monitor initialization failed with unexpected error: {e}"))
+            self.print(
+                failed(
+                    f"❌ Performance Monitor initialization failed with unexpected error: {e}"
+                )
+            )
             return False
 
     @handles_errors(
@@ -282,17 +298,25 @@ class PerformanceMonitor:
             )
 
             # Keep only recent history
-            if len(self.model_performance_history[model_name]) > self.drift_detection_window:
-                self.model_performance_history[model_name] = self.model_performance_history[model_name][
-                    -self.drift_detection_window:
-                ]
+            if (
+                len(self.model_performance_history[model_name])
+                > self.drift_detection_window
+            ):
+                self.model_performance_history[model_name] = (
+                    self.model_performance_history[model_name][
+                        -self.drift_detection_window :
+                    ]
+                )
 
             # Need enough data to detect drift
             if len(self.model_performance_history[model_name]) < 20:
                 return False
 
             # Calculate performance statistics
-            performances = [entry["performance"] for entry in self.model_performance_history[model_name]]
+            performances = [
+                entry["performance"]
+                for entry in self.model_performance_history[model_name]
+            ]
             recent_performances = performances[-10:]  # Last 10 predictions
             historical_performances = performances[:-10]  # Earlier predictions
 
@@ -349,7 +373,9 @@ class PerformanceMonitor:
                     "timestamp": datetime.now().isoformat(),
                     "model_name": model_name,
                     "type": "concept_drift",
-                    "severity": ("high" if mean_shift > self.drift_threshold * 2 else "medium"),
+                    "severity": (
+                        "high" if mean_shift > self.drift_threshold * 2 else "medium"
+                    ),
                     "message": f"Concept drift detected for {model_name}: {'; '.join(drift_reasons)}",
                     "metrics": {
                         "recent_mean": recent_mean,
@@ -414,8 +440,12 @@ class PerformanceMonitor:
 
             # Maintain performance window
             if len(self.model_predictions[model_name]) > self.performance_window:
-                self.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window:]
-                self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
+                self.model_predictions[model_name] = self.model_predictions[model_name][
+                    -self.performance_window :
+                ]
+                self.model_outcomes[model_name] = self.model_outcomes[model_name][
+                    -self.performance_window :
+                ]
 
             # Calculate real-time metrics
             await self._calculate_real_time_metrics(model_name)
@@ -443,31 +473,61 @@ class PerformanceMonitor:
                 return
 
             # Calculate accuracy (for binary outcomes)
-            correct_predictions = sum(1 for p, o in zip(predictions, outcomes, strict=False) if abs(p - o) < 0.1)
+            correct_predictions = sum(
+                1
+                for p, o in zip(predictions, outcomes, strict=False)
+                if abs(p - o) < 0.1
+            )
             accuracy = correct_predictions / len(predictions)
 
             # Calculate mean absolute error
-            mae = sum(abs(p - o) for p, o in zip(predictions, outcomes, strict=False)) / len(predictions)
+            mae = sum(
+                abs(p - o) for p, o in zip(predictions, outcomes, strict=False)
+            ) / len(predictions)
 
             # Calculate precision and recall (for binary classification)
-            true_positives = sum(1 for p, o in zip(predictions, outcomes, strict=False) if p > 0.5 and o > 0.5)
-            false_positives = sum(1 for p, o in zip(predictions, outcomes, strict=False) if p > 0.5 and o <= 0.5)
-            false_negatives = sum(1 for p, o in zip(predictions, outcomes, strict=False) if p <= 0.5 and o > 0.5)
+            true_positives = sum(
+                1
+                for p, o in zip(predictions, outcomes, strict=False)
+                if p > 0.5 and o > 0.5
+            )
+            false_positives = sum(
+                1
+                for p, o in zip(predictions, outcomes, strict=False)
+                if p > 0.5 and o <= 0.5
+            )
+            false_negatives = sum(
+                1
+                for p, o in zip(predictions, outcomes, strict=False)
+                if p <= 0.5 and o > 0.5
+            )
 
             precision = (
-                true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
+                true_positives / (true_positives + false_positives)
+                if (true_positives + false_positives) > 0
+                else 0.0
             )
             recall = (
-                true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+                true_positives / (true_positives + false_negatives)
+                if (true_positives + false_negatives) > 0
+                else 0.0
             )
-            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            f1_score = (
+                2 * (precision * recall) / (precision + recall)
+                if (precision + recall) > 0
+                else 0.0
+            )
 
             # Calculate trend (performance over time)
             recent_accuracy = accuracy
             if len(predictions) >= 20:
                 recent_predictions = predictions[-10:]
                 recent_outcomes = outcomes[-10:]
-                recent_correct = sum(1 for p, o in zip(recent_predictions, recent_outcomes, strict=False) if abs(p - o) < 0.1)
+                recent_correct = sum(
+                    1
+                    for p, o in zip(recent_predictions, recent_outcomes, strict=False)
+                    if abs(p - o) < 0.1
+                )
                 recent_accuracy = recent_correct / len(recent_predictions)
 
             # Store metrics
@@ -538,7 +598,10 @@ class PerformanceMonitor:
                 )
 
             # Check for recent accuracy drop
-            if metrics.get("recent_accuracy", 1.0) < metrics.get("accuracy", 1.0) - self.retraining_threshold:
+            if (
+                metrics.get("recent_accuracy", 1.0)
+                < metrics.get("accuracy", 1.0) - self.retraining_threshold
+            ):
                 triggers.append(
                     {
                         "model": model_name,
@@ -556,7 +619,9 @@ class PerformanceMonitor:
                 self.retraining_triggers.append(trigger)
 
             if triggers:
-                self.logger.warning(f"Retraining triggers detected for {model_name}: {triggers}")
+                self.logger.warning(
+                    f"Retraining triggers detected for {model_name}: {triggers}"
+                )
 
         except Exception as e:
             self.logger.exception(f"Error checking retraining triggers: {e}")
@@ -599,16 +664,22 @@ class PerformanceMonitor:
 
                 # Apply regime adjustment if available
                 if current_regime:
-                    regime_adjustment = self._get_regime_performance_adjustment(model_name=current_regime)
+                    regime_adjustment = self._get_regime_performance_adjustment(
+                        model_name=current_regime
+                    )
                     composite_score *= regime_adjustment
 
                 model_scores[model_name] = composite_score
 
             # Sort models by score and return top performers
-            sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
+            sorted_models = sorted(
+                model_scores.items(), key=lambda x: x[1], reverse=True
+            )
             best_models = [model for model, score in sorted_models[:required_count]]
 
-            self.logger.info(f"Selected best models: {best_models} with scores: {model_scores}")
+            self.logger.info(
+                f"Selected best models: {best_models} with scores: {model_scores}"
+            )
 
             return best_models
 
@@ -692,7 +763,6 @@ class PerformanceMonitor:
                 "system_health": self._calculate_system_health(),
             }
 
-
         except Exception as e:
             self.logger.exception(f"Error getting performance feedback: {e}")
             return {}
@@ -704,13 +774,24 @@ class PerformanceMonitor:
                 return {"status": "unknown", "overall_accuracy": 0.0}
 
             # Calculate average performance across all models
-            accuracies = [metrics.get("accuracy", 0.0) for metrics in self.model_metrics.values()]
-            f1_scores = [metrics.get("f1_score", 0.0) for metrics in self.model_metrics.values()]
-            recent_accuracies = [metrics.get("recent_accuracy", 0.0) for metrics in self.model_metrics.values()]
+            accuracies = [
+                metrics.get("accuracy", 0.0) for metrics in self.model_metrics.values()
+            ]
+            f1_scores = [
+                metrics.get("f1_score", 0.0) for metrics in self.model_metrics.values()
+            ]
+            recent_accuracies = [
+                metrics.get("recent_accuracy", 0.0)
+                for metrics in self.model_metrics.values()
+            ]
 
             avg_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
             avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
-            avg_recent_accuracy = sum(recent_accuracies) / len(recent_accuracies) if recent_accuracies else 0.0
+            avg_recent_accuracy = (
+                sum(recent_accuracies) / len(recent_accuracies)
+                if recent_accuracies
+                else 0.0
+            )
 
             # Determine system health status
             if avg_accuracy > 0.7 and avg_f1 > 0.6:

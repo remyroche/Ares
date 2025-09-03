@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/feature_engineering_optimizer.py
 
 """
@@ -113,7 +114,12 @@ class FeatureEngineeringOptimizer:
             "volatility_regime": {
                 "enabled": True,
                 "weight": 1.4,
-                "features": ["ATR_Normalized", "BB_Squeeze", "Volatility", "Market_Regime"],
+                "features": [
+                    "ATR_Normalized",
+                    "BB_Squeeze",
+                    "Volatility",
+                    "Market_Regime",
+                ],
             },
             "cross_timeframe": {
                 "enabled": True,
@@ -123,19 +129,24 @@ class FeatureEngineeringOptimizer:
         }
 
         # Optimization settings
-        self.optimization_config = config.get("feature_engineering_optimization", {
-            "n_trials": 100,
-            "cv_folds": 5,
-            "random_state": 42,
-            "correlation_threshold": 0.8,
-            "mi_threshold": 0.1,
-            "top_k_parameters": 3,
-            "interaction_enabled": True,
-            "max_interactions": 50,
-            "interaction_selection_threshold": 0.05,
-        })
+        self.optimization_config = config.get(
+            "feature_engineering_optimization",
+            {
+                "n_trials": 100,
+                "cv_folds": 5,
+                "random_state": 42,
+                "correlation_threshold": 0.8,
+                "mi_threshold": 0.1,
+                "top_k_parameters": 3,
+                "interaction_enabled": True,
+                "max_interactions": 50,
+                "interaction_selection_threshold": 0.05,
+            },
+        )
 
-        self.logger.info("🚀 Feature Engineering Optimizer initialized with interaction engineering")
+        self.logger.info(
+            "🚀 Feature Engineering Optimizer initialized with interaction engineering"
+        )
 
     @handles_errors(fallback={})
     async def optimize_feature_parameters(
@@ -161,7 +172,9 @@ class FeatureEngineeringOptimizer:
         Returns:
             Dictionary with optimized parameters for each regime and feature
         """
-        self.logger.info(f"🎯 Starting feature parameter optimization for {symbol} on {exchange}")
+        self.logger.info(
+            f"🎯 Starting feature parameter optimization for {symbol} on {exchange}"
+        )
 
         results = {
             "optimization_timestamp": datetime.now().isoformat(),
@@ -183,7 +196,9 @@ class FeatureEngineeringOptimizer:
         # 2. Feature Interaction Engineering
         if self.optimization_config.get("interaction_enabled", True):
             self.logger.info("🔗 Performing feature interaction engineering...")
-            interaction_results = await self._engineer_feature_interactions(data, target)
+            interaction_results = await self._engineer_feature_interactions(
+                data, target
+            )
             results["interaction_engineering"] = interaction_results
 
         # 3. Regime-specific optimization
@@ -195,12 +210,18 @@ class FeatureEngineeringOptimizer:
                 regime_target = target[regime_mask]
 
                 if len(regime_data) < 100:  # Skip regimes with insufficient data
-                    self.logger.warning(f"⚠️ Regime {regime} has insufficient data ({len(regime_data)} samples), skipping")
+                    self.logger.warning(
+                        f"⚠️ Regime {regime} has insufficient data ({len(regime_data)} samples), skipping"
+                    )
                     continue
 
-                self.logger.info(f"🎯 Optimizing parameters for regime {regime} ({len(regime_data)} samples)")
+                self.logger.info(
+                    f"🎯 Optimizing parameters for regime {regime} ({len(regime_data)} samples)"
+                )
                 regime_opt = await self._optimize_regime_parameters(
-                    regime_data, regime_target, regime,
+                    regime_data,
+                    regime_target,
+                    regime,
                 )
                 results["regime_optimizations"][f"regime_{regime}"] = regime_opt
 
@@ -242,19 +263,24 @@ class FeatureEngineeringOptimizer:
             for params in combinations:
                 # Generate synthetic feature based on parameters
                 synthetic_feature = self._generate_synthetic_feature(
-                    data, feature_name, params,
+                    data,
+                    feature_name,
+                    params,
                 )
 
                 if synthetic_feature is not None:
                     # Calculate feature importance using Random Forest + SHAP
                     importance_score = await self._calculate_feature_importance(
-                        synthetic_feature, target,
+                        synthetic_feature,
+                        target,
                     )
-                    feature_scores.append({
-                        "params": params,
-                        "importance": importance_score,
-                        "feature_values": synthetic_feature,
-                    })
+                    feature_scores.append(
+                        {
+                            "params": params,
+                            "importance": importance_score,
+                            "feature_values": synthetic_feature,
+                        }
+                    )
 
             # Sort by importance and select top parameters
             if feature_scores:
@@ -278,23 +304,30 @@ class FeatureEngineeringOptimizer:
 
         optimized_params = {}
         for feature_name, combinations in param_combinations.items():
-            self.logger.info(f"🎭 Optimizing {feature_name} parameters for regime {regime}...")
+            self.logger.info(
+                f"🎭 Optimizing {feature_name} parameters for regime {regime}..."
+            )
 
             feature_scores = []
             for params in combinations:
                 synthetic_feature = self._generate_synthetic_feature(
-                    data, feature_name, params,
+                    data,
+                    feature_name,
+                    params,
                 )
 
                 if synthetic_feature is not None:
                     importance_score = await self._calculate_feature_importance(
-                        synthetic_feature, target,
+                        synthetic_feature,
+                        target,
                     )
-                    feature_scores.append({
-                        "params": params,
-                        "importance": importance_score,
-                        "feature_values": synthetic_feature,
-                    })
+                    feature_scores.append(
+                        {
+                            "params": params,
+                            "importance": importance_score,
+                            "feature_values": synthetic_feature,
+                        }
+                    )
 
             if feature_scores:
                 feature_scores.sort(key=lambda x: x["importance"], reverse=True)
@@ -314,22 +347,26 @@ class FeatureEngineeringOptimizer:
 
         # Calculate mutual information with target
         mi_scores = mutual_info_regression(data, target, random_state=42)
-        mi_df = pd.DataFrame({
-            "feature": data.columns,
-            "mutual_information": mi_scores,
-        }).sort_values("mutual_information", ascending=False)
+        mi_df = pd.DataFrame(
+            {
+                "feature": data.columns,
+                "mutual_information": mi_scores,
+            }
+        ).sort_values("mutual_information", ascending=False)
 
         # Identify highly correlated features
         high_corr_pairs = []
         for i in range(len(correlation_matrix.columns)):
-            for j in range(i+1, len(correlation_matrix.columns)):
+            for j in range(i + 1, len(correlation_matrix.columns)):
                 corr_value = correlation_matrix.iloc[i, j]
                 if abs(corr_value) > self.optimization_config["correlation_threshold"]:
-                    high_corr_pairs.append({
-                        "feature1": correlation_matrix.columns[i],
-                        "feature2": correlation_matrix.columns[j],
-                        "correlation": corr_value,
-                    })
+                    high_corr_pairs.append(
+                        {
+                            "feature1": correlation_matrix.columns[i],
+                            "feature2": correlation_matrix.columns[j],
+                            "correlation": corr_value,
+                        }
+                    )
 
         return {
             "correlation_matrix": correlation_matrix.to_dict(),
@@ -338,13 +375,17 @@ class FeatureEngineeringOptimizer:
             "correlation_threshold": self.optimization_config["correlation_threshold"],
         }
 
-    async def _select_top_parameters(self, optimization_results: dict[str, Any]) -> dict[str, Any]:
+    async def _select_top_parameters(
+        self, optimization_results: dict[str, Any]
+    ) -> dict[str, Any]:
         """Select top 3 parameters for each feature considering correlation, MI, etc."""
 
         top_parameters = {}
 
         # Process global optimizations
-        for feature_name, feature_results in optimization_results["global_optimizations"].items():
+        for feature_name, feature_results in optimization_results[
+            "global_optimizations"
+        ].items():
             if not feature_results:
                 continue
 
@@ -355,13 +396,17 @@ class FeatureEngineeringOptimizer:
             scored_params = []
             for result in feature_results:
                 score = await self._calculate_comprehensive_score(
-                    result, correlation_data, feature_name,
+                    result,
+                    correlation_data,
+                    feature_name,
                 )
-                scored_params.append({
-                    "params": result["params"],
-                    "importance": result["importance"],
-                    "comprehensive_score": score,
-                })
+                scored_params.append(
+                    {
+                        "params": result["params"],
+                        "importance": result["importance"],
+                        "comprehensive_score": score,
+                    }
+                )
 
             # Sort by comprehensive score and select top 3
             scored_params.sort(key=lambda x: x["comprehensive_score"], reverse=True)
@@ -433,7 +478,9 @@ class FeatureEngineeringOptimizer:
 
         return max(0.0, final_score)
 
-    def _generate_param_combinations(self, params: dict[str, list]) -> list[dict[str, Any]]:
+    def _generate_param_combinations(
+        self, params: dict[str, list]
+    ) -> list[dict[str, Any]]:
         """Generate all parameter combinations for a feature."""
         import itertools
 
@@ -475,17 +522,23 @@ class FeatureEngineeringOptimizer:
             if feature_name == "Bollinger_Bands":
                 lookback = params["lookback_period"]
                 std_dev = params["std_dev"]
-                return self._calculate_bollinger_position(close_prices, lookback, std_dev)
+                return self._calculate_bollinger_position(
+                    close_prices, lookback, std_dev
+                )
 
             if feature_name == "SMA":
                 short_period = params["short_period"]
                 long_period = params["long_period"]
-                return self._calculate_sma_crossover(close_prices, short_period, long_period)
+                return self._calculate_sma_crossover(
+                    close_prices, short_period, long_period
+                )
 
             if feature_name == "EMA":
                 short_period = params["short_period"]
                 long_period = params["long_period"]
-                return self._calculate_ema_crossover(close_prices, short_period, long_period)
+                return self._calculate_ema_crossover(
+                    close_prices, short_period, long_period
+                )
 
             if feature_name == "ATR":
                 lookback = params["lookback_period"]
@@ -519,7 +572,9 @@ class FeatureEngineeringOptimizer:
         rs = gain / loss
         return 100 - (100 / (1 + rs))
 
-    def _calculate_macd(self, prices: pd.Series, fast: int, slow: int, signal: int) -> pd.Series:
+    def _calculate_macd(
+        self, prices: pd.Series, fast: int, slow: int, signal: int
+    ) -> pd.Series:
         """Calculate MACD with optimized periods."""
         ema_fast = prices.ewm(span=fast).mean()
         ema_slow = prices.ewm(span=slow).mean()
@@ -527,7 +582,9 @@ class FeatureEngineeringOptimizer:
         signal_line = macd_line.ewm(span=signal).mean()
         return macd_line - signal_line
 
-    def _calculate_bollinger_position(self, prices: pd.Series, lookback: int, std_dev: float) -> pd.Series:
+    def _calculate_bollinger_position(
+        self, prices: pd.Series, lookback: int, std_dev: float
+    ) -> pd.Series:
         """Calculate Bollinger Bands position with optimized parameters."""
         sma = prices.rolling(window=lookback).mean()
         std = prices.rolling(window=lookback).std()
@@ -536,13 +593,17 @@ class FeatureEngineeringOptimizer:
         # Return position within bands (0 = at lower band, 1 = at upper band)
         return (prices - lower_band) / (upper_band - lower_band)
 
-    def _calculate_sma_crossover(self, prices: pd.Series, short_period: int, long_period: int) -> pd.Series:
+    def _calculate_sma_crossover(
+        self, prices: pd.Series, short_period: int, long_period: int
+    ) -> pd.Series:
         """Calculate SMA crossover signal."""
         sma_short = prices.rolling(window=short_period).mean()
         sma_long = prices.rolling(window=long_period).mean()
         return (sma_short - sma_long) / sma_long
 
-    def _calculate_ema_crossover(self, prices: pd.Series, short_period: int, long_period: int) -> pd.Series:
+    def _calculate_ema_crossover(
+        self, prices: pd.Series, short_period: int, long_period: int
+    ) -> pd.Series:
         """Calculate EMA crossover signal."""
         ema_short = prices.ewm(span=short_period).mean()
         ema_long = prices.ewm(span=long_period).mean()
@@ -563,7 +624,9 @@ class FeatureEngineeringOptimizer:
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         return tr.rolling(window=lookback).mean()
 
-    def _calculate_stochastic(self, data: pd.DataFrame, k_period: int, d_period: int) -> pd.Series:
+    def _calculate_stochastic(
+        self, data: pd.DataFrame, k_period: int, d_period: int
+    ) -> pd.Series:
         """Calculate Stochastic oscillator with optimized periods."""
         if not all(col in data.columns for col in ["high", "low", "close"]):
             return pd.Series(index=data.index)
@@ -615,8 +678,9 @@ class FeatureEngineeringOptimizer:
         dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
         return dx.rolling(window=lookback).mean()
 
-
-    def _calculate_cci(self, data: pd.DataFrame, lookback: int, constant: float) -> pd.Series:
+    def _calculate_cci(
+        self, data: pd.DataFrame, lookback: int, constant: float
+    ) -> pd.Series:
         """Calculate CCI with optimized lookback period and constant."""
         if not all(col in data.columns for col in ["high", "low", "close"]):
             return pd.Series(index=data.index)
@@ -627,9 +691,10 @@ class FeatureEngineeringOptimizer:
 
         typical_price = (high + low + close) / 3
         sma_tp = typical_price.rolling(window=lookback).mean()
-        mad = typical_price.rolling(window=lookback).apply(lambda x: np.mean(np.abs(x - x.mean())))
+        mad = typical_price.rolling(window=lookback).apply(
+            lambda x: np.mean(np.abs(x - x.mean()))
+        )
         return (typical_price - sma_tp) / (constant * mad)
-
 
     @handles_errors(fallback={})
     async def _engineer_feature_interactions(
@@ -669,25 +734,36 @@ class FeatureEngineeringOptimizer:
         interaction_results["interaction_features"]["regime"] = regime_interactions
 
         # 4. Combine all interactions
-        all_interactions = pd.concat([
-            basic_interactions,
-            pattern_interactions,
-            regime_interactions,
-        ], axis=1)
+        all_interactions = pd.concat(
+            [
+                basic_interactions,
+                pattern_interactions,
+                regime_interactions,
+            ],
+            axis=1,
+        )
 
         # 5. Select optimal interactions
-        selected_interactions = await self._select_optimal_interactions(all_interactions, target)
+        selected_interactions = await self._select_optimal_interactions(
+            all_interactions, target
+        )
         interaction_results["selected_interactions"] = selected_interactions
 
         # 6. Calculate interaction importance
-        importance_scores = await self._calculate_interaction_importance(selected_interactions, target)
+        importance_scores = await self._calculate_interaction_importance(
+            selected_interactions, target
+        )
         interaction_results["interaction_importance"] = importance_scores
 
         # 7. Evaluate interaction performance
-        performance_metrics = await self._evaluate_interaction_performance(selected_interactions, target)
+        performance_metrics = await self._evaluate_interaction_performance(
+            selected_interactions, target
+        )
         interaction_results["interaction_performance"] = performance_metrics
 
-        self.logger.info(f"✅ Feature interaction engineering completed. Created {len(selected_interactions.columns)} interaction features")
+        self.logger.info(
+            f"✅ Feature interaction engineering completed. Created {len(selected_interactions.columns)} interaction features"
+        )
 
         return interaction_results
 
@@ -726,7 +802,11 @@ class FeatureEngineeringOptimizer:
                 interactions.append(diff_interaction)
 
         if interactions:
-            return pd.concat(interactions, axis=1, keys=[f"interaction_{i}" for i in range(len(interactions))])
+            return pd.concat(
+                interactions,
+                axis=1,
+                keys=[f"interaction_{i}" for i in range(len(interactions))],
+            )
         return pd.DataFrame()
 
     def _create_pattern_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -750,51 +830,79 @@ class FeatureEngineeringOptimizer:
 
                 if pattern_name == "momentum_volume":
                     # Momentum × Volume interactions
-                    momentum_features = [f for f in available_features if f in ["RSI", "MACD", "Stochastic"]]
-                    volume_features = [f for f in available_features if "Volume" in f or "OBV" in f]
+                    momentum_features = [
+                        f
+                        for f in available_features
+                        if f in ["RSI", "MACD", "Stochastic"]
+                    ]
+                    volume_features = [
+                        f for f in available_features if "Volume" in f or "OBV" in f
+                    ]
 
                     if momentum_features and volume_features:
                         momentum_avg = data[momentum_features].mean(axis=1)
                         volume_avg = data[volume_features].mean(axis=1)
 
-                        interactions.extend([
-                            momentum_avg * volume_avg * weight,
-                            momentum_avg / (volume_avg + 1e-8) * weight,
-                            momentum_avg.std(axis=1) * volume_avg * weight,
-                        ])
+                        interactions.extend(
+                            [
+                                momentum_avg * volume_avg * weight,
+                                momentum_avg / (volume_avg + 1e-8) * weight,
+                                momentum_avg.std(axis=1) * volume_avg * weight,
+                            ]
+                        )
 
                 elif pattern_name == "trend_volatility":
                     # Trend × Volatility interactions
-                    trend_features = [f for f in available_features if "SMA" in f or "EMA" in f]
-                    volatility_features = [f for f in available_features if "ATR" in f or "BB" in f or "Volatility" in f]
+                    trend_features = [
+                        f for f in available_features if "SMA" in f or "EMA" in f
+                    ]
+                    volatility_features = [
+                        f
+                        for f in available_features
+                        if "ATR" in f or "BB" in f or "Volatility" in f
+                    ]
 
                     if trend_features and volatility_features:
                         trend_avg = data[trend_features].mean(axis=1)
                         volatility_avg = data[volatility_features].mean(axis=1)
 
-                        interactions.extend([
-                            trend_avg * volatility_avg * weight,
-                            trend_avg / (volatility_avg + 1e-8) * weight,
-                            np.abs(trend_avg) * volatility_avg * weight,
-                        ])
+                        interactions.extend(
+                            [
+                                trend_avg * volatility_avg * weight,
+                                trend_avg / (volatility_avg + 1e-8) * weight,
+                                np.abs(trend_avg) * volatility_avg * weight,
+                            ]
+                        )
 
                 elif pattern_name == "oscillator_trend":
                     # Oscillator × Trend interactions
-                    oscillator_features = [f for f in available_features if f in ["RSI", "Williams_R", "CCI", "Stochastic"]]
-                    trend_features = [f for f in available_features if "SMA" in f or "EMA" in f]
+                    oscillator_features = [
+                        f
+                        for f in available_features
+                        if f in ["RSI", "Williams_R", "CCI", "Stochastic"]
+                    ]
+                    trend_features = [
+                        f for f in available_features if "SMA" in f or "EMA" in f
+                    ]
 
                     if oscillator_features and trend_features:
                         oscillator_avg = data[oscillator_features].mean(axis=1)
                         trend_avg = data[trend_features].mean(axis=1)
 
-                        interactions.extend([
-                            oscillator_avg * trend_avg * weight,
-                            oscillator_avg / (trend_avg + 1e-8) * weight,
-                            oscillator_avg.std(axis=1) * trend_avg * weight,
-                        ])
+                        interactions.extend(
+                            [
+                                oscillator_avg * trend_avg * weight,
+                                oscillator_avg / (trend_avg + 1e-8) * weight,
+                                oscillator_avg.std(axis=1) * trend_avg * weight,
+                            ]
+                        )
 
         if interactions:
-            return pd.concat(interactions, axis=1, keys=[f"pattern_{i}" for i in range(len(interactions))])
+            return pd.concat(
+                interactions,
+                axis=1,
+                keys=[f"pattern_{i}" for i in range(len(interactions))],
+            )
         return pd.DataFrame()
 
     def _create_regime_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -804,7 +912,9 @@ class FeatureEngineeringOptimizer:
         interactions = []
 
         # Identify market regime based on volatility and trend
-        volatility = data.get("ATR_Normalized", data.get("Volatility", pd.Series(0.5, index=data.index)))
+        volatility = data.get(
+            "ATR_Normalized", data.get("Volatility", pd.Series(0.5, index=data.index))
+        )
         trend_strength = data.get("SMA_Ratio", pd.Series(1.0, index=data.index))
 
         # Simple regime classification
@@ -821,8 +931,14 @@ class FeatureEngineeringOptimizer:
 
                 if regime_type == "trending":
                     # Trend-following interactions
-                    trend_features = [f for f in data.columns if "SMA" in f or "EMA" in f or "MACD" in f]
-                    momentum_features = [f for f in data.columns if f in ["RSI", "Stochastic", "CCI"]]
+                    trend_features = [
+                        f
+                        for f in data.columns
+                        if "SMA" in f or "EMA" in f or "MACD" in f
+                    ]
+                    momentum_features = [
+                        f for f in data.columns if f in ["RSI", "Stochastic", "CCI"]
+                    ]
 
                     if trend_features and momentum_features:
                         trend_avg = regime_data[trend_features].mean(axis=1)
@@ -833,8 +949,16 @@ class FeatureEngineeringOptimizer:
 
                 elif regime_type == "ranging":
                     # Range-trading interactions
-                    oscillator_features = [f for f in data.columns if f in ["RSI", "Stochastic", "Williams_R", "CCI"]]
-                    volume_features = [f for f in data.columns if "Volume" in f or "OBV" in f or "MFI" in f]
+                    oscillator_features = [
+                        f
+                        for f in data.columns
+                        if f in ["RSI", "Stochastic", "Williams_R", "CCI"]
+                    ]
+                    volume_features = [
+                        f
+                        for f in data.columns
+                        if "Volume" in f or "OBV" in f or "MFI" in f
+                    ]
 
                     if oscillator_features and volume_features:
                         oscillator_avg = regime_data[oscillator_features].mean(axis=1)
@@ -845,8 +969,16 @@ class FeatureEngineeringOptimizer:
 
                 elif regime_type == "volatile":
                     # Volatility-focused interactions
-                    volatility_features = [f for f in data.columns if "ATR" in f or "BB" in f or "Volatility" in f]
-                    risk_features = [f for f in data.columns if f in ["RSI", "Stochastic", "Williams_R"]]
+                    volatility_features = [
+                        f
+                        for f in data.columns
+                        if "ATR" in f or "BB" in f or "Volatility" in f
+                    ]
+                    risk_features = [
+                        f
+                        for f in data.columns
+                        if f in ["RSI", "Stochastic", "Williams_R"]
+                    ]
 
                     if volatility_features and risk_features:
                         volatility_avg = regime_data[volatility_features].mean(axis=1)
@@ -856,7 +988,11 @@ class FeatureEngineeringOptimizer:
                         interactions.append(interaction)
 
         if interactions:
-            return pd.concat(interactions, axis=1, keys=[f"regime_{i}" for i in range(len(interactions))])
+            return pd.concat(
+                interactions,
+                axis=1,
+                keys=[f"regime_{i}" for i in range(len(interactions))],
+            )
         return pd.DataFrame()
 
     @handles_errors(fallback=pd.DataFrame())
@@ -876,7 +1012,9 @@ class FeatureEngineeringOptimizer:
             mi_scores = mutual_info_classif(interactions, target, random_state=42)
 
             # Select interactions based on mutual information threshold
-            threshold = self.optimization_config.get("interaction_selection_threshold", 0.05)
+            threshold = self.optimization_config.get(
+                "interaction_selection_threshold", 0.05
+            )
             important_indices = np.where(mi_scores > threshold)[0]
 
             # Limit number of interactions
@@ -892,7 +1030,9 @@ class FeatureEngineeringOptimizer:
 
         except Exception as e:
             self.logger.exception(f"Interaction selection failed: {e}")
-            return interactions.iloc[:, :min(50, interactions.shape[1])]  # Return first 50 interactions as fallback
+            return interactions.iloc[
+                :, : min(50, interactions.shape[1])
+            ]  # Return first 50 interactions as fallback
 
     @handles_errors(fallback={})
     async def _calculate_interaction_importance(
@@ -923,10 +1063,12 @@ class FeatureEngineeringOptimizer:
             # Get top interactions
             top_indices = np.argsort(mi_scores)[-10:]  # Top 10
             for idx in top_indices:
-                importance_dict["top_interactions"].append({
-                    "feature": interactions.columns[idx],
-                    "importance": float(mi_scores[idx]),
-                })
+                importance_dict["top_interactions"].append(
+                    {
+                        "feature": interactions.columns[idx],
+                        "importance": float(mi_scores[idx]),
+                    }
+                )
 
             return importance_dict
 
@@ -955,7 +1097,9 @@ class FeatureEngineeringOptimizer:
             from sklearn.model_selection import cross_val_score
 
             model = RandomForestClassifier(n_estimators=50, random_state=42)
-            scores = cross_val_score(model, combined_features, target, cv=3, scoring="accuracy")
+            scores = cross_val_score(
+                model, combined_features, target, cv=3, scoring="accuracy"
+            )
 
             return {
                 "mean_accuracy": float(np.mean(scores)),
@@ -964,7 +1108,6 @@ class FeatureEngineeringOptimizer:
                 "max_accuracy": float(np.max(scores)),
                 "n_interactions": len(interactions.columns),
             }
-
 
         except Exception as e:
             self.logger.exception(f"Interaction performance evaluation failed: {e}")
@@ -998,10 +1141,14 @@ class FeatureEngineeringOptimizer:
     ) -> dict[str, Any]:
         """Load optimized parameters for use in feature engineering."""
 
-        filepath = Path(f"data/feature_engineering_optimization/{exchange}_{symbol}_{timeframe}_feature_optimization.json")
+        filepath = Path(
+            f"data/feature_engineering_optimization/{exchange}_{symbol}_{timeframe}_feature_optimization.json"
+        )
 
         if not filepath.exists():
-            self.logger.warning(f"⚠️ No optimization results found for {symbol} on {exchange}")
+            self.logger.warning(
+                f"⚠️ No optimization results found for {symbol} on {exchange}"
+            )
             return {}
 
         try:

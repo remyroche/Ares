@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/computational_optimization.py
 
 """Computational Optimization Configuration for Enhanced Training Pipeline."""
@@ -16,78 +17,101 @@ def get_computational_optimization_config() -> dict[str, Any]:
     return {
         "computational_optimization": {
             # Caching configuration
-            "enable_caching": True, "max_cache_size": 1000,
+            "enable_caching": True,
+            "max_cache_size": 1000,
             "cache_ttl_hours": 24,
             # Parallel processing configuration
-            "enable_parallelization": True, "max_workers": None,  # Auto-detect if None
+            "enable_parallelization": True,
+            "max_workers": None,  # Auto-detect if None
             "chunk_size": 1000,
             # Early stopping configuration
-            "enable_early_stopping": True, "patience": 10,
+            "enable_early_stopping": True,
+            "patience": 10,
             "min_trials": 20,
             # Surrogate models configuration
-            "enable_surrogate_models": True, "expensive_trials": 50,
+            "enable_surrogate_models": True,
+            "expensive_trials": 50,
             "update_frequency": 10,
             # Memory management configuration
-            "enable_memory_management": True, "memory_threshold": 0.8,
+            "enable_memory_management": True,
+            "memory_threshold": 0.8,
             "cleanup_frequency": 100,
             # Progressive evaluation configuration
-            "enable_progressive_evaluation": True, "evaluation_stages": [
+            "enable_progressive_evaluation": True,
+            "evaluation_stages": [
                 (0.1, 0.3),  # 10% data = 30% weight
                 (0.3, 0.5),  # 30% data = 50% weight
                 (1.0, 1.0),  # 100% data = 100% weight
             ],
             # Model complexity scaling
-            "enable_adaptive_complexity": True, "complexity_levels": {
+            "enable_adaptive_complexity": True,
+            "complexity_levels": {
                 "light": {"n_estimators": 50, "max_depth": 3},
                 "medium": {"n_estimators": 100, "max_depth": 6},
                 "heavy": {"n_estimators": 200, "max_depth": 10},
             },
             # Backtesting optimization
             "backtesting": {
-                "enable_cached_backtesting": True, "enable_progressive_evaluation": True,
-                "enable_parallel_backtesting": True, "max_backtest_workers": 4,
+                "enable_cached_backtesting": True,
+                "enable_progressive_evaluation": True,
+                "enable_parallel_backtesting": True,
+                "max_backtest_workers": 4,
                 "backtest_timeout_seconds": 300,
             },
             # Model training optimization
             "model_training": {
-                "enable_incremental_training": True, "enable_adaptive_complexity": True,
+                "enable_incremental_training": True,
+                "enable_adaptive_complexity": True,
                 "model_cache_size": 100,
                 "warm_start_threshold": 0.8,
             },
             # Feature engineering optimization
             "feature_engineering": {
-                "enable_precomputed_features": True, "enable_feature_caching": True,
+                "enable_precomputed_features": True,
+                "enable_feature_caching": True,
                 "feature_cache_size": 500,
-                "enable_memory_efficient_data": True},
+                "enable_memory_efficient_data": True,
+            },
             # Multi-objective optimization
             "multi_objective": {
-                "enable_surrogate_models": True, "enable_adaptive_sampling": True,
+                "enable_surrogate_models": True,
+                "enable_adaptive_sampling": True,
                 "surrogate_model_type": "gaussian_process",
                 "expensive_evaluation_ratio": 0.2,
             },
             # Memory management
             "memory_management": {
-                "enable_memory_monitoring": True, "memory_threshold": 0.8,
+                "enable_memory_monitoring": True,
+                "memory_threshold": 0.8,
                 "cleanup_frequency": 100,
-                "enable_garbage_collection": True, "max_memory_usage_mb": 8000,
+                "enable_garbage_collection": True,
+                "max_memory_usage_mb": 8000,
             },
             # Performance monitoring
             "performance_monitoring": {
-                "enable_performance_tracking": True, "track_cache_hits": True,
-                "track_memory_usage": True, "track_optimization_time": True,
+                "enable_performance_tracking": True,
+                "track_cache_hits": True,
+                "track_memory_usage": True,
+                "track_optimization_time": True,
                 "performance_log_interval": 100,
             },
             # Phase-specific configurations
             "phases": {
                 "phase_1_quick_wins": {
-                    "enable_caching": True, "enable_early_stopping": True,
-                    "enable_memory_optimization": True},
+                    "enable_caching": True,
+                    "enable_early_stopping": True,
+                    "enable_memory_optimization": True,
+                },
                 "phase_2_medium_term": {
-                    "enable_parallel_processing": True, "enable_surrogate_models": True,
-                    "enable_progressive_evaluation": True},
+                    "enable_parallel_processing": True,
+                    "enable_surrogate_models": True,
+                    "enable_progressive_evaluation": True,
+                },
                 "phase_3_advanced": {
-                    "enable_adaptive_complexity": True, "enable_advanced_surrogates": True,
-                    "enable_multi_objective_optimization": True},
+                    "enable_adaptive_complexity": True,
+                    "enable_advanced_surrogates": True,
+                    "enable_multi_objective_optimization": True,
+                },
             },
             # Expected performance improvements
             "expected_improvements": {
@@ -239,6 +263,8 @@ def get_optimization_statistics() -> dict[str, Any]:
             enabled_optimizations.append(key.replace("enable_", ""))
 
     return {
-        "enabled_optimizations": enabled_optimizations, "total_optimizations": len(enabled_optimizations),
+        "enabled_optimizations": enabled_optimizations,
+        "total_optimizations": len(enabled_optimizations),
         "expected_improvements": get_expected_improvements(),
-        "configuration": optimization_config}
+        "configuration": optimization_config,
+    }

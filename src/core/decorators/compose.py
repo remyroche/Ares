@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Decorator composition utilities with a uniform wrapper.
 
@@ -56,12 +57,14 @@ def uniform_wrapper(
             return func
 
         if asyncio.iscoroutinefunction(func):
+
             @functools.wraps(func)
             async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
                 return await async_handler(func, *args, **kwargs)
 
             mark_wrapped(async_wrapper)
             return cast("Callable[P, R]", async_wrapper)
+
         @functools.wraps(func)
         def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             return sync_handler(func, *args, **kwargs)
@@ -76,7 +79,9 @@ def uniform_wrapper(
     return decorator
 
 
-def compose(*decorators: Callable[[Callable[P, R]], Callable[P, R]]) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def compose(
+    *decorators: Callable[[Callable[P, R]], Callable[P, R]]
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Compose multiple decorators into a single decorator.
 
@@ -93,6 +98,7 @@ def compose(*decorators: Callable[[Callable[P, R]], Callable[P, R]]) -> Callable
         @decorator3
         def func(): ...
     """
+
     def composed_decorator(func: Callable[P, R]) -> Callable[P, R]:
         # Apply decorators in reverse order
         result = func
@@ -121,7 +127,9 @@ def ensure_async(func: Callable[P, R]) -> Callable[P, R | Callable[..., R]]:
     async def async_wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
         # Run sync function in executor to avoid blocking
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
+        return await loop.run_in_executor(
+            None, functools.partial(func, *args, **kwargs)
+        )
 
     return cast("Callable[P, R]", async_wrapped)
 
@@ -154,7 +162,9 @@ def ensure_sync(func: Callable[P, R]) -> Callable[P, R]:
 
 
 # Decorator metadata helpers
-def get_decorator_metadata(func: Callable[..., Any], key: str, default: Any = None) -> Any:
+def get_decorator_metadata(
+    func: Callable[..., Any], key: str, default: Any = None
+) -> Any:
     """Get metadata stored by decorators on a function."""
     return getattr(func, f"_decorator_meta_{key}", default)
 
@@ -164,7 +174,9 @@ def set_decorator_metadata(func: Callable[..., Any], key: str, value: Any) -> No
     setattr(func, f"_decorator_meta_{key}", value)
 
 
-def copy_decorator_metadata(source: Callable[..., Any], target: Callable[..., Any]) -> None:
+def copy_decorator_metadata(
+    source: Callable[..., Any], target: Callable[..., Any]
+) -> None:
     """Copy all decorator metadata from source to target function."""
     for attr in dir(source):
         if attr.startswith("_decorator_meta_"):

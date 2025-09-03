@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/types/data_types.py
 
 """Data structure type definitions for market data and trading information."""

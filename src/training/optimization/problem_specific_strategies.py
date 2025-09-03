@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Problem-Specific Optimization Strategies
 
@@ -12,22 +13,23 @@ to different problem characteristics:
 - Multi-objective strategies
 """
 
-from src.core.decorators import handles_errors
-from typing import (
-    Any,
-    Dict
-)
+from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict
+
 from scipy.stats import pearsonr
-from abc import ABC
-from src.utils.logger import system_logger
-from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+
 
 class ProblemType(Enum):
     """Enumeration of different problem types."""
+
     CONTINUOUS = "continuous"
     DISCRETE = "discrete"
     MIXED = "mixed"
@@ -39,9 +41,11 @@ class ProblemType(Enum):
     SPARSE = "sparse"
     TIME_SERIES = "time_series"
 
+
 @dataclass
 class ProblemCharacteristics:
     """Data class for problem characteristics."""
+
     problem_type: ProblemType
     dimensionality: int
     parameter_bounds: list[tuple[float, float]]
@@ -53,6 +57,7 @@ class ProblemCharacteristics:
     correlation_structure: dict[str, float]
     complexity_score: float
     optimization_difficulty: str  # "easy", "medium", "hard"
+
 
 class ProblemAnalyzer:
     """Analyzes optimization problems to determine their characteristics."""
@@ -77,7 +82,8 @@ class ProblemAnalyzer:
         # Generate sample data if not provided
         if sample_points is None or sample_values is None:
             sample_points, sample_values = self._generate_sample_data(
-                objective_function, parameter_space,
+                objective_function,
+                parameter_space,
             )
 
         # Analyze different characteristics
@@ -88,12 +94,17 @@ class ProblemAnalyzer:
         sparsity_ratio = self._calculate_sparsity(sample_points)
         correlation_structure = self._analyze_correlations(sample_points, sample_values)
         complexity_score = self._calculate_complexity_score(
-            dimensionality, is_noisy, is_multi_modal, sparsity_ratio,
+            dimensionality,
+            is_noisy,
+            is_multi_modal,
+            sparsity_ratio,
         )
 
         # Determine problem type
         problem_type = self._determine_problem_type(
-            parameter_space, is_multi_objective, has_constraints,
+            parameter_space,
+            is_multi_objective,
+            has_constraints,
         )
 
         # Determine optimization difficulty
@@ -113,7 +124,9 @@ class ProblemAnalyzer:
             optimization_difficulty=optimization_difficulty,
         )
 
-    def _extract_bounds(self, parameter_space: dict[str, Any]) -> list[tuple[float, float]]:
+    def _extract_bounds(
+        self, parameter_space: dict[str, Any]
+    ) -> list[tuple[float, float]]:
         """Extract parameter bounds from parameter space."""
         bounds = []
         for param_config in parameter_space.values():
@@ -142,12 +155,15 @@ class ProblemAnalyzer:
                 if isinstance(param_config, dict):
                     if "min" in param_config and "max" in param_config:
                         point[param_name] = np.random.uniform(
-                            param_config["min"], param_config["max"],
+                            param_config["min"],
+                            param_config["max"],
                         )
                     elif "choices" in param_config:
                         point[param_name] = np.random.choice(param_config["choices"])
                 elif isinstance(param_config, list | tuple) and len(param_config) == 2:
-                    point[param_name] = np.random.uniform(param_config[0], param_config[1])
+                    point[param_name] = np.random.uniform(
+                        param_config[0], param_config[1]
+                    )
 
             sample_points.append(point)
 
@@ -162,10 +178,9 @@ class ProblemAnalyzer:
                 sample_values.append(np.nan)
 
         # Convert to arrays
-        sample_points_array = np.array([
-            [point[param] for param in parameter_space]
-            for point in sample_points
-        ])
+        sample_points_array = np.array(
+            [[point[param] for param in parameter_space] for point in sample_points]
+        )
         sample_values_array = np.array(sample_values)
 
         return sample_points_array, sample_values_array
@@ -249,7 +264,9 @@ class ProblemAnalyzer:
         constraint_indicators = ["constraint", "bound", "limit", "range"]
 
         for param_name in parameter_space:
-            if any(indicator in param_name.lower() for indicator in constraint_indicators):
+            if any(
+                indicator in param_name.lower() for indicator in constraint_indicators
+            ):
                 return True
 
         # Check parameter space structure for constraints
@@ -379,6 +396,7 @@ class ProblemAnalyzer:
             return "medium"
         return "hard"
 
+
 class BaseOptimizationStrategy(ABC):
     """Base class for optimization strategies."""
 
@@ -397,6 +415,7 @@ class BaseOptimizationStrategy(ABC):
     @abstractmethod
     def get_strategy_name(self) -> str:
         """Get the name of this strategy."""
+
 
 class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for continuous optimization problems."""
@@ -435,6 +454,7 @@ class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "continuous_optimization"
 
+
 class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for discrete optimization problems."""
 
@@ -462,6 +482,7 @@ class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
 
     def get_strategy_name(self) -> str:
         return "discrete_optimization"
+
 
 class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for multi-objective optimization problems."""
@@ -492,6 +513,7 @@ class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "multi_objective_optimization"
 
+
 class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for constrained optimization problems."""
 
@@ -521,6 +543,7 @@ class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "constrained_optimization"
 
+
 class NoisyOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for noisy optimization problems."""
 
@@ -549,6 +572,7 @@ class NoisyOptimizationStrategy(BaseOptimizationStrategy):
 
     def get_strategy_name(self) -> str:
         return "noisy_optimization"
+
 
 class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for high-dimensional optimization problems."""
@@ -580,6 +604,7 @@ class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
     def get_strategy_name(self) -> str:
         return "high_dimensional_optimization"
 
+
 class StrategySelector:
     """Selects and applies appropriate optimization strategies."""
 
@@ -610,7 +635,8 @@ class StrategySelector:
 
         # Analyze the problem
         problem_characteristics = self.problem_analyzer.analyze_problem(
-            objective_function, parameter_space,
+            objective_function,
+            parameter_space,
         )
 
         self.logger.info(f"Problem characteristics: {problem_characteristics}")
@@ -620,11 +646,14 @@ class StrategySelector:
 
         # Apply strategy
         adaptations = primary_strategy.adapt_optimization(
-            problem_characteristics, surrogate_optimizer,
+            problem_characteristics,
+            surrogate_optimizer,
         )
 
         # Apply secondary strategies if needed
-        secondary_adaptations = self._apply_secondary_strategies(problem_characteristics)
+        secondary_adaptations = self._apply_secondary_strategies(
+            problem_characteristics
+        )
         adaptations.update(secondary_adaptations)
 
         self.logger.info(f"Selected strategy: {primary_strategy.get_strategy_name()}")
@@ -660,26 +689,32 @@ class StrategySelector:
 
         # Apply noise handling if noisy
         if problem_characteristics.is_noisy:
-            adaptations.update({
-                "noise_estimation": True,
-                "robust_kernel": True,
-                "multiple_evaluations": 3,
-            })
+            adaptations.update(
+                {
+                    "noise_estimation": True,
+                    "robust_kernel": True,
+                    "multiple_evaluations": 3,
+                }
+            )
 
         # Apply multi-modality handling
         if problem_characteristics.is_multi_modal:
-            adaptations.update({
-                "multi_start_optimization": True,
-                "restart_strategy": "adaptive",
-                "local_search": True,
-            })
+            adaptations.update(
+                {
+                    "multi_start_optimization": True,
+                    "restart_strategy": "adaptive",
+                    "local_search": True,
+                }
+            )
 
         # Apply sparsity handling
         if problem_characteristics.sparsity_ratio < 0.5:
-            adaptations.update({
-                "sparse_optimization": True,
-                "feature_importance": True,
-                "dimensionality_reduction": True,
-            })
+            adaptations.update(
+                {
+                    "sparse_optimization": True,
+                    "feature_importance": True,
+                    "dimensionality_reduction": True,
+                }
+            )
 
         return adaptations

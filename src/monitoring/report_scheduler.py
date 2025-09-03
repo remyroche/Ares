@@ -26,14 +26,17 @@ class ReportType(Enum):
     EXECUTIVE_SUMMARY = "executive_summary"
     CONTINUOUS_IMPROVEMENT = "continuous_improvement"
 
+
 class ReportSchedule(Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 
+
 class ReportFormat(Enum):
     JSON = "json"
     HTML = "html"
+
 
 @dataclass
 class ReportConfig:
@@ -42,6 +45,7 @@ class ReportConfig:
     format: ReportFormat
     recipients: list[str]
     enabled: bool = True
+
 
 @dataclass
 class ReportHistory:
@@ -52,6 +56,7 @@ class ReportHistory:
     recipients: list[str]
     file_path: str
     status: str
+
 
 class ReportScheduler:
     """Automated report scheduler."""

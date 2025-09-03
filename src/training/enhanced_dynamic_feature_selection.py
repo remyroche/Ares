@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/training/enhanced_dynamic_feature_selection.py
 
 import json
 from datetime import datetime
@@ -14,6 +13,8 @@ from sklearn.feature_selection import RFE, f_classif, mutual_info_classif
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+# src/training/enhanced_dynamic_feature_selection.py
 
 
 class EnhancedDynamicFeatureSelection:
@@ -31,9 +32,15 @@ class EnhancedDynamicFeatureSelection:
         self.logger = system_logger.getChild("EnhancedDynamicFeatureSelection")
 
         # Dynamic configuration - no fixed thresholds
-        self.target_features = config.get("feature_reduction", {}).get("target_features", 100)
-        self.min_features_per_category = config.get("feature_reduction", {}).get("min_features_per_category", 3)
-        self.max_features_per_category = config.get("feature_reduction", {}).get("max_features_per_category", 20)
+        self.target_features = config.get("feature_reduction", {}).get(
+            "target_features", 100
+        )
+        self.min_features_per_category = config.get("feature_reduction", {}).get(
+            "min_features_per_category", 3
+        )
+        self.max_features_per_category = config.get("feature_reduction", {}).get(
+            "max_features_per_category", 20
+        )
 
         # Adaptive thresholds that will be computed dynamically
         self.adaptive_correlation_threshold = None
@@ -46,9 +53,15 @@ class EnhancedDynamicFeatureSelection:
         self.feature_categories = {}
 
         # Interaction features configuration
-        self.enable_interaction_features = config.get("feature_reduction", {}).get("enable_interaction_features", True)
-        self.max_interaction_features = config.get("feature_reduction", {}).get("max_interaction_features", 50)
-        self.interaction_methods = config.get("feature_reduction", {}).get("interaction_methods", ["multiplication", "ratio", "difference"])
+        self.enable_interaction_features = config.get("feature_reduction", {}).get(
+            "enable_interaction_features", True
+        )
+        self.max_interaction_features = config.get("feature_reduction", {}).get(
+            "max_interaction_features", 50
+        )
+        self.interaction_methods = config.get("feature_reduction", {}).get(
+            "interaction_methods", ["multiplication", "ratio", "difference"]
+        )
 
     @handles_errors(fallback=(pd.DataFrame(), {}))
     def select_features_dynamically(
@@ -73,34 +86,52 @@ class EnhancedDynamicFeatureSelection:
             Tuple of (selected_features_df, selection_metadata)
         """
         try:
-            self.logger.info(f"🚀 Starting enhanced dynamic feature selection: {features_df.shape[1]} -> {self.target_features} features")
+            self.logger.info(
+                f"🚀 Starting enhanced dynamic feature selection: {features_df.shape[1]} -> {self.target_features} features"
+            )
 
             # Stage 1: Data quality and initial analysis
-            features_df, stage1_metadata = self._stage1_data_quality_analysis(features_df)
+            features_df, stage1_metadata = self._stage1_data_quality_analysis(
+                features_df
+            )
 
             # Stage 2: Dynamic threshold computation
-            features_df, stage2_metadata = self._stage2_dynamic_threshold_computation(features_df, target)
+            features_df, stage2_metadata = self._stage2_dynamic_threshold_computation(
+                features_df, target
+            )
 
             # Stage 3: Adaptive variance filtering
-            features_df, stage3_metadata = self._stage3_adaptive_variance_filtering(features_df)
+            features_df, stage3_metadata = self._stage3_adaptive_variance_filtering(
+                features_df
+            )
 
             # Stage 4: Adaptive correlation filtering
-            features_df, stage4_metadata = self._stage4_adaptive_correlation_filtering(features_df)
+            features_df, stage4_metadata = self._stage4_adaptive_correlation_filtering(
+                features_df
+            )
 
             # Stage 5: Multi-method feature importance ranking
-            features_df, stage5_metadata = self._stage5_multi_method_importance(features_df, target)
+            features_df, stage5_metadata = self._stage5_multi_method_importance(
+                features_df, target
+            )
 
             # Stage 6: Category-aware feature selection
-            features_df, stage6_metadata = self._stage6_category_aware_selection(features_df, target)
+            features_df, stage6_metadata = self._stage6_category_aware_selection(
+                features_df, target
+            )
 
             # Stage 7: Interaction feature generation
             if self.enable_interaction_features:
-                features_df, stage7_metadata = self._stage7_interaction_feature_generation(features_df, target)
+                features_df, stage7_metadata = (
+                    self._stage7_interaction_feature_generation(features_df, target)
+                )
             else:
                 stage7_metadata = {"interaction_features_added": 0}
 
             # Stage 8: Final optimization and selection
-            features_df, stage8_metadata = self._stage8_final_optimization(features_df, target)
+            features_df, stage8_metadata = self._stage8_final_optimization(
+                features_df, target
+            )
 
             # Compile metadata
             selection_metadata = {
@@ -129,16 +160,22 @@ class EnhancedDynamicFeatureSelection:
             }
 
             # Save selection metadata
-            self._save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
+            self._save_selection_metadata(
+                selection_metadata, symbol, exchange, data_dir
+            )
 
-            self.logger.info(f"✅ Enhanced dynamic feature selection completed: {len(features_df.columns)} features selected")
+            self.logger.info(
+                f"✅ Enhanced dynamic feature selection completed: {len(features_df.columns)} features selected"
+            )
             return features_df, selection_metadata
 
         except Exception as e:
             self.logger.exception(f"❌ Enhanced dynamic feature selection failed: {e}")
             raise
 
-    def _stage1_data_quality_analysis(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage1_data_quality_analysis(
+        self, features_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 1: Comprehensive data quality analysis and cleaning."""
         original_count = len(features_df.columns)
 
@@ -159,12 +196,17 @@ class EnhancedDynamicFeatureSelection:
         constant_threshold = 1e-10
         constant_features = []
         for col in features_df.columns:
-            if features_df[col].nunique() <= 1 or features_df[col].var() < constant_threshold:
+            if (
+                features_df[col].nunique() <= 1
+                or features_df[col].var() < constant_threshold
+            ):
                 constant_features.append(col)
         features_df = features_df.drop(columns=constant_features)
 
         # Fill remaining NaN values intelligently
-        features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
+        features_df = (
+            features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
+        )
 
         metadata = {
             "removed_high_nan": len(high_nan_features),
@@ -174,10 +216,14 @@ class EnhancedDynamicFeatureSelection:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
+        self.logger.info(
+            f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features"
+        )
         return features_df, metadata
 
-    def _stage2_dynamic_threshold_computation(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage2_dynamic_threshold_computation(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 2: Compute adaptive thresholds based on data characteristics."""
 
         # Compute adaptive variance threshold based on data distribution
@@ -213,13 +259,17 @@ class EnhancedDynamicFeatureSelection:
         self.logger.info("Stage 2: Computed adaptive thresholds dynamically")
         return features_df, metadata
 
-    def _stage3_adaptive_variance_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage3_adaptive_variance_filtering(
+        self, features_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 3: Adaptive variance filtering using computed threshold."""
         len(features_df.columns)
 
         # Use adaptive variance threshold
         variances = features_df.var()
-        low_variance_features = variances[variances < self.adaptive_variance_threshold].index.tolist()
+        low_variance_features = variances[
+            variances < self.adaptive_variance_threshold
+        ].index.tolist()
         features_df = features_df.drop(columns=low_variance_features)
 
         metadata = {
@@ -228,10 +278,14 @@ class EnhancedDynamicFeatureSelection:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 3: Removed {len(low_variance_features)} low-variance features using adaptive threshold")
+        self.logger.info(
+            f"Stage 3: Removed {len(low_variance_features)} low-variance features using adaptive threshold"
+        )
         return features_df, metadata
 
-    def _stage4_adaptive_correlation_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage4_adaptive_correlation_filtering(
+        self, features_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 4: Adaptive correlation filtering with clustering approach."""
         original_count = len(features_df.columns)
 
@@ -274,40 +328,56 @@ class EnhancedDynamicFeatureSelection:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 4: Removed {original_count - len(features_df.columns)} highly correlated features using clustering")
+        self.logger.info(
+            f"Stage 4: Removed {original_count - len(features_df.columns)} highly correlated features using clustering"
+        )
         return features_df, metadata
 
-    def _stage5_multi_method_importance(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage5_multi_method_importance(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 5: Multi-method feature importance ranking."""
 
         # Method 1: Mutual Information
         mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(ascending=False)
+        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(
+            ascending=False
+        )
 
         # Method 2: Random Forest Importance
-        rf_model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+        rf_model = RandomForestClassifier(
+            n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+        )
         rf_model.fit(features_df, target)
-        rf_importance = pd.Series(rf_model.feature_importances_, index=features_df.columns).sort_values(ascending=False)
+        rf_importance = pd.Series(
+            rf_model.feature_importances_, index=features_df.columns
+        ).sort_values(ascending=False)
 
         # Method 3: F-statistic
         f_scores, _ = f_classif(features_df, target)
-        f_ranking = pd.Series(f_scores, index=features_df.columns).sort_values(ascending=False)
+        f_ranking = pd.Series(f_scores, index=features_df.columns).sort_values(
+            ascending=False
+        )
 
         # Method 4: LightGBM Importance
         try:
-            lgb_model = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
+            lgb_model = lgb.LGBMClassifier(
+                n_estimators=100, random_state=42, verbose=-1
+            )
             lgb_model.fit(features_df, target)
-            lgb_importance = pd.Series(lgb_model.feature_importances_, index=features_df.columns).sort_values(ascending=False)
+            lgb_importance = pd.Series(
+                lgb_model.feature_importances_, index=features_df.columns
+            ).sort_values(ascending=False)
         except Exception as e:
             self.logger.warning(f"LightGBM importance computation failed: {e}")
             lgb_importance = rf_importance  # Fallback to RF importance
 
         # Ensemble importance (weighted average)
         ensemble_scores = (
-            0.3 * mi_ranking / mi_ranking.max() +
-            0.3 * rf_importance / rf_importance.max() +
-            0.2 * f_ranking / f_ranking.max() +
-            0.2 * lgb_importance / lgb_importance.max()
+            0.3 * mi_ranking / mi_ranking.max()
+            + 0.3 * rf_importance / rf_importance.max()
+            + 0.2 * f_ranking / f_ranking.max()
+            + 0.2 * lgb_importance / lgb_importance.max()
         )
 
         # Store rankings for later use
@@ -328,7 +398,9 @@ class EnhancedDynamicFeatureSelection:
         self.logger.info("Stage 5: Computed multi-method feature importance")
         return features_df, metadata
 
-    def _stage6_category_aware_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage6_category_aware_selection(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 6: Category-aware feature selection ensuring diversity."""
 
         # Categorize features
@@ -353,24 +425,34 @@ class EnhancedDynamicFeatureSelection:
                 category_selected = category_scores.head(n_to_select).index.tolist()
                 selected_features.extend(category_selected)
 
-                self.logger.info(f"Category '{category}': Selected {len(category_selected)} features")
+                self.logger.info(
+                    f"Category '{category}': Selected {len(category_selected)} features"
+                )
 
         # Ensure we don't exceed target features
         if len(selected_features) > self.target_features:
             # Prioritize by ensemble importance
-            selected_features = ensemble_scores[selected_features].head(self.target_features).index.tolist()
+            selected_features = (
+                ensemble_scores[selected_features]
+                .head(self.target_features)
+                .index.tolist()
+            )
 
         features_df = features_df[selected_features]
 
         metadata = {
-            "category_selection": {cat: len(features) for cat, features in self.feature_categories.items()},
+            "category_selection": {
+                cat: len(features) for cat, features in self.feature_categories.items()
+            },
             "features_after_stage": len(features_df.columns),
         }
 
         self.logger.info("Stage 6: Applied category-aware selection")
         return features_df, metadata
 
-    def _stage7_interaction_feature_generation(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage7_interaction_feature_generation(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 7: Generate interaction features between top features."""
 
         if len(features_df.columns) < 2:
@@ -378,7 +460,9 @@ class EnhancedDynamicFeatureSelection:
 
         # Get top features for interaction generation
         ensemble_scores = self.feature_importance_cache["ensemble"]
-        top_features = ensemble_scores.head(min(20, len(features_df.columns))).index.tolist()
+        top_features = ensemble_scores.head(
+            min(20, len(features_df.columns))
+        ).index.tolist()
 
         # Also get top 3 features from each category
         category_top_features = []
@@ -398,26 +482,38 @@ class EnhancedDynamicFeatureSelection:
             if feature_count >= self.max_interaction_features:
                 break
 
-            for feat2 in interaction_candidates[i+1:]:
+            for feat2 in interaction_candidates[i + 1 :]:
                 if feature_count >= self.max_interaction_features:
                     break
 
                 # Generate different types of interactions
                 if "multiplication" in self.interaction_methods:
                     interaction_name = f"{feat1}_x_{feat2}"
-                    interaction_features[interaction_name] = features_df[feat1] * features_df[feat2]
+                    interaction_features[interaction_name] = (
+                        features_df[feat1] * features_df[feat2]
+                    )
                     feature_count += 1
 
-                if "ratio" in self.interaction_methods and feature_count < self.max_interaction_features:
+                if (
+                    "ratio" in self.interaction_methods
+                    and feature_count < self.max_interaction_features
+                ):
                     # Avoid division by zero
                     if (features_df[feat2] != 0).all():
                         interaction_name = f"{feat1}_div_{feat2}"
-                        interaction_features[interaction_name] = features_df[feat1] / (features_df[feat2] + 1e-8)
+                        interaction_features[interaction_name] = features_df[feat1] / (
+                            features_df[feat2] + 1e-8
+                        )
                         feature_count += 1
 
-                if "difference" in self.interaction_methods and feature_count < self.max_interaction_features:
+                if (
+                    "difference" in self.interaction_methods
+                    and feature_count < self.max_interaction_features
+                ):
                     interaction_name = f"{feat1}_diff_{feat2}"
-                    interaction_features[interaction_name] = features_df[feat1] - features_df[feat2]
+                    interaction_features[interaction_name] = (
+                        features_df[feat1] - features_df[feat2]
+                    )
                     feature_count += 1
 
         # Add interaction features to the dataframe
@@ -429,12 +525,19 @@ class EnhancedDynamicFeatureSelection:
             interaction_df_clean = interaction_df.dropna(axis=1)
             constant_interactions = []
             for col in interaction_df_clean.columns:
-                if interaction_df_clean[col].nunique() <= 1 or interaction_df_clean[col].var() < 1e-10:
+                if (
+                    interaction_df_clean[col].nunique() <= 1
+                    or interaction_df_clean[col].var() < 1e-10
+                ):
                     constant_interactions.append(col)
 
             if constant_interactions:
                 features_df = features_df.drop(columns=constant_interactions)
-                interaction_features = {k: v for k, v in interaction_features.items() if k not in constant_interactions}
+                interaction_features = {
+                    k: v
+                    for k, v in interaction_features.items()
+                    if k not in constant_interactions
+                }
 
         metadata = {
             "interaction_features_added": len(interaction_features),
@@ -442,19 +545,30 @@ class EnhancedDynamicFeatureSelection:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 7: Generated {len(interaction_features)} interaction features")
+        self.logger.info(
+            f"Stage 7: Generated {len(interaction_features)} interaction features"
+        )
         return features_df, metadata
 
-    def _stage8_final_optimization(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage8_final_optimization(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 8: Final optimization and feature count adjustment."""
 
         if len(features_df.columns) <= self.target_features:
-            return features_df, {"final_optimization": "no_change", "features_after_stage": len(features_df.columns)}
+            return features_df, {
+                "final_optimization": "no_change",
+                "features_after_stage": len(features_df.columns),
+            }
 
         # Use Recursive Feature Elimination with LightGBM for final selection
         try:
-            estimator = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
-            rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
+            estimator = lgb.LGBMClassifier(
+                n_estimators=100, random_state=42, verbose=-1
+            )
+            rfe = RFE(
+                estimator=estimator, n_features_to_select=self.target_features, step=1
+            )
 
             # Fit RFE
             rfe.fit(features_df, target)
@@ -472,11 +586,15 @@ class EnhancedDynamicFeatureSelection:
             self.logger.info("Stage 8: Final optimization using RFE-LightGBM")
 
         except Exception as e:
-            self.logger.warning(f"RFE failed, using simple importance-based selection: {e}")
+            self.logger.warning(
+                f"RFE failed, using simple importance-based selection: {e}"
+            )
 
             # Fallback: simple importance-based selection
             ensemble_scores = self.feature_importance_cache["ensemble"]
-            selected_features = ensemble_scores.head(self.target_features).index.tolist()
+            selected_features = ensemble_scores.head(
+                self.target_features
+            ).index.tolist()
             features_df = features_df[selected_features]
 
             metadata = {
@@ -484,18 +602,24 @@ class EnhancedDynamicFeatureSelection:
                 "features_after_stage": len(features_df.columns),
             }
 
-            self.logger.info("Stage 8: Final optimization using importance-based selection")
+            self.logger.info(
+                "Stage 8: Final optimization using importance-based selection"
+            )
 
         return features_df, metadata
 
-    def _find_optimal_clusters(self, linkage_matrix: np.ndarray, max_clusters: int) -> int:
+    def _find_optimal_clusters(
+        self, linkage_matrix: np.ndarray, max_clusters: int
+    ) -> int:
         """Find optimal number of clusters using elbow method."""
         if max_clusters <= 1:
             return 1
 
         # Calculate within-cluster sum of squares for different numbers of clusters
         wcss = []
-        cluster_range = range(1, min(max_clusters + 1, 21))  # Limit to 20 for efficiency
+        cluster_range = range(
+            1, min(max_clusters + 1, 21)
+        )  # Limit to 20 for efficiency
 
         for n_clusters in cluster_range:
             if n_clusters == 1:
@@ -503,12 +627,17 @@ class EnhancedDynamicFeatureSelection:
             else:
                 # Use a subset of the data for efficiency
                 sample_size = min(1000, len(linkage_matrix))
-                sample_indices = np.random.choice(len(linkage_matrix), sample_size, replace=False)
+                sample_indices = np.random.choice(
+                    len(linkage_matrix), sample_size, replace=False
+                )
                 sample_linkage = linkage_matrix[sample_indices]
 
                 try:
                     from scipy.cluster.hierarchy import fcluster
-                    clusters = fcluster(sample_linkage, n_clusters, criterion="maxclust")
+
+                    clusters = fcluster(
+                        sample_linkage, n_clusters, criterion="maxclust"
+                    )
                     # Calculate WCSS (simplified)
                     wcss.append(len(np.unique(clusters)))
                 except:
@@ -546,74 +675,216 @@ class EnhancedDynamicFeatureSelection:
             categorized = False
 
             # Momentum/Trend indicators
-            if any(keyword in feature_lower for keyword in [
-                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
-                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
-                "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
-                "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend",
-            ]):
+            if any(
+                keyword in feature_lower
+                for keyword in [
+                    "momentum",
+                    "mom",
+                    "rsi",
+                    "macd",
+                    "cci",
+                    "roc",
+                    "willr",
+                    "stoch",
+                    "adx",
+                    "dmi",
+                    "kama",
+                    "tema",
+                    "dema",
+                    "hma",
+                    "wma",
+                    "vwma",
+                    "zlema",
+                    "ichimoku",
+                    "psar",
+                    "trix",
+                    "cmo",
+                    "tsi",
+                    "ppo",
+                    "pmo",
+                    "uo",
+                    "linreg",
+                    "lin_reg",
+                    "sma",
+                    "ema",
+                    "ma_",
+                    "moving_avg",
+                    "trend",
+                ]
+            ):
                 categories["momentum"].append(feature)
                 categorized = True
             # Volatility/range measures
-            elif any(keyword in feature_lower for keyword in [
-                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
-                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
-                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
-                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
-                "choppiness", "park_vol",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "volatility",
+                    "atr",
+                    "true_range",
+                    "truerange",
+                    "natr",
+                    "parkinson",
+                    "garman",
+                    "gk_vol",
+                    "garman_klass",
+                    "roll",
+                    "rvol",
+                    "realized_vol",
+                    "hv",
+                    "hist_vol",
+                    "historical_vol",
+                    "variance",
+                    "std",
+                    "bbands",
+                    "boll",
+                    "bollinger",
+                    "donch",
+                    "donchian",
+                    "keltner",
+                    "chop",
+                    "choppiness",
+                    "park_vol",
+                ]
+            ):
                 categories["volatility"].append(feature)
                 categorized = True
             # Liquidity/volume features
-            elif any(keyword in feature_lower for keyword in [
-                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
-                "pvi", "nvi", "efi", "delta_volume",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "liquidity",
+                    "volume",
+                    "tick_volume",
+                    "obv",
+                    "cmf",
+                    "mfi",
+                    "vwap",
+                    "pvi",
+                    "nvi",
+                    "efi",
+                    "delta_volume",
+                ]
+            ):
                 categories["liquidity"].append(feature)
                 categorized = True
             # Microstructure/order book features
-            elif any(keyword in feature_lower for keyword in [
-                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
-                "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
-                "microprice", "trade_count", "trade_frequency",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "microstructure",
+                    "order_flow",
+                    "orderflow",
+                    "ofi",
+                    "imbalance",
+                    "quote_imbalance",
+                    "spread",
+                    "bid_ask",
+                    "depth",
+                    "orderbook",
+                    "book",
+                    "microprice",
+                    "trade_count",
+                    "trade_frequency",
+                ]
+            ):
                 categories["microstructure"].append(feature)
                 categorized = True
             # Wavelet/transform domain features
-            elif any(keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]):
+            elif any(
+                keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]
+            ):
                 categories["wavelet"].append(feature)
                 categorized = True
             # Support/Resistance contextual features
-            elif any(keyword in feature_lower for keyword in [
-                "sr_", "sr_distance", "support", "resistance", "proximity",
-                "breakout_probability", "rebounce_probability", "consolidation_probability",
-                "sr_confidence", "multi_timeframe_sr_score",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "sr_",
+                    "sr_distance",
+                    "support",
+                    "resistance",
+                    "proximity",
+                    "breakout_probability",
+                    "rebounce_probability",
+                    "consolidation_probability",
+                    "sr_confidence",
+                    "multi_timeframe_sr_score",
+                ]
+            ):
                 categories["sr_distance"].append(feature)
                 categorized = True
             # Statistical descriptors
-            elif any(keyword in feature_lower for keyword in [
-                "autocorr", "autocorrelation", "correl", "correlation", "entropy",
-                "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
-                "skewness", "zscore", "z_score",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "autocorr",
+                    "autocorrelation",
+                    "correl",
+                    "correlation",
+                    "entropy",
+                    "fractal",
+                    "hurst",
+                    "hjorth",
+                    "hj_",
+                    "kurtosis",
+                    "kurt",
+                    "skew",
+                    "skewness",
+                    "zscore",
+                    "z_score",
+                ]
+            ):
                 categories["statistical"].append(feature)
                 categorized = True
             # Candlestick pattern features
-            elif any(keyword in feature_lower for keyword in [
-                "cdl", "candlestick", "doji", "hammer", "engulf", "harami",
-                "marubozu", "piercing", "shooting_star", "hanging_man",
-                "three_black_crows", "three_white_soldiers", "morning_star", "evening_star",
-                "dark_cloud",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "cdl",
+                    "candlestick",
+                    "doji",
+                    "hammer",
+                    "engulf",
+                    "harami",
+                    "marubozu",
+                    "piercing",
+                    "shooting_star",
+                    "hanging_man",
+                    "three_black_crows",
+                    "three_white_soldiers",
+                    "morning_star",
+                    "evening_star",
+                    "dark_cloud",
+                ]
+            ):
                 categories["candlestick"].append(feature)
                 categorized = True
             # Interaction features
-            elif any(keyword in feature_lower for keyword in ["_x_", "_div_", "_diff_", "_ratio_", "_over_", "_cross_", "interaction"]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "_x_",
+                    "_div_",
+                    "_diff_",
+                    "_ratio_",
+                    "_over_",
+                    "_cross_",
+                    "interaction",
+                ]
+            ):
                 categories["interaction"].append(feature)
                 categorized = True
             # Transform features
-            elif any(keyword in feature_lower for keyword in ["transform", "transformed", "scaled", "normalized", "standardized"]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "transform",
+                    "transformed",
+                    "scaled",
+                    "normalized",
+                    "standardized",
+                ]
+            ):
                 categories["transform"].append(feature)
                 categorized = True
 
@@ -622,11 +893,15 @@ class EnhancedDynamicFeatureSelection:
 
         return categories
 
-    def _save_selection_metadata(self, metadata: dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:
+    def _save_selection_metadata(
+        self, metadata: dict[str, Any], symbol: str, exchange: str, data_dir: str
+    ) -> None:
         """Save feature selection metadata."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"feature_selection_metadata_{symbol}_{exchange}_{timestamp}.json"
+            filename = (
+                f"feature_selection_metadata_{symbol}_{exchange}_{timestamp}.json"
+            )
             filepath = f"{data_dir}/{filename}"
 
             with open(filepath, "w") as f:
@@ -661,16 +936,20 @@ class EnhancedDynamicFeatureSelection:
 
             # Find high correlations
             high_corr_pairs = []
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(
+                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            )
 
             for col in upper_tri.columns:
                 high_corr_features = upper_tri[col][upper_tri[col] > 0.8].index.tolist()
                 for feature in high_corr_features:
-                    high_corr_pairs.append({
-                        "feature1": col,
-                        "feature2": feature,
-                        "correlation": float(corr_matrix.loc[col, feature]),
-                    })
+                    high_corr_pairs.append(
+                        {
+                            "feature1": col,
+                            "feature2": feature,
+                            "correlation": float(corr_matrix.loc[col, feature]),
+                        }
+                    )
 
             # Sort by correlation strength
             high_corr_pairs.sort(key=lambda x: x["correlation"], reverse=True)
@@ -678,8 +957,16 @@ class EnhancedDynamicFeatureSelection:
             return {
                 "correlation_matrix_shape": corr_matrix.shape,
                 "high_correlation_pairs": high_corr_pairs[:20],  # Top 20
-                "mean_correlation": float(corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].mean()),
-                "max_correlation": float(corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].max()),
+                "mean_correlation": float(
+                    corr_matrix.values[
+                        np.triu_indices_from(corr_matrix.values, k=1)
+                    ].mean()
+                ),
+                "max_correlation": float(
+                    corr_matrix.values[
+                        np.triu_indices_from(corr_matrix.values, k=1)
+                    ].max()
+                ),
             }
 
         except Exception as e:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/core/service_registry.py
 
 """

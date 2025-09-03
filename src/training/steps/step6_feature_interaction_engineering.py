@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Step6: Feature Interaction Engineering
 
@@ -26,6 +27,7 @@ from sklearn.preprocessing import StandardScaler
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
 
 class FeatureInteractionEngine:
     """
@@ -57,13 +59,18 @@ class FeatureInteractionEngine:
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
             from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+
             self.diverse_optimizer = DiverseLookbackOptimizer(config)
             self.use_dynamic_periods = True
-            self.logger.info("✅ Integrated with DiverseLookbackOptimizer for dynamic period selection")
+            self.logger.info(
+                "✅ Integrated with DiverseLookbackOptimizer for dynamic period selection"
+            )
         except ImportError:
             self.diverse_optimizer = None
             self.use_dynamic_periods = False
-            self.logger.warning("⚠️ DiverseLookbackOptimizer not available, using fallback periods")
+            self.logger.warning(
+                "⚠️ DiverseLookbackOptimizer not available, using fallback periods"
+            )
 
         # Optionally initialize MatrixDiverseLookbackOptimizer (vectorized) when enabled
         self.matrix_optimizer = None
@@ -74,15 +81,20 @@ class FeatureInteractionEngine:
                 from src.training.matrix_diverse_lookback_optimizer import (
                     MatrixDiverseLookbackOptimizer,
                 )
+
                 self.matrix_optimizer = MatrixDiverseLookbackOptimizer(config)
                 # Even if classic optimizer import failed, matrix optimizer enables dynamic periods
                 self.use_dynamic_periods = True
-                self.logger.info("✅ Integrated with MatrixDiverseLookbackOptimizer for vectorized period selection")
+                self.logger.info(
+                    "✅ Integrated with MatrixDiverseLookbackOptimizer for vectorized period selection"
+                )
             except Exception as e:
                 # Disable matrix path if import or construction fails
                 self.matrix_optimizer = None
                 self.use_matrix_optimizer = False
-                self.logger.warning(f"⚠️ MatrixDiverseLookbackOptimizer unavailable ({e}), falling back to classic optimization")
+                self.logger.warning(
+                    f"⚠️ MatrixDiverseLookbackOptimizer unavailable ({e}), falling back to classic optimization"
+                )
 
         # Fallback optimal lookback periods (used if dynamic optimization fails)
         self.fallback_lookback_periods = {
@@ -157,7 +169,9 @@ class FeatureInteractionEngine:
         self.dynamic_lookback_periods = {}
         self.period_optimization_results = {}
         # Flag to force consuming regime-specific optimized periods when available
-        self.force_regime_specific_periods = bool(step6_config.get("force_regime_specific_periods", False))
+        self.force_regime_specific_periods = bool(
+            step6_config.get("force_regime_specific_periods", False)
+        )
 
         # Interaction patterns and weights
         self.interaction_patterns = {
@@ -192,7 +206,12 @@ class FeatureInteractionEngine:
                 "enabled": step6_config.get("cross_timeframe_enabled", True),
             },
             "regime_dependent": {
-                "features": ["Trend_Strength", "Volatility_Regime", "Volume_Regime", "Momentum_Regime"],
+                "features": [
+                    "Trend_Strength",
+                    "Volatility_Regime",
+                    "Volume_Regime",
+                    "Momentum_Regime",
+                ],
                 "weight": step6_config.get("regime_dependent_weight", 1.7),
                 "enabled": step6_config.get("regime_dependent_enabled", True),
             },
@@ -226,7 +245,12 @@ class FeatureInteractionEngine:
         # Validate lookback periods
         self._validate_lookback_periods()
 
-    async def optimize_lookback_periods(self, market_data: pd.DataFrame, target: pd.Series, regimes: pd.Series | None = None) -> dict[str, Any]:
+    async def optimize_lookback_periods(
+        self,
+        market_data: pd.DataFrame,
+        target: pd.Series,
+        regimes: pd.Series | None = None,
+    ) -> dict[str, Any]:
         """
         Optimize lookback periods using DiverseLookbackOptimizer.
 
@@ -239,7 +263,9 @@ class FeatureInteractionEngine:
             Dictionary with optimized lookback periods
         """
         if not self.use_dynamic_periods:
-            self.logger.warning("⚠️ Dynamic period optimization not available, using fallback periods")
+            self.logger.warning(
+                "⚠️ Dynamic period optimization not available, using fallback periods"
+            )
             return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
         try:
@@ -248,23 +274,35 @@ class FeatureInteractionEngine:
             # Choose optimizer path based on configuration and availability
             if self.use_matrix_optimizer and self.matrix_optimizer is not None:
                 self.logger.info("🧮 Using MatrixDiverseLookbackOptimizer (vectorized)")
-                optimization_results = await self.matrix_optimizer.find_diverse_lookback_periods_matrix(
-                    market_data, target, regimes,
+                optimization_results = (
+                    await self.matrix_optimizer.find_diverse_lookback_periods_matrix(
+                        market_data,
+                        target,
+                        regimes,
+                    )
                 )
             else:
                 self.logger.info("📈 Using DiverseLookbackOptimizer (classic)")
-                optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
-                    market_data, target, regimes,
+                optimization_results = (
+                    await self.diverse_optimizer.find_diverse_lookback_periods(
+                        market_data,
+                        target,
+                        regimes,
+                    )
                 )
 
             # Extract optimized periods (optionally force regime-specific)
-            self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)
+            self.dynamic_lookback_periods = self._extract_optimized_periods(
+                optimization_results
+            )
             self.period_optimization_results = optimization_results
 
             # Update interaction patterns with optimized periods
             self._update_interaction_patterns_with_optimized_periods()
 
-            self.logger.info(f"✅ Dynamic period optimization completed. Selected {len(self.dynamic_lookback_periods)} indicators with optimized periods")
+            self.logger.info(
+                f"✅ Dynamic period optimization completed. Selected {len(self.dynamic_lookback_periods)} indicators with optimized periods"
+            )
 
             return {
                 "status": "optimized",
@@ -277,14 +315,18 @@ class FeatureInteractionEngine:
             self.logger.info("🔄 Falling back to predefined periods")
             return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
-    def _extract_optimized_periods(self, optimization_results: dict[str, Any]) -> dict[str, list[int]]:
+    def _extract_optimized_periods(
+        self, optimization_results: dict[str, Any]
+    ) -> dict[str, list[int]]:
         """
         Extract optimized periods from DiverseLookbackOptimizer results.
         """
         optimized_periods = {}
 
         # If forcing regime-specific periods and they exist, aggregate across regimes
-        if self.force_regime_specific_periods and optimization_results.get("regime_specific_periods"):
+        if self.force_regime_specific_periods and optimization_results.get(
+            "regime_specific_periods"
+        ):
             regime_results = optimization_results.get("regime_specific_periods", {})
             indicator_to_counter: dict[str, Counter] = {}
 
@@ -354,7 +396,11 @@ class FeatureInteractionEngine:
         self.logger.info("🔍 Validating lookback periods for non-correlation...")
 
         # Use dynamic periods if available, otherwise fallback
-        periods_to_validate = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        periods_to_validate = (
+            self.dynamic_lookback_periods
+            if self.dynamic_lookback_periods
+            else self.fallback_lookback_periods
+        )
 
         for indicator, config in periods_to_validate.items():
             if isinstance(config, dict) and "periods" in config:
@@ -374,15 +420,21 @@ class FeatureInteractionEngine:
                     ratio = max(period1, period2) / min(period1, period2)
 
                     if ratio < 1.5:  # Periods should be at least 1.5x different
-                        self.logger.warning(f"⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})")
+                        self.logger.warning(
+                            f"⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})"
+                        )
 
                     # Log the selected periods
                     if isinstance(config, dict) and "description" in config:
-                        self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
+                        self.logger.info(
+                            f"✅ {indicator}: Selected periods {periods} - {config['description']}"
+                        )
                     else:
                         self.logger.info(f"✅ {indicator}: Selected periods {periods}")
 
-    def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
+    def extract_optimal_technical_indicators(
+        self, market_data: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Extract technical indicators using optimal, non-correlated lookback periods.
 
@@ -392,10 +444,16 @@ class FeatureInteractionEngine:
         Returns:
             pd.DataFrame: Technical indicators with optimal lookback periods
         """
-        self.logger.info("🔧 Extracting optimal technical indicators with non-correlated lookback periods...")
+        self.logger.info(
+            "🔧 Extracting optimal technical indicators with non-correlated lookback periods..."
+        )
 
         # Use dynamic periods if available, otherwise fallback
-        periods_to_use = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        periods_to_use = (
+            self.dynamic_lookback_periods
+            if self.dynamic_lookback_periods
+            else self.fallback_lookback_periods
+        )
 
         indicators = {}
 
@@ -424,7 +482,9 @@ class FeatureInteractionEngine:
                     signalperiod=9,
                 )
                 indicators[f"MACD_{macd_periods[0]}_{macd_periods[1]}"] = macd
-                indicators[f"MACD_Signal_{macd_periods[0]}_{macd_periods[1]}"] = macd_signal
+                indicators[f"MACD_Signal_{macd_periods[0]}_{macd_periods[1]}"] = (
+                    macd_signal
+                )
                 indicators[f"MACD_Hist_{macd_periods[0]}_{macd_periods[1]}"] = macd_hist
 
                 # Add extended MACD if we have 3 periods
@@ -436,8 +496,12 @@ class FeatureInteractionEngine:
                         signalperiod=9,
                     )
                     indicators[f"MACD_{macd_periods[1]}_{macd_periods[2]}"] = macd_ext
-                    indicators[f"MACD_Signal_{macd_periods[1]}_{macd_periods[2]}"] = macd_signal_ext
-                    indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"] = macd_hist_ext
+                    indicators[f"MACD_Signal_{macd_periods[1]}_{macd_periods[2]}"] = (
+                        macd_signal_ext
+                    )
+                    indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"] = (
+                        macd_hist_ext
+                    )
 
         # Extract Bollinger Bands with optimal periods
         if "Bollinger_Bands" in periods_to_use:
@@ -602,7 +666,9 @@ class FeatureInteractionEngine:
         # Remove any NaN values
         indicators_df = indicators_df.fillna(method="ffill").fillna(0)
 
-        self.logger.info(f"✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods")
+        self.logger.info(
+            f"✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods"
+        )
 
         return indicators_df
 
@@ -616,7 +682,9 @@ class FeatureInteractionEngine:
         Returns:
             Dict with correlation analysis results
         """
-        self.logger.info("🔍 Analyzing feature correlations to ensure non-correlation...")
+        self.logger.info(
+            "🔍 Analyzing feature correlations to ensure non-correlation..."
+        )
 
         correlation_matrix = features.corr()
 
@@ -626,11 +694,13 @@ class FeatureInteractionEngine:
             for j in range(i + 1, len(correlation_matrix.columns)):
                 corr_value = correlation_matrix.iloc[i, j]
                 if abs(corr_value) > 0.8:  # High correlation threshold
-                    high_correlations.append({
-                        "feature1": correlation_matrix.columns[i],
-                        "feature2": correlation_matrix.columns[j],
-                        "correlation": corr_value,
-                    })
+                    high_correlations.append(
+                        {
+                            "feature1": correlation_matrix.columns[i],
+                            "feature2": correlation_matrix.columns[j],
+                            "correlation": corr_value,
+                        }
+                    )
 
         # Group correlations by indicator type
         correlation_groups = {}
@@ -646,29 +716,41 @@ class FeatureInteractionEngine:
             "high_correlations": high_correlations,
             "correlation_groups": correlation_groups,
             "n_high_correlations": len(high_correlations),
-            "mean_correlation": correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean(),
-            "max_correlation": correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].max(),
+            "mean_correlation": correlation_matrix.values[
+                np.triu_indices_from(correlation_matrix.values, k=1)
+            ].mean(),
+            "max_correlation": correlation_matrix.values[
+                np.triu_indices_from(correlation_matrix.values, k=1)
+            ].max(),
         }
 
         # Log findings
         if high_correlations:
-            self.logger.warning(f"⚠️ Found {len(high_correlations)} highly correlated feature pairs")
+            self.logger.warning(
+                f"⚠️ Found {len(high_correlations)} highly correlated feature pairs"
+            )
             for corr in high_correlations[:5]:  # Show first 5
-                self.logger.warning(f"   {corr['feature1']} vs {corr['feature2']}: {corr['correlation']:.3f}")
+                self.logger.warning(
+                    f"   {corr['feature1']} vs {corr['feature2']}: {corr['correlation']:.3f}"
+                )
         else:
-            self.logger.info("✅ No highly correlated features found - optimal lookback periods working correctly")
+            self.logger.info(
+                "✅ No highly correlated features found - optimal lookback periods working correctly"
+            )
 
         # Store analysis history
-        self.correlation_analysis_history.append({
-            "timestamp": datetime.now(),
-            "results": analysis_results,
-        })
+        self.correlation_analysis_history.append(
+            {
+                "timestamp": datetime.now(),
+                "results": analysis_results,
+            }
+        )
 
         return analysis_results
 
-    def extract_interaction_features(self, features: np.ndarray,
-                                   feature_names: list[str],
-                                   market_data: pd.DataFrame) -> np.ndarray:
+    def extract_interaction_features(
+        self, features: np.ndarray, feature_names: list[str], market_data: pd.DataFrame
+    ) -> np.ndarray:
         """
         Extract comprehensive interaction features.
 
@@ -684,27 +766,40 @@ class FeatureInteractionEngine:
             self.logger.info("Extracting feature interactions...")
 
             # 1. Create basic interaction features
-            basic_interactions = self._create_basic_interactions(features, feature_names)
+            basic_interactions = self._create_basic_interactions(
+                features, feature_names
+            )
 
             # 2. Create pattern-based interactions
-            pattern_interactions = self._create_pattern_interactions(features, feature_names)
+            pattern_interactions = self._create_pattern_interactions(
+                features, feature_names
+            )
 
             # 3. Create regime-dependent interactions
-            regime_interactions = self._create_regime_interactions(features, feature_names, market_data)
+            regime_interactions = self._create_regime_interactions(
+                features, feature_names, market_data
+            )
 
             # 4. Create cross-timeframe interactions
-            timeframe_interactions = self._create_cross_timeframe_interactions(features, feature_names)
+            timeframe_interactions = self._create_cross_timeframe_interactions(
+                features, feature_names
+            )
 
             # 5. Combine all interactions
-            all_interactions = np.concatenate([
-                basic_interactions,
-                pattern_interactions,
-                regime_interactions,
-                timeframe_interactions,
-            ], axis=1)
+            all_interactions = np.concatenate(
+                [
+                    basic_interactions,
+                    pattern_interactions,
+                    regime_interactions,
+                    timeframe_interactions,
+                ],
+                axis=1,
+            )
 
             # 6. Select optimal interactions
-            selected_interactions = self._select_optimal_interactions(all_interactions, market_data)
+            selected_interactions = self._select_optimal_interactions(
+                all_interactions, market_data
+            )
 
             # 7. Scale interaction features
             if not self.is_fitted:
@@ -713,7 +808,9 @@ class FeatureInteractionEngine:
             else:
                 selected_interactions = self.scaler.transform(selected_interactions)
 
-            self.logger.info(f"Extracted {selected_interactions.shape[1]} interaction features")
+            self.logger.info(
+                f"Extracted {selected_interactions.shape[1]} interaction features"
+            )
 
             return selected_interactions
 
@@ -721,8 +818,9 @@ class FeatureInteractionEngine:
             self.logger.exception(f"Feature interaction extraction failed: {e}")
             return np.zeros((features.shape[0], 50))  # Return default interactions
 
-    def _create_basic_interactions(self, features: np.ndarray,
-                                 feature_names: list[str]) -> np.ndarray:
+    def _create_basic_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> np.ndarray:
         """
         Create basic pairwise interactions between features.
         """
@@ -761,10 +859,15 @@ class FeatureInteractionEngine:
                 diff_interaction = features[:, idx1] - features[:, idx2]
                 interactions.append(diff_interaction)
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
 
-    def _create_pattern_interactions(self, features: np.ndarray,
-                                   feature_names: list[str]) -> np.ndarray:
+    def _create_pattern_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> np.ndarray:
         """
         Create pattern-based interactions using predefined patterns.
         """
@@ -787,16 +890,26 @@ class FeatureInteractionEngine:
             if len(pattern_indices) >= 2:
                 # Create pattern-specific interactions
                 pattern_interactions = self._create_pattern_specific_interactions(
-                    features, pattern_indices, pattern_name, weight,
+                    features,
+                    pattern_indices,
+                    pattern_name,
+                    weight,
                 )
                 interactions.extend(pattern_interactions)
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
 
-    def _create_pattern_specific_interactions(self, features: np.ndarray,
-                                            pattern_indices: list[int],
-                                            pattern_name: str,
-                                            weight: float) -> list[np.ndarray]:
+    def _create_pattern_specific_interactions(
+        self,
+        features: np.ndarray,
+        pattern_indices: list[int],
+        pattern_name: str,
+        weight: float,
+    ) -> list[np.ndarray]:
         """
         Create pattern-specific interactions.
         """
@@ -805,64 +918,104 @@ class FeatureInteractionEngine:
 
         if pattern_name == "momentum_volume":
             # Momentum × Volume interactions
-            momentum_avg = np.mean(pattern_features[:, :3], axis=1)  # RSI, MACD, Stochastic
+            momentum_avg = np.mean(
+                pattern_features[:, :3], axis=1
+            )  # RSI, MACD, Stochastic
             volume_feature = pattern_features[:, 3]  # Volume_Ratio
 
-            interactions.extend([
-                momentum_avg * volume_feature * weight,  # Momentum × Volume
-                momentum_avg / (volume_feature + 1e-8) * weight,  # Momentum / Volume
-                np.std(pattern_features[:, :3], axis=1) * volume_feature * weight,  # Momentum divergence × Volume
-            ])
+            interactions.extend(
+                [
+                    momentum_avg * volume_feature * weight,  # Momentum × Volume
+                    momentum_avg
+                    / (volume_feature + 1e-8)
+                    * weight,  # Momentum / Volume
+                    np.std(pattern_features[:, :3], axis=1)
+                    * volume_feature
+                    * weight,  # Momentum divergence × Volume
+                ]
+            )
 
         elif pattern_name == "trend_volatility":
             # Trend × Volatility interactions
             trend_avg = np.mean(pattern_features[:, :2], axis=1)  # SMA_Ratio, EMA_Ratio
-            volatility_avg = np.mean(pattern_features[:, 2:], axis=1)  # BB_Position, ATR_Normalized
+            volatility_avg = np.mean(
+                pattern_features[:, 2:], axis=1
+            )  # BB_Position, ATR_Normalized
 
-            interactions.extend([
-                trend_avg * volatility_avg * weight,  # Trend × Volatility
-                trend_avg / (volatility_avg + 1e-8) * weight,  # Trend / Volatility
-                np.abs(trend_avg) * volatility_avg * weight,  # Trend strength × Volatility
-            ])
+            interactions.extend(
+                [
+                    trend_avg * volatility_avg * weight,  # Trend × Volatility
+                    trend_avg / (volatility_avg + 1e-8) * weight,  # Trend / Volatility
+                    np.abs(trend_avg)
+                    * volatility_avg
+                    * weight,  # Trend strength × Volatility
+                ]
+            )
 
         elif pattern_name == "oscillator_trend":
             # Oscillator × Trend interactions
-            oscillator_avg = np.mean(pattern_features[:, :3], axis=1)  # RSI, Williams_R, CCI
+            oscillator_avg = np.mean(
+                pattern_features[:, :3], axis=1
+            )  # RSI, Williams_R, CCI
             trend_feature = pattern_features[:, 3]  # SMA_Ratio
 
-            interactions.extend([
-                oscillator_avg * trend_feature * weight,  # Oscillator × Trend
-                oscillator_avg / (trend_feature + 1e-8) * weight,  # Oscillator / Trend
-                np.std(pattern_features[:, :3], axis=1) * trend_feature * weight,  # Oscillator divergence × Trend
-            ])
+            interactions.extend(
+                [
+                    oscillator_avg * trend_feature * weight,  # Oscillator × Trend
+                    oscillator_avg
+                    / (trend_feature + 1e-8)
+                    * weight,  # Oscillator / Trend
+                    np.std(pattern_features[:, :3], axis=1)
+                    * trend_feature
+                    * weight,  # Oscillator divergence × Trend
+                ]
+            )
 
         elif pattern_name == "volume_price":
             # Volume × Price interactions
-            volume_avg = np.mean(pattern_features[:, [0, 3]], axis=1)  # OBV_Normalized, Volume_Ratio
+            volume_avg = np.mean(
+                pattern_features[:, [0, 3]], axis=1
+            )  # OBV_Normalized, Volume_Ratio
             price_feature = pattern_features[:, 2]  # Price_Momentum
 
-            interactions.extend([
-                volume_avg * price_feature * weight,  # Volume × Price
-                volume_avg / (price_feature + 1e-8) * weight,  # Volume / Price
-                np.sqrt(volume_avg) * price_feature * weight,  # Volume-weighted price
-            ])
+            interactions.extend(
+                [
+                    volume_avg * price_feature * weight,  # Volume × Price
+                    volume_avg / (price_feature + 1e-8) * weight,  # Volume / Price
+                    np.sqrt(volume_avg)
+                    * price_feature
+                    * weight,  # Volume-weighted price
+                ]
+            )
 
         elif pattern_name == "volatility_regime":
             # Volatility × Regime interactions
-            volatility_avg = np.mean(pattern_features[:, :3], axis=1)  # ATR, BB_Squeeze, Volatility
-            regime_feature = pattern_features[:, 3] if pattern_features.shape[1] > 3 else np.ones(features.shape[0])
+            volatility_avg = np.mean(
+                pattern_features[:, :3], axis=1
+            )  # ATR, BB_Squeeze, Volatility
+            regime_feature = (
+                pattern_features[:, 3]
+                if pattern_features.shape[1] > 3
+                else np.ones(features.shape[0])
+            )
 
-            interactions.extend([
-                volatility_avg * regime_feature * weight,  # Volatility × Regime
-                volatility_avg / (regime_feature + 1e-8) * weight,  # Volatility / Regime
-                np.square(volatility_avg) * regime_feature * weight,  # Volatility² × Regime
-            ])
+            interactions.extend(
+                [
+                    volatility_avg * regime_feature * weight,  # Volatility × Regime
+                    volatility_avg
+                    / (regime_feature + 1e-8)
+                    * weight,  # Volatility / Regime
+                    np.square(volatility_avg)
+                    * regime_feature
+                    * weight,  # Volatility² × Regime
+                ]
+            )
 
         return interactions
 
-    def _create_regime_interactions(self, features: np.ndarray,
-                                  feature_names: list[str],
-                                  market_data: pd.DataFrame) -> np.ndarray:
+    def _create_regime_interactions(
+        self, features: np.ndarray, feature_names: list[str], market_data: pd.DataFrame
+    ) -> np.ndarray:
         """
         Create regime-dependent interactions.
         """
@@ -874,23 +1027,34 @@ class FeatureInteractionEngine:
         # Create regime-specific interactions
         if market_regime == "trending":
             # Trending market interactions
-            trend_interactions = self._create_trending_interactions(features, feature_names)
+            trend_interactions = self._create_trending_interactions(
+                features, feature_names
+            )
             interactions.extend(trend_interactions)
 
         elif market_regime == "ranging":
             # Ranging market interactions
-            ranging_interactions = self._create_ranging_interactions(features, feature_names)
+            ranging_interactions = self._create_ranging_interactions(
+                features, feature_names
+            )
             interactions.extend(ranging_interactions)
 
         elif market_regime == "volatile":
             # Volatile market interactions
-            volatile_interactions = self._create_volatile_interactions(features, feature_names)
+            volatile_interactions = self._create_volatile_interactions(
+                features, feature_names
+            )
             interactions.extend(volatile_interactions)
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
 
-    def _create_trending_interactions(self, features: np.ndarray,
-                                    feature_names: list[str]) -> list[np.ndarray]:
+    def _create_trending_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> list[np.ndarray]:
         """
         Create interactions specific to trending markets.
         """
@@ -902,22 +1066,27 @@ class FeatureInteractionEngine:
         momentum_features = ["RSI", "Stochastic", "CCI"]
 
         trend_indices = [feature_map.get(f) for f in trend_features if f in feature_map]
-        momentum_indices = [feature_map.get(f) for f in momentum_features if f in feature_map]
+        momentum_indices = [
+            feature_map.get(f) for f in momentum_features if f in feature_map
+        ]
 
         if trend_indices and momentum_indices:
             trend_avg = np.mean(features[:, trend_indices], axis=1)
             momentum_avg = np.mean(features[:, momentum_indices], axis=1)
 
-            interactions.extend([
-                trend_avg * momentum_avg * 1.5,  # Trend × Momentum
-                trend_avg / (momentum_avg + 1e-8) * 1.3,  # Trend / Momentum
-                np.abs(trend_avg) * momentum_avg * 1.4,  # Trend strength × Momentum
-            ])
+            interactions.extend(
+                [
+                    trend_avg * momentum_avg * 1.5,  # Trend × Momentum
+                    trend_avg / (momentum_avg + 1e-8) * 1.3,  # Trend / Momentum
+                    np.abs(trend_avg) * momentum_avg * 1.4,  # Trend strength × Momentum
+                ]
+            )
 
         return interactions
 
-    def _create_ranging_interactions(self, features: np.ndarray,
-                                   feature_names: list[str]) -> list[np.ndarray]:
+    def _create_ranging_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> list[np.ndarray]:
         """
         Create interactions specific to ranging markets.
         """
@@ -928,23 +1097,32 @@ class FeatureInteractionEngine:
         oscillator_features = ["RSI", "Stochastic", "Williams_R", "CCI"]
         volume_features = ["Volume_Ratio", "OBV_Normalized", "MFI"]
 
-        oscillator_indices = [feature_map.get(f) for f in oscillator_features if f in feature_map]
-        volume_indices = [feature_map.get(f) for f in volume_features if f in feature_map]
+        oscillator_indices = [
+            feature_map.get(f) for f in oscillator_features if f in feature_map
+        ]
+        volume_indices = [
+            feature_map.get(f) for f in volume_features if f in feature_map
+        ]
 
         if oscillator_indices and volume_indices:
             oscillator_avg = np.mean(features[:, oscillator_indices], axis=1)
             volume_avg = np.mean(features[:, volume_indices], axis=1)
 
-            interactions.extend([
-                oscillator_avg * volume_avg * 1.6,  # Oscillator × Volume
-                oscillator_avg / (volume_avg + 1e-8) * 1.4,  # Oscillator / Volume
-                np.std(features[:, oscillator_indices], axis=1) * volume_avg * 1.5,  # Oscillator divergence × Volume
-            ])
+            interactions.extend(
+                [
+                    oscillator_avg * volume_avg * 1.6,  # Oscillator × Volume
+                    oscillator_avg / (volume_avg + 1e-8) * 1.4,  # Oscillator / Volume
+                    np.std(features[:, oscillator_indices], axis=1)
+                    * volume_avg
+                    * 1.5,  # Oscillator divergence × Volume
+                ]
+            )
 
         return interactions
 
-    def _create_volatile_interactions(self, features: np.ndarray,
-                                    feature_names: list[str]) -> list[np.ndarray]:
+    def _create_volatile_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> list[np.ndarray]:
         """
         Create interactions specific to volatile markets.
         """
@@ -955,23 +1133,28 @@ class FeatureInteractionEngine:
         volatility_features = ["ATR_Normalized", "BB_Squeeze", "Volatility"]
         risk_features = ["RSI", "Stochastic", "Williams_R"]
 
-        volatility_indices = [feature_map.get(f) for f in volatility_features if f in feature_map]
+        volatility_indices = [
+            feature_map.get(f) for f in volatility_features if f in feature_map
+        ]
         risk_indices = [feature_map.get(f) for f in risk_features if f in feature_map]
 
         if volatility_indices and risk_indices:
             volatility_avg = np.mean(features[:, volatility_indices], axis=1)
             risk_avg = np.mean(features[:, risk_indices], axis=1)
 
-            interactions.extend([
-                volatility_avg * risk_avg * 1.8,  # Volatility × Risk
-                volatility_avg / (risk_avg + 1e-8) * 1.6,  # Volatility / Risk
-                np.square(volatility_avg) * risk_avg * 1.7,  # Volatility² × Risk
-            ])
+            interactions.extend(
+                [
+                    volatility_avg * risk_avg * 1.8,  # Volatility × Risk
+                    volatility_avg / (risk_avg + 1e-8) * 1.6,  # Volatility / Risk
+                    np.square(volatility_avg) * risk_avg * 1.7,  # Volatility² × Risk
+                ]
+            )
 
         return interactions
 
-    def _create_cross_timeframe_interactions(self, features: np.ndarray,
-                                           feature_names: list[str]) -> np.ndarray:
+    def _create_cross_timeframe_interactions(
+        self, features: np.ndarray, feature_names: list[str]
+    ) -> np.ndarray:
         """
         Create cross-timeframe interactions.
         """
@@ -988,17 +1171,29 @@ class FeatureInteractionEngine:
 
         for short_feature, long_feature in timeframe_pairs:
             if short_feature in feature_map and long_feature in feature_map:
-                short_idx, long_idx = feature_map[short_feature], feature_map[long_feature]
+                short_idx, long_idx = (
+                    feature_map[short_feature],
+                    feature_map[long_feature],
+                )
 
                 # Create cross-timeframe interactions
-                interactions.extend([
-                    features[:, short_idx] - features[:, long_idx],  # Divergence
-                    features[:, short_idx] / (features[:, long_idx] + 1e-8),  # Ratio
-                    features[:, short_idx] * features[:, long_idx],  # Product
-                    np.abs(features[:, short_idx] - features[:, long_idx]),  # Absolute divergence
-                ])
+                interactions.extend(
+                    [
+                        features[:, short_idx] - features[:, long_idx],  # Divergence
+                        features[:, short_idx]
+                        / (features[:, long_idx] + 1e-8),  # Ratio
+                        features[:, short_idx] * features[:, long_idx],  # Product
+                        np.abs(
+                            features[:, short_idx] - features[:, long_idx]
+                        ),  # Absolute divergence
+                    ]
+                )
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return (
+            np.column_stack(interactions)
+            if interactions
+            else np.zeros((features.shape[0], 0))
+        )
 
     def _identify_market_regime(self, market_data: pd.DataFrame) -> str:
         """
@@ -1007,8 +1202,13 @@ class FeatureInteractionEngine:
         try:
             # Calculate regime indicators
             volatility = market_data["close"].pct_change().rolling(20).std().iloc[-1]
-            trend_strength = abs(market_data["close"].rolling(20).mean().iloc[-1] -
-                               market_data["close"].rolling(50).mean().iloc[-1]) / market_data["close"].iloc[-1]
+            trend_strength = (
+                abs(
+                    market_data["close"].rolling(20).mean().iloc[-1]
+                    - market_data["close"].rolling(50).mean().iloc[-1]
+                )
+                / market_data["close"].iloc[-1]
+            )
 
             if volatility > 0.03:
                 return "volatile"
@@ -1020,8 +1220,9 @@ class FeatureInteractionEngine:
             self.logger.warning(f"Market regime identification failed: {e}")
             return "ranging"  # Default to ranging
 
-    def _select_optimal_interactions(self, interactions: np.ndarray,
-                                   market_data: pd.DataFrame) -> np.ndarray:
+    def _select_optimal_interactions(
+        self, interactions: np.ndarray, market_data: pd.DataFrame
+    ) -> np.ndarray:
         """
         Select optimal interactions based on importance and correlation.
         """
@@ -1046,11 +1247,17 @@ class FeatureInteractionEngine:
                 selected_interactions = interactions[:, important_indices]
 
             # Store selection history
-            self.selected_interactions_history.append({
-                "timestamp": datetime.now(),
-                "n_interactions": selected_interactions.shape[1],
-                "mi_scores": mi_scores[important_indices] if len(important_indices) > 0 else [],
-            })
+            self.selected_interactions_history.append(
+                {
+                    "timestamp": datetime.now(),
+                    "n_interactions": selected_interactions.shape[1],
+                    "mi_scores": (
+                        mi_scores[important_indices]
+                        if len(important_indices) > 0
+                        else []
+                    ),
+                }
+            )
 
             return selected_interactions
 
@@ -1080,8 +1287,9 @@ class FeatureInteractionEngine:
         """
         self.interaction_performance[datetime.now()] = performance_metrics
 
-    def get_feature_importance(self, interactions: np.ndarray,
-                             target: np.ndarray) -> np.ndarray:
+    def get_feature_importance(
+        self, interactions: np.ndarray, target: np.ndarray
+    ) -> np.ndarray:
         """
         Calculate importance of interaction features.
         """
@@ -1090,15 +1298,19 @@ class FeatureInteractionEngine:
             mi_scores = mutual_info_classif(interactions, target, random_state=42)
 
             # Store importance history
-            self.feature_importance_history.append({
-                "timestamp": datetime.now(),
-                "importance_scores": mi_scores.tolist(),
-                "mean_importance": np.mean(mi_scores),
-                "max_importance": np.max(mi_scores),
-            })
+            self.feature_importance_history.append(
+                {
+                    "timestamp": datetime.now(),
+                    "importance_scores": mi_scores.tolist(),
+                    "mean_importance": np.mean(mi_scores),
+                    "max_importance": np.max(mi_scores),
+                }
+            )
 
             return mi_scores
 
         except Exception as e:
             self.logger.exception(f"Feature importance calculation failed: {e}")
-            return np.ones(interactions.shape[1])  # Return uniform importance as fallback
+            return np.ones(
+                interactions.shape[1]
+            )  # Return uniform importance as fallback

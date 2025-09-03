@@ -58,7 +58,8 @@ class RollingMTInference:
     def load(self) -> bool:
         try:
             models, meta, feat = MultiTaskRandomForest.load(
-                self.models_dir, prefix=self.prefix,
+                self.models_dir,
+                prefix=self.prefix,
             )
             self.models = models
             self.thresholds = meta.get("thresholds", {})

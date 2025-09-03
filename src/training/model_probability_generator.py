@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Model Probability Generator
 
@@ -21,6 +22,7 @@ from .probability_calculators import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 class ModelProbabilityGenerator:
     """
@@ -71,16 +73,32 @@ class ModelProbabilityGenerator:
             # Generate all 4 probability outputs
             probabilities = {
                 "triple_barrier_probability": self._calculate_triple_barrier_probability(
-                    calculator, model, X_test, market_data, **kwargs,
+                    calculator,
+                    model,
+                    X_test,
+                    market_data,
+                    **kwargs,
                 ),
                 "direction_probability": self._calculate_direction_probability(
-                    calculator, model, X_test, y_test, **kwargs,
+                    calculator,
+                    model,
+                    X_test,
+                    y_test,
+                    **kwargs,
                 ),
                 "magnitude_probability": self._calculate_magnitude_probability(
-                    calculator, model, X_test, market_data, **kwargs,
+                    calculator,
+                    model,
+                    X_test,
+                    market_data,
+                    **kwargs,
                 ),
                 "barrier_avoidance_probability": self._calculate_barrier_avoidance_probability(
-                    calculator, model, X_test, market_data, **kwargs,
+                    calculator,
+                    model,
+                    X_test,
+                    market_data,
+                    **kwargs,
                 ),
             }
 
@@ -98,7 +116,9 @@ class ModelProbabilityGenerator:
 
     def _calculate_triple_barrier_probability(
         self,
-        calculator: ClassificationProbabilityCalculator | RegressionProbabilityCalculator,
+        calculator: (
+            ClassificationProbabilityCalculator | RegressionProbabilityCalculator
+        ),
         model: Any,
         X_test: np.ndarray,
         market_data: pd.DataFrame,
@@ -112,10 +132,19 @@ class ModelProbabilityGenerator:
 
             if isinstance(calculator, ClassificationProbabilityCalculator):
                 return calculator.calculate_triple_barrier_probability(
-                    model, X_test, market_data, profit_target, stop_loss, volatility_window,
+                    model,
+                    X_test,
+                    market_data,
+                    profit_target,
+                    stop_loss,
+                    volatility_window,
                 )
             return calculator.calculate_triple_barrier_probability(
-                model, X_test, market_data, profit_target, stop_loss,
+                model,
+                X_test,
+                market_data,
+                profit_target,
+                stop_loss,
             )
         except Exception as e:
             self.logger.exception(f"Error calculating triple barrier probability: {e}")
@@ -123,7 +152,9 @@ class ModelProbabilityGenerator:
 
     def _calculate_direction_probability(
         self,
-        calculator: ClassificationProbabilityCalculator | RegressionProbabilityCalculator,
+        calculator: (
+            ClassificationProbabilityCalculator | RegressionProbabilityCalculator
+        ),
         model: Any,
         X_test: np.ndarray,
         y_test: np.ndarray,
@@ -138,7 +169,9 @@ class ModelProbabilityGenerator:
 
     def _calculate_magnitude_probability(
         self,
-        calculator: ClassificationProbabilityCalculator | RegressionProbabilityCalculator,
+        calculator: (
+            ClassificationProbabilityCalculator | RegressionProbabilityCalculator
+        ),
         model: Any,
         X_test: np.ndarray,
         market_data: pd.DataFrame,
@@ -148,7 +181,10 @@ class ModelProbabilityGenerator:
         try:
             threshold_factor = kwargs.get("threshold_factor", 0.8)
             return calculator.calculate_magnitude_probability(
-                model, X_test, market_data, threshold_factor,
+                model,
+                X_test,
+                market_data,
+                threshold_factor,
             )
         except Exception as e:
             self.logger.exception(f"Error calculating magnitude probability: {e}")
@@ -156,7 +192,9 @@ class ModelProbabilityGenerator:
 
     def _calculate_barrier_avoidance_probability(
         self,
-        calculator: ClassificationProbabilityCalculator | RegressionProbabilityCalculator,
+        calculator: (
+            ClassificationProbabilityCalculator | RegressionProbabilityCalculator
+        ),
         model: Any,
         X_test: np.ndarray,
         market_data: pd.DataFrame,
@@ -166,10 +204,15 @@ class ModelProbabilityGenerator:
         try:
             adverse_threshold = kwargs.get("adverse_threshold", 0.01)
             return calculator.calculate_barrier_avoidance_probability(
-                model, X_test, market_data, adverse_threshold,
+                model,
+                X_test,
+                market_data,
+                adverse_threshold,
             )
         except Exception as e:
-            self.logger.exception(f"Error calculating barrier avoidance probability: {e}")
+            self.logger.exception(
+                f"Error calculating barrier avoidance probability: {e}"
+            )
             return 0.5
 
     def _get_default_probabilities(self, model_type: str) -> dict[str, float]:
@@ -257,14 +300,23 @@ class ModelProbabilityGenerator:
             all_probabilities = []
             for model, model_type in zip(models, model_types, strict=False):
                 model_probs = self.generate_price_action_probabilities(
-                    model, X_test, y_test, market_data, model_type, **kwargs,
+                    model,
+                    X_test,
+                    y_test,
+                    market_data,
+                    model_type,
+                    **kwargs,
                 )
                 all_probabilities.append(model_probs)
 
             # Calculate weighted ensemble probabilities
             ensemble_probabilities = {}
-            for key in ["triple_barrier_probability", "direction_probability",
-                       "magnitude_probability", "barrier_avoidance_probability"]:
+            for key in [
+                "triple_barrier_probability",
+                "direction_probability",
+                "magnitude_probability",
+                "barrier_avoidance_probability",
+            ]:
                 weighted_sum = sum(
                     prob[key] * weight
                     for prob, weight in zip(all_probabilities, weights, strict=False)
@@ -312,7 +364,12 @@ class ModelProbabilityGenerator:
             # For now, use standard probability generation
             # In the future, this could incorporate calibration-specific adjustments
             probabilities = self.generate_price_action_probabilities(
-                model, X_test, y_test, market_data, model_type, **kwargs,
+                model,
+                X_test,
+                y_test,
+                market_data,
+                model_type,
+                **kwargs,
             )
 
             # Add calibration metadata
@@ -324,6 +381,7 @@ class ModelProbabilityGenerator:
         except Exception as e:
             self.logger.exception(f"Error generating calibrated probabilities: {e}")
             return self._get_default_probabilities(f"{model_type}_calibrated")
+
 
 # Convenience function for easy access
 def generate_model_probabilities(
@@ -350,5 +408,10 @@ def generate_model_probabilities(
     """
     generator = ModelProbabilityGenerator()
     return generator.generate_price_action_probabilities(
-        model, X_test, y_test, market_data, model_type, **kwargs,
+        model,
+        X_test,
+        y_test,
+        market_data,
+        model_type,
+        **kwargs,
     )

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Utility functions and common patterns for the Strategist module.
 """
@@ -29,7 +30,9 @@ class CalculationError(StrategistError):
     """Raised when calculation fails."""
 
 
-def log_error(logger: logging.Logger, message: str, exception: Exception | None = None) -> None:
+def log_error(
+    logger: logging.Logger, message: str, exception: Exception | None = None
+) -> None:
     """
     Centralized error logging with consistent formatting.
 
@@ -84,7 +87,12 @@ def validate_data_sufficiency(df: pd.DataFrame, min_rows: int = 100) -> None:
 class PerformanceOptimizer:
     """Performance optimization utilities for market calculations."""
 
-    def __init__(self, use_vectorized: bool = True, use_parallel: bool = True, cache_ttl: int = 300):
+    def __init__(
+        self,
+        use_vectorized: bool = True,
+        use_parallel: bool = True,
+        cache_ttl: int = 300,
+    ):
         self.use_vectorized = use_vectorized
         self.use_parallel = use_parallel
         self.cache_ttl = cache_ttl
@@ -146,7 +154,9 @@ class PerformanceOptimizer:
 
         return float(np.mean(prices[-window:]))
 
-    def calculate_volatility_vectorized(self, prices: np.ndarray, window: int = 20) -> float:
+    def calculate_volatility_vectorized(
+        self, prices: np.ndarray, window: int = 20
+    ) -> float:
         """
         Vectorized volatility calculation.
 
@@ -160,13 +170,12 @@ class PerformanceOptimizer:
         if len(prices) < window + 1:
             return 0.0
 
-        returns = np.diff(prices[-window-1:]) / prices[-window-1:-1]
+        returns = np.diff(prices[-window - 1 :]) / prices[-window - 1 : -1]
         return float(np.std(returns))
 
-    async def calculate_indicators_parallel(self,
-                                          prices: pd.Series,
-                                          volume: pd.Series,
-                                          config: dict[str, Any]) -> dict[str, float]:
+    async def calculate_indicators_parallel(
+        self, prices: pd.Series, volume: pd.Series, config: dict[str, Any]
+    ) -> dict[str, float]:
         """
         Calculate multiple indicators in parallel.
 
@@ -189,16 +198,31 @@ class PerformanceOptimizer:
 
         # Define calculation tasks
         tasks = {
-            "rsi": lambda: self.calculate_rsi_vectorized(prices_tuple, config.get("rsi_window", 14)),
-            "sma_fast": lambda: self.calculate_sma_vectorized(prices_array, config["sma_fast_window"]),
-            "sma_slow": lambda: self.calculate_sma_vectorized(prices_array, config["sma_slow_window"]),
-            "volatility": lambda: self.calculate_volatility_vectorized(prices_array, config["price_volatility_window"]),
-            "volume_ratio": lambda: float(volume_array[-1] / np.mean(volume_array[-20:])) if len(volume_array) >= 20 else 1.0,
+            "rsi": lambda: self.calculate_rsi_vectorized(
+                prices_tuple, config.get("rsi_window", 14)
+            ),
+            "sma_fast": lambda: self.calculate_sma_vectorized(
+                prices_array, config["sma_fast_window"]
+            ),
+            "sma_slow": lambda: self.calculate_sma_vectorized(
+                prices_array, config["sma_slow_window"]
+            ),
+            "volatility": lambda: self.calculate_volatility_vectorized(
+                prices_array, config["price_volatility_window"]
+            ),
+            "volume_ratio": lambda: (
+                float(volume_array[-1] / np.mean(volume_array[-20:]))
+                if len(volume_array) >= 20
+                else 1.0
+            ),
         }
 
         # Execute in parallel
         loop = asyncio.get_event_loop()
-        futures = {name: loop.run_in_executor(self._executor, func) for name, func in tasks.items()}
+        futures = {
+            name: loop.run_in_executor(self._executor, func)
+            for name, func in tasks.items()
+        }
 
         results = {}
         for name, future in futures.items():
@@ -209,26 +233,38 @@ class PerformanceOptimizer:
 
         return results
 
-    def _calculate_indicators_sequential(self,
-                                       prices: pd.Series,
-                                       volume: pd.Series,
-                                       config: dict[str, Any]) -> dict[str, float]:
+    def _calculate_indicators_sequential(
+        self, prices: pd.Series, volume: pd.Series, config: dict[str, Any]
+    ) -> dict[str, float]:
         """Sequential fallback for indicator calculation."""
         prices_array = prices.values
         prices_tuple = tuple(prices_array)
         volume_array = volume.values
 
         return {
-            "rsi": self.calculate_rsi_vectorized(prices_tuple, config.get("rsi_window", 14)),
-            "sma_fast": self.calculate_sma_vectorized(prices_array, config["sma_fast_window"]),
-            "sma_slow": self.calculate_sma_vectorized(prices_array, config["sma_slow_window"]),
-            "volatility": self.calculate_volatility_vectorized(prices_array, config["price_volatility_window"]),
-            "volume_ratio": float(volume_array[-1] / np.mean(volume_array[-20:])) if len(volume_array) >= 20 else 1.0,
+            "rsi": self.calculate_rsi_vectorized(
+                prices_tuple, config.get("rsi_window", 14)
+            ),
+            "sma_fast": self.calculate_sma_vectorized(
+                prices_array, config["sma_fast_window"]
+            ),
+            "sma_slow": self.calculate_sma_vectorized(
+                prices_array, config["sma_slow_window"]
+            ),
+            "volatility": self.calculate_volatility_vectorized(
+                prices_array, config["price_volatility_window"]
+            ),
+            "volume_ratio": (
+                float(volume_array[-1] / np.mean(volume_array[-20:]))
+                if len(volume_array) >= 20
+                else 1.0
+            ),
         }
 
 
-def create_strategy_validator(min_confidence: float = 0.0,
-                            max_confidence: float = 1.0) -> Callable:
+def create_strategy_validator(
+    min_confidence: float = 0.0, max_confidence: float = 1.0
+) -> Callable:
     """
     Factory function to create strategy validation decorators.
 
@@ -239,6 +275,7 @@ def create_strategy_validator(min_confidence: float = 0.0,
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -248,19 +285,28 @@ def create_strategy_validator(min_confidence: float = 0.0,
                 # Validate confidence
                 confidence = result.get("confidence", 0)
                 if not min_confidence <= confidence <= max_confidence:
-                    result["confidence"] = max(min_confidence, min(confidence, max_confidence))
+                    result["confidence"] = max(
+                        min_confidence, min(confidence, max_confidence)
+                    )
                     result.setdefault("reasoning", []).append(
                         f"Confidence adjusted to range [{min_confidence}, {max_confidence}]",
                     )
 
                 # Validate direction
-                if "direction" in result and result["direction"] not in ["BUY", "SELL", "HOLD"]:
+                if "direction" in result and result["direction"] not in [
+                    "BUY",
+                    "SELL",
+                    "HOLD",
+                ]:
                     result["direction"] = "HOLD"
-                    result.setdefault("reasoning", []).append("Invalid direction corrected to HOLD")
+                    result.setdefault("reasoning", []).append(
+                        "Invalid direction corrected to HOLD"
+                    )
 
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -294,7 +340,11 @@ class StrategyComponentExtractor:
         return {
             "risk_level": risk_level,
             "confidence_multiplier": confidence_multiplier,
-            "reasoning": "High liquidation risk - reduced confidence" if risk_level == "HIGH" else None,
+            "reasoning": (
+                "High liquidation risk - reduced confidence"
+                if risk_level == "HIGH"
+                else None
+            ),
         }
 
     @staticmethod

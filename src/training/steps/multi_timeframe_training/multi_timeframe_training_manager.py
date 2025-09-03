@@ -1,12 +1,16 @@
 from __future__ import annotations
-# src/training/multi_timeframe_training_manager.py
 
+from datetime import datetime
+from typing import Any
+
+from src.analyst.multi_timeframe_feature_engineering import (
+    MultiTimeframeFeatureEngineering,
+)
+from src.analyst.multi_timeframe_regime_integration import (
+    MultiTimeframeRegimeIntegration,
+)
 from src.core.decorators import handles_errors
 from src.core.domain import handle_specific_errors
-from typing import Any
-from datetime import datetime
-from src.analyst.multi_timeframe_regime_integration import MultiTimeframeRegimeIntegration
-from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
 from src.utils.logger import system_logger
 
 # Import StepDependencyValidator for step dependency validation
@@ -16,6 +20,8 @@ from src.utils.warning_symbols import (
     invalid,
     validation_error,
 )
+
+# src/training/multi_timeframe_training_manager.py
 
 
 class MultiTimeframeTrainingManager:
@@ -266,7 +272,9 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing timeframe analysis: {e}",
             )
             # Log specific error details for debugging
-            self.logger.exception(f"Timeframe analysis initialization failed: {type(e).__name__}: {e!s}")
+            self.logger.exception(
+                f"Timeframe analysis initialization failed: {type(e).__name__}: {e!s}"
+            )
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -293,7 +301,9 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing cross timeframe features: {e}",
             )
             # Log specific error details for debugging
-            self.logger.exception(f"Cross timeframe features initialization failed: {type(e).__name__}: {e!s}")
+            self.logger.exception(
+                f"Cross timeframe features initialization failed: {type(e).__name__}: {e!s}"
+            )
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -320,7 +330,9 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing timeframe ensemble: {e}",
             )
             # Log specific error details for debugging
-            self.logger.exception(f"Timeframe ensemble initialization failed: {type(e).__name__}: {e!s}")
+            self.logger.exception(
+                f"Timeframe ensemble initialization failed: {type(e).__name__}: {e!s}"
+            )
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -347,7 +359,9 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing timeframe optimization: {e}",
             )
             # Log specific error details for debugging
-            self.logger.exception(f"Timeframe optimization initialization failed: {type(e).__name__}: {e!s}")
+            self.logger.exception(
+                f"Timeframe optimization initialization failed: {type(e).__name__}: {e!s}"
+            )
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -380,12 +394,17 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing multi-timeframe components: {e}",
             )
             # Log specific error details for debugging
-            self.logger.exception(f"Multi-timeframe components initialization failed: {type(e).__name__}: {e!s}")
+            self.logger.exception(
+                f"Multi-timeframe components initialization failed: {type(e).__name__}: {e!s}"
+            )
             # Re-raise the exception to prevent silent failures
             raise
 
     async def generate_multi_timeframe_features_for_training(
-        self, data_dict: dict[str, Any], symbol: str, ) -> dict[str, Any]:
+        self,
+        data_dict: dict[str, Any],
+        symbol: str,
+    ) -> dict[str, Any]:
         """Generate multi-timeframe features for training data."
 
         Args:
@@ -400,12 +419,13 @@ class MultiTimeframeTrainingManager:
             self.logger.info(f"🎯 Generating multi-timeframe features for {symbol}")
 
             # Generate multi-timeframe features
-            features_dict = (await self.mtf_feature_engine.generate_multi_timeframe_features(
-                data_dict=data_dict,
-                agg_trades_dict=data_dict.get("agg_trades", {}),
-                futures_dict=data_dict.get("futures", {}),
-                sr_levels=data_dict.get("sr_levels", []),
-            )
+            features_dict = (
+                await self.mtf_feature_engine.generate_multi_timeframe_features(
+                    data_dict=data_dict,
+                    agg_trades_dict=data_dict.get("agg_trades", {}),
+                    futures_dict=data_dict.get("futures", {}),
+                    sr_levels=data_dict.get("sr_levels", []),
+                )
             )
 
             # Get regime information for each timeframe
@@ -413,11 +433,12 @@ class MultiTimeframeTrainingManager:
             if "1h" in data_dict:  # Strategic timeframe for regime classification
                 for timeframe in data_dict:
                     if timeframe != "1h":
-                        regime_info = (await self.mtf_regime_integration.get_regime_for_timeframe(
-                            timeframe=timeframe,
-                            current_data=data_dict[timeframe],
-                            data_1h=data_dict["1h"],
-                        )
+                        regime_info = (
+                            await self.mtf_regime_integration.get_regime_for_timeframe(
+                                timeframe=timeframe,
+                                current_data=data_dict[timeframe],
+                                data_1h=data_dict["1h"],
+                            )
                         )
                         regime_dict[timeframe] = regime_info
 
@@ -452,7 +473,9 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training execution",
     )
     async def execute_multi_timeframe_training(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> bool:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> bool:
         """Execute multi-timeframe training operations."
 
         Args:
@@ -500,9 +523,10 @@ class MultiTimeframeTrainingManager:
 
             # Perform timeframe optimization
             if self.multi_timeframe_config.get("enable_timeframe_optimization", True):
-                timeframe_optimization_results = (await self._perform_timeframe_optimization(
-                    multi_timeframe_training_input,
-                )
+                timeframe_optimization_results = (
+                    await self._perform_timeframe_optimization(
+                        multi_timeframe_training_input,
+                    )
                 )
                 self.multi_timeframe_training_results["timeframe_optimization"] = (
                     timeframe_optimization_results
@@ -528,7 +552,9 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training inputs validation",
     )
     def _validate_multi_timeframe_training_inputs(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> bool:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> bool:
         """Validate multi-timeframe training inputs."
 
         Args:
@@ -578,7 +604,9 @@ class MultiTimeframeTrainingManager:
         context="timeframe analysis",
     )
     async def _perform_timeframe_analysis(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe analysis."
 
         Args:
@@ -627,7 +655,9 @@ class MultiTimeframeTrainingManager:
         context="cross timeframe features",
     )
     async def _perform_cross_timeframe_features(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform cross timeframe features."
 
         Args:
@@ -685,7 +715,9 @@ class MultiTimeframeTrainingManager:
         context="timeframe ensemble",
     )
     async def _perform_timeframe_ensemble(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe ensemble."
 
         Args:
@@ -734,7 +766,9 @@ class MultiTimeframeTrainingManager:
         context="timeframe optimization",
     )
     async def _perform_timeframe_optimization(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe optimization."
 
         Args:
@@ -792,7 +826,9 @@ class MultiTimeframeTrainingManager:
 
     # Timeframe analysis methods
     def _perform_timeframe_correlation(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe correlation."""
         try:
             # Simulate timeframe correlation
@@ -807,7 +843,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_timeframe_volatility(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe volatility."""
         try:
             # Simulate timeframe volatility
@@ -822,7 +860,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_timeframe_trend(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe trend."""
         try:
             # Simulate timeframe trend
@@ -837,7 +877,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_timeframe_pattern(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform timeframe pattern."""
         try:
             # Simulate timeframe pattern
@@ -853,7 +895,9 @@ class MultiTimeframeTrainingManager:
 
     # Cross timeframe features methods
     def _perform_feature_extraction(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform feature extraction."""
         try:
             # Simulate feature extraction
@@ -868,7 +912,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_feature_combination(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform feature combination."""
         try:
             # Simulate feature combination
@@ -883,7 +929,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_feature_selection(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform feature selection."""
         try:
             # Simulate feature selection
@@ -898,7 +946,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_feature_validation(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform feature validation."""
         try:
             # Simulate feature validation
@@ -914,7 +964,9 @@ class MultiTimeframeTrainingManager:
 
     # Timeframe ensemble methods
     def _perform_ensemble_creation(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform ensemble creation."""
         try:
             # Simulate ensemble creation
@@ -929,7 +981,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_ensemble_training(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform ensemble training."""
         try:
             # Simulate ensemble training
@@ -944,7 +998,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_ensemble_evaluation(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform ensemble evaluation."""
         try:
             # Simulate ensemble evaluation
@@ -959,7 +1015,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_ensemble_optimization(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform ensemble optimization."""
         try:
             # Simulate ensemble optimization
@@ -975,7 +1033,9 @@ class MultiTimeframeTrainingManager:
 
     # Timeframe optimization methods
     def _perform_optimization_search(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform optimization search."""
         try:
             # Simulate optimization search
@@ -990,7 +1050,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_optimization_evaluation(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform optimization evaluation."""
         try:
             # Simulate optimization evaluation
@@ -1005,7 +1067,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_optimization_selection(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform optimization selection."""
         try:
             # Simulate optimization selection
@@ -1020,7 +1084,9 @@ class MultiTimeframeTrainingManager:
             return {}
 
     def _perform_optimization_validation(
-        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        multi_timeframe_training_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform optimization validation."""
         try:
             # Simulate optimization validation
@@ -1074,7 +1140,8 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training results getting",
     )
     def get_multi_timeframe_training_results(
-        self, multi_timeframe_training_type: str | None = None,
+        self,
+        multi_timeframe_training_type: str | None = None,
     ) -> dict[str, Any]:
         """Get multi-timeframe training results."
 
@@ -1104,7 +1171,8 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training history getting",
     )
     def get_multi_timeframe_training_history(
-        self, limit: int | None = None,
+        self,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Get multi-timeframe training history."
 
@@ -1180,7 +1248,10 @@ class MultiTimeframeTrainingManager:
             )
 
     async def _validate_step_dependencies(
-        self, step_name: str, pipeline_state: dict[str, Any], ) -> bool:
+        self,
+        step_name: str,
+        pipeline_state: dict[str, Any],
+    ) -> bool:
         """Validate that all prerequisites for a step are met using StepDependencyValidator."
 
         Args:
@@ -1202,18 +1273,26 @@ class MultiTimeframeTrainingManager:
             )
 
             if validation_result["valid"]:
-                self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
+                self.logger.info(
+                    f"✅ Dependencies validated for {step_name}: {validation_result['reason']}"
+                )
                 return True
-                self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
+                self.logger.error(
+                    f"❌ Dependencies failed for {step_name}: {validation_result['reason']}"
+                )
 
             # Log failed prerequisites for debugging
             if "failed_steps" in validation_result:
-                self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
+                self.logger.error(
+                    f"   Failed prerequisites: {validation_result['failed_steps']}"
+                )
 
             return False
 
         except Exception as e:
-            self.logger.exception(f"🚨 Error validating dependencies for {step_name}: {e}")
+            self.logger.exception(
+                f"🚨 Error validating dependencies for {step_name}: {e}"
+            )
             return False
 
 
@@ -1226,7 +1305,9 @@ multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
     default_return=None,
     context="multi-timeframe training manager setup",
 )
-async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None = None) -> MultiTimeframeTrainingManager | None:
+async def setup_multi_timeframe_training_manager(
+    config: dict[str, Any] | None = None,
+) -> MultiTimeframeTrainingManager | None:
     """Setup global multi-timeframe training manager."
 
     Args:

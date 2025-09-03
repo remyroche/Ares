@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/optimization/parallel_optimizer.py
 
 """Parallel Optimizer for efficient parameter optimization using parallel processing."""
@@ -29,6 +30,7 @@ class ParallelConfig:
     chunk_size: int = 10
     timeout_seconds: int = 300
     enable_async: bool = True
+
 
 class ParallelParameterOptimizer:
     """Implements parallel optimization for time efficiency."""

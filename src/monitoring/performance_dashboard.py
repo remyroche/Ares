@@ -1,10 +1,6 @@
 # src/monitoring/performance_dashboard.py
 
-from src.core.decorators import (
-    cached,
-    log_execution_time
-)
-
+from src.core.decorators import cached, log_execution_time
 from src.core.domain import PerformanceLevel
 
 """
@@ -19,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.core.decorators import handles_errors
-
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
@@ -38,6 +33,7 @@ class DashboardMetrics:
     confidence_metrics: dict[str, float]
     alerts: list[dict[str, Any]]
     optimization_opportunities: list[dict[str, Any]]
+
 
 class PerformanceDashboard:
     """Real-time performance dashboard."""

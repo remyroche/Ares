@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/steps/step6_feature_engineering_validator.py
 
 """Validator for Step 2: Feature Engineering."""
@@ -34,7 +35,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         self.feature_quality_threshold = 0.7  # More lenient feature quality checks
         self.data_balance_threshold = 0.15  # More lenient balance requirements
 
-    async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
+    async def validate(
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    ) -> bool:
         """Validate the feature engineering step.
 
         Args:
@@ -69,7 +72,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # 2. Validate feature engineering outputs (CRITICAL - blocks process)
         features_passed = self._validate_feature_engineering_outputs(
-            symbol=symbol, exchange=exchange, data_dir=data_dir,
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
         )
         if not features_passed:
             self.logger.error(
@@ -79,7 +84,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # 2.5. Validate minimum relevant features requirement (CRITICAL - make or break)
         relevant_features_passed = self._validate_minimum_relevant_features(
-            symbol=symbol, exchange=exchange, data_dir=data_dir,
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
         )
         if not relevant_features_passed:
             self.logger.error(
@@ -89,7 +96,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # 3. Validate feature quality (CRITICAL - blocks process if insufficient relevant features)
         feature_quality_passed = self._validate_feature_quality(
-            symbol=symbol, exchange=exchange, data_dir=data_dir,
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
         )
         if not feature_quality_passed:
             self.logger.error(
@@ -109,7 +118,12 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             )
 
         # Overall validation passes if critical checks pass
-        critical_passed = error_passed and features_passed and relevant_features_passed and feature_quality_passed
+        critical_passed = (
+            error_passed
+            and features_passed
+            and relevant_features_passed
+            and feature_quality_passed
+        )
         if critical_passed:
             self.logger.info(
                 "✅ Feature engineering validation passed (critical checks only)",
@@ -121,7 +135,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         return False
 
     def _validate_feature_engineering_outputs(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate feature engineering outputs.
 
@@ -145,7 +162,8 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             missing_files: list[str] = []
             for file_path in expected_files:
                 file_passed, file_metrics = self.validate_file_exists(
-                    file_path, "feature_engineering",
+                    file_path,
+                    "feature_engineering",
                 )
                 if not file_passed:
                     missing_files.append(file_path)
@@ -187,7 +205,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
     def _validate_labeling_quality(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate labeling quality.
 
@@ -296,7 +317,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
     def _validate_feature_quality(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate feature quality.
 
@@ -369,8 +393,14 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     ].index.tolist()
 
                     # Calculate relevant features (excluding problematic ones)
-                    problematic_features = set(constant_features + high_missing_features)
-                    relevant_features = [col for col in feature_data.columns if col not in problematic_features]
+                    problematic_features = set(
+                        constant_features + high_missing_features
+                    )
+                    relevant_features = [
+                        col
+                        for col in feature_data.columns
+                        if col not in problematic_features
+                    ]
                     relevant_feature_count = len(relevant_features)
 
                     # Check relevant feature count (CRITICAL - blocks process if insufficient)
@@ -415,7 +445,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                                     corr_matrix.iloc[i, j] > 0.95
                                 ):  # Very high correlation
                                     high_corr_pairs.append(
-                                        (corr_matrix.columns[i], corr_matrix.columns[j]),
+                                        (
+                                            corr_matrix.columns[i],
+                                            corr_matrix.columns[j],
+                                        ),
                                     )
 
                         if high_corr_pairs:
@@ -437,7 +470,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
     def _validate_minimum_relevant_features(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate minimum relevant features requirement (MAKE OR BREAK).
 
@@ -454,7 +490,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
-            self.logger.info(f"🔍 Validating minimum relevant features requirement ({self.min_feature_count} required)...")
+            self.logger.info(
+                f"🔍 Validating minimum relevant features requirement ({self.min_feature_count} required)..."
+            )
 
             # Load feature files
             feature_files = [
@@ -500,8 +538,14 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     ].index.tolist()
 
                     # Calculate relevant features
-                    problematic_features = set(constant_features + high_missing_features)
-                    relevant_features = [col for col in feature_data.columns if col not in problematic_features]
+                    problematic_features = set(
+                        constant_features + high_missing_features
+                    )
+                    relevant_features = [
+                        col
+                        for col in feature_data.columns
+                        if col not in problematic_features
+                    ]
                     relevant_feature_count = len(relevant_features)
 
                     self.logger.info(
@@ -544,7 +588,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Error during minimum relevant features validation: {e}")
+            self.logger.exception(
+                f"❌ Error during minimum relevant features validation: {e}"
+            )
             return False
 
     def _validate_data_balance(self, symbol: str, exchange: str, data_dir: str) -> bool:
@@ -636,7 +682,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
 
-async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+async def run_validator(
+    training_input: dict[str, Any],
+    pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
     """Run the Step 2 Feature Engineering validator.
 
     Args:
@@ -679,4 +728,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    asyncio.run( test_validator())
+    asyncio.run(test_validator())

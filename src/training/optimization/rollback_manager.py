@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/optimization/rollback_manager.py
 
 import json
 from dataclasses import asdict, dataclass
@@ -18,6 +17,8 @@ from src.utils.warning_symbols import (
     missing,
 )
 
+# src/optimization/rollback_manager.py
+
 
 @dataclass
 class RollbackPoint:
@@ -31,6 +32,7 @@ class RollbackPoint:
     optimization_results: dict[str, Any] | None = None
     notes: str | None = None
 
+
 @dataclass
 class RollbackOperation:
     """Rollback operation details."""
@@ -41,6 +43,7 @@ class RollbackOperation:
     parameters_changed: list[str]
     success: bool
     error_message: str | None = None
+
 
 class RollbackManager:
     """Manages rollback points and allows manual reversion to previous parameter configurations."""
@@ -321,9 +324,9 @@ class RollbackManager:
                     target_point.config_snapshot,
                 ),
                 success=success,
-                error_message=None
-                if success
-                else "Failed to apply rollback configuration",
+                error_message=(
+                    None if success else "Failed to apply rollback configuration"
+                ),
             )
 
             self.rollback_history.append(rollback_operation)
@@ -545,6 +548,7 @@ class RollbackManager:
         except Exception as e:
             self.print(error("Error getting rollback summary: {e}"))
             return {"error": str(e)}
+
 
 @handles_errors(fallback=None)
 def setup_rollback_manager(

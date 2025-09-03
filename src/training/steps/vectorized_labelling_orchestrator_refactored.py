@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Refactored VectorizedLabellingOrchestrator with reduced complexity and type hints.
 This version breaks down the massive orchestrate_labeling_and_feature_engineering method
@@ -17,6 +18,7 @@ import pandas as pd
 
 class PipelineStage(Enum):
     """Enumeration of pipeline stages"""
+
     INITIALIZATION = "initialization"
     STATIONARITY_CHECK = "stationarity_check"
     FEATURE_ENGINEERING = "feature_engineering"
@@ -31,6 +33,7 @@ class PipelineStage(Enum):
 @dataclass
 class PipelineConfig:
     """Configuration for the labeling and feature engineering pipeline"""
+
     enable_stationary_checks: bool = True
     enable_feature_selection: bool = True
     enable_data_normalization: bool = True
@@ -45,6 +48,7 @@ class PipelineConfig:
 @dataclass
 class PipelineMetadata:
     """Metadata for pipeline execution"""
+
     stage_timings: dict[str, float]
     data_shapes: dict[str, tuple[int, int]]
     feature_counts: dict[str, int]
@@ -56,6 +60,7 @@ class PipelineMetadata:
 @dataclass
 class StageResult:
     """Result from a pipeline stage"""
+
     stage: PipelineStage
     success: bool
     data: pd.DataFrame | None
@@ -153,77 +158,111 @@ class VectorizedLabellingOrchestratorRefactored:
         stage_timings = {}
 
         # Initialize pipeline metadata
-        metadata = self._initialize_pipeline_metadata(price_data, volume_data, order_flow_data)
+        metadata = self._initialize_pipeline_metadata(
+            price_data, volume_data, order_flow_data
+        )
 
         try:
             # Stage 1: Validation and initialization
             stage_result = await self._execute_initialization_stage(
-                price_data, volume_data, order_flow_data,
+                price_data,
+                volume_data,
+                order_flow_data,
             )
             if not stage_result.success:
                 return self._create_error_response(stage_result.error)
-            stage_timings[PipelineStage.INITIALIZATION.value] = stage_result.metadata["duration"]
+            stage_timings[PipelineStage.INITIALIZATION.value] = stage_result.metadata[
+                "duration"
+            ]
 
             # Stage 2: Stationarity checks
             if self.pipeline_config.enable_stationary_checks:
                 stage_result = await self._execute_stationarity_stage(
-                    price_data, volume_data, order_flow_data,
+                    price_data,
+                    volume_data,
+                    order_flow_data,
                 )
                 if stage_result.success and stage_result.data is not None:
                     price_data = stage_result.data.get("price_data", price_data)
                     volume_data = stage_result.data.get("volume_data", volume_data)
-                    order_flow_data = stage_result.data.get("order_flow_data", order_flow_data)
-                stage_timings[PipelineStage.STATIONARITY_CHECK.value] = stage_result.metadata["duration"]
+                    order_flow_data = stage_result.data.get(
+                        "order_flow_data", order_flow_data
+                    )
+                stage_timings[PipelineStage.STATIONARITY_CHECK.value] = (
+                    stage_result.metadata["duration"]
+                )
 
             # Stage 3: Feature engineering
             stage_result = await self._execute_feature_engineering_stage(
-                price_data, volume_data, order_flow_data, sr_levels,
+                price_data,
+                volume_data,
+                order_flow_data,
+                sr_levels,
             )
             if not stage_result.success:
                 return self._create_error_response(stage_result.error)
             advanced_features = stage_result.data
-            stage_timings[PipelineStage.FEATURE_ENGINEERING.value] = stage_result.metadata["duration"]
+            stage_timings[PipelineStage.FEATURE_ENGINEERING.value] = (
+                stage_result.metadata["duration"]
+            )
 
             # Stage 4: Labeling
             stage_result = await self._execute_labeling_stage(price_data)
             if not stage_result.success:
                 return self._create_error_response(stage_result.error)
             labeled_data = stage_result.data
-            stage_timings[PipelineStage.LABELING.value] = stage_result.metadata["duration"]
+            stage_timings[PipelineStage.LABELING.value] = stage_result.metadata[
+                "duration"
+            ]
 
             # Stage 5: Feature combination
             stage_result = await self._execute_feature_combination_stage(
-                labeled_data, advanced_features,
+                labeled_data,
+                advanced_features,
             )
             if not stage_result.success:
                 return self._create_error_response(stage_result.error)
             combined_data = stage_result.data
-            stage_timings[PipelineStage.FEATURE_COMBINATION.value] = stage_result.metadata["duration"]
+            stage_timings[PipelineStage.FEATURE_COMBINATION.value] = (
+                stage_result.metadata["duration"]
+            )
 
             # Stage 6: Feature selection
             if self.pipeline_config.enable_feature_selection:
-                stage_result = await self._execute_feature_selection_stage(combined_data)
+                stage_result = await self._execute_feature_selection_stage(
+                    combined_data
+                )
                 if stage_result.success and stage_result.data is not None:
                     combined_data = stage_result.data
-                stage_timings[PipelineStage.FEATURE_SELECTION.value] = stage_result.metadata["duration"]
+                stage_timings[PipelineStage.FEATURE_SELECTION.value] = (
+                    stage_result.metadata["duration"]
+                )
 
             # Stage 7: Normalization
             if self.pipeline_config.enable_data_normalization:
                 stage_result = await self._execute_normalization_stage(combined_data)
                 if stage_result.success and stage_result.data is not None:
                     combined_data = stage_result.data
-                stage_timings[PipelineStage.NORMALIZATION.value] = stage_result.metadata["duration"]
+                stage_timings[PipelineStage.NORMALIZATION.value] = (
+                    stage_result.metadata["duration"]
+                )
 
             # Stage 8: Memory optimization
             if self.pipeline_config.enable_memory_optimization:
-                stage_result = await self._execute_memory_optimization_stage(combined_data)
+                stage_result = await self._execute_memory_optimization_stage(
+                    combined_data
+                )
                 if stage_result.success and stage_result.data is not None:
                     combined_data = stage_result.data
-                stage_timings[PipelineStage.MEMORY_OPTIMIZATION.value] = stage_result.metadata["duration"]
+                stage_timings[PipelineStage.MEMORY_OPTIMIZATION.value] = (
+                    stage_result.metadata["duration"]
+                )
 
             # Stage 9: Final validation
             stage_result = await self._execute_validation_stage(combined_data)
-            stage_timings[PipelineStage.VALIDATION.value] = stage_result.metadata["duration"]
+            stage_timings[PipelineStage.VALIDATION.value] = stage_result.metadata[
+                "duration"
+            ]
 
             # Create final result
             total_execution_time = time.time() - start_time
@@ -256,7 +295,9 @@ class VectorizedLabellingOrchestratorRefactored:
             data_shapes={
                 "price": price_data.shape,
                 "volume": volume_data.shape if volume_data is not None else (0, 0),
-                "order_flow": order_flow_data.shape if order_flow_data is not None else (0, 0),
+                "order_flow": (
+                    order_flow_data.shape if order_flow_data is not None else (0, 0)
+                ),
             },
             feature_counts={},
             baseline_columns=baseline_cols,
@@ -322,8 +363,12 @@ class VectorizedLabellingOrchestratorRefactored:
                 )
 
             self.logger.info("📊 Performing stationarity checks...")
-            stationary_data = await self.stationarity_checker.check_and_transform_stationarity(
-                price_data, volume_data, order_flow_data,
+            stationary_data = (
+                await self.stationarity_checker.check_and_transform_stationarity(
+                    price_data,
+                    volume_data,
+                    order_flow_data,
+                )
             )
 
             return StageResult(
@@ -366,12 +411,17 @@ class VectorizedLabellingOrchestratorRefactored:
 
             # Generate features
             advanced_features = await self.advanced_feature_engineer.engineer_features(
-                price_data, volume_data, order_flow_data, sr_levels,
+                price_data,
+                volume_data,
+                order_flow_data,
+                sr_levels,
             )
 
             # Validate features
             if not advanced_features or len(advanced_features) < 10:
-                self.logger.warning(f"⚠️ Few features generated: {len(advanced_features)}")
+                self.logger.warning(
+                    f"⚠️ Few features generated: {len(advanced_features)}"
+                )
 
             return StageResult(
                 stage=PipelineStage.FEATURE_ENGINEERING,
@@ -436,7 +486,9 @@ class VectorizedLabellingOrchestratorRefactored:
     ) -> pd.DataFrame:
         """Apply regime-aware triple barrier labeling"""
         if self.pipeline_config.hmm_barrier_regime_column not in price_data.columns:
-            self.logger.warning("⚠️ Regime column not found, falling back to standard labeling")
+            self.logger.warning(
+                "⚠️ Regime column not found, falling back to standard labeling"
+            )
             return await self._apply_standard_labeling(price_data)
 
         # Placeholder for actual regime-aware labeling
@@ -468,7 +520,8 @@ class VectorizedLabellingOrchestratorRefactored:
 
             # Combine features with labels
             combined_data = self._combine_features_and_labels(
-                labeled_data, advanced_features,
+                labeled_data,
+                advanced_features,
             )
 
             # Remove stationarity transform columns

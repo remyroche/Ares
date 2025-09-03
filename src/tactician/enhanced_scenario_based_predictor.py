@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Enhanced Scenario-Based Predictor for Tactician
 
@@ -26,16 +27,20 @@ from src.core.decorators import handles_errors
 # Simple logger setup
 logger = logging.getLogger(__name__)
 
+
 # Simple error handling decorator
 def handle_errors(func):
     """Simple error handling decorator."""
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
             logger.exception(f"Error in {func.__name__}: {e}")
             return None
+
     return wrapper
+
 
 class EnhancedScenarioBasedPredictor:
     """
@@ -81,20 +86,30 @@ class EnhancedScenarioBasedPredictor:
 
         # Enhanced decision thresholds (configurable for step17)
         self.decision_thresholds = {
-            "profit_zone_combined": scenario_config.get("profit_zone_combined_threshold", 0.6),
-            "risk_zone_combined": scenario_config.get("risk_zone_combined_threshold", 0.2),
+            "profit_zone_combined": scenario_config.get(
+                "profit_zone_combined_threshold", 0.6
+            ),
+            "risk_zone_combined": scenario_config.get(
+                "risk_zone_combined_threshold", 0.2
+            ),
             "exit_risk_threshold": scenario_config.get("exit_risk_threshold", 0.5),
             "neutral_threshold": scenario_config.get("neutral_threshold", 0.3),
             "confidence_threshold": scenario_config.get("confidence_threshold", 0.7),
-            "profit_risk_ratio": scenario_config.get("profit_risk_ratio_threshold", 2.0),
-            "scenario_dominance": scenario_config.get("scenario_dominance_threshold", 0.4),
+            "profit_risk_ratio": scenario_config.get(
+                "profit_risk_ratio_threshold", 2.0
+            ),
+            "scenario_dominance": scenario_config.get(
+                "scenario_dominance_threshold", 0.4
+            ),
         }
 
         # Step7 technical indicator parameters (configurable for step17)
         self.technical_indicators = {
             "RSI": {
                 "lookback_period": scenario_config.get("rsi_lookback_period", 14),
-                "overbought_threshold": scenario_config.get("rsi_overbought_threshold", 70),
+                "overbought_threshold": scenario_config.get(
+                    "rsi_overbought_threshold", 70
+                ),
                 "oversold_threshold": scenario_config.get("rsi_oversold_threshold", 30),
             },
             "MACD": {
@@ -139,8 +154,12 @@ class EnhancedScenarioBasedPredictor:
             "lookback_periods": scenario_config.get("lookback_periods", 20),
             "volatility_window": scenario_config.get("volatility_window", 20),
             "volume_ma_period": scenario_config.get("volume_ma_period", 10),
-            "price_momentum_periods": scenario_config.get("price_momentum_periods", [5, 10, 20]),
-            "volatility_periods": scenario_config.get("volatility_periods", [5, 10, 20]),
+            "price_momentum_periods": scenario_config.get(
+                "price_momentum_periods", [5, 10, 20]
+            ),
+            "volatility_periods": scenario_config.get(
+                "volatility_periods", [5, 10, 20]
+            ),
         }
 
         # Model state
@@ -150,7 +169,9 @@ class EnhancedScenarioBasedPredictor:
         self.feature_importance: dict[str, float] = {}
         self.model_performance: dict[str, float] = {}
 
-    def _create_fractal_scenarios(self, scenario_config: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    def _create_fractal_scenarios(
+        self, scenario_config: dict[str, Any]
+    ) -> dict[int, dict[str, Any]]:
         """
         Create fractal scenarios with linear progression.
 
@@ -168,24 +189,39 @@ class EnhancedScenarioBasedPredictor:
         for i, profit_target in enumerate(profit_targets):
             scenarios[scenario_id] = {
                 "name": f"Profit Zone {i+1} ({profit_target*100:.1f}%)",
-                "profit_target": scenario_config.get(f"profit_zone_{i+1}_target", profit_target),
-                "stop_loss": scenario_config.get(f"profit_zone_{i+1}_stop_loss", -0.005),
+                "profit_target": scenario_config.get(
+                    f"profit_zone_{i+1}_target", profit_target
+                ),
+                "stop_loss": scenario_config.get(
+                    f"profit_zone_{i+1}_stop_loss", -0.005
+                ),
                 "description": f"Price moves up by {profit_target*100:.1f}% before moving down by 0.5%",
                 "zone_type": "profit",
-                "zone_level": i+1,
+                "zone_level": i + 1,
             }
             scenario_id += 1
 
         # Risk zones (-0.25% to -2.0% in 0.25% increments)
-        risk_targets = [-0.0025, -0.005, -0.0075, -0.01, -0.0125, -0.015, -0.0175, -0.02]
+        risk_targets = [
+            -0.0025,
+            -0.005,
+            -0.0075,
+            -0.01,
+            -0.0125,
+            -0.015,
+            -0.0175,
+            -0.02,
+        ]
         for i, risk_target in enumerate(risk_targets):
             scenarios[scenario_id] = {
                 "name": f"Risk Zone {i+1} ({abs(risk_target)*100:.1f}%)",
                 "profit_target": scenario_config.get(f"risk_zone_{i+1}_target", 0.005),
-                "stop_loss": scenario_config.get(f"risk_zone_{i+1}_stop_loss", risk_target),
+                "stop_loss": scenario_config.get(
+                    f"risk_zone_{i+1}_stop_loss", risk_target
+                ),
                 "description": f"Price moves down by {abs(risk_target)*100:.1f}% before moving up by 0.5%",
                 "zone_type": "risk",
-                "zone_level": i+1,
+                "zone_level": i + 1,
             }
             scenario_id += 1
 
@@ -213,17 +249,23 @@ class EnhancedScenarioBasedPredictor:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for enhanced scenario predictor")
+                self.logger.error(
+                    "Invalid configuration for enhanced scenario predictor"
+                )
                 return False
 
             # Initialize model
             self.model = lgb.LGBMClassifier(**self.model_config)
 
-            self.logger.info("✅ Enhanced Scenario-Based Predictor initialized successfully")
+            self.logger.info(
+                "✅ Enhanced Scenario-Based Predictor initialized successfully"
+            )
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Enhanced Scenario-Based Predictor initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Enhanced Scenario-Based Predictor initialization failed: {e}"
+            )
             return False
 
     def _validate_configuration(self) -> bool:
@@ -237,12 +279,19 @@ class EnhancedScenarioBasedPredictor:
             # Validate scenarios
             for scenario_id, scenario in self.scenarios.items():
                 if scenario["zone_type"] != "neutral":
-                    if scenario["profit_target"] <= 0 and scenario["zone_type"] == "profit":
-                        self.logger.error(f"Invalid profit target for scenario {scenario_id}")
+                    if (
+                        scenario["profit_target"] <= 0
+                        and scenario["zone_type"] == "profit"
+                    ):
+                        self.logger.error(
+                            f"Invalid profit target for scenario {scenario_id}"
+                        )
                         return False
 
                     if scenario["stop_loss"] >= 0 and scenario["zone_type"] == "risk":
-                        self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
+                        self.logger.error(
+                            f"Invalid stop loss for scenario {scenario_id}"
+                        )
                         return False
 
             # Validate time limit
@@ -260,7 +309,9 @@ class EnhancedScenarioBasedPredictor:
             for indicator_name, params in self.technical_indicators.items():
                 for param_name, param_value in params.items():
                     if param_value <= 0:
-                        self.logger.error(f"Invalid parameter for {indicator_name}.{param_name}")
+                        self.logger.error(
+                            f"Invalid parameter for {indicator_name}.{param_name}"
+                        )
                         return False
 
             return True
@@ -299,7 +350,9 @@ class EnhancedScenarioBasedPredictor:
             # 1. Price momentum features
             for period in self.feature_config["price_momentum_periods"]:
                 if len(close_prices) >= period:
-                    momentum = (current_price - close_prices[-period]) / close_prices[-period]
+                    momentum = (current_price - close_prices[-period]) / close_prices[
+                        -period
+                    ]
                     features.append(momentum)
                 else:
                     features.append(0.0)
@@ -314,8 +367,15 @@ class EnhancedScenarioBasedPredictor:
                     features.append(0.0)
 
             # 3. Volume features
-            volume_trend = (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
-            volume_ma_ratio = volumes[-1] / np.mean(volumes[-self.feature_config["volume_ma_period"]:]) if np.mean(volumes[-self.feature_config["volume_ma_period"]:]) > 0 else 1.0
+            volume_trend = (
+                (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
+            )
+            volume_ma_ratio = (
+                volumes[-1]
+                / np.mean(volumes[-self.feature_config["volume_ma_period"] :])
+                if np.mean(volumes[-self.feature_config["volume_ma_period"] :]) > 0
+                else 1.0
+            )
             features.extend([volume_trend, volume_ma_ratio])
 
             # 4. RSI
@@ -331,11 +391,13 @@ class EnhancedScenarioBasedPredictor:
                 slowperiod=macd_params["slow_period"],
                 signalperiod=macd_params["signal_period"],
             )
-            features.extend([
-                macd[-1] if not np.isnan(macd[-1]) else 0.0,
-                macd_signal[-1] if not np.isnan(macd_signal[-1]) else 0.0,
-                macd_hist[-1] if not np.isnan(macd_hist[-1]) else 0.0,
-            ])
+            features.extend(
+                [
+                    macd[-1] if not np.isnan(macd[-1]) else 0.0,
+                    macd_signal[-1] if not np.isnan(macd_signal[-1]) else 0.0,
+                    macd_hist[-1] if not np.isnan(macd_hist[-1]) else 0.0,
+                ]
+            )
 
             # 6. Bollinger Bands
             bb_params = self.technical_indicators["Bollinger_Bands"]
@@ -345,12 +407,22 @@ class EnhancedScenarioBasedPredictor:
                 nbdevup=bb_params["std_dev"],
                 nbdevdn=bb_params["std_dev"],
             )
-            bb_position = (current_price - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if bb_upper[-1] != bb_lower[-1] else 0.5
-            bb_squeeze = (bb_upper[-1] - bb_lower[-1]) / bb_middle[-1] if bb_middle[-1] > 0 else 0.0
-            features.extend([
-                bb_position if not np.isnan(bb_position) else 0.5,
-                bb_squeeze if not np.isnan(bb_squeeze) else 0.0,
-            ])
+            bb_position = (
+                (current_price - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1])
+                if bb_upper[-1] != bb_lower[-1]
+                else 0.5
+            )
+            bb_squeeze = (
+                (bb_upper[-1] - bb_lower[-1]) / bb_middle[-1]
+                if bb_middle[-1] > 0
+                else 0.0
+            )
+            features.extend(
+                [
+                    bb_position if not np.isnan(bb_position) else 0.5,
+                    bb_squeeze if not np.isnan(bb_squeeze) else 0.0,
+                ]
+            )
 
             # 7. SMA
             sma_params = self.technical_indicators["SMA"]
@@ -368,31 +440,50 @@ class EnhancedScenarioBasedPredictor:
 
             # 9. ATR
             atr_params = self.technical_indicators["ATR"]
-            atr = talib.ATR(high_prices, low_prices, close_prices, timeperiod=atr_params["lookback_period"])
+            atr = talib.ATR(
+                high_prices,
+                low_prices,
+                close_prices,
+                timeperiod=atr_params["lookback_period"],
+            )
             atr_normalized = atr[-1] / current_price if current_price > 0 else 0.0
             features.append(atr_normalized if not np.isnan(atr_normalized) else 0.0)
 
             # 10. Stochastic
             stoch_params = self.technical_indicators["Stochastic"]
             stoch_k, stoch_d = talib.STOCH(
-                high_prices, low_prices, close_prices,
+                high_prices,
+                low_prices,
+                close_prices,
                 fastk_period=stoch_params["k_period"],
                 slowk_period=stoch_params["d_period"],
                 slowd_period=stoch_params["d_period"],
             )
-            features.extend([
-                stoch_k[-1] / 100 if not np.isnan(stoch_k[-1]) else 0.5,
-                stoch_d[-1] / 100 if not np.isnan(stoch_d[-1]) else 0.5,
-            ])
+            features.extend(
+                [
+                    stoch_k[-1] / 100 if not np.isnan(stoch_k[-1]) else 0.5,
+                    stoch_d[-1] / 100 if not np.isnan(stoch_d[-1]) else 0.5,
+                ]
+            )
 
             # 11. ADX
             adx_params = self.technical_indicators["ADX"]
-            adx = talib.ADX(high_prices, low_prices, close_prices, timeperiod=adx_params["lookback_period"])
+            adx = talib.ADX(
+                high_prices,
+                low_prices,
+                close_prices,
+                timeperiod=adx_params["lookback_period"],
+            )
             features.append(adx[-1] / 100 if not np.isnan(adx[-1]) else 0.5)
 
             # 12. CCI
             cci_params = self.technical_indicators["CCI"]
-            cci = talib.CCI(high_prices, low_prices, close_prices, timeperiod=cci_params["lookback_period"])
+            cci = talib.CCI(
+                high_prices,
+                low_prices,
+                close_prices,
+                timeperiod=cci_params["lookback_period"],
+            )
             # Normalize CCI to 0-1 range
             cci_normalized = (cci[-1] + 300) / 600 if not np.isnan(cci[-1]) else 0.5
             features.append(np.clip(cci_normalized, 0, 1))
@@ -406,7 +497,11 @@ class EnhancedScenarioBasedPredictor:
             features.extend([price_range, upper_shadow, lower_shadow, body_size])
 
             # 14. Latest return
-            latest_return = (current_price - close_prices[-2]) / close_prices[-2] if len(close_prices) > 1 else 0.0
+            latest_return = (
+                (current_price - close_prices[-2]) / close_prices[-2]
+                if len(close_prices) > 1
+                else 0.0
+            )
             features.append(latest_return)
 
             # 15. Price acceleration (second derivative)
@@ -453,7 +548,9 @@ class EnhancedScenarioBasedPredictor:
             for i in range(len(X)):
                 # Look ahead to see which scenario occurs first
                 scenario = self._determine_first_scenario(
-                    prices[i:], i, self.time_limit_minutes,
+                    prices[i:],
+                    i,
+                    self.time_limit_minutes,
                 )
                 scenario_labels.append(scenario)
 
@@ -485,14 +582,18 @@ class EnhancedScenarioBasedPredictor:
                 return len(self.scenarios) - 1  # Neutral if not enough data
 
             current_price = future_prices[0]
-            look_ahead_prices = future_prices[1:min(len(future_prices), time_limit + 1)]
+            look_ahead_prices = future_prices[
+                1 : min(len(future_prices), time_limit + 1)
+            ]
 
             # Check each scenario in order of preference
             for scenario_id in range(len(self.scenarios) - 1):  # Exclude neutral
                 scenario = self.scenarios[scenario_id]
 
                 if self._scenario_triggered(
-                    look_ahead_prices, current_price, scenario,
+                    look_ahead_prices,
+                    current_price,
+                    scenario,
                 ):
                     return scenario_id
 
@@ -577,24 +678,32 @@ class EnhancedScenarioBasedPredictor:
             # Split validation data if not provided
             if X_val is None or y_val is None:
                 X_train_split, X_val, y_train_split, y_val = train_test_split(
-                    X_train, y_train, test_size=0.2, random_state=42, stratify=y_train,
+                    X_train,
+                    y_train,
+                    test_size=0.2,
+                    random_state=42,
+                    stratify=y_train,
                 )
             else:
                 X_train_split, y_train_split = X_train, y_train
 
             # Train model
             self.model.fit(
-                X_train_split, y_train_split,
+                X_train_split,
+                y_train_split,
                 eval_set=[(X_val, y_val)],
                 eval_metric="multi_logloss",
                 callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)],
             )
 
             # Calculate feature importance
-            self.feature_importance = dict(zip(
-                [f"feature_{i}" for i in range(X_train.shape[1])],
-                self.model.feature_importances_, strict=False,
-            ))
+            self.feature_importance = dict(
+                zip(
+                    [f"feature_{i}" for i in range(X_train.shape[1])],
+                    self.model.feature_importances_,
+                    strict=False,
+                )
+            )
 
             # Calculate performance metrics
             y_pred = self.model.predict(X_val)
@@ -611,7 +720,9 @@ class EnhancedScenarioBasedPredictor:
             self.is_trained = True
             self.last_training_time = datetime.now()
 
-            self.logger.info(f"✅ Enhanced model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}")
+            self.logger.info(
+                f"✅ Enhanced model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}"
+            )
             return True
 
         except Exception as e:
@@ -636,7 +747,9 @@ class EnhancedScenarioBasedPredictor:
         """
         try:
             if not self.is_trained:
-                self.logger.warning("Enhanced model not trained, using fallback predictions")
+                self.logger.warning(
+                    "Enhanced model not trained, using fallback predictions"
+                )
                 return self._generate_enhanced_fallback_predictions(X)
 
             # Generate probability predictions
@@ -646,13 +759,17 @@ class EnhancedScenarioBasedPredictor:
             predicted_scenario = self.model.predict(X)[0]
 
             # Calculate scenario-specific metrics
-            scenario_analysis = self._analyze_enhanced_scenario_probabilities(probabilities[0])
+            scenario_analysis = self._analyze_enhanced_scenario_probabilities(
+                probabilities[0]
+            )
 
             # Calculate confidence score
             confidence = self._calculate_enhanced_confidence(probabilities[0])
 
             return {
-                "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0], strict=False)),
+                "probabilities": dict(
+                    zip(range(len(probabilities[0])), probabilities[0], strict=False)
+                ),
                 "predicted_scenario": predicted_scenario,
                 "scenario_name": self.scenarios[predicted_scenario]["name"],
                 "confidence": confidence,
@@ -661,18 +778,23 @@ class EnhancedScenarioBasedPredictor:
                     "model_type": "enhanced_scenario_based",
                     "generation_timestamp": datetime.now().isoformat(),
                     "is_trained": self.is_trained,
-                    "last_training_time": self.last_training_time.isoformat() if self.last_training_time else None,
+                    "last_training_time": (
+                        self.last_training_time.isoformat()
+                        if self.last_training_time
+                        else None
+                    ),
                     "n_scenarios": len(self.scenarios),
                     "time_limit_minutes": self.time_limit_minutes,
                 },
             }
 
-
         except Exception as e:
             self.logger.exception(f"❌ Enhanced scenario prediction failed: {e}")
             return self._generate_enhanced_fallback_predictions(X)
 
-    def _analyze_enhanced_scenario_probabilities(self, probabilities: np.ndarray) -> dict[str, Any]:
+    def _analyze_enhanced_scenario_probabilities(
+        self, probabilities: np.ndarray
+    ) -> dict[str, Any]:
         """
         Analyze enhanced scenario probabilities for decision making.
 
@@ -731,7 +853,9 @@ class EnhancedScenarioBasedPredictor:
                 "scenario_dominance": scenario_dominance,
                 "zone_distribution": zone_distribution,
                 "max_probability": max_prob,
-                "probability_entropy": -np.sum(probabilities * np.log(probabilities + 1e-8)),
+                "probability_entropy": -np.sum(
+                    probabilities * np.log(probabilities + 1e-8)
+                ),
             }
 
         except Exception as e:
@@ -744,7 +868,12 @@ class EnhancedScenarioBasedPredictor:
                 "risk_reward_ratio": 0.0,
                 "profit_risk_difference": 0.0,
                 "scenario_dominance": 0.0,
-                "zone_distribution": {"profit_zones": 0, "risk_zones": 0, "profit_probabilities": [], "risk_probabilities": []},
+                "zone_distribution": {
+                    "profit_zones": 0,
+                    "risk_zones": 0,
+                    "profit_probabilities": [],
+                    "risk_probabilities": [],
+                },
                 "max_probability": 0.0,
                 "probability_entropy": 0.0,
             }
@@ -799,7 +928,9 @@ class EnhancedScenarioBasedPredictor:
             probabilities = [base_prob * 0.8] * (n_scenarios - 1) + [base_prob * 1.4]
 
             return {
-                "probabilities": dict(zip(range(n_scenarios), probabilities, strict=False)),
+                "probabilities": dict(
+                    zip(range(n_scenarios), probabilities, strict=False)
+                ),
                 "predicted_scenario": n_scenarios - 1,  # Neutral
                 "scenario_name": self.scenarios[n_scenarios - 1]["name"],
                 "confidence": 0.3,
@@ -811,7 +942,12 @@ class EnhancedScenarioBasedPredictor:
                     "risk_reward_ratio": 1.0,
                     "profit_risk_difference": 0.0,
                     "scenario_dominance": base_prob * 1.4,
-                    "zone_distribution": {"profit_zones": 8, "risk_zones": 8, "profit_probabilities": [base_prob * 0.8] * 8, "risk_probabilities": [base_prob * 0.8] * 8},
+                    "zone_distribution": {
+                        "profit_zones": 8,
+                        "risk_zones": 8,
+                        "profit_probabilities": [base_prob * 0.8] * 8,
+                        "risk_probabilities": [base_prob * 0.8] * 8,
+                    },
                     "max_probability": base_prob * 1.4,
                     "probability_entropy": np.log(n_scenarios),
                 },
@@ -826,7 +962,9 @@ class EnhancedScenarioBasedPredictor:
             }
 
         except Exception as e:
-            self.logger.exception(f"❌ Enhanced fallback prediction generation failed: {e}")
+            self.logger.exception(
+                f"❌ Enhanced fallback prediction generation failed: {e}"
+            )
             return {
                 "probabilities": dict.fromkeys(range(n_scenarios), 1.0 / n_scenarios),
                 "predicted_scenario": n_scenarios - 1,
@@ -840,7 +978,12 @@ class EnhancedScenarioBasedPredictor:
                     "risk_reward_ratio": 1.0,
                     "profit_risk_difference": 0.0,
                     "scenario_dominance": 0.0,
-                    "zone_distribution": {"profit_zones": 0, "risk_zones": 0, "profit_probabilities": [], "risk_probabilities": []},
+                    "zone_distribution": {
+                        "profit_zones": 0,
+                        "risk_zones": 0,
+                        "profit_probabilities": [],
+                        "risk_probabilities": [],
+                    },
                     "max_probability": 0.0,
                     "probability_entropy": 0.0,
                 },

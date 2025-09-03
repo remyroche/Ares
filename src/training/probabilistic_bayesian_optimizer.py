@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Probabilistic Bayesian Optimizer for Tactician and Analyst Models
 
@@ -23,6 +24,7 @@ warnings.filterwarnings("ignore")
 
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
 
 @dataclass
 class ProbabilisticOptimizationConfig:
@@ -55,6 +57,7 @@ class ProbabilisticOptimizationConfig:
     def __post_init__(self):
         if self.objectives is None:
             self.objectives = ["calibration", "sharpness", "discrimination"]
+
 
 class ProbabilisticBayesianOptimizer:
     """
@@ -104,7 +107,6 @@ class ProbabilisticBayesianOptimizer:
             load_if_exists=True,
         )
 
-
     def _get_model_configurations(self) -> dict[str, dict[str, Any]]:
         """Get model-specific hyperparameter search spaces with expanded ranges."""
 
@@ -123,9 +125,21 @@ class ProbabilisticBayesianOptimizer:
                     "scale_pos_weight": (0.1, 10.0),  # New parameter
                 },
                 "probabilistic_calibration": {
-                    "calibration_method": ["isotonic", "sigmoid", "platt", "temperature", "beta"],
+                    "calibration_method": [
+                        "isotonic",
+                        "sigmoid",
+                        "platt",
+                        "temperature",
+                        "beta",
+                    ],
                     "calibration_cv_folds": (2, 20),  # Expanded from (3, 10)
-                    "uncertainty_estimation": ["mc_dropout", "ensemble", "gaussian", "conformal", "bootstrap"],
+                    "uncertainty_estimation": [
+                        "mc_dropout",
+                        "ensemble",
+                        "gaussian",
+                        "conformal",
+                        "bootstrap",
+                    ],
                 },
                 "barrier_system": {
                     "upper_barrier_multiplier": (0.1, 2.0),  # Expanded from (0.3, 0.8)
@@ -165,9 +179,23 @@ class ProbabilisticBayesianOptimizer:
                 "scale_pos_weight": (0.1, 20.0),  # New parameter
             },
             "probabilistic_calibration": {
-                "calibration_method": ["isotonic", "sigmoid", "platt", "temperature", "beta", "dirichlet"],
+                "calibration_method": [
+                    "isotonic",
+                    "sigmoid",
+                    "platt",
+                    "temperature",
+                    "beta",
+                    "dirichlet",
+                ],
                 "calibration_cv_folds": (3, 30),  # Expanded from (5, 15)
-                "uncertainty_estimation": ["ensemble", "gaussian", "conformal", "mc_dropout", "bootstrap", "variational"],
+                "uncertainty_estimation": [
+                    "ensemble",
+                    "gaussian",
+                    "conformal",
+                    "mc_dropout",
+                    "bootstrap",
+                    "variational",
+                ],
             },
             "regime_detection": {
                 "regime_threshold": (0.3, 0.9),  # Expanded from (0.5, 0.8)
@@ -175,16 +203,37 @@ class ProbabilisticBayesianOptimizer:
                 "regime_transition_smoothing": (0.01, 1.0),  # Expanded from (0.1, 0.5)
                 "regime_lookback_period": (5, 200),  # New parameter
                 "regime_min_samples": (50, 1000),  # New parameter
-                "regime_clustering_method": ["kmeans", "hmm", "gaussian_mixture", "dbscan"],  # New parameter
+                "regime_clustering_method": [
+                    "kmeans",
+                    "hmm",
+                    "gaussian_mixture",
+                    "dbscan",
+                ],  # New parameter
             },
             "ensemble_methods": {
                 "ensemble_size": (3, 20),  # New parameter
-                "ensemble_weighting": ["equal", "performance", "uncertainty", "regime_specific"],  # New parameter
-                "meta_learner_type": ["logistic", "random_forest", "xgboost", "neural_network"],  # New parameter
+                "ensemble_weighting": [
+                    "equal",
+                    "performance",
+                    "uncertainty",
+                    "regime_specific",
+                ],  # New parameter
+                "meta_learner_type": [
+                    "logistic",
+                    "random_forest",
+                    "xgboost",
+                    "neural_network",
+                ],  # New parameter
                 "stacking_cv_folds": (3, 15),  # New parameter
             },
             "feature_selection": {
-                "feature_selection_method": ["none", "variance", "mutual_info", "lasso", "recursive"],  # New parameter
+                "feature_selection_method": [
+                    "none",
+                    "variance",
+                    "mutual_info",
+                    "lasso",
+                    "recursive",
+                ],  # New parameter
                 "max_features": (10, 500),  # New parameter
                 "feature_importance_threshold": (0.001, 0.1),  # New parameter
                 "correlation_threshold": (0.5, 0.99),  # New parameter
@@ -207,7 +256,8 @@ class ProbabilisticBayesianOptimizer:
         # Probabilistic calibration parameters
         calib_config = self.model_configs["probabilistic_calibration"]
         params["calibration_method"] = trial.suggest_categorical(
-            "calibration_method", calib_config["calibration_method"],
+            "calibration_method",
+            calib_config["calibration_method"],
         )
         params["calibration_cv_folds"] = trial.suggest_int(
             "calibration_cv_folds",
@@ -215,7 +265,8 @@ class ProbabilisticBayesianOptimizer:
             calib_config["calibration_cv_folds"][1],
         )
         params["uncertainty_estimation"] = trial.suggest_categorical(
-            "uncertainty_estimation", calib_config["uncertainty_estimation"],
+            "uncertainty_estimation",
+            calib_config["uncertainty_estimation"],
         )
 
         # Model-specific parameters
@@ -273,7 +324,9 @@ class ProbabilisticBayesianOptimizer:
 
         # Calibration metrics
         if "calibration" in self.config.objectives:
-            metrics["calibration"] = self._calculate_calibration_score(y_true, y_pred_proba)
+            metrics["calibration"] = self._calculate_calibration_score(
+                y_true, y_pred_proba
+            )
 
         # Sharpness metrics
         if "sharpness" in self.config.objectives:
@@ -281,12 +334,16 @@ class ProbabilisticBayesianOptimizer:
 
         # Discrimination metrics
         if "discrimination" in self.config.objectives:
-            metrics["discrimination"] = self._calculate_discrimination_score(y_true, y_pred_proba)
+            metrics["discrimination"] = self._calculate_discrimination_score(
+                y_true, y_pred_proba
+            )
 
         # Uncertainty quantification metrics
         if confidence_intervals is not None:
             metrics["uncertainty_quality"] = self._calculate_uncertainty_quality(
-                y_true, y_pred_proba, confidence_intervals,
+                y_true,
+                y_pred_proba,
+                confidence_intervals,
             )
 
         return metrics
@@ -335,8 +392,8 @@ class ProbabilisticBayesianOptimizer:
         try:
             # Check if true values fall within confidence intervals
             return np.mean(
-                (y_true >= confidence_intervals[:, 0]) &
-                (y_true <= confidence_intervals[:, 1]),
+                (y_true >= confidence_intervals[:, 0])
+                & (y_true <= confidence_intervals[:, 1]),
             )
         except:
             return 0.0
@@ -376,7 +433,9 @@ class ProbabilisticBayesianOptimizer:
 
                 # Calculate metrics
                 metrics = self.evaluate_probabilistic_metrics(
-                    y_val, y_pred_proba, confidence_intervals,
+                    y_val,
+                    y_pred_proba,
+                    confidence_intervals,
                 )
 
                 # Return objectives in the order specified
@@ -405,13 +464,19 @@ class ProbabilisticBayesianOptimizer:
     ) -> dict[str, Any]:
         """Run the Bayesian optimization with MLflow integration."""
 
-        self.logger.info(f"Starting probabilistic Bayesian optimization for {self.model_type}")
+        self.logger.info(
+            f"Starting probabilistic Bayesian optimization for {self.model_type}"
+        )
         self.logger.info(f"Objectives: {self.config.objectives}")
         self.logger.info(f"Number of trials: {self.config.n_trials}")
-        self.logger.info("Objective weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio")
+        self.logger.info(
+            "Objective weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio"
+        )
 
         # Create objective function
-        objective = self.create_objective_function(X, y, model_factory, validation_split)
+        objective = self.create_objective_function(
+            X, y, model_factory, validation_split
+        )
 
         # Set up callbacks
         callbacks = []
@@ -477,12 +542,14 @@ class ProbabilisticBayesianOptimizer:
         optimization_history = []
         for trial in self.study.trials:
             if trial.state == optuna.trial.TrialState.COMPLETE:
-                optimization_history.append({
-                    "trial_number": trial.number,
-                    "values": trial.values,
-                    "params": trial.params,
-                    "duration": trial.duration.total_seconds(),
-                })
+                optimization_history.append(
+                    {
+                        "trial_number": trial.number,
+                        "values": trial.values,
+                        "params": trial.params,
+                        "duration": trial.duration.total_seconds(),
+                    }
+                )
 
         return {
             "best_solutions": best_solutions,
@@ -493,7 +560,9 @@ class ProbabilisticBayesianOptimizer:
             "config": self.config,
         }
 
-    def get_recommended_hyperparameters(self, objective_weights: dict[str, float] | None = None) -> dict[str, Any]:
+    def get_recommended_hyperparameters(
+        self, objective_weights: dict[str, float] | None = None
+    ) -> dict[str, Any]:
         """Get recommended hyperparameters based on objective weights."""
 
         if objective_weights is None:
@@ -522,13 +591,17 @@ class ProbabilisticBayesianOptimizer:
         if best_trial:
             return {
                 "hyperparameters": best_trial.params,
-                "objective_values": dict(zip(self.config.objectives, best_trial.values, strict=False)),
+                "objective_values": dict(
+                    zip(self.config.objectives, best_trial.values, strict=False)
+                ),
                 "weighted_score": best_weighted_score,
                 "trial_number": best_trial.number,
             }
         return {}
 
-    def _log_mlflow_experiment(self, study_name: str, best_params: dict[str, Any], best_values: list[float]):
+    def _log_mlflow_experiment(
+        self, study_name: str, best_params: dict[str, Any], best_values: list[float]
+    ):
         """Log optimization results to MLflow."""
 
         try:
@@ -567,14 +640,26 @@ class ProbabilisticBayesianOptimizer:
             import matplotlib.pyplot as plt
 
             # Create subplots for each objective
-            fig, axes = plt.subplots(1, len(self.config.objectives), figsize=(5*len(self.config.objectives), 5))
+            fig, axes = plt.subplots(
+                1,
+                len(self.config.objectives),
+                figsize=(5 * len(self.config.objectives), 5),
+            )
             if len(self.config.objectives) == 1:
                 axes = [axes]
 
             for i, objective in enumerate(self.config.objectives):
                 # Plot optimization history for this objective
-                values = [trial.values[i] for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
-                trial_numbers = [trial.number for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+                values = [
+                    trial.values[i]
+                    for trial in self.study.trials
+                    if trial.state == optuna.trial.TrialState.COMPLETE
+                ]
+                trial_numbers = [
+                    trial.number
+                    for trial in self.study.trials
+                    if trial.state == optuna.trial.TrialState.COMPLETE
+                ]
 
                 axes[i].plot(trial_numbers, values, "b-", alpha=0.6)
                 axes[i].set_title(f"{objective.capitalize()} Optimization History")
@@ -595,6 +680,7 @@ class ProbabilisticBayesianOptimizer:
         except Exception as e:
             self.logger.exception(f"Error plotting optimization results: {e}")
 
+
 # Example usage and model factories
 def create_tactician_model(params: dict[str, Any]):
     """Factory function for creating Tactician models."""
@@ -608,6 +694,7 @@ def create_tactician_model(params: dict[str, Any]):
         random_state=42,
         n_jobs=1,
     )
+
 
 def create_analyst_model(params: Dict[str, Any]):
     """Factory function for creating Analyst models."""

@@ -1,11 +1,12 @@
 from __future__ import annotations
-# aggtrades_data_formatting.py
 
 import csv
 import glob
 import os
 import os.path
 import shutil
+
+# aggtrades_data_formatting.py
 
 
 def check_file_format(file_path) -> bool | None:
@@ -175,10 +176,15 @@ class DataFileReformatter:
                 price = other_cols[0] if len(other_cols) > 0 else ""
                 quantity = other_cols[1] if len(other_cols) > 1 else ""
                 is_buyer_maker = other_cols[2] if len(other_cols) > 2 else ""
-                agg_trade_id = other_cols[3] if len(other_cols) > 3 else f"agg_{timestamp}_{price}_{quantity}"
+                agg_trade_id = (
+                    other_cols[3]
+                    if len(other_cols) > 3
+                    else f"agg_{timestamp}_{price}_{quantity}"
+                )
 
-                writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
-
+                writer.writerow(
+                    [timestamp, price, quantity, is_buyer_maker, agg_trade_id]
+                )
 
             return True
         except Exception:
@@ -268,7 +274,6 @@ def auto_reformat_aggtrades_files() -> None:
             shutil.copy2(backup_path, file_path)
 
 
-
 def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> None:
     """Automatically detect and reformat aggtrades CSV files for a specific exchange and symbol.
     This is a targeted version that only processes files for the specified exchange/symbol.
@@ -318,7 +323,6 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
             shutil.copy2(backup_path, file_path)
 
 
-
 def create_dummy_files(input_dir) -> None:
     """Creates a set of dummy CSV files for demonstration purposes.
     This function simulates the two different formats you provided.
@@ -353,7 +357,10 @@ class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
 
     def __init__(
-        self, input_directory: str, output_directory: str, write_header: bool = True,
+        self,
+        input_directory: str,
+        output_directory: str,
+        write_header: bool = True,
     ) -> None:
         self.input_directory = input_directory
         self.output_directory = output_directory

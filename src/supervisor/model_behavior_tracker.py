@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Model Behavior Tracker
 
@@ -34,6 +35,7 @@ class BehaviorMetricType(Enum):
     CONFIDENCE_CALIBRATION = "confidence_calibration"
     THEORY_VS_REALITY = "theory_vs_reality"
 
+
 @dataclass
 class ModelBehaviorSnapshot:
     """Model behavior snapshot."""
@@ -51,6 +53,7 @@ class ModelBehaviorSnapshot:
     theory_vs_reality_score: float | None = None
     metadata: dict[str, Any] = None
 
+
 @dataclass
 class FeatureImportanceTracking:
     """Feature importance tracking data."""
@@ -63,6 +66,7 @@ class FeatureImportanceTracking:
     stability_score: float
     drift_score: float
 
+
 @dataclass
 class DecisionPathAnalysis:
     """Decision path analysis data."""
@@ -74,6 +78,7 @@ class DecisionPathAnalysis:
     path_stability: float
     path_complexity: float
     confidence_distribution: list[float]
+
 
 class ModelBehaviorTracker:
     """
@@ -265,7 +270,9 @@ class ModelBehaviorTracker:
                     model_id,
                     performance,
                 )
-                feature_importance_stability = self._calculate_feature_importance_stability(model_id, performance)
+                feature_importance_stability = (
+                    self._calculate_feature_importance_stability(model_id, performance)
+                )
                 prediction_drift = self._calculate_prediction_drift(
                     model_id,
                     performance,
@@ -310,7 +317,9 @@ class ModelBehaviorTracker:
 
                 # Keep only recent snapshots
                 if len(self.behavior_history[model_id]) > self.max_history_size:
-                    self.behavior_history[model_id] = self.behavior_history[model_id][-self.max_history_size // 2:]
+                    self.behavior_history[model_id] = self.behavior_history[model_id][
+                        -self.max_history_size // 2 :
+                    ]
 
             self.logger.debug("📊 Behavior snapshots captured")
 
@@ -377,7 +386,9 @@ class ModelBehaviorTracker:
             )
 
             # Calculate stability relative to reference
-            stability = 1.0 - abs(feature_stability - reference_stability) / reference_stability
+            stability = (
+                1.0 - abs(feature_stability - reference_stability) / reference_stability
+            )
             return max(0.0, min(1.0, stability))
 
         except Exception as e:
@@ -441,7 +452,9 @@ class ModelBehaviorTracker:
             )
 
             # Calculate stability relative to reference
-            stability = 1.0 - abs(path_stability - reference_stability) / reference_stability
+            stability = (
+                1.0 - abs(path_stability - reference_stability) / reference_stability
+            )
             return max(0.0, min(1.0, stability))
 
         except Exception:
@@ -502,7 +515,9 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(error("Error stopping behavior tracker: {e}"))
 
-    def get_behavior_history(self, model_id: str, limit: int | None = None) -> list[ModelBehaviorSnapshot]:
+    def get_behavior_history(
+        self, model_id: str, limit: int | None = None
+    ) -> list[ModelBehaviorSnapshot]:
         """Get behavior history for a specific model."""
         history = self.behavior_history.get(model_id=[])
 
@@ -543,13 +558,21 @@ class ModelBehaviorTracker:
             # Add ensemble-specific metrics if applicable
             if any(s.ensemble_diversity is not None for s in recent_snapshots):
                 summary["avg_ensemble_diversity"] = np.mean(
-                    [s.ensemble_diversity for s in recent_snapshots if s.ensemble_diversity is not None],
+                    [
+                        s.ensemble_diversity
+                        for s in recent_snapshots
+                        if s.ensemble_diversity is not None
+                    ],
                 )
 
             # Add decision path metrics if applicable
             if any(s.decision_path_stability is not None for s in recent_snapshots):
                 summary["avg_decision_path_stability"] = np.mean(
-                    [s.decision_path_stability for s in recent_snapshots if s.decision_path_stability is not None],
+                    [
+                        s.decision_path_stability
+                        for s in recent_snapshots
+                        if s.decision_path_stability is not None
+                    ],
                 )
 
             return summary
@@ -567,7 +590,9 @@ class ModelBehaviorTracker:
             # Calculate trend based on prediction consistency
             recent_avg = np.mean([s.prediction_consistency for s in snapshots[-5:]])
             older_avg = (
-                np.mean([s.prediction_consistency for s in snapshots[-10:-5]]) if len(snapshots) >= 10 else recent_avg
+                np.mean([s.prediction_consistency for s in snapshots[-10:-5]])
+                if len(snapshots) >= 10
+                else recent_avg
             )
 
             if recent_avg > older_avg + 0.05:
@@ -591,7 +616,9 @@ class ModelBehaviorTracker:
 
             # Combine multiple stability metrics
             consistency_scores = [s.prediction_consistency for s in snapshots]
-            feature_stability_scores = [s.feature_importance_stability for s in snapshots]
+            feature_stability_scores = [
+                s.feature_importance_stability for s in snapshots
+            ]
             drift_scores = [1.0 - s.prediction_drift for s in snapshots]  # Invert drift
 
             # Calculate weighted average
@@ -666,6 +693,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(error("Error exporting behavior data: {e}"))
             return ""
+
 
 # Factory function for creating model behavior tracker
 @handles_errors(fallback=None)

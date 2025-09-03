@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Validator for Step 11: Confidence Calibration."""
 
 import os
@@ -92,7 +93,10 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         return True
 
     def _validate_calibration_files(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate that calibration files exist.
 
@@ -116,7 +120,9 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
             missing_files = [f for f in expected_files if not os.path.exists(f)]
 
             if missing_files:
-                self.logger.error(missing(f"Missing calibration files: {missing_files}"))
+                self.logger.error(
+                    missing(f"Missing calibration files: {missing_files}")
+                )
                 return False
 
             self.logger.info("✅ Calibration files validation passed")

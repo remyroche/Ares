@@ -1,17 +1,15 @@
 from __future__ import annotations
-from src.core.decorators import handles_errors
 
-from src.core.domain import handle_specific_errors
-
+import asyncio
+import copy
+import logging
 from datetime import datetime
 from typing import Any
-import logging
-import asyncio
 
+from src.core.decorators import handles_errors
+from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
-import copy
 from src.utils.warning_symbols import (
-
     error,
     failed,
     initialization_error,
@@ -31,6 +29,7 @@ class PredictiveEnsembles:
     """
     Predictive Ensembles with comprehensive error handling and type safety.
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize predictive ensembles with enhanced type safety.
@@ -97,7 +96,9 @@ class PredictiveEnsembles:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.debug(invalid("Invalid configuration for predictive ensembles"))
+                self.logger.debug(
+                    invalid("Invalid configuration for predictive ensembles")
+                )
 
                 return False
 
@@ -111,7 +112,9 @@ class PredictiveEnsembles:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(failed("❌ Predictive Ensembles initialization failed: {e}"))
+            self.logger.error(
+                failed("❌ Predictive Ensembles initialization failed: {e}")
+            )
 
             return False
 
@@ -146,7 +149,6 @@ class PredictiveEnsembles:
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error loading ensemble configuration: {e}")
-
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -230,7 +232,6 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error initializing ensemble modules: {e}")
 
-
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -253,7 +254,6 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error initializing model ensemble: {e}")
 
-
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -275,7 +275,6 @@ class PredictiveEnsembles:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error initializing voting ensemble: {e}")
-
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -322,7 +321,6 @@ class PredictiveEnsembles:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(f"Error initializing bagging ensemble: {e}")
-
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -1142,7 +1140,6 @@ class PredictiveEnsembles:
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error storing ensemble results: {e}")
-
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),

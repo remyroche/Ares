@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/integration_guide.py
 
 """Integration guide showing how to integrate the optimized enhanced training manager"
@@ -24,10 +25,12 @@ from src.utils.warning_symbols import (
     failed,
 )
 
+
 class OptimizedTrainingIntegration:
     """Integration class that shows how to replace the existing training manager"
     with the optimized version while maintaining compatibility.
     """
+
     def __init__(self, base_config: dict[str, Any]) -> None:
         self.base_config = base_config
         self.logger = system_logger.getChild("OptimizedTrainingIntegration")
@@ -126,6 +129,7 @@ class OptimizedTrainingIntegration:
             },
         }
 
+
 def demonstrate_integration():
     """Demonstrate how to integrate optimized training with existing system."""
     logger = system_logger.getChild("IntegrationDemo")
@@ -165,6 +169,7 @@ def demonstrate_integration():
 
     return integration
 
+
 async def run_integration_example() -> None:
     """Run a complete integration example."""
     logger = system_logger.getChild("IntegrationExample")
@@ -202,6 +207,7 @@ async def run_integration_example() -> None:
 
     except Exception:
         pass
+
 
 def show_migration_steps() -> None:
     """Show step-by-step migration from existing to optimized system."""
@@ -255,6 +261,7 @@ def show_migration_steps() -> None:
             logger.info(f"     {step}")
         else:
             logger.info(step)
+
 
 if __name__ == "__main__":
     # Show migration steps

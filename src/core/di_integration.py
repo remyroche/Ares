@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/core/di_integration.py
 
 """
@@ -30,6 +31,7 @@ class DIIntegration:
     Integration class that demonstrates proper dependency injection usage
     throughout the Ares trading system.
     """
+
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or CONFIG
         self.logger = system_logger.getChild("DIIntegration")
@@ -196,7 +198,9 @@ class DIIntegration:
 
 
 # Convenience function for quick integration demonstration
-async def demonstrate_di_integration(config: dict[str, Any] | None = None) -> dict[str, Any]:
+async def demonstrate_di_integration(
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Quick demonstration of DI integration."""
     integration = DIIntegration(config)
     return await integration.demonstrate_full_di_integration()

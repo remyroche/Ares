@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Validator orchestrator for running individual step validators in the training pipeline.
 """
@@ -59,8 +60,16 @@ class ValidatorOrchestrator:
             try:
                 self.logger.debug(
                     "Input context - training_input_keys=%s pipeline_state_keys=%s validation_level=%s",
-                    list(training_input.keys()) if isinstance(training_input, dict) else type(training_input).__name__,
-                    list(pipeline_state.keys()) if isinstance(pipeline_state, dict) else type(pipeline_state).__name__,
+                    (
+                        list(training_input.keys())
+                        if isinstance(training_input, dict)
+                        else type(training_input).__name__
+                    ),
+                    (
+                        list(pipeline_state.keys())
+                        if isinstance(pipeline_state, dict)
+                        else type(pipeline_state).__name__
+                    ),
                     validation_level,
                 )
             except Exception:
@@ -69,12 +78,18 @@ class ValidatorOrchestrator:
 
             # Pre-validation checks
             pre_validation_result = await self._run_pre_validation_checks(
-                step_name, training_input, pipeline_state, config, validation_level,
+                step_name,
+                training_input,
+                pipeline_state,
+                config,
+                validation_level,
             )
 
             if not pre_validation_result.get("passed", True):
                 duration = max(0.0, time.perf_counter() - start_perf)
-                return self._normalize_result(step_name, pre_validation_result, duration)
+                return self._normalize_result(
+                    step_name, pre_validation_result, duration
+                )
 
             # Import and run the appropriate validator
             raw_result = await self._run_validator(
@@ -87,12 +102,20 @@ class ValidatorOrchestrator:
 
             # Post-validation checks
             post_validation_result = await self._run_post_validation_checks(
-                step_name, raw_result, training_input, pipeline_state, config, validation_level,
+                step_name,
+                raw_result,
+                training_input,
+                pipeline_state,
+                config,
+                validation_level,
             )
 
             # Combine results
             combined_result = self._combine_validation_results(
-                step_name, raw_result, post_validation_result, validation_level,
+                step_name,
+                raw_result,
+                post_validation_result,
+                validation_level,
             )
 
             # Normalize and enrich result with timing and defaults
@@ -109,10 +132,14 @@ class ValidatorOrchestrator:
 
             # Record metrics
             try:
-                metrics.record_step_execution(step_name=step_name, duration=duration, status=status)
+                metrics.record_step_execution(
+                    step_name=step_name, duration=duration, status=status
+                )
             except Exception:
                 # Metrics are best-effort; do not fail validation on metrics issues
-                self.logger.debug("Metrics recording for step execution failed", exc_info=True)
+                self.logger.debug(
+                    "Metrics recording for step execution failed", exc_info=True
+                )
 
             if passed:
                 metrics.record_validation_result(
@@ -156,9 +183,13 @@ class ValidatorOrchestrator:
 
             # Record failure metric
             try:
-                metrics.record_step_execution(step_name=step_name, duration=duration, status="EXCEPTION")
+                metrics.record_step_execution(
+                    step_name=step_name, duration=duration, status="EXCEPTION"
+                )
             except Exception:
-                self.logger.debug("Metrics recording for exception failed", exc_info=True)
+                self.logger.debug(
+                    "Metrics recording for exception failed", exc_info=True
+                )
 
             metrics.record_validation_result(
                 step_name=step_name,
@@ -217,7 +248,9 @@ class ValidatorOrchestrator:
 
             # Check for required training input parameters
             required_params = ["symbol", "exchange", "timeframe"]
-            missing_params = [param for param in required_params if param not in training_input]
+            missing_params = [
+                param for param in required_params if param not in training_input
+            ]
 
             if missing_params:
                 return {
@@ -253,7 +286,9 @@ class ValidatorOrchestrator:
             return {"passed": True, "validation_passed": True}
 
         except Exception as e:
-            self.logger.exception(f"❌ Error in pre-validation checks for {step_name}: {e}")
+            self.logger.exception(
+                f"❌ Error in pre-validation checks for {step_name}: {e}"
+            )
             return {
                 "passed": False,
                 "validation_passed": False,
@@ -302,21 +337,31 @@ class ValidatorOrchestrator:
             if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
                 # Check for critical issues in validation result
                 if validation_result.get("critical_issues"):
-                    post_checks["warnings"].append(f"Critical issues found: {validation_result['critical_issues']}")
+                    post_checks["warnings"].append(
+                        f"Critical issues found: {validation_result['critical_issues']}"
+                    )
 
                 # Check for data quality issues
                 if validation_result.get("data_quality_issues"):
-                    post_checks["warnings"].append(f"Data quality issues: {validation_result['data_quality_issues']}")
+                    post_checks["warnings"].append(
+                        f"Data quality issues: {validation_result['data_quality_issues']}"
+                    )
 
                 # Generate recommendations based on validation level
                 if validation_level == "CRITICAL":
-                    post_checks["recommendations"].append("Consider running additional data quality checks")
-                    post_checks["recommendations"].append("Review model performance metrics")
+                    post_checks["recommendations"].append(
+                        "Consider running additional data quality checks"
+                    )
+                    post_checks["recommendations"].append(
+                        "Review model performance metrics"
+                    )
 
             return post_checks
 
         except Exception as e:
-            self.logger.exception(f"❌ Error in post-validation checks for {step_name}: {e}")
+            self.logger.exception(
+                f"❌ Error in post-validation checks for {step_name}: {e}"
+            )
             return {
                 "validation_passed": False,
                 "error": f"Post-validation check error: {str(e)}",
@@ -349,7 +394,9 @@ class ValidatorOrchestrator:
                 combined.setdefault("warnings", []).extend(post_result["warnings"])
 
             if post_result.get("recommendations"):
-                combined.setdefault("recommendations", []).extend(post_result["recommendations"])
+                combined.setdefault("recommendations", []).extend(
+                    post_result["recommendations"]
+                )
 
             # Determine final validation status
             main_passed = main_result.get("validation_passed", False)
@@ -369,7 +416,9 @@ class ValidatorOrchestrator:
             return combined
 
         except Exception as e:
-            self.logger.exception(f"❌ Error combining validation results for {step_name}: {e}")
+            self.logger.exception(
+                f"❌ Error combining validation results for {step_name}: {e}"
+            )
             return {
                 "step_name": step_name,
                 "validation_passed": False,
@@ -417,11 +466,21 @@ class ValidatorOrchestrator:
             "step12_analyst_enhancement": "step12_analyst_enhancement_validator",
             "step13_analyst_ensemble_creation": "step13_analyst_ensemble_creation_validator",
             "step14_tactician_labeling": "step14_tactician_labeling_validator",
-            "step15_tactician_specialist_training": ("step15_tactician_specialist_training_validator"),
-            "step16_confidence_calibration": ("step16_confidence_calibration_validator"),
-            "step17_final_parameters_optimization": ("step17_final_parameters_optimization_validator"),
-            "step18_walk_forward_validation": ("step18_walk_forward_validation_validator"),
-            "step19_monte_carlo_validation": ("step19_monte_carlo_validation_validator"),
+            "step15_tactician_specialist_training": (
+                "step15_tactician_specialist_training_validator"
+            ),
+            "step16_confidence_calibration": (
+                "step16_confidence_calibration_validator"
+            ),
+            "step17_final_parameters_optimization": (
+                "step17_final_parameters_optimization_validator"
+            ),
+            "step18_walk_forward_validation": (
+                "step18_walk_forward_validation_validator"
+            ),
+            "step19_monte_carlo_validation": (
+                "step19_monte_carlo_validation_validator"
+            ),
             "step20_ab_testing": "step20_ab_testing_validator",
             "step21_saving": "step21_saving_validator",
         }
@@ -440,9 +499,13 @@ class ValidatorOrchestrator:
             self.validators[step_name] = validator_module
 
             # Resolve run function
-            run_validator_func: Any | None = getattr(validator_module, "run_validator", None)
+            run_validator_func: Any | None = getattr(
+                validator_module, "run_validator", None
+            )
             if run_validator_func is None or not callable(run_validator_func):
-                warn_msg = f"run_validator not found or not callable in module {module_path}"
+                warn_msg = (
+                    f"run_validator not found or not callable in module {module_path}"
+                )
                 self.logger.warning(missing(warn_msg))
                 return {
                     "step_name": step_name,
@@ -461,7 +524,11 @@ class ValidatorOrchestrator:
                 f"{bool(result.get('validation_passed', False)) if isinstance(result, dict) else bool(result)}",
             )
             # Ensure dict result; normalize later in caller
-            return result if isinstance(result, dict) else {"validation_passed": bool(result)}
+            return (
+                result
+                if isinstance(result, dict)
+                else {"validation_passed": bool(result)}
+            )
 
         except ImportError as e:
             # Explicitly warn about missing module and continue as a soft skip
@@ -510,7 +577,9 @@ class ValidatorOrchestrator:
 
         # If failed and no explicit reason, extract one for better troubleshooting
         if not bool(normalized.get("validation_passed", False)) and not (
-            normalized.get("error") or normalized.get("warning") or normalized.get("message")
+            normalized.get("error")
+            or normalized.get("warning")
+            or normalized.get("message")
         ):
             normalized["error"] = self._extract_failure_reason(normalized)
 
@@ -551,7 +620,9 @@ class ValidatorOrchestrator:
         """
         total_validations = len(self.validation_results)
         passed_validations = sum(
-            1 for result in self.validation_results.values() if result.get("validation_passed", False)
+            1
+            for result in self.validation_results.values()
+            if result.get("validation_passed", False)
         )
         failed_validations = total_validations - passed_validations
 
@@ -559,7 +630,9 @@ class ValidatorOrchestrator:
             "total_validations": total_validations,
             "passed_validations": passed_validations,
             "failed_validations": failed_validations,
-            "success_rate": passed_validations / total_validations if total_validations > 0 else 0,
+            "success_rate": (
+                passed_validations / total_validations if total_validations > 0 else 0
+            ),
             "validation_results": self.validation_results,
         }
 

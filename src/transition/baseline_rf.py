@@ -17,6 +17,7 @@ try:
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
 
+
 @dataclass
 class RFConfig:
     enabled: bool
@@ -26,6 +27,7 @@ class RFConfig:
     random_state: int
     max_train_samples: int
     enable_shap: bool
+
 
 class TransitionRandomForest:
     # TODO: Add proper implementation

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Live Trading Wavelet Demo
 
@@ -283,6 +284,7 @@ class LiveWaveletDemo:
         self.is_running = False
         self.logger.info("🛑 Demo stopped by user")
 
+
 async def main():
     """Main demo function."""
     try:
@@ -302,5 +304,6 @@ async def main():
     except Exception as e:
         print(f"Error in demo: {e}")
 
+
 if __name__ == "__main__":
-    asyncio.run( main())
+    asyncio.run(main())

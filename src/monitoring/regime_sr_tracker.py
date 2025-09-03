@@ -21,6 +21,7 @@ class RegimeType(Enum):
     HIGH_VOLATILITY = "high_volatility"
     LOW_VOLATILITY = "low_volatility"
 
+
 class RegimeSRTracker:
     """Regime and S/R tracker scaffold."""
 

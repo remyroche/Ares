@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Centralized configuration for all decorators."""
 
 from dataclasses import dataclass

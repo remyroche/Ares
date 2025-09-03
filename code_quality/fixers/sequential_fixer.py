@@ -37,6 +37,25 @@ class SequentialFixer:
         self.start_time = None
         self.end_time = None
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Make auto-fix more conservative - remove aggressive tools
+        if self.config.auto_fix:
+            # Use a balanced set of tools - remove the most aggressive ones
+            safe_tools = [
+                "isort",      # Import sorting - very safe
+                "autoflake",  # Remove unused imports/variables - mostly safe
+                "pyupgrade",  # Upgrade Python syntax - fairly safe
+                "yesqa",      # Remove unnecessary noqa comments - safe
+                # Removed: black (can be aggressive with formatting)
+                # Removed: yapf (another aggressive formatter)
+                # Removed: autopep8 (can make unwanted changes)
+                # Removed: docformatter (can break docstrings)
+                # Removed: flynt (f-string conversion can be risky)
+                # Removed: unify (quote changes can be problematic)
+            ]
+            self.config.auto_fix.tools = safe_tools
+            self.config.auto_fix.aggressive = False
+            self.config.auto_fix.max_line_length = 120
 
     def run_pipeline(self, target: str | list[str],
                     output_dir: str | None = None,

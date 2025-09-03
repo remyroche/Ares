@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Training Mode Configuration
 
@@ -14,6 +15,7 @@ from typing import Any, Final
 @dataclass
 class TrainingModeConfig:
     """Configuration for a specific training mode."""
+
     name: str
     description: str
     lookback_days: int
@@ -37,7 +39,7 @@ LIGHT_MODE = TrainingModeConfig(
     description="Light training mode for quick testing and development (30 days) - 2% of full intensity",
     lookback_days=30,
     max_trials=4,  # 2% of 200 = 4, minimum 3
-    n_trials=3,   # 2% of 100 = 2, but minimum 3
+    n_trials=3,  # 2% of 100 = 2, but minimum 3
     exclude_recent_days=1,
     enable_advanced_model_training=False,
     enable_ensemble_training=False,
@@ -55,7 +57,7 @@ BLANK_MODE = TrainingModeConfig(
     description="Blank training mode for moderate testing and validation (180 days) - 10% of full intensity",
     lookback_days=180,
     max_trials=20,  # 10% of 200 = 20
-    n_trials=10,   # 10% of 100 = 10 (already above minimum 3)
+    n_trials=10,  # 10% of 100 = 10 (already above minimum 3)
     exclude_recent_days=2,
     enable_advanced_model_training=True,
     enable_ensemble_training=True,
@@ -91,7 +93,7 @@ FULL_MODE = TrainingModeConfig(
 INTENSITY_PERCENTAGES = {
     "light": 0.02,  # 2% of full intensity
     "blank": 0.10,  # 10% of full intensity
-    "full": 1.00,   # 100% intensity
+    "full": 1.00,  # 100% intensity
 }
 
 # Mode mapping for easy access
@@ -105,7 +107,9 @@ TRAINING_MODES: dict[str, TrainingModeConfig] = {
 LIGHT_TRAINING_LOOKBACK_DAYS: Final[int] = LIGHT_MODE.lookback_days
 BLANK_TRAINING_LOOKBACK_DAYS: Final[int] = BLANK_MODE.lookback_days
 FULL_TRAINING_LOOKBACK_DAYS: Final[int] = FULL_MODE.lookback_days
-SHORT_BLANK_LOOKBACK_DAYS: Final[int] = LIGHT_MODE.lookback_days  # Alias for backward compatibility
+SHORT_BLANK_LOOKBACK_DAYS: Final[int] = (
+    LIGHT_MODE.lookback_days
+)  # Alias for backward compatibility
 
 
 def get_training_mode_config(mode: str) -> TrainingModeConfig:
@@ -162,7 +166,9 @@ def get_training_config_dict(mode: str) -> dict[str, Any]:
     }
 
 
-def get_training_input_dict(mode: str, symbol: str, exchange: str, **kwargs) -> dict[str, Any]:
+def get_training_input_dict(
+    mode: str, symbol: str, exchange: str, **kwargs
+) -> dict[str, Any]:
     """
     Get the training input dictionary for a specific mode.
 
@@ -228,7 +234,9 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
                 return False
             if mode == "light" and provided_lookback > 60:  # Light mode should be short
                 return False
-            if mode == "full" and provided_lookback < 365:  # Full mode should be substantial
+            if (
+                mode == "full" and provided_lookback < 365
+            ):  # Full mode should be substantial
                 return False
 
         # Validate max_trials if provided
@@ -236,7 +244,9 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
             provided_max_trials = kwargs["max_trials"]
             if provided_max_trials < 3:  # Minimum 3 trials for all modes
                 return False
-            if mode == "light" and provided_max_trials > 5:  # Light mode should be quick
+            if (
+                mode == "light" and provided_max_trials > 5
+            ):  # Light mode should be quick
                 return False
 
         # Validate n_trials if provided
@@ -253,7 +263,9 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
         return False
 
 
-def calculate_intensity_percentage(base_value: int, percentage: float, minimum: int = 3) -> int:
+def calculate_intensity_percentage(
+    base_value: int, percentage: float, minimum: int = 3
+) -> int:
     """
     Calculate a percentage of a base value with a minimum threshold.
 
@@ -410,7 +422,9 @@ def get_step_specific_parameters(mode: str, step_name: str) -> dict[str, Any]:
     return step_params
 
 
-def get_optimization_parameters(mode: str, optimization_type: str = "default") -> dict[str, Any]:
+def get_optimization_parameters(
+    mode: str, optimization_type: str = "default"
+) -> dict[str, Any]:
     """
     Get optimization parameters based on the training mode and optimization type.
 
@@ -469,7 +483,9 @@ def get_optimization_parameters(mode: str, optimization_type: str = "default") -
     return opt_params
 
 
-def apply_mode_parameters_to_config(config: dict[str, Any], mode: str, step_name: str = None) -> dict[str, Any]:
+def apply_mode_parameters_to_config(
+    config: dict[str, Any], mode: str, step_name: str = None
+) -> dict[str, Any]:
     """
     Apply training mode parameters to an existing configuration dictionary.
 
@@ -484,16 +500,18 @@ def apply_mode_parameters_to_config(config: dict[str, Any], mode: str, step_name
     mode_config = get_training_mode_config(mode)
 
     # Apply base mode parameters
-    config.update({
-        "max_trials": mode_config.max_trials,
-        "n_trials": mode_config.n_trials,
-        "lookback_days": mode_config.lookback_days,
-        "exclude_recent_days": mode_config.exclude_recent_days,
-        "min_data_points": mode_config.min_data_points,
-        "computational_intensity": mode_config.computational_intensity,
-        "training_mode": mode,
-        "intensity_percentage": get_intensity_percentage(mode),
-    })
+    config.update(
+        {
+            "max_trials": mode_config.max_trials,
+            "n_trials": mode_config.n_trials,
+            "lookback_days": mode_config.lookback_days,
+            "exclude_recent_days": mode_config.exclude_recent_days,
+            "min_data_points": mode_config.min_data_points,
+            "computational_intensity": mode_config.computational_intensity,
+            "training_mode": mode,
+            "intensity_percentage": get_intensity_percentage(mode),
+        }
+    )
 
     # Apply step-specific parameters if step name is provided
     if step_name:

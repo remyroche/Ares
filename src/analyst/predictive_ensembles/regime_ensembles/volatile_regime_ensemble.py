@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 
 import numpy as np
@@ -29,6 +30,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
     This ensemble specializes in detecting and predicting during volatile market conditions.
     It combines signals from multiple models optimized for high volatility periods.
     """
+
     def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
         self.logger = logging.getLogger(self.__class__.__name__)
         super().__init__(config, ensemble_name)
@@ -110,7 +112,6 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         except Exception:
             self.logger.exception(failed("GARCH training failed: {e}"))
 
-
         self.logger.info("✅ VolatileRegime base models training completed")
 
     def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
@@ -150,10 +151,16 @@ class VolatileRegimeEnsemble(BaseEnsemble):
 
             if is_transformer:
                 return self._build_transformer_model(
-                    input_shape, num_classes, X_seq, y_seq_encoded,
+                    input_shape,
+                    num_classes,
+                    X_seq,
+                    y_seq_encoded,
                 )
             return self._build_lstm_model(
-                input_shape, num_classes, X_seq, y_seq_encoded,
+                input_shape,
+                num_classes,
+                X_seq,
+                y_seq_encoded,
             )
 
         except Exception:

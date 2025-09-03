@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/training/validator.py
 
 import time
 from typing import Any
@@ -10,6 +9,9 @@ from src.training.steps.data_preparation_components.training_validation_config i
     get_progression_rules,
     get_validation_config,
 )
+
+# src/training/validator.py
+
 
 class TrainingStepValidator:
     """Validates training steps and prevents progression on significant errors."""
@@ -47,12 +49,16 @@ class TrainingStepValidator:
         }
 
     def can_proceed_to_next_step(
-        self, current_step: str, next_step: str,
+        self,
+        current_step: str,
+        next_step: str,
     ) -> tuple[bool, str]:
         """Check if we can proceed to the next step based on current step status."""
         # Use the validation configuration to check progression rules
         can_proceed, message = can_proceed_to_step(
-            current_step, next_step, self.step_status,
+            current_step,
+            next_step,
+            self.step_status,
         )
 
         # Additional checks for critical errors

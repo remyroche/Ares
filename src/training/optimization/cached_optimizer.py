@@ -1,13 +1,14 @@
 from __future__ import annotations
-# src/training/optimization/cached_optimizer.py
 
 from src.core.decorators import handles_errors
+
+# src/training/optimization/cached_optimizer.py
+
 
 """Cached Optimizer for efficient parameter optimization with caching and warm start."""
 
 import hashlib
 import json
-import os
 import os
 import pickle
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 
+
 @dataclass
 class CacheConfig:
     """Configuration for caching optimization results."""
@@ -31,6 +33,7 @@ class CacheConfig:
     max_cache_size_mb: int = 100
     enable_warm_start: bool = True
     warm_start_threshold: float = 0.8  # Similarity threshold for warm start
+
 
 class CachedOptimizer:
     """Implements caching for optimization efficiency with warm start capabilities."""

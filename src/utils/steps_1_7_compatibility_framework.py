@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Steps 1-7 Compatibility Framework
 
@@ -35,6 +36,7 @@ class StepContract:
         self.outputs = outputs
         self.timestamp = datetime.now().isoformat()
 
+
 class Steps1_7CompatibilityFramework:
     """Comprehensive compatibility framework for steps 1-7."""
 
@@ -48,49 +50,93 @@ class Steps1_7CompatibilityFramework:
                 "timeframe": {"type": "str", "required": True},
             },
             "outputs": {
-                "klines_data": {"type": "DataFrame", "required": True, "schema": "klines"},
-                "aggtrades_data": {"type": "DataFrame", "required": True, "schema": "aggtrades"},
+                "klines_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "klines",
+                },
+                "aggtrades_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "aggtrades",
+                },
                 "data_paths": {"type": "dict", "required": True},
                 "metadata": {"type": "dict", "required": True},
             },
         },
         "step1_5_data_converter": {
             "inputs": {
-                "klines_data": {"type": "DataFrame", "required": True, "schema": "klines"},
-                "aggtrades_data": {"type": "DataFrame", "required": True, "schema": "aggtrades"},
+                "klines_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "klines",
+                },
+                "aggtrades_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "aggtrades",
+                },
                 "config": {"type": "dict", "required": True},
             },
             "outputs": {
-                "unified_data": {"type": "DataFrame", "required": True, "schema": "unified"},
+                "unified_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "unified",
+                },
                 "conversion_metadata": {"type": "dict", "required": True},
             },
         },
         "step2_data_reading": {
             "inputs": {
-                "unified_data": {"type": "DataFrame", "required": True, "schema": "unified"},
+                "unified_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "unified",
+                },
                 "config": {"type": "dict", "required": True},
             },
             "outputs": {
-                "validated_data": {"type": "DataFrame", "required": True, "schema": "unified"},
+                "validated_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "unified",
+                },
                 "validation_report": {"type": "dict", "required": True},
                 "quality_metrics": {"type": "dict", "required": True},
             },
         },
         "step3_hmm_regime_discovery": {
             "inputs": {
-                "validated_data": {"type": "DataFrame", "required": True, "schema": "unified"},
+                "validated_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "unified",
+                },
                 "config": {"type": "dict", "required": True},
             },
             "outputs": {
-                "regime_labels": {"type": "DataFrame", "required": True, "schema": "regime_labels"},
+                "regime_labels": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "regime_labels",
+                },
                 "hmm_model": {"type": "object", "required": True},
                 "regime_metadata": {"type": "dict", "required": True},
             },
         },
         "step4_regime_data_splitting": {
             "inputs": {
-                "validated_data": {"type": "DataFrame", "required": True, "schema": "unified"},
-                "regime_labels": {"type": "DataFrame", "required": True, "schema": "regime_labels"},
+                "validated_data": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "unified",
+                },
+                "regime_labels": {
+                    "type": "DataFrame",
+                    "required": True,
+                    "schema": "regime_labels",
+                },
                 "config": {"type": "dict", "required": True},
             },
             "outputs": {
@@ -153,11 +199,29 @@ class Steps1_7CompatibilityFramework:
         },
         "aggtrades": {
             "required_columns": ["timestamp", "price", "quantity"],
-            "optional_columns": ["first_trade_id", "last_trade_id", "trade_time", "is_buyer_maker"],
-            "data_types": {"timestamp": "int64", "price": "float64", "quantity": "float64"},
+            "optional_columns": [
+                "first_trade_id",
+                "last_trade_id",
+                "trade_time",
+                "is_buyer_maker",
+            ],
+            "data_types": {
+                "timestamp": "int64",
+                "price": "float64",
+                "quantity": "float64",
+            },
         },
         "unified": {
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume", "price", "quantity"],
+            "required_columns": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "price",
+                "quantity",
+            ],
             "optional_columns": ["regime", "label", "split"],
             "data_types": {
                 "timestamp": "int64",
@@ -185,7 +249,9 @@ class Steps1_7CompatibilityFramework:
         self.compatibility_history: list[dict[str, Any]] = []
 
     @handles_errors(fallback=False)
-    def validate_step_contract(self, step_name: str, inputs: dict[str, Any], outputs: dict[str, Any]) -> bool:
+    def validate_step_contract(
+        self, step_name: str, inputs: dict[str, Any], outputs: dict[str, Any]
+    ) -> bool:
         """Validate that a step's inputs and outputs match its contract.
 
         Args:
@@ -206,7 +272,9 @@ class Steps1_7CompatibilityFramework:
         # Validate inputs
         for input_name, input_spec in contract["inputs"].items():
             if input_spec["required"] and input_name not in inputs:
-                self.logger.error(f"Missing required input '{input_name}' for {step_name}")
+                self.logger.error(
+                    f"Missing required input '{input_name}' for {step_name}"
+                )
                 validation_result = False
             elif input_name in inputs:
                 # Validate input type and schema
@@ -216,23 +284,33 @@ class Steps1_7CompatibilityFramework:
         # Validate outputs
         for output_name, output_spec in contract["outputs"].items():
             if output_spec["required"] and output_name not in outputs:
-                self.logger.error(f"Missing required output '{output_name}' for {step_name}")
+                self.logger.error(
+                    f"Missing required output '{output_name}' for {step_name}"
+                )
                 validation_result = False
             elif output_name in outputs:
                 # Validate output type and schema
-                if not self._validate_output(output_name, outputs[output_name], output_spec):
+                if not self._validate_output(
+                    output_name, outputs[output_name], output_spec
+                ):
                     validation_result = False
 
         # Record validation result
-        self._record_compatibility_check(step_name, "contract_validation", validation_result)
+        self._record_compatibility_check(
+            step_name, "contract_validation", validation_result
+        )
 
         return validation_result
 
-    def _validate_input(self, input_name: str, input_value: Any, input_spec: dict[str, Any]) -> bool:
+    def _validate_input(
+        self, input_name: str, input_value: Any, input_spec: dict[str, Any]
+    ) -> bool:
         """Validate a single input against its specification."""
         try:
             # Type validation
-            if input_spec["type"] == "DataFrame" and not isinstance(input_value, pd.DataFrame):
+            if input_spec["type"] == "DataFrame" and not isinstance(
+                input_value, pd.DataFrame
+            ):
                 self.logger.error(f"Input '{input_name}' must be a DataFrame")
                 return False
 
@@ -247,11 +325,15 @@ class Steps1_7CompatibilityFramework:
             self.logger.exception(f"Error validating input '{input_name}': {e}")
             return False
 
-    def _validate_output(self, output_name: str, output_value: Any, output_spec: dict[str, Any]) -> bool:
+    def _validate_output(
+        self, output_name: str, output_value: Any, output_spec: dict[str, Any]
+    ) -> bool:
         """Validate a single output against its specification."""
         try:
             # Type validation
-            if output_spec["type"] == "DataFrame" and not isinstance(output_value, pd.DataFrame):
+            if output_spec["type"] == "DataFrame" and not isinstance(
+                output_value, pd.DataFrame
+            ):
                 self.logger.error(f"Output '{output_name}' must be a DataFrame")
                 return False
 
@@ -277,7 +359,9 @@ class Steps1_7CompatibilityFramework:
         # Check required columns
         missing_columns = set(schema["required_columns"]) - set(df.columns)
         if missing_columns:
-            self.logger.error(f"Missing required columns for schema '{schema_name}': {missing_columns}")
+            self.logger.error(
+                f"Missing required columns for schema '{schema_name}': {missing_columns}"
+            )
             return False
 
         # Check data types for required columns
@@ -285,12 +369,16 @@ class Steps1_7CompatibilityFramework:
             if column in df.columns:
                 actual_type = str(df[column].dtype)
                 if actual_type != expected_type:
-                    self.logger.warning(f"Column '{column}' has type {actual_type}, expected {expected_type}")
+                    self.logger.warning(
+                        f"Column '{column}' has type {actual_type}, expected {expected_type}"
+                    )
 
         return True
 
     @handles_errors(fallback=False)
-    def validate_cross_step_consistency(self, step_data: dict[str, pd.DataFrame], step_sequence: list[str]) -> bool:
+    def validate_cross_step_consistency(
+        self, step_data: dict[str, pd.DataFrame], step_sequence: list[str]
+    ) -> bool:
         """Validate data consistency across multiple steps.
 
         Args:
@@ -306,7 +394,11 @@ class Steps1_7CompatibilityFramework:
         # Get reference dataframe (first step with data)
         reference_df = None
         for step in step_sequence:
-            if step in step_data and step_data[step] is not None and len(step_data[step]) > 0:
+            if (
+                step in step_data
+                and step_data[step] is not None
+                and len(step_data[step]) > 0
+            ):
                 reference_df = step_data[step]
                 break
 
@@ -315,7 +407,11 @@ class Steps1_7CompatibilityFramework:
             return False
 
         reference_length = len(reference_df)
-        reference_timestamps = set(reference_df["timestamp"].values) if "timestamp" in reference_df.columns else set()
+        reference_timestamps = (
+            set(reference_df["timestamp"].values)
+            if "timestamp" in reference_df.columns
+            else set()
+        )
 
         consistency_issues = []
 
@@ -328,7 +424,9 @@ class Steps1_7CompatibilityFramework:
 
             # Check row count consistency
             if len(df) != reference_length:
-                consistency_issues.append(f"Row count mismatch in {step}: {len(df)} vs {reference_length}")
+                consistency_issues.append(
+                    f"Row count mismatch in {step}: {len(df)} vs {reference_length}"
+                )
 
             # Check timestamp consistency if available
             if "timestamp" in df.columns and reference_timestamps:
@@ -350,7 +448,9 @@ class Steps1_7CompatibilityFramework:
         return True
 
     @handles_errors(fallback=False)
-    def validate_configuration_compatibility(self, configs: dict[str, dict[str, Any]]) -> bool:
+    def validate_configuration_compatibility(
+        self, configs: dict[str, dict[str, Any]]
+    ) -> bool:
         """Validate that configurations are compatible across steps.
 
         Args:
@@ -374,15 +474,22 @@ class Steps1_7CompatibilityFramework:
                     values.add(str(config[param]))
 
             if len(values) > 1:
-                compatibility_issues.append(f"Parameter '{param}' has different values across steps: {values}")
+                compatibility_issues.append(
+                    f"Parameter '{param}' has different values across steps: {values}"
+                )
 
         # Check for conflicting parameters
-        conflicting_params = {"data_source": ["binance", "kucoin"], "timeframe": ["1m", "5m", "15m", "1h", "4h", "1d"]}
+        conflicting_params = {
+            "data_source": ["binance", "kucoin"],
+            "timeframe": ["1m", "5m", "15m", "1h", "4h", "1d"],
+        }
 
         for param, allowed_values in conflicting_params.items():
             for step, config in configs.items():
                 if param in config and config[param] not in allowed_values:
-                    compatibility_issues.append(f"Invalid value for '{param}' in {step}: {config[param]}")
+                    compatibility_issues.append(
+                        f"Invalid value for '{param}' in {step}: {config[param]}"
+                    )
 
         if compatibility_issues:
             for issue in compatibility_issues:
@@ -394,7 +501,10 @@ class Steps1_7CompatibilityFramework:
 
     @handles_errors(fallback=False)
     def validate_step_dependencies(
-        self, step_name: str, dependencies: list[str], available_data: dict[str, Any],
+        self,
+        step_name: str,
+        dependencies: list[str],
+        available_data: dict[str, Any],
     ) -> bool:
         """Validate that all dependencies for a step are available.
 
@@ -413,14 +523,20 @@ class Steps1_7CompatibilityFramework:
                 missing_dependencies.append(dependency)
 
         if missing_dependencies:
-            self.logger.error(f"Missing dependencies for {step_name}: {missing_dependencies}")
+            self.logger.error(
+                f"Missing dependencies for {step_name}: {missing_dependencies}"
+            )
             return False
 
         self.logger.info(f"All dependencies satisfied for {step_name}")
         return True
 
     def _record_compatibility_check(
-        self, step_name: str, check_type: str, result: bool, details: dict[str, Any] | None = None,
+        self,
+        step_name: str,
+        check_type: str,
+        result: bool,
+        details: dict[str, Any] | None = None,
     ) -> None:
         """Record a compatibility check result."""
         check_record = {
@@ -447,7 +563,9 @@ class Steps1_7CompatibilityFramework:
             Dict: Compatibility report
         """
         if step_name:
-            filtered_history = [h for h in self.compatibility_history if h["step_name"] == step_name]
+            filtered_history = [
+                h for h in self.compatibility_history if h["step_name"] == step_name
+            ]
         else:
             filtered_history = self.compatibility_history
 
@@ -463,7 +581,9 @@ class Steps1_7CompatibilityFramework:
         for check in filtered_history:
             # Count by check type
             check_type = check["check_type"]
-            report["by_check_type"][check_type] = report["by_check_type"].get(check_type, 0) + 1
+            report["by_check_type"][check_type] = (
+                report["by_check_type"].get(check_type, 0) + 1
+            )
 
             # Count by step
             step = check["step_name"]
@@ -492,6 +612,7 @@ class Steps1_7CompatibilityFramework:
         except Exception as e:
             self.logger.exception(f"Failed to export compatibility report: {e}")
             return False
+
 
 # Global instance
 steps_1_7_compatibility = Steps1_7CompatibilityFramework()

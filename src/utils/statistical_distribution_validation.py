@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Statistical Distribution Validation Module
 
@@ -31,7 +32,12 @@ class StatisticalValidator:
         self.logger = logger or system_logger.getChild("StatisticalValidator")
 
         # Configuration for various tests
-        self.outlier_methods = ["iqr", "zscore", "isolation_forest", "local_outlier_factor"]
+        self.outlier_methods = [
+            "iqr",
+            "zscore",
+            "isolation_forest",
+            "local_outlier_factor",
+        ]
         self.distribution_tests = ["normality", "stationarity", "autocorrelation"]
         self.stationarity_significance = 0.05
 
@@ -62,37 +68,47 @@ class StatisticalValidator:
 
         if df is None or df.empty:
             result.passed = False
-            result.issues.append(ValidationIssue(
-                severity=DataQualityLevel.CRITICAL,
-                message="DataFrame is None or empty",
-            ))
+            result.issues.append(
+                ValidationIssue(
+                    severity=DataQualityLevel.CRITICAL,
+                    message="DataFrame is None or empty",
+                )
+            )
             return result
 
         # Determine columns to validate
         if columns is None:
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
             # Exclude timestamp-like columns
-            columns = [col for col in numeric_cols if "time" not in col.lower() and col != "timestamp"]
+            columns = [
+                col
+                for col in numeric_cols
+                if "time" not in col.lower() and col != "timestamp"
+            ]
 
         validation_summary = {}
 
         for column in columns:
             if column not in df.columns:
-                result.warnings.append(ValidationIssue(
-                    severity=DataQualityLevel.WARNING,
-                    message=f"Column '{column}' not found in DataFrame",
-                ))
+                result.warnings.append(
+                    ValidationIssue(
+                        severity=DataQualityLevel.WARNING,
+                        message=f"Column '{column}' not found in DataFrame",
+                    )
+                )
                 continue
 
             col_data = df[column].dropna()
 
             if len(col_data) < 30:  # Minimum sample size for meaningful statistics
-                result.warnings.append(ValidationIssue(
-                    severity=DataQualityLevel.WARNING,
-                    message=f"Column '{column}' has insufficient data for statistical analysis",
-                    column=column,
-                    details={"sample_size": len(col_data)},
-                ))
+                result.warnings.append(
+                    ValidationIssue(
+                        severity=DataQualityLevel.WARNING,
+                        message=f"Column '{column}' has insufficient data for statistical analysis",
+                        column=column,
+                        details={"sample_size": len(col_data)},
+                    )
+                )
                 continue
 
             col_validation = {
@@ -109,12 +125,14 @@ class StatisticalValidator:
             col_validation["distribution_shape"] = shape_analysis
 
             if shape_analysis["is_heavily_skewed"]:
-                result.warnings.append(ValidationIssue(
-                    severity=DataQualityLevel.WARNING,
-                    message=f"Column '{column}' shows heavy skewness",
-                    column=column,
-                    details=shape_analysis,
-                ))
+                result.warnings.append(
+                    ValidationIssue(
+                        severity=DataQualityLevel.WARNING,
+                        message=f"Column '{column}' shows heavy skewness",
+                        column=column,
+                        details=shape_analysis,
+                    )
+                )
 
             # 2. Normality tests
             if expected_distribution == "normal" or expected_distribution is None:
@@ -122,71 +140,92 @@ class StatisticalValidator:
                 col_validation["distribution_tests"]["normality"] = normality_results
 
                 if not normality_results["is_normal"]:
-                    severity = DataQualityLevel.WARNING if expected_distribution is None else DataQualityLevel.CRITICAL
-                    result.issues.append(ValidationIssue(
-                        severity=severity,
-                        message=f"Column '{column}' fails normality tests",
-                        column=column,
-                        details=normality_results,
-                    ))
+                    severity = (
+                        DataQualityLevel.WARNING
+                        if expected_distribution is None
+                        else DataQualityLevel.CRITICAL
+                    )
+                    result.issues.append(
+                        ValidationIssue(
+                            severity=severity,
+                            message=f"Column '{column}' fails normality tests",
+                            column=column,
+                            details=normality_results,
+                        )
+                    )
                     if severity == DataQualityLevel.CRITICAL:
                         result.passed = False
 
             # 3. Outlier detection
-            outlier_results = self._detect_outliers(col_data, method="iqr", threshold=outlier_threshold)
+            outlier_results = self._detect_outliers(
+                col_data, method="iqr", threshold=outlier_threshold
+            )
             col_validation["outlier_analysis"] = outlier_results
 
             if outlier_results["outlier_percentage"] > 5.0:  # More than 5% outliers
-                result.warnings.append(ValidationIssue(
-                    severity=DataQualityLevel.WARNING,
-                    message=f"Column '{column}' has high outlier percentage",
-                    column=column,
-                    details=outlier_results,
-                ))
+                result.warnings.append(
+                    ValidationIssue(
+                        severity=DataQualityLevel.WARNING,
+                        message=f"Column '{column}' has high outlier percentage",
+                        column=column,
+                        details=outlier_results,
+                    )
+                )
 
             # 4. Stationarity tests (for time series)
             if check_stationarity and self._is_time_series_candidate(df, column):
                 stationarity_results = self._test_stationarity(col_data)
-                col_validation["distribution_tests"]["stationarity"] = stationarity_results
+                col_validation["distribution_tests"][
+                    "stationarity"
+                ] = stationarity_results
 
                 if not stationarity_results["is_stationary"]:
-                    result.warnings.append(ValidationIssue(
-                        severity=DataQualityLevel.WARNING,
-                        message=f"Column '{column}' appears non-stationary",
-                        column=column,
-                        details=stationarity_results,
-                    ))
+                    result.warnings.append(
+                        ValidationIssue(
+                            severity=DataQualityLevel.WARNING,
+                            message=f"Column '{column}' appears non-stationary",
+                            column=column,
+                            details=stationarity_results,
+                        )
+                    )
 
             # 5. Autocorrelation check
             autocorr_results = self._test_autocorrelation(col_data)
             col_validation["distribution_tests"]["autocorrelation"] = autocorr_results
 
             if autocorr_results["has_significant_autocorrelation"]:
-                result.info.append(ValidationIssue(
-                    severity=DataQualityLevel.INFO,
-                    message=f"Column '{column}' shows significant autocorrelation",
-                    column=column,
-                    details=autocorr_results,
-                ))
+                result.info.append(
+                    ValidationIssue(
+                        severity=DataQualityLevel.INFO,
+                        message=f"Column '{column}' shows significant autocorrelation",
+                        column=column,
+                        details=autocorr_results,
+                    )
+                )
 
             # 6. Distribution shift detection (if historical data available)
             if hasattr(self, "historical_stats") and column in self.historical_stats:
                 shift_results = self._detect_distribution_shift(
-                    col_data, self.historical_stats[column],
+                    col_data,
+                    self.historical_stats[column],
                 )
                 if shift_results["has_shifted"]:
-                    result.warnings.append(ValidationIssue(
-                        severity=DataQualityLevel.WARNING,
-                        message=f"Column '{column}' shows distribution shift",
-                        column=column,
-                        details=shift_results,
-                    ))
+                    result.warnings.append(
+                        ValidationIssue(
+                            severity=DataQualityLevel.WARNING,
+                            message=f"Column '{column}' shows distribution shift",
+                            column=column,
+                            details=shift_results,
+                        )
+                    )
 
             validation_summary[column] = col_validation
 
         # Calculate overall quality score
         len(validation_summary) * 5  # 5 tests per column
-        issues_count = len([i for i in result.issues if i.severity == DataQualityLevel.CRITICAL])
+        issues_count = len(
+            [i for i in result.issues if i.severity == DataQualityLevel.CRITICAL]
+        )
         warnings_count = len(result.warnings)
 
         result.quality_score = max(0, 1 - (issues_count * 0.2 + warnings_count * 0.05))
@@ -221,8 +260,8 @@ class StatisticalValidator:
             "is_symmetric": abs(skewness) < 0.5,
             "is_heavily_skewed": abs(skewness) > 2.0,
             "is_mesokurtic": abs(kurtosis) < 1.0,  # Normal-like
-            "is_leptokurtic": kurtosis > 1.0,      # Heavy-tailed
-            "is_platykurtic": kurtosis < -1.0,     # Light-tailed
+            "is_leptokurtic": kurtosis > 1.0,  # Heavy-tailed
+            "is_platykurtic": kurtosis < -1.0,  # Light-tailed
             "distribution_type": self._classify_distribution(skewness, kurtosis),
         }
 
@@ -280,8 +319,11 @@ class StatisticalValidator:
         result = anderson(data)
         results["tests"]["anderson_darling"] = {
             "statistic": float(result.statistic),
-            "critical_values": dict(zip(result.significance_level, result.critical_values, strict=False)),
-            "is_normal": result.statistic < result.critical_values[2],  # 5% significance
+            "critical_values": dict(
+                zip(result.significance_level, result.critical_values, strict=False)
+            ),
+            "is_normal": result.statistic
+            < result.critical_values[2],  # 5% significance
         }
         results["is_normal"] &= result.statistic < result.critical_values[2]
 
@@ -319,7 +361,7 @@ class StatisticalValidator:
             "outlier_count": int(outliers.sum()),
             "outlier_percentage": float(outliers.sum() / len(data) * 100),
             "outlier_indices": outlier_indices.tolist()[:10],  # First 10
-            "outlier_values": outlier_values.tolist()[:10],    # First 10
+            "outlier_values": outlier_values.tolist()[:10],  # First 10
             "lower_bound": float(lower_bound) if method == "iqr" else None,
             "upper_bound": float(upper_bound) if method == "iqr" else None,
             "threshold": threshold if method == "zscore" else None,
@@ -328,13 +370,15 @@ class StatisticalValidator:
     def _is_time_series_candidate(self, df: pd.DataFrame, column: str) -> bool:
         """Check if column is likely a time series."""
         # Check if dataframe has a timestamp column and data is ordered
-        has_timestamp = any("time" in col.lower() or col == "timestamp" for col in df.columns)
+        has_timestamp = any(
+            "time" in col.lower() or col == "timestamp" for col in df.columns
+        )
 
         # Check if values show temporal patterns
         if has_timestamp and len(df) > 100:
             # Simple check: look for trend or seasonality
             rolling_mean = df[column].rolling(window=10).mean()
-            rolling_mean.iloc[-1] != rolling_mean.iloc[len(rolling_mean)//2]
+            rolling_mean.iloc[-1] != rolling_mean.iloc[len(rolling_mean) // 2]
             return True  # Assume time series if we have timestamp
 
         return False
@@ -387,7 +431,11 @@ class StatisticalValidator:
             return {
                 "has_significant_autocorrelation": len(significant_lags) > 0,
                 "significant_lag_count": len(significant_lags),
-                "first_significant_lag": int(significant_lags.index[0]) if len(significant_lags) > 0 else None,
+                "first_significant_lag": (
+                    int(significant_lags.index[0])
+                    if len(significant_lags) > 0
+                    else None
+                ),
                 "max_correlation": float(lb_result["lb_stat"].max()),
                 "test_type": "ljung_box",
             }
@@ -407,13 +455,19 @@ class StatisticalValidator:
         current_stats = self._calculate_basic_stats(current_data)
 
         # Calculate relative changes
-        mean_shift = abs(current_stats["mean"] - historical_stats["mean"]) / (abs(historical_stats["mean"]) + 1e-10)
-        std_shift = abs(current_stats["std"] - historical_stats["std"]) / (abs(historical_stats["std"]) + 1e-10)
+        mean_shift = abs(current_stats["mean"] - historical_stats["mean"]) / (
+            abs(historical_stats["mean"]) + 1e-10
+        )
+        std_shift = abs(current_stats["std"] - historical_stats["std"]) / (
+            abs(historical_stats["std"]) + 1e-10
+        )
 
         # Kolmogorov-Smirnov test against normal distribution with historical parameters
         ks_stat, ks_pvalue = kstest(
             current_data,
-            lambda x: stats.norm.cdf(x, loc=historical_stats["mean"], scale=historical_stats["std"]),
+            lambda x: stats.norm.cdf(
+                x, loc=historical_stats["mean"], scale=historical_stats["std"]
+            ),
         )
 
         has_shifted = mean_shift > 0.1 or std_shift > 0.2 or ks_pvalue < 0.05
@@ -439,10 +493,12 @@ class StatisticalValidator:
         result = ValidationResult(passed=True)
 
         if len(columns) < 2:
-            result.warnings.append(ValidationIssue(
-                severity=DataQualityLevel.WARNING,
-                message="Need at least 2 columns for correlation analysis",
-            ))
+            result.warnings.append(
+                ValidationIssue(
+                    severity=DataQualityLevel.WARNING,
+                    message="Need at least 2 columns for correlation analysis",
+                )
+            )
             return result
 
         # Calculate rolling correlations
@@ -465,16 +521,21 @@ class StatisticalValidator:
                 corr_std = rolling_corr.std()
                 corr_range = rolling_corr.max() - rolling_corr.min()
 
-                if corr_std > stability_threshold or corr_range > stability_threshold * 2:
-                    result.warnings.append(ValidationIssue(
-                        severity=DataQualityLevel.WARNING,
-                        message=f"Unstable correlation between {col1} and {col2}",
-                        details={
-                            "correlation_std": float(corr_std),
-                            "correlation_range": float(corr_range),
-                            "mean_correlation": float(rolling_corr.mean()),
-                        },
-                    ))
+                if (
+                    corr_std > stability_threshold
+                    or corr_range > stability_threshold * 2
+                ):
+                    result.warnings.append(
+                        ValidationIssue(
+                            severity=DataQualityLevel.WARNING,
+                            message=f"Unstable correlation between {col1} and {col2}",
+                            details={
+                                "correlation_std": float(corr_std),
+                                "correlation_range": float(corr_range),
+                                "mean_correlation": float(rolling_corr.mean()),
+                            },
+                        )
+                    )
 
                 correlation_changes[f"{col1}_vs_{col2}"] = {
                     "stable": corr_std <= stability_threshold,
@@ -483,6 +544,8 @@ class StatisticalValidator:
                 }
 
         result.metadata["correlation_analysis"] = correlation_changes
-        result.quality_score = sum(1 for v in correlation_changes.values() if v["stable"]) / max(len(correlation_changes), 1)
+        result.quality_score = sum(
+            1 for v in correlation_changes.values() if v["stable"]
+        ) / max(len(correlation_changes), 1)
 
         return result

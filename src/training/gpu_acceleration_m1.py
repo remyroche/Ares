@@ -1,16 +1,10 @@
 from __future__ import annotations
+
+from src.core.decorators import cached, log_call, validates
+from src.core.domain import quality_gate, secure_data_processing
+
 # src/training/gpu_acceleration_m1.py
 
-from src.core.decorators import (
-    cached,
-    log_call,
-    validates
-)
-
-from src.core.domain import (
-    quality_gate,
-    secure_data_processing
-)
 
 """
 GPU Acceleration for Mac M1 (Apple Silicon) using Metal Performance Shaders.
@@ -63,7 +57,9 @@ class GPUAccelerationM1:
     )
     @handles_errors(fallback=None)
     def gpu_matrix_multiplication(
-        self, A: np.ndarray, B: np.ndarray,
+        self,
+        A: np.ndarray,
+        B: np.ndarray,
     ) -> tuple[np.ndarray, dict[str, Any]]:
         """
         GPU-accelerated matrix multiplication using MPS.
@@ -129,7 +125,9 @@ class GPUAccelerationM1:
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handles_errors(fallback=None)
     def gpu_svd_decomposition(
-        self, matrix: np.ndarray, k: int | None = None,
+        self,
+        matrix: np.ndarray,
+        k: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
         """
         GPU-accelerated SVD decomposition using MPS.
@@ -150,7 +148,9 @@ class GPUAccelerationM1:
                 return self._cpu_svd_decomposition(matrix, k)
 
             # Convert to PyTorch tensor
-            matrix_tensor = torch.tensor(matrix, dtype=torch.float32, device=self.device)
+            matrix_tensor = torch.tensor(
+                matrix, dtype=torch.float32, device=self.device
+            )
 
             # Perform SVD decomposition
             with torch.no_grad():
@@ -226,7 +226,9 @@ class GPUAccelerationM1:
             return False
 
     def _cpu_matrix_multiplication(
-        self, A: np.ndarray, B: np.ndarray,
+        self,
+        A: np.ndarray,
+        B: np.ndarray,
     ) -> tuple[np.ndarray, dict[str, Any]]:
         """CPU fallback for matrix multiplication.
 
@@ -252,7 +254,9 @@ class GPUAccelerationM1:
         return result, metadata
 
     def _cpu_svd_decomposition(
-        self, matrix: np.ndarray, k: int | None = None,
+        self,
+        matrix: np.ndarray,
+        k: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
         """CPU fallback for SVD decomposition.
 

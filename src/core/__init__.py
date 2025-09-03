@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/core/__init__.py
 
 from .dependency_injection import (
     ComponentFactory,
@@ -7,6 +6,9 @@ from .dependency_injection import (
     ModularTradingSystem,
     ServiceRegistration,
 )
+
+# src/core/__init__.py
+
 
 __all__ = [
     "DependencyContainer",

@@ -28,8 +28,10 @@ except Exception:  # pragma: no cover
 with contextlib.suppress(Exception):
     torch.set_float32_matmul_precision("high")
 
+
 def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     return torch.as_tensor(x, dtype=dtype)
+
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
@@ -43,6 +45,7 @@ def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
         return float(dtw[n, m] / (n + m))
     except Exception:
         return float("nan")
+
 
 class TransitionSeqDataset(Dataset):
     # TODO: Add proper implementation
@@ -89,6 +92,7 @@ class TransitionSeqDataset(Dataset):
             "y_ttpt": _to_tensor(np.array(y_ttpt), torch.float32),
         }
 
+
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     # TODO: Add proper implementation
     def __init__(
@@ -112,8 +116,11 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         self.num_proj = nn.Linear(num_features, d_model)
         self.enc_ln = nn.LayerNorm(d_model)
         enc_layer = nn.TransformerEncoderLayer(
-            d_model, nhead=nhead,
-            dim_feedforward=d_model, dropout=dropout, batch_first=True,
+            d_model,
+            nhead=nhead,
+            dim_feedforward=d_model,
+            dropout=dropout,
+            batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
         # Decoder heads
@@ -173,7 +180,7 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         y_path = batch["y_path"]
         h, cls = self(hmm_ids, x_num)
         # Use last post_len timesteps
-        z = h[:, -self.post_len:, :]
+        z = h[:, -self.post_len :, :]
         pred_ret = self.dec_ret(z).squeeze(-1)  # [B = post]
         pred_hmm = self.dec_hmm(z)  # [B = post, vocab]
         pred_path = self.cls_path(cls)  # [B = 4]
@@ -196,8 +203,10 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
         self.log_dict(
             {
-                "train_loss": loss, "loss_ret": loss_ret,
-                "loss_hmm": loss_hmm, "loss_path": loss_path,
+                "train_loss": loss,
+                "loss_ret": loss_ret,
+                "loss_hmm": loss_hmm,
+                "loss_path": loss_path,
             },
             prog_bar=True,
         )
@@ -210,7 +219,7 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         y_hmm = batch["y_hmm"]
         y_path = batch["y_path"]
         h, cls = self(hmm_ids, x_num)
-        z = h[:, -self.post_len:, :]
+        z = h[:, -self.post_len :, :]
         pred_ret = self.dec_ret(z).squeeze(-1)
         pred_hmm = self.dec_hmm(z)
         pred_path = self.cls_path(cls)
@@ -243,8 +252,10 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
         sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=5)
         return {
-            "optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"},
+            "optimizer": opt,
+            "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"},
         }
+
 
 class SmallTCN(SmallTransformer):
     # TODO: Add proper implementation
@@ -260,10 +271,13 @@ class SmallTCN(SmallTransformer):
         focal_gamma: float = 0.0,
     ):
         super().__init__(
-            hmm_vocab, num_features, d_model=d_model,
+            hmm_vocab,
+            num_features,
+            d_model=d_model,
             nhead=1,
             num_layers=1,
-            dropout=dropout, lr=lr,
+            dropout=dropout,
+            lr=lr,
             path_class_weights=path_class_weights,
             focal_gamma=focal_gamma,
         )
@@ -295,6 +309,7 @@ class SmallTCN(SmallTransformer):
         cls = h.mean(dim=1)
         return h, cls
 
+
 def build_dataloaders(
     samples: list[dict[str, Any]],
     numeric_dim: int,
@@ -309,16 +324,21 @@ def build_dataloaders(
     train_ds = TransitionSeqDataset(samples[:cut], numeric_dim, label_index)
     val_ds = TransitionSeqDataset(samples[cut:], numeric_dim, label_index)
     train_loader = DataLoader(
-        train_ds, batch_size=batch_size,
-        shuffle=False, num_workers=0,
+        train_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
         pin_memory=True,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=batch_size,
-        shuffle=False, num_workers=0,
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
         pin_memory=True,
     )
     return train_loader, val_loader
+
 
 def evaluate_samples(
     model: SmallTransformer,
@@ -341,7 +361,7 @@ def evaluate_samples(
             y_hmm = batch["y_hmm"].to(device)
             y_ttpt = batch.get("y_ttpt", torch.full((y_ret.size(0),), -1.0)).to(device)
             h, cls = model(hmm_ids, x_num)
-            z = h[:, -model.post_len:, :]
+            z = h[:, -model.post_len :, :]
             pred_ret = model.dec_ret(z).squeeze(-1)
             pred_hmm = model.dec_hmm(z)
             # Metrics
@@ -377,6 +397,7 @@ def evaluate_samples(
         "ttpt_mae": float(np.nanmean(ttpt_mae_list)) if ttpt_mae_list else float("nan"),
     }
 
+
 def train_seq2seq(
     samples: list[dict[str, Any]],
     label_index: list[str],
@@ -404,17 +425,22 @@ def train_seq2seq(
     def _make_model() -> SmallTransformer:
         if model_type.lower() == "tcn":
             return SmallTCN(
-                hmm_vocab=numeric_dim, num_features=numeric_dim,
-                post_len=post_window, d_model=d_model,
+                hmm_vocab=numeric_dim,
+                num_features=numeric_dim,
+                post_len=post_window,
+                d_model=d_model,
                 layers=max(2, num_layers),
                 lr=lr,
                 path_class_weights=path_class_weights,
                 focal_gamma=focal_gamma,
             )
         return SmallTransformer(
-            hmm_vocab=numeric_dim, num_features=numeric_dim,
-            post_len=post_window, d_model=d_model,
-            nhead=nhead, num_layers=num_layers,
+            hmm_vocab=numeric_dim,
+            num_features=numeric_dim,
+            post_len=post_window,
+            d_model=d_model,
+            nhead=nhead,
+            num_layers=num_layers,
             lr=lr,
             path_class_weights=path_class_weights,
             focal_gamma=focal_gamma,
@@ -476,8 +502,10 @@ def train_seq2seq(
                 best_mse = m.get("mse", float("inf"))
                 best_idx = k
         return {
-            "trained": True, "cv_metrics": all_metrics,
-            "best_fold": best_idx, "best_mse": best_mse,
+            "trained": True,
+            "cv_metrics": all_metrics,
+            "best_fold": best_idx,
+            "best_mse": best_mse,
         }
     model, metrics = _train_one(samples)
     return {"trained": True, "metrics": metrics}

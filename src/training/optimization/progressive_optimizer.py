@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/optimization/progressive_optimizer.py
 
 """Progressive Optimizer for efficient parameter optimization using tiered approach."""
@@ -28,6 +29,7 @@ class OptimizationTier(Enum):
     TIER_2_IMPORTANT = "tier_2_important"
     TIER_3_ADVANCED = "tier_3_advanced"
 
+
 @dataclass
 class ProgressiveConfig:
     """Configuration for progressive optimization."""
@@ -46,6 +48,7 @@ class ProgressiveConfig:
     use_previous_results: bool = True
     adaptive_timeout: bool = True
     convergence_threshold: float = 0.01
+
 
 class ProgressiveOptimizer:
     """Implements progressive optimization strategy for efficiency."""

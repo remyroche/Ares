@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/components/modular_supervisor.py
 
 from datetime import datetime
 from typing import Any
@@ -13,6 +12,8 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
+
+# src/components/modular_supervisor.py
 
 
 class ModularSupervisor:
@@ -81,7 +82,9 @@ class ModularSupervisor:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for modular supervisor"))
+                self.logger.error(
+                    invalid("Invalid configuration for modular supervisor")
+                )
                 return False
 
             # Initialize supervision modules
@@ -93,7 +96,9 @@ class ModularSupervisor:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Modular Supervisor initialization failed: {e}"))
+            self.logger.exception(
+                failed(f"❌ Modular Supervisor initialization failed: {e}")
+            )
             return False
 
     @handles_errors(fallback=None)
@@ -110,11 +115,15 @@ class ModularSupervisor:
 
             # Update configuration
             self.supervision_interval = self.supervisor_config["supervision_interval"]
-            self.max_supervision_history = self.supervisor_config["max_supervision_history"]
+            self.max_supervision_history = self.supervisor_config[
+                "max_supervision_history"
+            ]
             self.enable_performance_monitoring = self.supervisor_config[
                 "enable_performance_monitoring"
             ]
-            self.enable_risk_monitoring = self.supervisor_config["enable_risk_monitoring"]
+            self.enable_risk_monitoring = self.supervisor_config[
+                "enable_risk_monitoring"
+            ]
 
             self.logger.info("Supervisor configuration loaded successfully")
 
@@ -149,7 +158,9 @@ class ModularSupervisor:
                     self.supervisor_config.get("enable_alerting", True),
                 ],
             ):
-                self.logger.error(error("At least one supervision type must be enabled"))
+                self.logger.error(
+                    error("At least one supervision type must be enabled")
+                )
                 return False
 
             self.logger.info("Configuration validation successful")
@@ -182,7 +193,9 @@ class ModularSupervisor:
             self.logger.info("Supervision modules initialized successfully")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing supervision modules: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing supervision modules: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_performance_monitoring(self) -> None:
@@ -201,7 +214,9 @@ class ModularSupervisor:
             self.logger.info("Performance monitoring module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing performance monitoring: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing performance monitoring: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_risk_monitoring(self) -> None:
@@ -220,7 +235,9 @@ class ModularSupervisor:
             self.logger.info("Risk monitoring module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing risk monitoring: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing risk monitoring: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_system_monitoring(self) -> None:
@@ -239,7 +256,9 @@ class ModularSupervisor:
             self.logger.info("System monitoring module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing system monitoring: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing system monitoring: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_alerting(self) -> None:
@@ -256,7 +275,9 @@ class ModularSupervisor:
             self.logger.info("Alerting module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing alerting: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing alerting: {e}")
+            )
 
     @handles_errors(
         error_handlers={
@@ -354,14 +375,18 @@ class ModularSupervisor:
             required_trading_fields = ["returns", "positions", "timestamp"]
             for field in required_trading_fields:
                 if field not in trading_data:
-                    self.logger.error(missing(f"Missing required trading data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required trading data field: {field}")
+                    )
                     return False
 
             # Check required system data fields
             required_system_fields = ["cpu_usage", "memory_usage", "timestamp"]
             for field in required_system_fields:
                 if field not in system_data:
-                    self.logger.error(missing(f"Missing required system data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required system data field: {field}")
+                    )
                     return False
 
             # Validate data types
@@ -404,29 +429,41 @@ class ModularSupervisor:
 
             # Calculate Sharpe ratio
             if self.performance_metrics.get("sharpe_ratio", False):
-                results["sharpe_ratio"] = self._calculate_sharpe_ratio(trading_data, system_data)
+                results["sharpe_ratio"] = self._calculate_sharpe_ratio(
+                    trading_data, system_data
+                )
 
             # Calculate Sortino ratio
             if self.performance_metrics.get("sortino_ratio", False):
-                results["sortino_ratio"] = self._calculate_sortino_ratio(trading_data, system_data)
+                results["sortino_ratio"] = self._calculate_sortino_ratio(
+                    trading_data, system_data
+                )
 
             # Calculate Calmar ratio
             if self.performance_metrics.get("calmar_ratio", False):
-                results["calmar_ratio"] = self._calculate_calmar_ratio(trading_data, system_data)
+                results["calmar_ratio"] = self._calculate_calmar_ratio(
+                    trading_data, system_data
+                )
 
             # Calculate max drawdown
             if self.performance_metrics.get("max_drawdown", False):
-                results["max_drawdown"] = self._calculate_max_drawdown(trading_data, system_data)
+                results["max_drawdown"] = self._calculate_max_drawdown(
+                    trading_data, system_data
+                )
 
             # Calculate win rate
             if self.performance_metrics.get("win_rate", False):
-                results["win_rate"] = self._calculate_win_rate(trading_data, system_data)
+                results["win_rate"] = self._calculate_win_rate(
+                    trading_data, system_data
+                )
 
             self.logger.info("Performance monitoring completed")
             return results
 
         except Exception as e:
-            self.logger.exception(error(f"Error performing performance monitoring: {e}"))
+            self.logger.exception(
+                error(f"Error performing performance monitoring: {e}")
+            )
             return {}
 
     @handles_errors(fallback=None)
@@ -458,7 +495,9 @@ class ModularSupervisor:
 
             # Calculate volatility
             if self.risk_metrics.get("volatility", False):
-                results["volatility"] = self._calculate_volatility(trading_data, system_data)
+                results["volatility"] = self._calculate_volatility(
+                    trading_data, system_data
+                )
 
             # Calculate beta
             if self.risk_metrics.get("beta", False):
@@ -466,11 +505,15 @@ class ModularSupervisor:
 
             # Calculate correlation
             if self.risk_metrics.get("correlation", False):
-                results["correlation"] = self._calculate_correlation(trading_data, system_data)
+                results["correlation"] = self._calculate_correlation(
+                    trading_data, system_data
+                )
 
             # Calculate concentration
             if self.risk_metrics.get("concentration", False):
-                results["concentration"] = self._calculate_concentration(trading_data, system_data)
+                results["concentration"] = self._calculate_concentration(
+                    trading_data, system_data
+                )
 
             self.logger.info("Risk monitoring completed")
             return results
@@ -500,23 +543,33 @@ class ModularSupervisor:
 
             # Monitor CPU usage
             if self.system_metrics.get("cpu_usage", False):
-                results["cpu_usage"] = self._monitor_cpu_usage(trading_data, system_data)
+                results["cpu_usage"] = self._monitor_cpu_usage(
+                    trading_data, system_data
+                )
 
             # Monitor memory usage
             if self.system_metrics.get("memory_usage", False):
-                results["memory_usage"] = self._monitor_memory_usage(trading_data, system_data)
+                results["memory_usage"] = self._monitor_memory_usage(
+                    trading_data, system_data
+                )
 
             # Monitor disk usage
             if self.system_metrics.get("disk_usage", False):
-                results["disk_usage"] = self._monitor_disk_usage(trading_data, system_data)
+                results["disk_usage"] = self._monitor_disk_usage(
+                    trading_data, system_data
+                )
 
             # Monitor network latency
             if self.system_metrics.get("network_latency", False):
-                results["network_latency"] = self._monitor_network_latency(trading_data, system_data)
+                results["network_latency"] = self._monitor_network_latency(
+                    trading_data, system_data
+                )
 
             # Monitor error rate
             if self.system_metrics.get("error_rate", False):
-                results["error_rate"] = self._monitor_error_rate(trading_data, system_data)
+                results["error_rate"] = self._monitor_error_rate(
+                    trading_data, system_data
+                )
 
             # Monitor uptime
             if self.system_metrics.get("uptime", False):
@@ -551,21 +604,27 @@ class ModularSupervisor:
             # Check performance alerts
             if self.alerting_rules.get("performance_alerts", False):
                 results["performance_alerts"] = self._check_performance_alerts(
-                    trading_data, system_data,
+                    trading_data,
+                    system_data,
                 )
 
             # Check risk alerts
             if self.alerting_rules.get("risk_alerts", False):
-                results["risk_alerts"] = self._check_risk_alerts(trading_data, system_data)
+                results["risk_alerts"] = self._check_risk_alerts(
+                    trading_data, system_data
+                )
 
             # Check system alerts
             if self.alerting_rules.get("system_alerts", False):
-                results["system_alerts"] = self._check_system_alerts(trading_data, system_data)
+                results["system_alerts"] = self._check_system_alerts(
+                    trading_data, system_data
+                )
 
             # Check threshold alerts
             if self.alerting_rules.get("threshold_alerts", False):
                 results["threshold_alerts"] = self._check_threshold_alerts(
-                    trading_data, system_data,
+                    trading_data,
+                    system_data,
                 )
 
             self.logger.info("Alerting completed")
@@ -1022,8 +1081,10 @@ class ModularSupervisor:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular supervisor: {e}"))
 
+
 # Global modular supervisor instance
 modular_supervisor: ModularSupervisor | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_modular_supervisor(

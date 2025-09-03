@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 import os
 import os.path
@@ -99,15 +100,21 @@ class RegimePredictiveEnsembles:
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" in prepared_data.columns:
-            self.logger.info("🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)")
+            self.logger.info(
+                "🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)"
+            )
             regime_column = "composite_cluster_id"
             regime_prefix = "hmm_composite_"
         else:
             self.logger.error(
                 "🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.",
             )
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
-            self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
+            self.logger.error(
+                "   HMM composite clusters are paramount - no fallbacks allowed"
+            )
+            self.logger.error(
+                "   Please ensure step3_hmm_regime_discovery completed successfully"
+            )
             return
 
         if "target" not in prepared_data.columns:
@@ -445,7 +452,8 @@ class RegimePredictiveEnsembles:
             # Optional PCA after scaling to reduce dimensionality (fit on train only)
             if self.global_meta_config.get("use_pca", False):
                 n_components = min(
-                    self.global_meta_config.get("pca_components", 16), X_train.shape[1],
+                    self.global_meta_config.get("pca_components", 16),
+                    X_train.shape[1],
                 )
                 pca = PCA(n_components=n_components)
                 X_train = pca.fit_transform(X_train)
@@ -620,8 +628,12 @@ class RegimePredictiveEnsembles:
         if "composite_cluster_id" in current_features.columns:
             cluster_id = current_features["composite_cluster_id"].iloc[-1]
             return self._map_cluster_to_regime(cluster_id)
-        self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-        self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+        self.logger.error(
+            "🚨 HMM composite_cluster_id column is missing from current features"
+        )
+        self.logger.error(
+            "   HMM composite clusters are paramount - no fallbacks allowed"
+        )
         return "UNKNOWN"
 
     def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
@@ -703,8 +715,12 @@ class RegimePredictiveEnsembles:
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" not in current_features.columns:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+            self.logger.error(
+                "🚨 HMM composite_cluster_id column is missing from current features"
+            )
+            self.logger.error(
+                "   HMM composite clusters are paramount - no fallbacks allowed"
+            )
             return {
                 "cluster_id": -1,
                 "regime_name": "UNKNOWN",
@@ -733,9 +749,9 @@ class RegimePredictiveEnsembles:
             "regime_name": regime_name,
             "expert": expert,
             "confidence": confidence,
-            "timestamp": current_features.index[-1]
-            if not current_features.empty
-            else None,
+            "timestamp": (
+                current_features.index[-1] if not current_features.empty else None
+            ),
         }
 
     def save_model(self, ensemble_instance: Any, path: str):

@@ -196,18 +196,10 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @traced(span_name="execute_labeling")
-    # @quality_gate - removed, handled by validates
-        min_quality_score=0.7,
-        max_correlation=0.95,
-        required_grade="C"
-    )
-    # @with_enhanced_mlflow_logging - removed, use traced"step05_labeling")
-    @validates()
+    @validates(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
     @handles_errors
     @cached
     @log_execution_time
-    # @secure_data_processing - removed, handled by validates
-    @validates()
     async def execute_labeling(
         self,
         symbol: str,
@@ -216,23 +208,10 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
         data_dir: str = "data_cache",
         force_rerun: bool = False,
     ) -> bool:
-        """Execute the labeling step."
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe for data
-            data_dir: Data directory
-            force_rerun: Force rerun the step
-
-        Returns:
-            True if successful, False otherwise
-        """
         step_start = time.time()
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
         try:
-            # Load triple barrier labels from previous step
             triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
             if not triple_barrier_path.exists():
                 self.logger.error(f"❌ Triple barrier labels not found at {triple_barrier_path}")
@@ -242,47 +221,89 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
             data = pd.read_parquet(triple_barrier_path)
             self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
-            # Generate comprehensive labels
-            labeled_data = await self._generate_comprehensive_labels(data, symbol, exchange, timeframe)
+            # Memory optimizations
+            float_cols = [c for c in data.columns if data[c].dtype == np.float64]
+            for c in float_cols:
+                data[c] = data[c].astype(np.float32)
+            if "composite_cluster_id" in data.columns:
+                data["composite_cluster_id"] = data["composite_cluster_id"].astype("category")
 
-            if labeled_data is None:
-                self.logger.error("❌ Failed to generate comprehensive labels")
-                return False
+            # Precompute rolling highs/lows for barriers to avoid O(N * lookahead)
+            max_lookahead = int(self.max_lookahead)
+            close = data["close"].values.astype(np.float32)
 
-            # Save results under standardized labeled_data directory
+            # Regime-aware lookahead scaling
+            if "composite_cluster_id" in data.columns:
+                regimes = data["composite_cluster_id"].cat.codes.values
+                regime_unique = np.unique(regimes)
+                regime_to_lookahead = {
+                    r: max(10, int(max_lookahead * 0.5)) if i % 2 == 0 else max_lookahead
+                    for i, r in enumerate(regime_unique)
+                }
+                lookahead_array = np.vectorize(lambda r: regime_to_lookahead.get(r, max_lookahead))(regimes)
+            else:
+                lookahead_array = np.full(len(data), max_lookahead, dtype=np.int32)
+
+            window = max_lookahead
+            # Rolling max/min using pandas is efficient; compute once at largest window
+            roll_max = pd.Series(close).rolling(window=window, min_periods=1).max().values
+            roll_min = pd.Series(close).rolling(window=window, min_periods=1).min().values
+
+            # Generate labels in chunks to bound memory
+            n = len(data)
+            chunk_size = int(self.config.get("labeling", {}).get("chunk_size", 200_000))
+            labels = np.zeros(n, dtype=np.int8)
+            tb_labels = data["triple_barrier_label"].values if "triple_barrier_label" in data.columns else None
+
+            def compute_label(i: int) -> int:
+                # Example regime-aware: if future max exceeds threshold within lookahead
+                la = int(lookahead_array[i])
+                end = min(n - 1, i + la)
+                max_future = roll_max[end]
+                min_future = roll_min[end]
+                price = close[i]
+                up = price * (1 + 0.005)
+                dn = price * (1 - 0.005)
+                if max_future >= up:
+                    return 1
+                if min_future <= dn:
+                    return -1
+                return 0
+
+            for start in range(0, n, chunk_size):
+                end = min(n, start + chunk_size)
+                for i in range(start, end):
+                    labels[i] = compute_label(i)
+
+            data["label"] = labels
+            if tb_labels is not None:
+                # Combine meta-labeling if available (keep both)
+                data["meta_label"] = tb_labels
+
             labeled_dir = ensure_directory(Path(data_dir) / "training" / "labeled_data")
             output_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
-            
-            labeled_data.to_parquet(output_path)
+            data.to_parquet(output_path, compression="snappy", index=False)
             self.logger.info(f"✅ Labeled data saved to {output_path}")
 
-            # Save labeling metadata alongside labeled data
             metadata_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
             metadata = {
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe,
-                "total_samples": len(labeled_data),
-                "label_distribution": labeled_data['label'].value_counts().to_dict(),
-                "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict(),
+                "total_samples": int(len(data)),
+                "label_distribution": pd.Series(labels).value_counts().to_dict(),
                 "created_at": pd.Timestamp.now().isoformat(),
-                "labeling_config": self.config.get("labeling", {})
+                "labeling_config": self.config.get("labeling", {}),
             }
-            
-            safe_json_dump(metadata, metadata_path, indent=2)
-            
-            self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
+            safe_json_dump(metadata, metadata_path, indent=2, default=str)
 
-            self._log_step_timing("Labeling", step_start)
-            
-            # Log artifacts and create detailed report
+            self._log_step_timing("execute_labeling", step_start)
+
             await self._log_step5_artifacts_and_report(
-            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
-                symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
+                symbol, exchange, timeframe, data_dir, data, output_path, metadata_path
             )
-            
-            return True
 
+            return True
         except Exception as e:
             self.logger.exception(f"❌ Error in labeling: {e}")
             return False

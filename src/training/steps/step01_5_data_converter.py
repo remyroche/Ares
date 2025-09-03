@@ -1701,18 +1701,36 @@ class UnifiedDataConverter:
                 partition_month = target_date.month
                 partition_day = target_date.day
 
-            partition_path = os.path.join(
-                base_dir,
-                f"exchange={exchange.upper()}",
-                f"symbol={symbol}",
-                f"timeframe={timeframe}",
-                f"year={partition_year}",
-                f"month={partition_month:02d}",
-                f"day={partition_day:02d}",
+            # Use PyArrow dataset writer with partitioned directories to avoid pandas materialization
+            daily_data = daily_data.copy()
+            daily_data["exchange"] = exchange.upper()
+            daily_data["symbol"] = symbol
+            daily_data["timeframe"] = timeframe
+            daily_data["year"] = np.int16(partition_year)
+            daily_data["month"] = np.int8(partition_month)
+            daily_data["day"] = np.int8(partition_day)
+
+            table = pa.Table.from_pandas(daily_data, preserve_index=False)
+            ds.write_dataset(
+                table,
+                base_dir=base_dir,
+                format="parquet",
+                partitioning=ds.partitioning(
+                    pa.schema([
+                        pa.field("exchange", pa.string()),
+                        pa.field("symbol", pa.string()),
+                        pa.field("timeframe", pa.string()),
+                        pa.field("year", pa.int16()),
+                        pa.field("month", pa.int8()),
+                        pa.field("day", pa.int8()),
+                    ]),
+                    flavor="hive",
+                ),
+                existing_data_behavior="overwrite_or_ignore",
+                max_rows_per_file=1_000_000,
+                min_rows_per_group=50_000,
+                basename_template="part-{i}.parquet",
             )
-            ensure_directory(partition_path)
-            file_path = os.path.join(partition_path, "part-0.parquet")
-            daily_data.to_parquet(file_path, compression="snappy", index=False)
             return True
         except Exception as e:
             self.logger.exception(

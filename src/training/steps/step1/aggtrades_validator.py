@@ -17,7 +17,6 @@ from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.core.decorators import handles_errors, traced
-from src.core.domain import handle_errors, optimize_memory_usage, validate_data_structure, with_tracing_span
 
 logger = system_logger.getChild("AggtradesValidator")
 

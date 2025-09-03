@@ -9,7 +9,7 @@ import functools
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from typing import A, Callableny, TypeVar
+from typing import TypeVar
 
 import numpy as np
 import pandas as pd

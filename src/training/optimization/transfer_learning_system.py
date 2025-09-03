@@ -18,15 +18,12 @@ import os.path
 import pickle
 import time
 from dataclasses import dataclass
-from typing import A, Callableny, Dict
 
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
 # ML libraries
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
-
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 
 # Utilities
 from src.utils.logger import system_logger

@@ -5,18 +5,17 @@ This module handles reading the unified data from step1_5 and performs comprehen
 data quality validation before proceeding to HMM regime discovery.
 """
 import asyncio
-import os
 import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import time
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from src.core.decorators import (
-    handles_errors,
-    traced,
     cached,
-    validates,
+    handles_errors,
     log_execution_time,
+    traced,
+    validates,
 )
 
 # Add project root to path
@@ -25,13 +24,13 @@ sys.path.insert(0, str(project_root))
 
 # Import common operations
 from src.utils.common_operations import (
-    safe_read_parquet, safe_to_parquet, ensure_directory,
-    validate_dataframe_schema, validate_data_quality
+    ensure_directory,
+    safe_json_dump,
+    safe_read_parquet,
 )
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -285,7 +284,6 @@ class DataReadingStep:
         self.logger.info("💾 Saving validation report...")
         
         try:
-            import json
             from datetime import datetime
 
             # Create reports directory

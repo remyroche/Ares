@@ -196,12 +196,9 @@ class TrainingManager:
         """Initialize feature integration manager."""
         try:
             from src.training.feature_integration import FeatureIntegrationManager
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-self.feature_integration_manager = FeatureIntegrationManager(self.config)
-await self.feature_integration_manager.initialize()
+            
+            self.feature_integration_manager = FeatureIntegrationManager(self.config)
+            await self.feature_integration_manager.initialize()
             self.logger.info("Feature integration manager initialized successfully")
         except Exception as e:
             self.logger.exception(

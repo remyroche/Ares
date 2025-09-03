@@ -1,9 +1,8 @@
 # src/tactician/dynamic_barrier_calculator.py
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
-import pandas as pd
 import yaml
 
 from src.core.decorators import handles_errors, traced

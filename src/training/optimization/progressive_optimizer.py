@@ -4,7 +4,6 @@ from __future__ import annotations
 
 """Progressive Optimizer for efficient parameter optimization using tiered approach."""
 
-import datetime as datetime
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -13,7 +12,6 @@ from typing import Any
 import optuna
 import pandas as pd
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,

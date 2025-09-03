@@ -10,7 +10,6 @@ This module organizes all configurable and optimizable parameters.
 from dataclasses import asdict
 from typing import Any
 
-from .config import get_static_config
 from .config_confidence import get_confidence_config, get_confidence_search_space
 from .config_ensemble import get_ensemble_config, get_ensemble_search_space
 from .config_leverage import get_leverage_config, get_leverage_search_space

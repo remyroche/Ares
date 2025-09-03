@@ -17,14 +17,13 @@ import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from functools import partial, wraps
-from typing import TYPE_CHECKING, A, Callableny
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import psutil
 
 if TYPE_CHECKING:
-    from collections.abc import Callable as Callable_collections_abc
     from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)

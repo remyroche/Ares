@@ -8,7 +8,7 @@ import importlib
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional
 
 from src.core.decorators import handles_errors
 from src.training.base_step import BaseStep

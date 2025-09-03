@@ -4,14 +4,12 @@ Dependency Injection System for Simplified ML Pipeline
 This module implements a clean dependency injection pattern to replace
 hidden imports and complex dependency chains.
 """
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Type, Optional, Callable, TypeVar, Generic
 import logging
-from pathlib import Path
-import inspect
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Type, TypeVar
 
 T = TypeVar('T')
 
@@ -32,12 +30,10 @@ class ServiceDescriptor:
 
 class ServiceNotFoundError(Exception):
     """Raised when a requested service is not registered."""
-    pass
 
 
 class CircularDependencyError(Exception):
     """Raised when circular dependencies are detected."""
-    pass
 
 
 class DIContainer:

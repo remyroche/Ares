@@ -1,0 +1,861 @@
+{
+  "total_files": 120,
+  "errors": {
+    "src/launcher/enhanced_trading_launcher.py": [
+      {
+        "line": 124,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/interfaces/enhanced_event_bus.py": [
+      {
+        "line": 106,
+        "error": "invalid syntax. Perhaps you forgot a comma?"
+      }
+    ],
+    "src/supervisor/system_coordinator_backup.py": [
+      {
+        "line": 630,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/pipelines/live_trading_pipeline.py": [
+      {
+        "line": 27,
+        "error": "'(' was never closed"
+      }
+    ],
+    "src/pipelines/improved_pipeline_executor.py": [
+      {
+        "line": 160,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/pipelines/components/lifecycle_manager.py": [
+      {
+        "line": 18,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/pipelines/components/data_manager.py": [
+      {
+        "line": 22,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/integration/paper_trading_integration.py": [
+      {
+        "line": 15,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/tactician/position_division_strategy.py": [
+      {
+        "line": 14,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/tactician/tactician.py": [
+      {
+        "line": 109,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/tactician/enhanced_execution_manager.py": [
+      {
+        "line": 47,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/model_trainer.py": [
+      {
+        "line": 322,
+        "error": "expected an indented block after 'try' statement on line 321"
+      }
+    ],
+    "src/training/enhanced_training_manager.py": [
+      {
+        "line": 2542,
+        "error": "expected an indented block after 'try' statement on line 2541"
+      }
+    ],
+    "src/training/multi_output_probability_trainer.py": [
+      {
+        "line": 130,
+        "error": "unindent does not match any outer indentation level"
+      }
+    ],
+    "src/training/feature_integration.py": [
+      {
+        "line": 67,
+        "error": "expected 'except' or 'finally' block"
+      }
+    ],
+    "src/training/enhanced_matrix_operations.py": [
+      {
+        "line": 1549,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/enhanced_lm_optimizer.py": [
+      {
+        "line": 1356,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/enhanced_training_manager_optimized.py": [
+      {
+        "line": 432,
+        "error": "expected an indented block after 'if' statement on line 431"
+      }
+    ],
+    "src/training/multi_objective_optimizer.py": [
+      {
+        "line": 70,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/optimized_feature_selection_manager.py": [
+      {
+        "line": 308,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/multi_output_model_trainer.py": [
+      {
+        "line": 54,
+        "error": "expected an indented block after 'try' statement on line 53"
+      }
+    ],
+    "src/training/calibration_manager.py": [
+      {
+        "line": 134,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/training_orchestrator.py": [
+      {
+        "line": 419,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/factory.py": [
+      {
+        "line": 186,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/training_manager.py": [
+      {
+        "line": 205,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/enhanced_coarse_optimizer.py": [
+      {
+        "line": 468,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/di_training_manager.py": [
+      {
+        "line": 116,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/data_efficiency_optimizer.py": [
+      {
+        "line": 228,
+        "error": "unterminated string literal"
+      }
+    ],
+    "src/training/data_manager.py": [
+      {
+        "line": 729,
+        "error": "unterminated string literal"
+      }
+    ],
+    "src/training/wavelet_caching_workflow.py": [
+      {
+        "line": 240,
+        "error": "expected 'except' or 'finally' block"
+      }
+    ],
+    "src/training/optimization/computational_optimization_manager.py": [
+      {
+        "line": 1747,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/fractional_feature_selector.py": [
+      {
+        "line": 693,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step14_tactician_labeling_validator.py": [
+      {
+        "line": 189,
+        "error": "expected an indented block after 'try' statement on line 188"
+      }
+    ],
+    "src/training/steps/step10_unified_regime_intelligence.py": [
+      {
+        "line": 1977,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step18_walk_forward_validation_validator.py": [
+      {
+        "line": 11,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/step14_tactician_labeling.py": [
+      {
+        "line": 626,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py": [
+      {
+        "line": 41,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step09_hmm_based_training_validator.py": [
+      {
+        "line": 32,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step03_parameter_optimization_validator.py": [
+      {
+        "line": 10,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/enhanced_step1_data_collection.py": [
+      {
+        "line": 26,
+        "error": "expected an indented block after 'try' statement on line 25"
+      }
+    ],
+    "src/training/steps/step19_monte_carlo_validation_validator.py": [
+      {
+        "line": 120,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/step02_5_sr_optimization_validator.py": [
+      {
+        "line": 94,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step04_5_triple_barrier_method_validator.py": [
+      {
+        "line": 32,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step16_confidence_calibration.py": [
+      {
+        "line": 857,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step04_regime_data_splitting_validator.py": [
+      {
+        "line": 9,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/step21_saving.py": [
+      {
+        "line": 248,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step05_labeling.py": [
+      {
+        "line": 156,
+        "error": "expected an indented block after 'try' statement on line 154"
+      }
+    ],
+    "src/training/steps/combined_fractional_system.py": [
+      {
+        "line": 466,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step10_unified_regime_intelligence_validator.py": [
+      {
+        "line": 548,
+        "error": "unindent does not match any outer indentation level"
+      }
+    ],
+    "src/training/steps/step03_5_final_regime_clustering_validator.py": [
+      {
+        "line": 447,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/precompute_wavelet_features.py": [
+      {
+        "line": 168,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step02_5_sr_optimization.py": [
+      {
+        "line": 1516,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step02_data_reading_validator.py": [
+      {
+        "line": 35,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step07_enhanced_matrix_operations.py": [
+      {
+        "line": 1699,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step19_monte_carlo_validation.py": [
+      {
+        "line": 243,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step03_hmm_regime_discovery.py": [
+      {
+        "line": 584,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/unified_data_loader.py": [
+      {
+        "line": 34,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step03_parameter_optimization.py": [
+      {
+        "line": 130,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step11_analyst_creation.py": [
+      {
+        "line": 163,
+        "error": "unindent does not match any outer indentation level"
+      }
+    ],
+    "src/training/steps/step09_hmm_based_training.py": [
+      {
+        "line": 1053,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step06_feature_engineering_validator.py": [
+      {
+        "line": 6,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/step04_regime_data_splitting.py": [
+      {
+        "line": 416,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step09_5_hmm_lm_generalist_training.py": [
+      {
+        "line": 124,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/integrated_data_quality_pipeline.py": [
+      {
+        "line": 54,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/enhanced_step1_5_data_converter.py": [
+      {
+        "line": 27,
+        "error": "expected an indented block after 'try' statement on line 26"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization.py": [
+      {
+        "line": 66,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step03_5_final_regime_clustering.py": [
+      {
+        "line": 881,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step12_analyst_enhancement.py": [
+      {
+        "line": 3623,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/raw_data_quality_checker.py": [
+      {
+        "line": 544,
+        "error": "expected an indented block after 'if' statement on line 542"
+      }
+    ],
+    "src/training/steps/step18_walk_forward_validation.py": [
+      {
+        "line": 196,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step15_tactician_specialist_training.py": [
+      {
+        "line": 1154,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step05_labeling_validator.py": [
+      {
+        "line": 9,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/steps/fractional_differentiation.py": [
+      {
+        "line": 15,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step13_analyst_ensemble_creation.py": [
+      {
+        "line": 154,
+        "error": "expected an indented block after 'try' statement on line 153"
+      }
+    ],
+    "src/training/steps/step04_5_triple_barrier_method.py": [
+      {
+        "line": 340,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py": [
+      {
+        "line": 47,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+      {
+        "line": 85,
+        "error": "unexpected unindent"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py": [
+      {
+        "line": 42,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py": [
+      {
+        "line": 33,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": [
+      {
+        "line": 776,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py": [
+      {
+        "line": 522,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": [
+      {
+        "line": 39,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step1/data_quality_dashboard.py": [
+      {
+        "line": 22,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step1/comprehensive_gap_filler.py": [
+      {
+        "line": 940,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step1/data_resampler.py": [
+      {
+        "line": 816,
+        "error": "unindent does not match any outer indentation level"
+      }
+    ],
+    "src/training/steps/step1/data_gap_detector.py": [
+      {
+        "line": 38,
+        "error": "expected an indented block after 'try' statement on line 37"
+      }
+    ],
+    "src/training/steps/step1/data_quality_monitor.py": [
+      {
+        "line": 226,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step1/enhanced_data_quality_manager.py": [
+      {
+        "line": 73,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py": [
+      {
+        "line": 468,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py": [
+      {
+        "line": 802,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py": [
+      {
+        "line": 15,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py": [
+      {
+        "line": 706,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": [
+      {
+        "line": 301,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/data_preparation_components/training_validation_config.py": [
+      {
+        "line": 394,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/core/checkpoint_manager.py": [
+      {
+        "line": 357,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/training/core/pipeline_orchestrator.py": [
+      {
+        "line": 63,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/exchange/binance.py": [
+      {
+        "line": 14,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/utils/vif_calculator.py": [
+      {
+        "line": 73,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/utils/model_performance_monitor.py": [
+      {
+        "line": 388,
+        "error": "expected 'except' or 'finally' block"
+      }
+    ],
+    "src/utils/enhanced_memory_management.py": [
+      {
+        "line": 40,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/utils/data_optimizer.py": [
+      {
+        "line": 98,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/utils/configuration_security.py": [
+      {
+        "line": 102,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/utils/enhanced_missing_value_handler.py": [
+      {
+        "line": 81,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/utils/data_formatting_framework.py": [
+      {
+        "line": 401,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/utils/quality_alert_system.py": [
+      {
+        "line": 260,
+        "error": "expected 'except' or 'finally' block"
+      }
+    ],
+    "src/utils/base_validator.py": [
+      {
+        "line": 310,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/utils/model_manager.py": [
+      {
+        "line": 205,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/utils/database_security.py": [
+      {
+        "line": 358,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/strategist/strategist_backup.py": [
+      {
+        "line": 59,
+        "error": "invalid syntax. Perhaps you forgot a comma?"
+      }
+    ],
+    "src/analyst/autoencoder_feature_generator.py": [
+      {
+        "line": 1925,
+        "error": "expected 'except' or 'finally' block"
+      }
+    ],
+    "src/analyst/enhanced_prediction_integrator.py": [
+      {
+        "line": 10,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/analyst/liquidation_risk_model.py": [
+      {
+        "line": 3,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/analyst/regime_expert_orchestrator.py": [
+      {
+        "line": 17,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/analyst/meta_label_relevance.py": [
+      {
+        "line": 114,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/analyst/ml_confidence_predictor.py": [
+      {
+        "line": 1640,
+        "error": "unmatched ')'"
+      }
+    ],
+    "src/analyst/unified_regime_classifier.py": [
+      {
+        "line": 20,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/analyst/predictive_ensembles/multi_timeframe_ensemble.py": [
+      {
+        "line": 40,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/database/precomputed_features_manager.py": [
+      {
+        "line": 24,
+        "error": "invalid syntax"
+      }
+    ],
+    "src/database/migration_utils.py": [
+      {
+        "line": 412,
+        "error": "unexpected indent"
+      }
+    ],
+    "src/training/steps/step1/missing_data_downloader_and_gap_filler.py": [
+      {
+        "line": 0,
+        "error": "Syntax error after auto-fixing"
+      }
+    ]
+  },
+  "categories": {
+    "indentation": [
+      "src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+      "src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+      "src/training/steps/step04_5_triple_barrier_method_validator.py",
+      "src/training/steps/step02_5_sr_optimization.py",
+      "src/training/steps/combined_fractional_system.py",
+      "src/supervisor/system_coordinator_backup.py",
+      "src/training/steps/step09_hmm_based_training.py",
+      "src/analyst/regime_expert_orchestrator.py",
+      "src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "src/training/steps/step21_saving.py",
+      "src/training/steps/step02_data_reading_validator.py",
+      "src/utils/base_validator.py",
+      "src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "src/tactician/enhanced_execution_manager.py",
+      "src/training/steps/step07_enhanced_matrix_operations.py",
+      "src/pipelines/components/data_manager.py",
+      "src/training/steps/step09_5_hmm_lm_generalist_training.py",
+      "src/training/steps/step03_5_final_regime_clustering_validator.py",
+      "src/training/steps/step03_5_final_regime_clustering.py",
+      "src/training/steps/step09_hmm_based_training_validator.py",
+      "src/training/training_manager.py",
+      "src/training/steps/step1/enhanced_data_quality_manager.py",
+      "src/pipelines/components/lifecycle_manager.py",
+      "src/training/factory.py",
+      "src/utils/vif_calculator.py",
+      "src/training/enhanced_coarse_optimizer.py",
+      "src/database/migration_utils.py",
+      "src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py",
+      "src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "src/utils/database_security.py",
+      "src/training/di_training_manager.py",
+      "src/pipelines/improved_pipeline_executor.py",
+      "src/training/calibration_manager.py",
+      "src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+      "src/training/training_orchestrator.py",
+      "src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "src/training/enhanced_lm_optimizer.py",
+      "src/training/steps/step1/data_quality_monitor.py",
+      "src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "src/launcher/enhanced_trading_launcher.py",
+      "src/training/steps/step17_final_parameters_optimization.py",
+      "src/exchange/binance.py",
+      "src/training/steps/integrated_data_quality_pipeline.py",
+      "src/utils/data_formatting_framework.py",
+      "src/training/enhanced_matrix_operations.py",
+      "src/training/steps/data_preparation_components/training_validation_config.py",
+      "src/training/steps/step03_parameter_optimization.py",
+      "src/training/steps/precompute_wavelet_features.py",
+      "src/analyst/meta_label_relevance.py",
+      "src/training/steps/step03_hmm_regime_discovery.py",
+      "src/training/steps/step1/comprehensive_gap_filler.py",
+      "src/analyst/enhanced_prediction_integrator.py",
+      "src/training/optimization/computational_optimization_manager.py",
+      "src/training/steps/fractional_feature_selector.py",
+      "src/training/steps/step02_5_sr_optimization_validator.py",
+      "src/training/steps/unified_data_loader.py",
+      "src/training/steps/step04_regime_data_splitting.py",
+      "src/tactician/tactician.py",
+      "src/training/steps/step16_confidence_calibration.py",
+      "src/training/multi_objective_optimizer.py"
+    ],
+    "invalid_syntax": [
+      "src/utils/configuration_security.py",
+      "src/training/steps/step19_monte_carlo_validation_validator.py",
+      "src/integration/paper_trading_integration.py",
+      "src/training/steps/step14_tactician_labeling.py",
+      "src/analyst/liquidation_risk_model.py",
+      "src/training/steps/step18_walk_forward_validation_validator.py",
+      "src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "src/training/steps/step04_regime_data_splitting_validator.py",
+      "src/utils/model_manager.py",
+      "src/database/precomputed_features_manager.py",
+      "src/training/optimized_feature_selection_manager.py",
+      "src/interfaces/enhanced_event_bus.py",
+      "src/strategist/strategist_backup.py",
+      "src/training/steps/step03_parameter_optimization_validator.py",
+      "src/training/steps/step05_labeling_validator.py",
+      "src/utils/enhanced_memory_management.py",
+      "src/analyst/unified_regime_classifier.py",
+      "src/training/steps/step06_feature_engineering_validator.py",
+      "src/training/core/pipeline_orchestrator.py",
+      "src/training/core/checkpoint_manager.py",
+      "src/utils/enhanced_missing_value_handler.py"
+    ],
+    "other": [
+      "src/training/steps/step1/missing_data_downloader_and_gap_filler.py",
+      "src/pipelines/live_trading_pipeline.py",
+      "src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py"
+    ],
+    "unmatched_brackets": [
+      "src/training/steps/step12_analyst_enhancement.py",
+      "src/analyst/ml_confidence_predictor.py",
+      "src/tactician/position_division_strategy.py",
+      "src/training/steps/step15_tactician_specialist_training.py",
+      "src/training/steps/step1/data_quality_dashboard.py",
+      "src/training/steps/step18_walk_forward_validation.py",
+      "src/training/steps/fractional_differentiation.py",
+      "src/training/steps/step04_5_triple_barrier_method.py",
+      "src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+      "src/training/steps/step10_unified_regime_intelligence.py",
+      "src/utils/data_optimizer.py",
+      "src/training/steps/step19_monte_carlo_validation.py"
+    ],
+    "missing_block": [
+      "src/training/feature_integration.py",
+      "src/training/steps/step05_labeling.py",
+      "src/training/steps/step1/data_gap_detector.py",
+      "src/utils/quality_alert_system.py",
+      "src/training/enhanced_training_manager.py",
+      "src/training/multi_output_model_trainer.py",
+      "src/training/enhanced_training_manager_optimized.py",
+      "src/training/wavelet_caching_workflow.py",
+      "src/training/steps/enhanced_step1_5_data_converter.py",
+      "src/training/steps/step14_tactician_labeling_validator.py",
+      "src/training/steps/step13_analyst_ensemble_creation.py",
+      "src/utils/model_performance_monitor.py",
+      "src/training/steps/enhanced_step1_data_collection.py",
+      "src/analyst/autoencoder_feature_generator.py",
+      "src/training/steps/raw_data_quality_checker.py",
+      "src/training/model_trainer.py"
+    ],
+    "indentation_mismatch": [
+      "src/training/steps/step11_analyst_creation.py",
+      "src/training/steps/step10_unified_regime_intelligence_validator.py",
+      "src/training/multi_output_probability_trainer.py",
+      "src/training/steps/step1/data_resampler.py"
+    ],
+    "unterminated_string": [
+      "src/training/data_efficiency_optimizer.py",
+      "src/training/data_manager.py"
+    ]
+  }
+}

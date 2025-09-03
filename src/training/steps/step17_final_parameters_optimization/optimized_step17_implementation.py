@@ -39,7 +39,7 @@ except Exception as e:
     pass  # TODO: Handle exception properly
 import copy
 
-    OPTUNA_AVAILABLE = True
+OPTUNA_AVAILABLE = True
     except ImportError:
     OPTUNA_AVAILABLE = False
 

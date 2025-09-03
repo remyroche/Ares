@@ -57,8 +57,8 @@ from src.training.steps.step07_enhanced_matrix_operations_validator import run_v
 from src.utils.enhanced_mlflow_integration import (
     log_step_report,
 )
-from src.utils.step_dependency_validator import validate_step_dependencies
 from src.utils.logger import system_logger
+from src.utils.step_dependency_validator import validate_step_dependencies
 
 
 class Steps1To7ComprehensiveExecutor:

@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 
 # Import MLflow for experiment tracking
 try:
-    import mlflow
+    pass
 
     MLFLOW_AVAILABLE = True
 except ImportError:
@@ -37,7 +37,7 @@ except ImportError:
 
 # Import Optuna for optimization
 try:
-    import optuna
+    pass
 
     OPTUNA_AVAILABLE = True
 except ImportError:

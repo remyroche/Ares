@@ -5,17 +5,18 @@ This module provides comprehensive tracking of trading performance segmented by 
 """
 
 import asyncio
+import json
+import sqlite3
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
-import pandas as pd
-import numpy as np
-import json
-from collections import defaultdict
-import sqlite3
+from typing import Any, Dict, Optional
 
-from src.utils.logger import system_logger
+import numpy as np
+import pandas as pd
+
 from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("RegimePerformanceTracker")
 

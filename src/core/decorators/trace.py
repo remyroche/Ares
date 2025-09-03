@@ -11,7 +11,7 @@ import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import A, Callableny, Optional
+from typing import Optional
 
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id

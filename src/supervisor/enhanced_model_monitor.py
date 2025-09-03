@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING, Any
 
 from dataclasses_json import dataclass_json
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-from src.supervisor.performance_monitor import PerformanceMonitor as PerformanceMonitor_2
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:

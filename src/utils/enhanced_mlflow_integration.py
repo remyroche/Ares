@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
-
 # src/utils/enhanced_mlflow_integration.py
 
 
@@ -29,7 +27,6 @@ from typing import Any
 import mlflow
 import pandas as pd
 
-from src.config import ARES_VERSION
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import (
     extract_training_metadata,
@@ -572,7 +569,8 @@ def log_step_report(
 
         get_standardized_artifact_path("report", step_name, report_name)
 
-        import json, gzip
+        import gzip
+        import json
 
         with tempfile.NamedTemporaryFile(suffix=".json.gz", delete=False, mode="wb") as tmp_file:
             with gzip.GzipFile(fileobj=tmp_file, mode="wb") as gz:

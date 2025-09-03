@@ -25,7 +25,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
-from src.utils.base_validator import BaseValidator as BaseValidator_src_utils_base_validator
 
 
 class Step6HMMBasedEnhancementValidator(BaseValidator):

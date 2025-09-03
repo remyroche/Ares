@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/analyst/__init__.py
 # This file makes the 'analyst' directory a Python package.
 

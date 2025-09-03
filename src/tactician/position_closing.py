@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/position_closing.py
 
 from src.core.decorators import handles_errors

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Validator for Step 6: HMM-Based Enhancement."""
 
 import asyncio

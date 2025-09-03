@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/config_two_tier.py
 
 """

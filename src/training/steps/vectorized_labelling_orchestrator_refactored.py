@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Refactored VectorizedLabellingOrchestrator with reduced complexity and type hints.
 This version breaks down the massive orchestrate_labeling_and_feature_engineering method

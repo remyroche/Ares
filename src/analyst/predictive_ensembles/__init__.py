@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/analyst/predictive_ensembles/__init__.py
 
 

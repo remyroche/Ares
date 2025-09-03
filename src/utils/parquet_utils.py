@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/utils/parquet_utils.py
 
 import gc

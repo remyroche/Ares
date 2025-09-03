@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/types/protocol_types.py
 
 """

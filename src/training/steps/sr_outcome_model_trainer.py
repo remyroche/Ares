@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/steps/sr_outcome_model_trainer.py
 
 from src.core.decorators import handles_errors

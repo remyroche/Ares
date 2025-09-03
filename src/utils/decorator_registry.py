@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Central registry for all decorators with metadata and versioning."""
 
 import logging

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Validator for Step 11: Confidence Calibration."""
 
 import os

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Advanced Decorators Module
 Provides enhanced decorators for performance monitoring, model validation, data pipeline management, caching, adaptive resource allocation, and comprehensive validation.
 """

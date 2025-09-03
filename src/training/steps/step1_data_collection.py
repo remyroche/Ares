@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Step 1: Data Collection.
 
 This module handles the data collection step of the training pipeline.

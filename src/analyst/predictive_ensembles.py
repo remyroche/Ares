@@ -1,3 +1,4 @@
+from __future__ import annotations
 from src.core.decorators import handles_errors
 
 from src.core.domain import handle_specific_errors

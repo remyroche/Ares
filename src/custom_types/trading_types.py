@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/types/trading_types.py
 
 """Trading-specific type definitions for orders = positions, and trade decisions."""

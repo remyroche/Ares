@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/optimization/progressive_optimizer.py
 
 """Progressive Optimizer for efficient parameter optimization using tiered approach."""

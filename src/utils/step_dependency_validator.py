@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Step dependency validator for the training pipeline.
 Ensures that steps don't proceed if their prerequisites have failed.

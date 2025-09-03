@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Validator for Step 20: Extended A/B Testing."""
 
 import asyncio

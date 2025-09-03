@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/enhanced_lm_config.py
 
 """Pydantic-based configuration for Enhanced LM Optimizer.

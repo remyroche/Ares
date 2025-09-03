@@ -13,14 +13,12 @@ from src.utils.warning_symbols import error, failed, warning
 import asyncio
 
 import pandas as pd
-try:
-    from src.database.influxdb_manager import InfluxDBManager
-except Exception as e:
-    pass  # TODO: Handle exception properly
 import copy
 import os
 
-INFLUXDB_AVAILABLE = True
+try:
+    from src.database.influxdb_manager import InfluxDBManager
+    INFLUXDB_AVAILABLE = True
 except Exception:
     InfluxDBManager = None  # type: ignore
     INFLUXDB_AVAILABLE = False
@@ -249,7 +247,7 @@ class PrecomputedFeaturesManager:
             time_range = f"|> range(stop: {end_time})"
 
         # Construct query
-        query = f""""
+        query = f"""
         from(bucket: "{self.db_manager.bucket}")
           {time_range}
           |> filter(fn: (r) => r["_measurement"] == "precomputed_features")
@@ -296,7 +294,7 @@ class PrecomputedFeaturesManager:
         df_copy = df.copy()
 
         for col in df_copy.columns:
-            # Parse feature name to check if it's price-related'
+            # Parse feature name to check if it's price-related
             try:
                 category, timeframe, name = self.parse_feature_name(col)
             except ValueError:

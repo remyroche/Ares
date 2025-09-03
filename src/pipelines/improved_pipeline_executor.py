@@ -156,7 +156,7 @@ import copy
         
 # Generate realistic mock data
 base_price = 100.0
-        prices = []
+prices = []
         for i in range(limit):
             # Add some realistic price movement
             change = np.random.normal(0, 0.5)  # 0.5% standard deviation

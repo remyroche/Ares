@@ -78,7 +78,7 @@ class EnhancedTradingLauncher:
             "enable_detailed_reporting",
             True,
 
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid launcher configuration"),
             AttributeError: (False, "Missing required launcher parameters"),
@@ -87,6 +87,8 @@ class EnhancedTradingLauncher:
         context="launcher initialization",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
+
+
     async def initialize(self) -> bool:
         """
         Initialize enhanced trading launcher.
@@ -115,7 +117,7 @@ class EnhancedTradingLauncher:
                 f"❌ Enhanced Trading Launcher initialization failed: {e}",
             return False
 
-    @handles_errors(
+    @handles_errors()
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -133,12 +135,14 @@ class EnhancedTradingLauncher:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
-    @handles_errors(
+    @handles_errors()
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="components initialization",
     )
     @performance_monitor(level=PerformanceLevel.BASIC)
+
+
     async def _initialize_components(self) -> None:
         """Initialize trading components."""
         try:
@@ -174,7 +178,7 @@ setup_enhanced_backtester as _setup_backtester,
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing components: {e}"))
 
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid paper trading parameters"),
             AttributeError: (False, "Missing paper trading components"),
@@ -183,6 +187,8 @@ setup_enhanced_backtester as _setup_backtester,
         context="paper trading launch",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
+
+
     async def launch_paper_trading(
         self,
         trading_config: dict[str, Any] | None = None,
@@ -223,7 +229,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error launching paper trading: {e}"))
             return False
 
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid live trading parameters"),
             AttributeError: (False, "Missing live trading components"),
@@ -232,6 +238,8 @@ setup_enhanced_backtester as _setup_backtester,
         context="live trading launch",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
+
+
     async def launch_live_trading(
         self,
         trading_config: dict[str, Any] | None = None,
@@ -271,7 +279,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error launching live trading: {e}"))
             return False
 
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid backtest parameters"),
             AttributeError: (False, "Missing backtest components"),
@@ -280,6 +288,8 @@ setup_enhanced_backtester as _setup_backtester,
         context="backtest launch",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
+
+
     async def launch_backtest(
         self,
         historical_data: pd.DataFrame,
@@ -330,7 +340,7 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error launching backtest: {e}"))
             return {}
 
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid trade parameters"),
             AttributeError: (False, "Missing trade components"),
@@ -339,6 +349,8 @@ setup_enhanced_backtester as _setup_backtester,
         context="trade execution",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
+
+
     async def execute_trade(
         self,
         symbol: str,
@@ -461,12 +473,14 @@ setup_enhanced_backtester as _setup_backtester,
             self.logger.error(error(f"Error generating comprehensive report: {e}"))
             return {}
 
-    @handles_errors(
+    @handles_errors()
         exceptions=(Exception,),
         default_return=None,
         context="basic report generation",
     )
     @performance_monitor(level=PerformanceLevel.BASIC)
+
+
     async def _generate_basic_report(
         self,
         report_type: str,
@@ -525,12 +539,14 @@ setup_enhanced_backtester as _setup_backtester,
             "enhanced_backtester_available": self.enhanced_backtester is not None,
         }
 
-    @handles_errors(
+    @handles_errors()
         exceptions=(Exception,),
         default_return=None,
         context="launcher cleanup",
     )
     @performance_monitor(level=PerformanceLevel.BASIC)
+
+
     async def stop(self) -> None:
         """Stop enhanced trading launcher."""
         try:
@@ -549,7 +565,7 @@ setup_enhanced_backtester as _setup_backtester,
         except Exception as e:
             self.logger.error(error(f"Error stopping launcher: {e}"))
 
-@handles_errors(
+@handles_errors()
     exceptions=(Exception,),
     default_return=None,
     context="enhanced trading launcher setup",

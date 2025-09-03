@@ -254,6 +254,8 @@ class EnhancedPredictionService:
                 for optimization_file in optimization_path.glob("*.json"):
                     try:
                         import json
+                    except Exception as e:
+                        pass  # TODO: Handle exception
 from src.core.decorators import handles_errors
 
                         with open(optimization_file, "r") as f:

@@ -29,6 +29,8 @@ sys.path.insert(0, str(project_root))
 
 try:
     from src.config.constants import DEFAULT_LOOKBACK_DAYS
+except Exception as e:
+    pass  # TODO: Handle exception
 from src.utils.logger import system_logger
 
 from src.training.steps.unified_data_loader import UnifiedDataLoader

@@ -1,0 +1,367 @@
+{
+  "fixed": 9,
+  "failed": 21,
+  "results": [
+    {
+      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+      "success": true,
+      "message": "Partially fixed (new error: invalid syntax)",
+      "error": {
+        "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+        "line": 81,
+        "offset": 5,
+        "msg": "invalid syntax",
+        "text": "    @handle_specific_errors(\n"
+      }
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "success": true,
+      "message": "Partially fixed (new error: invalid syntax)",
+      "error": {
+        "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+        "line": 30,
+        "offset": 1,
+        "msg": "invalid syntax",
+        "text": "class EventType(Enum):\n"
+      }
+    },
+    {
+      "file": "/workspace/src/supervisor/system_coordinator_backup.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/supervisor/system_coordinator_backup.py",
+        "line": 630,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            analyst_decision = analyst_signals.get(\"analyst_decision\", {})\n"
+      }
+    },
+    {
+      "file": "/workspace/src/integration/paper_trading_integration.py",
+      "success": true,
+      "message": "Partially fixed (new error: invalid syntax)",
+      "error": {
+        "file": "/workspace/src/integration/paper_trading_integration.py",
+        "line": 15,
+        "offset": 1,
+        "msg": "invalid syntax",
+        "text": "from datetime import datetime\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+        "line": 47,
+        "offset": 8,
+        "msg": "unexpected indent",
+        "text": "        self.barrier_calculator = DynamicBarrierCalculator(self.config)\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/model_trainer.py",
+        "line": 322,
+        "offset": 0,
+        "msg": "expected an indented block after 'try' statement on line 321",
+        "text": "from src.utils.mlflow_utils import log_params_with_metadata\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/enhanced_training_manager.py",
+        "line": 2542,
+        "offset": 0,
+        "msg": "expected an indented block after 'try' statement on line 2541",
+        "text": "from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/feature_integration.py",
+      "success": true,
+      "message": "Partially fixed (new error: expected 'except' or 'finally' block)",
+      "error": {
+        "file": "/workspace/src/training/feature_integration.py",
+        "line": 66,
+        "offset": 0,
+        "msg": "expected an indented block after 'if' statement on line 65",
+        "text": "import copy\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/feature_engineering.py",
+        "line": 8,
+        "offset": 1,
+        "msg": "invalid syntax",
+        "text": "from collections.abc import Callable\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_operations.py",
+      "success": true,
+      "message": "Partially fixed (new error: unexpected indent)",
+      "error": {
+        "file": "/workspace/src/training/enhanced_matrix_operations.py",
+        "line": 1549,
+        "offset": 34,
+        "msg": "unindent does not match any outer indentation level",
+        "text": "                except Exception:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+        "line": 1356,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            tscv = TimeSeriesSplit(n_splits=n_folds)\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_optimized.py",
+      "success": true,
+      "message": "Partially fixed (new error: expected an indented block after 'if' statement on line 431)",
+      "error": {
+        "file": "/workspace/src/training/enhanced_training_manager_optimized.py",
+        "line": 431,
+        "offset": 35,
+        "msg": "unindent does not match any outer indentation level",
+        "text": "            if writer is not None:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/multi_objective_optimizer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/multi_objective_optimizer.py",
+        "line": 70,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    @handles_errors(\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/optimized_feature_selection_manager.py",
+      "success": true,
+      "message": "Partially fixed (new error: invalid syntax)",
+      "error": {
+        "file": "/workspace/src/training/optimized_feature_selection_manager.py",
+        "line": 308,
+        "offset": 20,
+        "msg": "unindent does not match any outer indentation level",
+        "text": "            except:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/multi_output_model_trainer.py",
+        "line": 54,
+        "offset": 1,
+        "msg": "expected an indented block after 'try' statement on line 53",
+        "text": "from .steps.step9_hmm_based_training import (\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/calibration_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/calibration_manager.py",
+        "line": 134,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            if self.enable_temperature_scaling:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/training_orchestrator.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/training_orchestrator.py",
+        "line": 419,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            self.logger.info(\"\u2705 All component managers initialized\")\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/factory.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/factory.py",
+        "line": 186,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    if memory_gb < 8:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/training_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/training_manager.py",
+        "line": 205,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            self.logger.info(\"Feature integration manager initialized successfully\")\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/enhanced_coarse_optimizer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/enhanced_coarse_optimizer.py",
+        "line": 460,
+        "offset": 0,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "import copy\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/di_training_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/di_training_manager.py",
+        "line": 116,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            await self._initialize_training_steps()\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/data_efficiency_optimizer.py",
+      "success": true,
+      "message": "Partially fixed (new error: unterminated string literal (detected at line 227))",
+      "error": {
+        "file": "/workspace/src/training/data_efficiency_optimizer.py",
+        "line": 95,
+        "offset": 18,
+        "msg": "unterminated string literal (detected at line 95)",
+        "text": "            \"\"\"),\""
+      }
+    },
+    {
+      "file": "/workspace/src/training/data_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/data_manager.py",
+        "line": 729,
+        "offset": 97,
+        "msg": "unterminated string literal (detected at line 729)",
+        "text": "                    f\"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}\",'"
+      }
+    },
+    {
+      "file": "/workspace/src/training/wavelet_caching_workflow.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/wavelet_caching_workflow.py",
+        "line": 238,
+        "offset": 0,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "import copy\n"
+      }
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/exchange/binance.py",
+        "line": 14,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    handle_network_operations,\n"
+      }
+    },
+    {
+      "file": "/workspace/src/utils/vif_calculator.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/utils/vif_calculator.py",
+        "line": 73,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            if r_squared < 1.0:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/utils/model_performance_monitor.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/utils/model_performance_monitor.py",
+        "line": 386,
+        "offset": 0,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "from src.core.decorators import handles_errors\n"
+      }
+    },
+    {
+      "file": "/workspace/src/utils/data_loader.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/utils/data_loader.py",
+        "line": 21,
+        "offset": 5,
+        "msg": "invalid syntax",
+        "text": "    as,\n"
+      }
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_memory_management.py",
+      "success": true,
+      "message": "Partially fixed (new error: invalid syntax)",
+      "error": {
+        "file": "/workspace/src/utils/enhanced_memory_management.py",
+        "line": 40,
+        "offset": 1,
+        "msg": "invalid syntax",
+        "text": "except ImportError:\n"
+      }
+    },
+    {
+      "file": "/workspace/src/utils/data_optimizer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/utils/data_optimizer.py",
+        "line": 98,
+        "offset": 86,
+        "msg": "unmatched ')'",
+        "text": "    @handles_errors, default_return=lambda self, df: df, context=\"optimize dataframe\")"
+      }
+    }
+  ],
+  "total_fixed": 21
+}

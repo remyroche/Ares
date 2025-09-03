@@ -1,0 +1,17 @@
+{
+  "fixed": 0,
+  "failed": 412,
+  "fixed_files": [],
+  "failed_files": [
+    "/workspace/src/tasks.py",
+    "/workspace/src/ares_pipeline.py",
+    "/workspace/src/config.py",
+    "/workspace/src/paper_trader.py",
+    "/workspace/src/monitoring/error_detection_system.py",
+    "/workspace/src/monitoring/tracking_system.py",
+    "/workspace/src/monitoring/correlation_manager.py",
+    "/workspace/src/monitoring/report_scheduler.py",
+    "/workspace/src/monitoring/fractional_system_monitor.py",
+    "/workspace/src/monitoring/enhanced_ml_tracker.py"
+  ]
+}

@@ -1,8 +1,8 @@
-"""Pipeline orchestrator for the modular training pipeline.
+"""Pipeline orchestrator for the modular training pipeline."
 
 This module provides the main orchestrator that coordinates the execution
 of pipeline stages, handles dependencies, and manages the overall pipeline flow.
-"""
+""""
 
 from datetime import datetime
 from typing import Any
@@ -30,12 +30,12 @@ class PipelineOrchestrator:
     """Pipeline orchestrator with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize pipeline orchestrator with enhanced type safety.
+        """Initialize pipeline orchestrator with enhanced type safety."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PipelineOrchestrator")
 
@@ -79,12 +79,12 @@ class PipelineOrchestrator:
         context="pipeline orchestrator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize pipeline orchestrator with enhanced error handling.
+        """Initialize pipeline orchestrator with enhanced error handling."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Pipeline Orchestrator...")
 
@@ -148,12 +148,12 @@ class PipelineOrchestrator:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate pipeline configuration.
+        """Validate pipeline configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate pipeline interval
             if self.pipeline_interval <= 0:
@@ -307,7 +307,7 @@ class PipelineOrchestrator:
         context="pipeline execution",
     )
     async def execute_pipeline(self, pipeline_input: dict[str, Any]) -> bool:
-        """Execute pipeline operations.
+        """Execute pipeline operations."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -315,7 +315,7 @@ class PipelineOrchestrator:
         Returns:
             bool: True if successful, False otherwise
 
-        """
+        """"
         try:
             if not self._validate_pipeline_inputs(pipeline_input):
                 return False
@@ -369,7 +369,7 @@ class PipelineOrchestrator:
         context="pipeline inputs validation",
     )
     def _validate_pipeline_inputs(self, pipeline_input: dict[str, Any]) -> bool:
-        """Validate pipeline inputs.
+        """Validate pipeline inputs."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -377,7 +377,7 @@ class PipelineOrchestrator:
         Returns:
             bool: True if valid, False otherwise
 
-        """
+        """"
         try:
             # Check required pipeline input fields
             required_fields = ["pipeline_type", "pipeline_steps", "timestamp"]
@@ -410,7 +410,7 @@ class PipelineOrchestrator:
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline execution.
+        """Perform pipeline execution."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -418,7 +418,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline execution results
 
-        """
+        """"
         try:
             results = {}
 
@@ -460,7 +460,7 @@ class PipelineOrchestrator:
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline monitoring.
+        """Perform pipeline monitoring."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -468,7 +468,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline monitoring results
 
-        """
+        """"
         try:
             results = {}
 
@@ -512,7 +512,7 @@ class PipelineOrchestrator:
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline optimization.
+        """Perform pipeline optimization."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -520,7 +520,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline optimization results
 
-        """
+        """"
         try:
             results = {}
 
@@ -576,7 +576,7 @@ class PipelineOrchestrator:
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline validation.
+        """Perform pipeline validation."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -584,7 +584,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline validation results
 
-        """
+        """"
         try:
             results = {}
 
@@ -924,7 +924,7 @@ class PipelineOrchestrator:
         self,
         pipeline_type: str | None,
     ) -> dict[str, Any]:
-        """Get pipeline results.
+        """Get pipeline results."
 
         Args:
             pipeline_type: Optional pipeline type filter
@@ -932,7 +932,7 @@ class PipelineOrchestrator:
         Returns:
             Dict[str, Any]: Pipeline results
 
-        """
+        """"
         try:
             if pipeline_type:
                 return self.pipeline_results.get(pipeline_type, {})
@@ -948,7 +948,7 @@ class PipelineOrchestrator:
         context="pipeline history getting",
     )
     def get_pipeline_history(self, limit: int | None) -> list[dict[str, Any]]:
-        """Get pipeline history.
+        """Get pipeline history."
 
         Args:
             limit: Optional limit on number of records
@@ -956,7 +956,7 @@ class PipelineOrchestrator:
         Returns:
             List[Dict[str, Any]]: Pipeline history
 
-        """
+        """"
         try:
             history = self.pipeline_history.copy()
 
@@ -970,12 +970,12 @@ class PipelineOrchestrator:
             return []
 
     def get_pipeline_status(self) -> dict[str, Any]:
-        """Get pipeline status information.
+        """Get pipeline status information."
 
         Returns:
             Dict[str, Any]: Pipeline status
 
-        """
+        """"
         return {
             "is_orchestrating": self.is_orchestrating,
             "pipeline_interval": self.pipeline_interval,
@@ -1030,7 +1030,7 @@ pipeline_orchestrator: PipelineOrchestrator | None = None
 async def setup_pipeline_orchestrator(
     config: dict[str, Any] | None,
 ) -> PipelineOrchestrator | None:
-    """Setup global pipeline orchestrator.
+    """Setup global pipeline orchestrator."
 
     Args:
         config: Optional configuration dictionary
@@ -1038,7 +1038,7 @@ async def setup_pipeline_orchestrator(
     Returns:
         Optional[PipelineOrchestrator]: Global pipeline orchestrator instance
 
-    """
+    """"
     try:
         global pipeline_orchestrator
 

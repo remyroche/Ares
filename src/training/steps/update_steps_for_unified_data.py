@@ -1,10 +1,10 @@
 # src/training/steps/update_steps_for_unified_data.py
 
-"""Utility script to update all training steps to use the unified data loader.
+"""Utility script to update all training steps to use the unified data loader."
 
 This script provides guidance and templates for updating the training steps
 to use the new unified Parquet partitioned data format.
-"""
+""""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ TRAINING_STEPS: List[str] = [
     "step9_tactician_specialist_training",
     "step10_tactician_ensemble_creation",
     "step11_confidence_calibration",
-            "step17_final_parameters_optimization",
+    "step17_final_parameters_optimization",
     "step13_walk_forward_validation",
     "step14_monte_carlo_validation",
     "step15_ab_testing",
@@ -44,7 +44,7 @@ def get_unified_data_loading_code(
     lookback_days: int = 180,
     data_dir_var: str = "data_dir",
 ) -> str:
-    """Get the code template for loading unified data.
+    """Get the code template for loading unified data."
 
     Args:
         symbol_var: Variable name for symbol
@@ -56,8 +56,8 @@ def get_unified_data_loading_code(
     Returns:
         Code template string
 
-    """
-    return f"""
+    """"
+    return f""""
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
         data_loader = get_unified_data_loader(self.config)
@@ -88,7 +88,7 @@ def get_unified_data_loading_code(
         if missing_columns:
             self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
-    """
+    """"
 
 
 def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
@@ -187,7 +187,7 @@ def generate_step_update_template(step_name: str) -> str:
     """Generate a template for updating a specific step."""
     guidance = get_step_specific_guidance(step_name)
 
-    return f"""
+    return f""""
 # Template for updating {step_name}.py
 
 ## 1. Add import at the top of the file:
@@ -213,7 +213,7 @@ def generate_step_update_template(step_name: str) -> str:
 #     with open(regime_file_path, 'r') as f:
 #         regime_data = json.load(f)
 #     # Process regime data as needed
-"""
+""""
 
 
 

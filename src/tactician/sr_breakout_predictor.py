@@ -22,7 +22,7 @@ except ImportError:
     print("Warning: sklearn not available, DBSCAN clustering will be disabled")
 
 class SRBreakoutPredictor:
-    """
+    """"
     SR Breakout Predictor responsible for predicting support/resistance breakouts.
     This module handles all SR breakout prediction logic and feature engineering.
     Centralized S/R detection using multiple methods:
@@ -30,15 +30,15 @@ class SRBreakoutPredictor:
     - Volume-weighted price levels
     - Traditional pivot points (fallback)
     - ATR-based activation ranges
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize SR breakout predictor.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("SRBreakoutPredictor")
 
@@ -470,7 +470,7 @@ class SRBreakoutPredictor:
             import os
             from pathlib import Path
             
-            # Create report directory if it doesn't exist
+            # Create report directory if it doesn't exist'
             report_path = Path(self.report_directory)
             report_path.mkdir(parents=True, exist_ok=True)
             
@@ -838,7 +838,9 @@ class SRBreakoutPredictor:
     def _save_html_report(self, report: dict[str, Any], file_path: Path) -> None:
         """Save HTML report."""
         try:
-            html_content = f"""
+            html_content = f""""
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 <!DOCTYPE html>
 <html>
 <head>
@@ -909,8 +911,8 @@ class SRBreakoutPredictor:
     </div>
 </body>
 </html>
-"""
-            with open(file_path, 'w') as f:
+""""
+with open(file_path, 'w') as f:
                 f.write(html_content)
         except Exception as e:
             self.logger.error(f"Error saving HTML report: {e}")
@@ -1008,7 +1010,7 @@ class SRBreakoutPredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any]:
-        """
+        """"
         Predict support/resistance breakouts.
 
         Args:
@@ -1017,7 +1019,7 @@ class SRBreakoutPredictor:
 
         Returns:
             dict[str, Any]: SR breakout predictions
-        """
+        """"
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
@@ -1093,7 +1095,7 @@ class SRBreakoutPredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any]:
-        """
+        """"
         Get comprehensive S/R context for current market position.
 
         Args:
@@ -1102,8 +1104,8 @@ class SRBreakoutPredictor:
 
         Returns:
             dict[str, Any]: S/R context information
-"""
-        if not self.is_initialized:
+""""
+if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
@@ -1162,6 +1164,8 @@ class SRBreakoutPredictor:
 
             # Create context
             context = {
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 "current_price": current_price,
 "nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
 "nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,
@@ -1193,7 +1197,7 @@ class SRBreakoutPredictor:
 }
 
 # Generate detailed report after context is fully defined
-            try:
+try:
                 context["report_id"] = await self._generate_detailed_report(market_data, context)
             except Exception as e:
                 self.logger.warning(f"Error generating detailed report: {e}")
@@ -1206,7 +1210,7 @@ class SRBreakoutPredictor:
             return {}
 
 async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
-        """
+        """"
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
@@ -1310,7 +1314,7 @@ async def extract_ml_features(self, market_data: pd.DataFrame, current_price: fl
             return {}
 
     async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
-        """
+        """"
         Extract comprehensive SR features for ML model training.
 
         This method provides a standardized interface for extracting all SR features
@@ -1323,7 +1327,7 @@ async def extract_ml_features(self, market_data: pd.DataFrame, current_price: fl
 
         Returns:
             dict[str, float]: Comprehensive SR features for ML training
-        """
+        """"
         try:
             self.logger.info("Extracting comprehensive SR features for ML training...")
 
@@ -1340,6 +1344,8 @@ async def extract_ml_features(self, market_data: pd.DataFrame, current_price: fl
                 "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
                 "sr_nearest_support": sr_context.get("nearest_support", current_price),
                 "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 })
 
 # Strength features
@@ -1361,7 +1367,7 @@ features.update({
 
 # Distance features
 if support_levels:
-                support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
+    support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
                 features["sr_nearest_support_distance"] = min(support_distances) if support_distances else 1.0
             else:
                 features["sr_nearest_support_distance"] = 1.0
@@ -2874,7 +2880,7 @@ if support_levels:
                 
                 # Calculate bounce rate - handle untested levels properly
                 if touches == 0:
-                    # Level hasn't been tested yet - give neutral score
+                    # Level hasn't been tested yet - give neutral score'
                     bounce_rate = 0.5  # Neutral score for untested levels
                     bounce_strength = 1.0  # Neutral strength
                     is_untested = True
@@ -3644,7 +3650,7 @@ if support_levels:
         current_price: float,
         sr_context: dict[str, Any],
     ) -> bool:
-        """
+        """"
         Check if price is near significant S/R level.
 
         Args:
@@ -3653,7 +3659,7 @@ if support_levels:
 
         Returns:
             bool: True if near S/R level
-        """
+        """"
         try:
             if not sr_context:
                 return False
@@ -3677,7 +3683,7 @@ if support_levels:
         current_price: float,
         sr_context: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Get detailed proximity information to S/R levels.
 
         Args:
@@ -3686,7 +3692,7 @@ if support_levels:
 
         Returns:
             dict[str, Any]: Detailed proximity information
-        """
+        """"
         try:
             if not sr_context:
                 return {}
@@ -3737,7 +3743,7 @@ if support_levels:
         current_price: float,
         sr_context: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Predict S/R outcome (breakout/rebounce/consolidation).
 
         Args:
@@ -3747,7 +3753,7 @@ if support_levels:
 
         Returns:
             dict[str, Any]: S/R outcome prediction
-        """
+        """"
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
@@ -3797,7 +3803,7 @@ if support_levels:
         self,
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
-        """
+        """"
         Calculate SR-related features.
 
         Args:
@@ -3805,7 +3811,7 @@ if support_levels:
 
         Returns:
             dict[str, Any]: SR features
-        """
+        """"
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
@@ -3855,7 +3861,7 @@ if support_levels:
         self,
         market_data: pd.DataFrame,
     ) -> dict[str, pd.Series]:
-        """
+        """"
         Calculate comprehensive S/R features with multiple timeframes.
 
         Args:
@@ -3863,7 +3869,7 @@ if support_levels:
 
         Returns:
             dict[str, pd.Series]: Comprehensive S/R features
-        """
+        """"
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
@@ -4148,7 +4154,7 @@ if support_levels:
             return 0.5
 
     async def set_weights(self, weights: dict[str, float]) -> bool:
-        """
+        """"
         Set weights for S/R detection methods.
 
         Args:
@@ -4156,7 +4162,7 @@ if support_levels:
 
         Returns:
             bool: True if weights set successfully
-        """
+        """"
         try:
             # Update model weights
             if "fractal_weight" in weights:
@@ -4222,7 +4228,7 @@ if support_levels:
         context="Breakout prediction",
     )
     async def predict_breakout(self, market_data: pd.DataFrame) -> dict[str, Any] | None:
-        """
+        """"
         Predict breakout direction and confidence.
 
         Args:
@@ -4230,7 +4236,7 @@ if support_levels:
 
         Returns:
             dict[str, Any]: Breakout prediction or None
-        """
+        """"
         try:
             current_price = market_data['close'].iloc[-1]
             
@@ -4566,7 +4572,7 @@ if support_levels:
 async def setup_sr_breakout_predictor(
     config: dict[str, Any] | None = None,
 ) -> SRBreakoutPredictor | None:
-    """
+    """"
     Setup and return a configured SRBreakoutPredictor instance with optimized parameters.
 
     Args:
@@ -4574,7 +4580,7 @@ async def setup_sr_breakout_predictor(
 
     Returns:
         SRBreakoutPredictor: Configured SR breakout predictor instance
-    """
+    """"
     try:
         # Ensure optimized parameters are enabled
         sr_config = config.copy() if config else {}
@@ -4591,7 +4597,7 @@ async def setup_sr_breakout_predictor(
 
 
 def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
-    """
+    """"
     Ensure that the configuration has optimized S/R parameters enabled.
     
     Args:
@@ -4599,7 +4605,7 @@ def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
         
     Returns:
         dict: Configuration with optimized S/R parameters enabled
-    """
+    """"
     sr_config = config.copy()
     sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
     sr_config["sr_breakout_predictor"]["use_optimized_params"] = True

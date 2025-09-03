@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict
 
 from ..base import AppError
 from ..mapping import error_mapper
+import asyncio
 
 logger = logging.getLogger(__name__)
 

@@ -30,6 +30,7 @@ from src.utils.common_operations import (
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 import asyncio
+from src.utils.common_operations import ensure_directory
 
 
 # -----------------------------------------------------------------------------
@@ -1605,7 +1606,6 @@ class VectorizedLabellingOrchestrator:
 
             ensure_directory("log/mi")
             ts = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
-
             meta_label_cols: list[str] = [
                 c
                 for c in df.columns
@@ -2440,8 +2440,6 @@ class VectorizedDataNormalizer:
     def _apply_minmax_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
         try:
             from sklearn.preprocessing import MinMaxScaler
-import copy
-import os.path
 
             scaler = MinMaxScaler()
             numeric_data = data.select_dtypes(include=[np.number])

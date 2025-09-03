@@ -8,6 +8,7 @@ It uses the optimized triple barrier labeling component and integrates with the 
 import asyncio
 import sys
 from pathlib import Path
+from src.utils.common_operations import ensure_directory
 from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
@@ -174,7 +175,7 @@ class TripleBarrierMethodStep:
 
             # Save results
             output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_directory(output_path.parent)
             
             # Combine data with labels
             result_data = data.copy()

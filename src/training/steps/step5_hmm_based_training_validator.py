@@ -19,6 +19,7 @@ from src.utils.warning_symbols import (
     missing,
     validation_error,
 )
+from src.utils.common_operations import safe_json_load
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -291,8 +292,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                 )
                 return True  # Not critical for validation
 
-            with open(history_file, "r", encoding="utf-8") as f:
-                training_history: dict[str, Any] = json.load(f)
+            training_history: dict[str, Any] = safe_json_load(history_file)
 
             # Extract performance metrics
             metrics: dict[str, Any] = training_history.get("metrics", {})
@@ -384,8 +384,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                 )
                 return True
 
-            with open(history_file, "r", encoding="utf-8") as f:
-                training_history: dict[str, Any] = json.load(f)
+            training_history: dict[str, Any] = safe_json_load(history_file)
 
             # Check for training epochs
             if "epochs" in training_history:
@@ -453,8 +452,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
             )
 
             if os.path.exists(metadata_file):
-                with open(metadata_file, "r", encoding="utf-8") as f:
-                    metadata: dict[str, Any] = json.load(f)
+                metadata: dict[str, Any] = safe_json_load(metadata_file)
 
                 # Check model type
                 model_type = metadata.get("model_type")

@@ -18,6 +18,7 @@ from src.utils.enhanced_validation_decorators import (
     validate_step3_comprehensive,
     smart_validation_cache
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step3ParameterOptimizationValidator")
 
@@ -118,8 +119,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(results_file, 'r') as f:
-                results_data = json.load(f)
+            results_data = safe_json_load(results_file)
 
             # Check required fields
             required_fields = ["best_parameters", "optimization_history", "final_score"]
@@ -197,8 +197,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(config_file, 'r') as f:
-                config_data = json.load(f)
+            config_data = safe_json_load(config_file)
 
             # Check required fields
             required_fields = ["parameter_ranges", "optimization_method", "max_iterations"]
@@ -265,8 +264,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(logs_file, 'r') as f:
-                logs_data = json.load(f)
+            logs_data = safe_json_load(logs_file)
 
             # Check if it's a list
             if not isinstance(logs_data, list):
@@ -312,8 +310,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(metrics_file, 'r') as f:
-                metrics_data = json.load(f)
+            metrics_data = safe_json_load(metrics_file)
 
             # Check if it's a dictionary
             if not isinstance(metrics_data, dict):
@@ -445,8 +442,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             if existing_files:
                 for file_path in existing_files:
                     try:
-                        with open(file_path, 'r') as f:
-                            data = json.load(f)
+                        data = safe_json_load(file_path)
                         validation_result["details"][f"{Path(file_path).stem}_keys"] = list(data.keys())
                         validation_result["details"][f"{Path(file_path).stem}_valid"] = True
                     except Exception as e:

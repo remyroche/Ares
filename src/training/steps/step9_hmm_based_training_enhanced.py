@@ -57,6 +57,7 @@ from src.utils.centralized_decorators import (
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -1004,8 +1005,7 @@ class EnhancedHMMBasedTrainingStep:
             }
             
             metadata_path = os.path.join(save_path, "metadata.json")
-            with open(metadata_path, "w") as f:
-                json.dump(metadata, f, indent=2)
+            safe_json_dump(metadata, metadata_path, indent=2)
             
             self.logger.info(f"✅ Enhanced models saved to {save_path}")
             

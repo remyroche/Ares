@@ -158,7 +158,9 @@ def generate_final_report():
     }
     
     # Save report
-    report_path = Path('/workspace/code_quality/final_fixes_report.json')
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = Path(f'/workspace/code_quality/reports/final_fixes_report_{timestamp}.json')
     with open(report_path, 'w') as f:
         json.dump(report, f, indent=2)
     

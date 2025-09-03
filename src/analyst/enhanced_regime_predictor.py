@@ -44,10 +44,7 @@ class EnhancedRegimePredictor:
         self.boundary_scaler = None
         
     @with_tracing_span("enhanced_regime_predictor.predict_regime_changes")
-    @handles_errors
-        default_return={"success": False, "predictions": [], "error": "Prediction failed"},
-        context="enhanced_regime_prediction"
-    )
+    @handles_errors(default_return={"success": False, "predictions": [], "error": "Prediction failed"}, context="enhanced_regime_prediction" )
     def predict_regime_changes(
         self, 
         features: pd.DataFrame,
@@ -120,10 +117,7 @@ class EnhancedRegimePredictor:
             self.logger.exception(f"❌ Enhanced regime prediction failed: {e}")
             return {"success": False, "predictions": [], "error": str(e)}
     
-    @handles_errors
-        default_return=np.zeros(0, dtype=float),
-        context="calculate_regime_stability"
-    )
+    @handles_errors(default_return=np.zeros(0, dtype=float), context="calculate_regime_stability" )
     def _calculate_regime_stability(self, hmm_probs: np.ndarray) -> np.ndarray:
         """Calculate regime stability (max probability for each timepoint)."""
         try:
@@ -132,10 +126,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating regime stability: {e}")
             return np.zeros(len(hmm_probs))
     
-    @handles_errors
-        default_return=np.zeros(0, dtype=float),
-        context="calculate_regime_entropy"
-    )
+    @handles_errors(default_return=np.zeros(0, dtype=float), context="calculate_regime_entropy" )
     def _calculate_regime_entropy(self, hmm_probs: np.ndarray) -> np.ndarray:
         """Calculate regime entropy (uncertainty measure)."""
         try:
@@ -146,10 +137,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating regime entropy: {e}")
             return np.zeros(len(hmm_probs))
     
-    @handles_errors
-        default_return=np.zeros(0, dtype=bool),
-        context="detect_regime_changes_multi_signal"
-    )
+    @handles_errors(default_return=np.zeros(0, dtype=bool), context="detect_regime_changes_multi_signal" )
     def _detect_regime_changes_multi_signal(
         self, 
         hmm_states: np.ndarray, 
@@ -199,10 +187,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error in multi-signal regime change detection: {e}")
             return np.zeros(len(hmm_states), dtype=bool)
     
-    @handles_errors
-        default_return=np.zeros(0, dtype=float),
-        context="calculate_transition_probabilities"
-    )
+    @handles_errors(default_return=np.zeros(0, dtype=float), context="calculate_transition_probabilities" )
     def _calculate_transition_probabilities(
         self, 
         hmm_probs: np.ndarray, 
@@ -227,10 +212,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating transition probabilities: {e}")
             return np.zeros(len(regime_changes), dtype=float)
     
-    @handles_errors
-        default_return=np.zeros(0, dtype=float),
-        context="calculate_prediction_confidence"
-    )
+    @handles_errors(default_return=np.zeros(0, dtype=float), context="calculate_prediction_confidence" )
     def _calculate_prediction_confidence(
         self, 
         stability: np.ndarray, 
@@ -266,10 +248,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error calculating prediction confidence: {e}")
             return np.zeros(len(stability), dtype=float)
     
-    @handles_errors
-        default_return=np.ones(0, dtype=float),
-        context="apply_persistence_model"
-    )
+    @handles_errors(default_return=np.ones(0, dtype=float), context="apply_persistence_model" )
     def _apply_persistence_model(
         self, 
         regime_changes: np.ndarray, 
@@ -341,10 +320,7 @@ class EnhancedRegimePredictor:
             self.logger.warning(f"⚠️ Error creating prediction events: {e}")
             return []
     
-    @handles_errors
-        default_return=np.zeros(0, dtype=int),
-        context="calculate_regime_durations"
-    )
+    @handles_errors(default_return=np.zeros(0, dtype=int), context="calculate_regime_durations" )
     def _calculate_regime_durations(self, states: np.ndarray) -> np.ndarray:
         """Calculate how long each regime persists."""
         try:

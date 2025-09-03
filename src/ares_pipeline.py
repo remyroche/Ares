@@ -100,14 +100,7 @@ class AresPipeline:
         self.cycle_count: int = 0
         self.last_cycle_time: datetime | None = None
 
-    @handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid pipeline configuration"),
-            AttributeError: (False, "Missing required pipeline components"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False, context="pipeline initialization",
-    )
+    @handles_errors(error_handlers={ ValueError: (False, "Invalid pipeline configuration"), AttributeError: (False, "Missing required pipeline components"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="pipeline initialization", )
     async def initialize(self) -> bool:
         """
         Initialize pipeline with enhanced error handling and DI.
@@ -146,9 +139,7 @@ class AresPipeline:
             self.logger.exception("❌ Ares Pipeline initialization failed")
             return False
 
-    @handles_errors
-        default_return=None, context="configuration service initialization",
-    )
+    @handles_errors(default_return=None, context="configuration service initialization", )
     async def _initialize_configuration_service(self) -> None:
         """Initialize configuration service."""
         try:
@@ -180,9 +171,7 @@ class AresPipeline:
             self.logger.exception("Error initializing configuration service")
             raise
 
-    @handles_errors
-        default_return=None, context="core service registration",
-    )
+    @handles_errors(default_return=None, context="core service registration", )
     async def _register_core_services(self) -> None:
         """Register core services in DI container with comprehensive logging."""
         try:
@@ -303,9 +292,7 @@ class AresPipeline:
             self.logger.exception("Error registering core services")
             raise
 
-    @handles_errors
-        default_return=None, context="pipeline component resolution",
-    )
+    @handles_errors(default_return=None, context="pipeline component resolution", )
     async def _resolve_pipeline_components(self) -> None:
         """Resolve pipeline components through DI container with comprehensive logging."""
         try:
@@ -381,9 +368,7 @@ class AresPipeline:
             self.logger.exception("Error resolving pipeline components")
             raise
 
-    @handles_errors
-        default_return=None, context="component initialization",
-    )
+    @handles_errors(default_return=None, context="component initialization", )
     async def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
@@ -411,9 +396,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception("Error initializing components")
 
-    @handles_errors
-        default_return=None, context="signal handler setup",
-    )
+    @handles_errors(default_return=None, context="signal handler setup", )
     def _setup_signal_handlers(self) -> None:
         """Setup signal handlers for graceful shutdown."""
         try:
@@ -430,14 +413,7 @@ class AresPipeline:
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         asyncio.create_task(self.stop())
 
-    @handles_errors(
-        error_handlers={
-            ConnectionError: (None, "Failed to connect to exchange"),
-            TimeoutError: (None, "Pipeline operation timed out"),
-            ValueError: (None, "Invalid pipeline state"),
-        },
-        default_return=None, context="pipeline execution",
-    )
+    @handles_errors(error_handlers={ ConnectionError: (None, "Failed to connect to exchange"), TimeoutError: (None, "Pipeline operation timed out"), ValueError: (None, "Invalid pipeline state"), }, default_return=None, context="pipeline execution", )
     async def run(self) -> dict[str, Any] | None:
         """
         Run the Ares pipeline with comprehensive logging and timeout protection.
@@ -568,9 +544,7 @@ class AresPipeline:
             print("🧹 Pipeline cleanup completed")
             self.logger.info("🧹 Pipeline cleanup completed")
 
-    @handles_errors
-        default_return=None, context="pipeline cycle execution",
-    )
+    @handles_errors(default_return=None, context="pipeline cycle execution", )
     async def _execute_cycle(self) -> None:
         """Execute a single pipeline cycle with comprehensive logging."""
         try:
@@ -939,9 +913,7 @@ class AresPipeline:
 
         return status
 
-    @handles_errors
-        default_return=None, context="pipeline cleanup",
-    )
+    @handles_errors(default_return=None, context="pipeline cleanup", )
     async def stop(self) -> None:
         """Stop the pipeline gracefully."""
         self.logger.info("🛑 Stopping Ares Pipeline...")

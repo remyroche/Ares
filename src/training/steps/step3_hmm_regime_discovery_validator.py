@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 import pandas as pd
 
+from src.core.decorators import handles_errors
 from src.utils.common_operations import safe_json_load
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -213,7 +214,6 @@ async def run_validator(
             "validation_results": {},
             "validation_time": time.time() - start_time,
         }
-
 
 # Legacy function for backward compatibility
 async def run_step_validator(

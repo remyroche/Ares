@@ -15,6 +15,12 @@ import pandas as pd
 import pywt
 
 from src.config import CONFIG
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+)
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
@@ -23,7 +29,6 @@ from src.utils.centralized_decorators_simple import (
 from src.utils.error_handler import asyncio, handle_errors, import, logging
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning
-
 
 class CandlestickPatternAnalyzer:
     """
@@ -47,11 +52,7 @@ class CandlestickPatternAnalyzer:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="candlestick pattern analyzer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize candlestick pattern analyzer."""
         try:
@@ -65,11 +66,7 @@ class CandlestickPatternAnalyzer:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return={},
-        context="candlestick pattern analysis",
-    )
+    @handles_errors
     async def analyze_patterns(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """
         Analyze candlestick patterns and return features for ML training.
@@ -117,7 +114,7 @@ class CandlestickPatternAnalyzer:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error analyzing candlestick patterns: {e}")
+            self.logger.error(f"Error analyzing candlestick patterns: {e}")
 
             return {}
 
@@ -146,7 +143,7 @@ class CandlestickPatternAnalyzer:
 
         except (ValueError, TypeError, IndexError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error preparing candlestick data: {e}")
+            self.logger.error(f"Error preparing candlestick data: {e}")
 
             return pd.DataFrame()
 
@@ -677,10 +674,9 @@ class CandlestickPatternAnalyzer:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error converting patterns to features: {e}")
+            self.logger.error(f"Error converting patterns to features: {e}")
 
             return {}
-
 
 class FeatureInteractionEngine:
     """
@@ -756,11 +752,7 @@ class FeatureInteractionEngine:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature interaction engine initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize feature interaction engine."""
         try:
@@ -774,11 +766,7 @@ class FeatureInteractionEngine:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return={},
-        context="feature interaction generation",
-    )
+    @handles_errors
     async def generate_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
         """
         Generate feature interaction terms from normalized features.
@@ -825,7 +813,7 @@ class FeatureInteractionEngine:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating feature interactions: {e}")
+            self.logger.error(f"Error generating feature interactions: {e}")
 
             return features
 
@@ -1150,7 +1138,6 @@ class FeatureInteractionEngine:
         """Print message with proper formatting."""
         print(message)
 
-
 class AdvancedFeatureEngineering:
     """
     Advanced feature engineering with market microstructure analysis,
@@ -1243,11 +1230,7 @@ class AdvancedFeatureEngineering:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="advanced feature engineering initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize advanced feature engineering components."""
         try:
@@ -1284,9 +1267,7 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
-
 import copy
-
                 self.meta_labeling_system = MetaLabelingSystem(self.config)
                 await self.meta_labeling_system.initialize()
 
@@ -1300,11 +1281,7 @@ import copy
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="advanced feature engineering",
-    )
+    @handles_errors(fallback=None)
     async def engineer_features(
         self,
         price_data: pd.DataFrame,
@@ -1416,7 +1393,7 @@ import copy
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error engineering advanced features: {e}")
+            self.logger.error(f"Error engineering advanced features: {e}")
 
             return {}
 
@@ -1457,7 +1434,7 @@ import copy
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error engineering multi-timeframe features: {e}")
+            self.logger.error(f"Error engineering multi-timeframe features: {e}")
 
             return {}
 
@@ -1501,7 +1478,7 @@ import copy
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating {timeframe} features: {e}")
+            self.logger.error(f"Error calculating {timeframe} features: {e}")
 
             return {}
 
@@ -1541,7 +1518,7 @@ import copy
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error resampling to {timeframe}: {e}")
+            self.logger.error(f"Error resampling to {timeframe}: {e}")
 
             return data
 
@@ -1759,7 +1736,7 @@ import copy
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating meta-labels: {e}")
+            self.logger.error(f"Error generating meta-labels: {e}")
 
             return {}
 
@@ -1834,7 +1811,7 @@ import copy
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating analyst labels: {e}")
+            self.logger.error(f"Error generating analyst labels: {e}")
 
             return {"NO_SETUP": 1}
 
@@ -1905,7 +1882,7 @@ import copy
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating tactician labels: {e}")
+            self.logger.error(f"Error generating tactician labels: {e}")
 
             return {
                 "LOWEST_PRICE_NEXT_1m": price_data["close"].iloc[-1],
@@ -1946,7 +1923,7 @@ import copy
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error engineering microstructure features: {e}")
+            self.logger.error(f"Error engineering microstructure features: {e}")
 
             return {}
 
@@ -1965,7 +1942,7 @@ import copy
                 (price_changes * volume_data["volume"]).rolling(20).mean()
             )
 
-            # Calculate Kyle's lambda (price impact parameter)
+            # Calculate Kyle's lambda (price impact parameter)'
             kyle_lambda = (
                 np.abs(price_changes).rolling(50).mean()
                 / volume_data["volume"].rolling(50).mean()
@@ -1987,7 +1964,7 @@ import copy
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating price impact: {e}")
+            self.logger.error(f"Error calculating price impact: {e}")
 
             return {}
 
@@ -2021,7 +1998,7 @@ import copy
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating order flow imbalance: {e}")
+            self.logger.error(f"Error calculating order flow imbalance: {e}")
 
             return {}
 
@@ -2061,7 +2038,7 @@ import copy
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating volume profile: {e}")
+            self.logger.error(f"Error calculating volume profile: {e}")
 
             return {}
 
@@ -2089,7 +2066,7 @@ import copy
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error engineering adaptive indicators: {e}")
+            self.logger.error(f"Error engineering adaptive indicators: {e}")
 
             return {}
 
@@ -2131,7 +2108,7 @@ import copy
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating adaptive moving averages: {e}")
+            self.logger.error(f"Error calculating adaptive moving averages: {e}")
 
             return {}
 
@@ -2168,7 +2145,6 @@ import copy
             self.logger.error(f"Error selecting optimal features: {e}")
             return features
 
-
 class VolatilityRegimeModel:
     """Model volatility regimes using GARCH and other methods."""
 
@@ -2184,7 +2160,7 @@ class VolatilityRegimeModel:
             return True
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error(initialization_"Error initializing volatility model: {e}")
+            self.logger.error(initialization_f"Error initializing volatility model: {e}")
 
             return False
 
@@ -2224,7 +2200,7 @@ class VolatilityRegimeModel:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error modeling volatility: {e}")
+            self.logger.error(f"Error modeling volatility: {e}")
 
             return {}
 
@@ -2251,7 +2227,6 @@ class VolatilityRegimeModel:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             return pd.Series()
 
-
 class CorrelationAnalyzer:
     """Analyze correlations between different assets and timeframes."""
 
@@ -2268,7 +2243,7 @@ class CorrelationAnalyzer:
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing correlation analyzer: {e}")
+                initialization_error(f"Error initializing correlation analyzer: {e}")
             )
             return False
 
@@ -2299,10 +2274,9 @@ class CorrelationAnalyzer:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error analyzing correlations: {e}")
+            self.logger.error(f"Error analyzing correlations: {e}")
 
             return {}
-
 
 class MomentumAnalyzer:
     """Analyze momentum patterns and signals."""
@@ -2320,7 +2294,7 @@ class MomentumAnalyzer:
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing momentum analyzer: {e}")
+                initialization_error(f"Error initializing momentum analyzer: {e}")
             )
             return False
 
@@ -2366,10 +2340,9 @@ class MomentumAnalyzer:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error analyzing momentum: {e}")
+            self.logger.error(f"Error analyzing momentum: {e}")
 
             return {}
-
 
 class LiquidityAnalyzer:
     """Analyze liquidity conditions and market depth."""
@@ -2387,7 +2360,7 @@ class LiquidityAnalyzer:
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("Error initializing liquidity analyzer: {e}")
+                initialization_error(f"Error initializing liquidity analyzer: {e}")
             )
             return False
 
@@ -2437,6 +2410,6 @@ class LiquidityAnalyzer:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error analyzing liquidity: {e}")
+            self.logger.error(f"Error analyzing liquidity: {e}")
 
             return {}

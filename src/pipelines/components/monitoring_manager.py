@@ -15,7 +15,7 @@ from src.utils.centralized_decorators import (
     performance_monitor,
 )
 from src.utils.logger import system_logger
-
+from src.core.decorators import handles_errors
 
 class MonitoringManager:
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -23,7 +23,7 @@ class MonitoringManager:
         self.logger = system_logger.getChild("MonitoringManager")
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid monitoring manager configuration"),
             AttributeError: (False, "Missing monitoring manager parameters"),

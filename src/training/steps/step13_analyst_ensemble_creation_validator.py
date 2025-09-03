@@ -6,13 +6,13 @@ import os.path
 from pathlib import Path
 from typing import Any
 
+from src.core.decorators import handles_errors
 from src.utils.common_operations import safe_json_load
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing, success, warning
 
 logger = system_logger
-
 
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
@@ -22,7 +22,7 @@ class Step7AnalystEnsembleCreationValidator:
         self.logger = logger
         self.validation_results = {}
 
-    @handle_errors
+    @handles_errors
     def validate(
         self,
         symbol: str,

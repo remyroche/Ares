@@ -34,8 +34,12 @@ from scipy import stats
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import TimeSeriesSplit
 
-from src.config.config_optuna import (
+from src.utils.logger import setup_logging
+from pathlib import Path
+SROptimizationParameters,
     HyperparameterOptimizationConfig,
+    get_parameter_search_space
+from src.config.config_optuna import (
     Path,
     SROptimizationParameters,
     from,
@@ -457,6 +461,10 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
             # Import the optimized triple barrier labeling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
+import copy
+OptimizedTripleBarrierLabeling
                 OptimizedTripleBarrierLabeling,
             )
 
@@ -828,7 +836,7 @@ class RegimeSpecificTripleBarrierOptimizer:
             self.regime_results[regime_name] = result
             
             self.logger.info(f"✅ Optimized {regime_name}: Score={best_trial.value:.4f}, "
-                           f"Sharpe={best_metrics.get('sharpe_ratio', 0.0):.4f}, "
+            f"Sharpe={best_metrics.get('sharpe_ratio', 0.0):.4f}, "
                            f"Win Rate={best_metrics.get('win_rate', 0.5):.4f}")
             
         except Exception as e:

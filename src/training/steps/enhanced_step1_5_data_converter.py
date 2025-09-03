@@ -160,7 +160,7 @@ class OptimizedUnifiedDataProcessor:
         elif source_name == 'aggtrades':
             # Transform aggtrades to OHLCV
             if 'price' in chunk.columns and 'quantity' in chunk.columns:
-                # Simple aggregation - in practice, you'd want more sophisticated aggregation
+                # Simple aggregation - in practice, you'd want more sophisticated aggregation'
                 unified_chunk['open'] = chunk['price']
                 unified_chunk['high'] = chunk['price']
                 unified_chunk['low'] = chunk['price']
@@ -505,7 +505,7 @@ if __name__ == "__main__":
 import os.path
 
     # Set up logging
-    logging.basicConfig(
+logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )

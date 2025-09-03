@@ -25,9 +25,9 @@ from sklearn.feature_selection import mutual_info_regression
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
+from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 
 class DiverseLookbackOptimizer:
     """Optimizer that finds diverse yet meaningful lookback periods for each feature.

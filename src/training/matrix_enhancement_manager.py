@@ -19,9 +19,8 @@ from sklearn.decomposition import NMF
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class MatrixEnhancementConfig:
@@ -52,7 +51,6 @@ class MatrixEnhancementConfig:
     correlation_threshold: float = 0.8
     condition_number_threshold: float = 1e12
 
-
 class MatrixEnhancementManager:
     """Advanced matrix enhancement manager for ML training processes.
 
@@ -72,7 +70,7 @@ class MatrixEnhancementManager:
         self.logger = system_logger.getChild("MatrixEnhancementManager")
         self.enhancement_results = {}
 
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(fallback=None)
     def enhance_features_with_svd(
         self,
         features_df: pd.DataFrame,
@@ -138,7 +136,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ SVD enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(fallback=None)
     def enhance_features_with_nmf(
         self,
         features_df: pd.DataFrame,
@@ -200,7 +198,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ NMF enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(fallback=None)
     def apply_spectral_clustering_features(
         self,
         features_df: pd.DataFrame,
@@ -288,7 +286,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ Spectral clustering enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(fallback=None)
     def apply_tensor_decomposition(
         self,
         features_df: pd.DataFrame,
@@ -370,7 +368,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ Tensor decomposition enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(fallback=None)
     def analyze_matrix_condition(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze matrix condition number and numerical stability.
 
@@ -424,7 +422,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ Matrix condition analysis failed: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handles_errors(fallback=None)
     def apply_sparse_matrix_optimizations(
         self,
         features_df: pd.DataFrame,

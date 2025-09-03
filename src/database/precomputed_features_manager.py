@@ -9,8 +9,9 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, failed, warning
 
 try:
@@ -19,19 +20,18 @@ try:
 import copy
 import os.path
 
-    INFLUXDB_AVAILABLE = True
+INFLUXDB_AVAILABLE = True
 except Exception:
     InfluxDBManager = None  # type: ignore
     INFLUXDB_AVAILABLE = False
 
-
 class PrecomputedFeaturesManager:
-    """
+    """"
     Manages precomputed features with standardized naming convention and database storage.
 
     Feature naming convention: {category}_{timeframe}_{name}
     Categories: candle, volatility, volume, momentum, technical, price, time,
-                ml_enhanced, triple_barrier, autoencoder
+    ml_enhanced, triple_barrier, autoencoder
     Timeframes: 1m, 5m, 15m, 30m
 
     Examples:
@@ -41,7 +41,7 @@ class PrecomputedFeaturesManager:
     - price_30m_change_pct
     - triple_barrier_1m_profit_take_hit
     - autoencoder_5m_reconstruction_error
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -84,11 +84,7 @@ class PrecomputedFeaturesManager:
             "log_return",
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="precomputed features manager initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the precomputed features manager."""
         self.logger.info("🚀 Initializing PrecomputedFeaturesManager...")
@@ -100,7 +96,7 @@ class PrecomputedFeaturesManager:
         return True
 
     def generate_feature_name(self, category: str, timeframe: str, name: str) -> str:
-        """
+        """"
         Generate standardized feature name.
 
         Args:
@@ -110,7 +106,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             Standardized feature name
-        """
+        """"
         if category not in self.feature_categories:
             msg = (
                 f"Invalid category: {category}. "
@@ -125,7 +121,7 @@ class PrecomputedFeaturesManager:
         return f"{category}_{timeframe}_{name}"
 
     def parse_feature_name(self, feature_name: str) -> tuple[str, str, str]:
-        """
+        """"
         Parse standardized feature name into components.
 
         Args:
@@ -133,7 +129,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             Tuple of (category, timeframe, name)
-        """
+        """"
         parts = feature_name.split("_", 2)
         if len(parts) != 3:
             msg = f"Invalid feature name format: {feature_name}"
@@ -151,18 +147,14 @@ class PrecomputedFeaturesManager:
 
         return category, timeframe, name
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature storage",
-    )
+    @handles_errors(fallback=False)
     async def store_features(
         self,
         features_df: pd.DataFrame,
         symbol: str,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """
+        """"
         Store precomputed features in the database.
 
         Args:
@@ -172,7 +164,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             Success status
-        """
+        """"
         if features_df.empty:
             self.logger.warning(warning("Empty features DataFrame provided"))
             return False
@@ -211,11 +203,7 @@ class PrecomputedFeaturesManager:
         self.logger.info(f"✅ Successfully stored features for {symbol}")
         return True
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="feature retrieval",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def retrieve_features(
         self,
         symbol: str,
@@ -225,7 +213,7 @@ class PrecomputedFeaturesManager:
         category_filter: str | None = None,
         timeframe_filter: str | None = None,
     ) -> pd.DataFrame:
-        """
+        """"
         Retrieve precomputed features from the database.
 
         Args:
@@ -238,7 +226,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             DataFrame with requested features
-        """
+        """"
         if self.db_manager is None:
             self.logger.warning(warning("InfluxDB not available; cannot retrieve features"))
             return pd.DataFrame()
@@ -262,13 +250,13 @@ class PrecomputedFeaturesManager:
             time_range = f"|> range(stop: {end_time})"
 
         # Construct query
-        query = f"""
+        query = f""""
         from(bucket: "{self.db_manager.bucket}")
           {time_range}
           |> filter(fn: (r) => r["_measurement"] == "precomputed_features")
           |> filter(fn: (r) => {" and ".join(query_filters)})
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        """
+        """"
 
         df = self.db_manager.query_api.query_data_frame(
             query,
@@ -298,7 +286,7 @@ class PrecomputedFeaturesManager:
         return df
 
     def _ensure_price_differences(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
+        """"
         Ensure price-based features use differences rather than absolute values.
 
         Args:
@@ -306,11 +294,11 @@ class PrecomputedFeaturesManager:
 
         Returns:
             DataFrame with price differences applied
-        """
+        """"
         df_copy = df.copy()
 
         for col in df_copy.columns:
-            # Parse feature name to check if it's price-related
+            # Parse feature name to check if it's price-related'
             try:
                 category, timeframe, name = self.parse_feature_name(col)
             except ValueError:
@@ -430,7 +418,7 @@ class PrecomputedFeaturesManager:
         category: str | None = None,
         timeframe: str | None = None,
     ) -> list[str]:
-        """
+        """"
         Get list of available feature names based on filters.
 
         Args:
@@ -439,7 +427,7 @@ class PrecomputedFeaturesManager:
 
         Returns:
             List of available feature names
-        """
+        """"
         # This would query the metadata to get available features
         # For now, return example features based on the standardized naming
 

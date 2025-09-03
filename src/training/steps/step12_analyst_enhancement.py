@@ -45,12 +45,12 @@ import contextlib
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, failed, timeout, warning
 
-# Suppress Optuna's verbose logging to keep the output clean
+# Suppress Optuna's verbose logging to keep the output clean'
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Required modules for this step
@@ -70,14 +70,12 @@ REQUIRED_MODULES = [
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
-
 """
 Compatibility shim for NumPy RNG unpickling across versions.
 We avoid nested functions to keep the shim picklable.
 """
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
-
 
 def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwargs):  # type: ignore[override]
     """Module-level normalized ctor to avoid creating a closure (picklable)."""
@@ -87,7 +85,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwarg
         if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
     except Exception:
         pass
 
@@ -114,7 +112,6 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwarg
             except Exception:
                 pass
             raise
-
 
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
@@ -144,7 +141,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
             )
 
 class RegimeAwareAnalystEnhancementStep:
-    """Step 12: Regime-Aware Analyst Models Enhancement.
+    """Step 12: Regime-Aware Analyst Models Enhancement."
 
     This step refines the trained analyst models through a regime-specific sequential process:
     1.  **Regime-Specific Model Loading:** Loads models organized by HMM regime clusters
@@ -155,7 +152,7 @@ class RegimeAwareAnalystEnhancementStep:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the RegimeAwareAnalystEnhancementStep.
+        """Initializes the RegimeAwareAnalystEnhancementStep."
 
         Args: config (Dict[str = Any]): Configuration dictionary for the step.
 
@@ -169,7 +166,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.regime_config = self._initialize_regime_config()
         
         # --- Mac M1 / M2 / M3 (Apple Silicon) Specific Setup ---
-        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
+        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.'
         # Fallback to 'cpu' if MPS is not available or hangs.
         self.device = self._safe_get_device()
         self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
@@ -264,24 +261,19 @@ class RegimeAwareAnalystEnhancementStep:
             self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
             return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="analyst enhancement step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the analyst enhancement step."""
         self.logger.info("Initializing Analyst Enhancement Step...")
         self.logger.info("Analyst Enhancement Step initialized successfully.")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="regime-aware analyst enhancement step execution",
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Executes the full regime-aware analyst model enhancement pipeline.
+        """Executes the full regime-aware analyst model enhancement pipeline."
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
@@ -710,7 +702,7 @@ class RegimeAwareAnalystEnhancementStep:
                     f"Loaded HMM data shape: {data.shape}, columns: {list(data.columns)}",
                 )
 
-                # Remove non-numeric columns that XGBoost doesn't accept
+                # Remove non-numeric columns that XGBoost doesn't accept'
                 numeric_columns = data.select_dtypes(include=[np.number]).columns
                 data = data[numeric_columns]
 
@@ -860,7 +852,7 @@ class RegimeAwareAnalystEnhancementStep:
     @with_tracing_span("Step6._create_target_from_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
-        """Attempts to create a meaningful target column from available data.
+        """Attempts to create a meaningful target column from available data."
 
         Args:
             data: The regime data DataFrame
@@ -1370,7 +1362,7 @@ class RegimeAwareAnalystEnhancementStep:
             from sklearn.neural_network import MLPClassifier
 
         return MLPClassifier(
-                **params,
+        **params,
                 random_state=42,
                 early_stopping=True,
                 validation_fraction=0.1,
@@ -1565,9 +1557,9 @@ class RegimeAwareAnalystEnhancementStep:
                     sys.stdout = old_stdout
                     signal.alarm(0)  # Cancel the alarm
             elif model_name == "xgboost":
-                # XGBoost doesn't support callbacks parameter, use eval_set only
+                # XGBoost doesn't support callbacks parameter, use eval_set only'
                 model.fit(X_train, y_train, eval_set=[(X_val, y_val)])
-            else: # SVM = Neural Network, and Random Forest don't support eval_set
+            else: # SVM = Neural Network, and Random Forest don't support eval_set'
                 if model_name == "svm":
                     self.logger.info(
                         {
@@ -1763,7 +1755,7 @@ class RegimeAwareAnalystEnhancementStep:
         return optimal_features, selection_summary
 
     def _log_mutual_information_warnings(self, X: pd.DataFrame, y: pd.Series) -> None:
-        """Compute MI for each feature vs target and warn on near-zero scores.
+        """Compute MI for each feature vs target and warn on near-zero scores."
         Threshold: in blank mode -> absolute threshold 1e-5.
         Full mode -> bottom 20% percentile flagged.
         """
@@ -1794,7 +1786,7 @@ class RegimeAwareAnalystEnhancementStep:
             )
 
     def _log_feature_stability_warnings(self, X: pd.DataFrame) -> None:
-        """Check 4-fold CV stability: warn if std of fold means >> expected standard error.
+        """Check 4-fold CV stability: warn if std of fold means >> expected standard error."
         Criterion: std_of_means > 3 * (global_std / sqrt(k)).
         """
         if X.empty:
@@ -1804,6 +1796,8 @@ class RegimeAwareAnalystEnhancementStep:
         for col in X.columns:
             try:
                 vals = X[col].astype(float).values
+            except Exception as e:
+                pass  # TODO: Handle exception properly
             # Skip constant columns
                 gstd = float(np.nanstd(vals))
                 if not np.isfinite(gstd) or gstd == 0.0:
@@ -1985,7 +1979,7 @@ class RegimeAwareAnalystEnhancementStep:
                 stability_threshold,
             )
         self.logger.info(
-                f"   🔧 Final pruning: Reduced to {len(selected_features)} stable features",
+        f"   🔧 Final pruning: Reduced to {len(selected_features)} stable features",
             )
 
         selection_summary["selected_features"] = len(selected_features)
@@ -2008,7 +2002,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Ensure we keep at least 10 features or 50% of original features, whichever is larger
         min_features, max(10, len(feature_names) // 2)
-        max_features, min(20, len(feature_names))  # Don't select more than 20 features
+        max_features, min(20, len(feature_names))  # Don't select more than 20 features'
 
         try:
             # Try SHAP first with stability selection
@@ -2079,7 +2073,6 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
         )
 
-
     async def _select_stable_tier_2_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_2_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select normalized features with stability selection."""
@@ -2103,7 +2096,6 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
             selection_criteria="stability",  # Prefer stable features for normalized tier,
         )
-
 
     async def _select_stable_tier_3_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_3_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
@@ -2129,7 +2121,6 @@ class RegimeAwareAnalystEnhancementStep:
             selection_criteria="significance",  # Prefer significant interactions,
         )
 
-
     async def _select_stable_tier_4_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_4_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select lagged features with stability selection."""
@@ -2153,7 +2144,6 @@ class RegimeAwareAnalystEnhancementStep:
             min_features_per_tier,
             selection_criteria="temporal",  # Prefer temporally stable features,
         )
-
 
     async def _select_stable_tier_5_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_5_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
@@ -2179,7 +2169,6 @@ class RegimeAwareAnalystEnhancementStep:
             selection_criteria="market_logic",  # Prefer market-logic consistent features,
         )
 
-
     async def _perform_stability_selection(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, available_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, selection_criteria: str = "importance"
     ) -> list[str]:
@@ -2204,7 +2193,7 @@ class RegimeAwareAnalystEnhancementStep:
 
                 # Perform feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._select_features_single_bootstrap(
-                        model,
+                model,
                         model_name,
                         X_bootstrap,
                         y_bootstrap,
@@ -2325,7 +2314,6 @@ class RegimeAwareAnalystEnhancementStep:
             5,
         )
 
-
     async def _try_stable_shap_feature_selection(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, min_features: int, max_features: int, n_bootstrap_samples: int, stability_threshold: float, ) -> tuple[list[str], dict]:
         """Attempts stable SHAP-based feature selection with bootstrapping."""
@@ -2373,7 +2361,7 @@ class RegimeAwareAnalystEnhancementStep:
 
                 # Calculate SHAP values for bootstrap sample
                 shap_importance = (await self._calculate_shap_importance_single_bootstrap(
-                        model,
+                model,
                         model_name,
                         X_bootstrap,
                         y_bootstrap,
@@ -2484,12 +2472,11 @@ class RegimeAwareAnalystEnhancementStep:
         else: # Very large dataset: use 2% of data = but cap at max_size
             sample_size = min(max_size, int(total_samples * 0.02))
 
-        # Ensure we don't exceed total samples
+        # Ensure we don't exceed total samples'
         sample_size = min(sample_size, total_samples)
 
         # Ensure we meet minimum requirements
         return max(min_size, sample_size)
-
 
     async def _calculate_shap_importance_single_bootstrap(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> dict[str, float] | None:
@@ -2598,7 +2585,7 @@ class RegimeAwareAnalystEnhancementStep:
 
                 # Perform robust feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._robust_feature_selection_single_bootstrap(
-                        model,
+                model,
                         model_name,
                         X_bootstrap,
                         y_bootstrap,
@@ -2755,7 +2742,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Tier 1: Core technical and liquidity features
             if any(
-                    keyword in feature_lower
+            keyword in feature_lower
                     for keyword in [
                         "rsi",
                         "macd",
@@ -2779,7 +2766,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Tier 2: Normalized features
             elif any(
-                    keyword in feature_lower
+            keyword in feature_lower
                     for keyword in [
                         "_z_score",
                         "_change",
@@ -2802,7 +2789,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Tier 5: Causality features
             elif any(
-                    keyword in feature_lower
+            keyword in feature_lower
                     for keyword in [
                         "_predicts_",
                         "_causality",
@@ -2984,7 +2971,7 @@ class RegimeAwareAnalystEnhancementStep:
     def _apply_quantization(self, model: torch.nn.Module) -> torch.nn.Module:
         """Applies dynamic quantization to a PyTorch model for CPU/MPS inference."""
         self.logger.info("Applying dynamic quantization to the model...")
-        # Move model to CPU for quantization, as it's primarily a CPU-based feature set in PyTorch
+        # Move model to CPU for quantization, as it's primarily a CPU-based feature set in PyTorch'
         model.to("cpu")
         quantized_model = torch.quantization.quantize_dynamic(
             model,
@@ -2999,7 +2986,7 @@ class RegimeAwareAnalystEnhancementStep:
     def _apply_wanda_pruning(
         self, model: torch.nn.Module, calibration_data: pd.DataFrame, sparsity: float = 0.5
     ) -> torch.nn.Module:
-        """Applies structured pruning using a simplified WANDA (Weight and Activation-based) method.
+        """Applies structured pruning using a simplified WANDA (Weight and Activation-based) method."
         This implementation demonstrates the core concept.
         """
         self.logger.info(f"Applying WANDA-style pruning with {sparsity} sparsity...")
@@ -3089,7 +3076,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Distillation parameters
         T = 2.0  # Temperature for softening probabilities,
-        alpha = 0.3  # Weight for student's own loss,
+        alpha = 0.3  # Weight for student's own loss,'
 
         # 3. Training loop
         student_model.train()
@@ -3097,11 +3084,11 @@ class RegimeAwareAnalystEnhancementStep:
             for data, targets in train_loader:
                 data, targets = data.to(self.device), targets.to(self.device)
 
-                # Get teacher's logits (outputs before softmax)
+                # Get teacher's logits (outputs before softmax)'
                 with torch.no_grad():
                     teacher_logits = teacher_model(data)
 
-                # Get student's logits
+                # Get student's logits'
                 student_logits = student_model(data)
 
                 # Calculate losses
@@ -3575,7 +3562,6 @@ class RegimeAwareAnalystEnhancementStep:
         # Placeholder - implement CNN evaluation
         return 0.0
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -3594,7 +3580,6 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step7_analyst_enhancement")
@@ -3667,7 +3652,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs
 ) -> bool:
-    """Run the analyst enhancement step.
+    """Run the analyst enhancement step."
 
     Args:
         symbol: Trading symbol
@@ -3680,6 +3665,10 @@ async def run_step(
     """
     # Import logger for step-level logging
     from src.utils.enhanced_mlflow_integration import (
+import copy
+import os.path
+with_enhanced_mlflow_logging,
+        log_step_report,
         copy,
         create_detailed_step_report,
         log_step_artifact_with_standardized_name,
@@ -3785,7 +3774,7 @@ async def run_step(
             step_phases["validation"] = True
         except Exception as e:
             logger.exception(f"❌ Enhancement validation failed: {e}")
-        # Don't fail the entire step for validation issues
+        # Don't fail the entire step for validation issues'
             step_phases["validation"] = False
 
         # Final summary

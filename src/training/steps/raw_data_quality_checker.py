@@ -1,6 +1,6 @@
 # src/training/steps/raw_data_quality_checker.py
 
-"""Raw Data Quality Checker for Early Detection of Data Issues
+"""Raw Data Quality Checker for Early Detection of Data Issues"
 This module provides comprehensive validation of raw market data before any processing.
 """
 
@@ -21,7 +21,7 @@ from src.utils.warning_symbols import critical
 
 
 class RawDataQualityChecker:
-    """Comprehensive raw data quality checker for early detection of issues.
+    """Comprehensive raw data quality checker for early detection of issues."
     This should be called immediately after data download to prevent downstream problems.
     """
 
@@ -31,7 +31,7 @@ class RawDataQualityChecker:
 
     @staticmethod
     def ensure_datetime_index(func):
-        """Decorator to ensure DataFrame has datetime index before processing.
+        """Decorator to ensure DataFrame has datetime index before processing."
         Attempts to fix missing datetime index automatically.
         """
         @functools.wraps(func)
@@ -264,7 +264,7 @@ class RawDataQualityChecker:
     @ensure_datetime_index
     def validate_raw_data(
         self, data: pd.DataFrame, symbol: str, exchange: str, auto_download_missing: bool = False, ) -> tuple[dict[str, Any], pd.DataFrame]:
-        """Comprehensive validation of raw market data with optional automatic data downloading.
+        """Comprehensive validation of raw market data with optional automatic data downloading."
 
         Args:
             data: Raw OHLCV data
@@ -371,7 +371,7 @@ class RawDataQualityChecker:
 
     def _auto_fix_irregular_intervals(
         self, data: pd.DataFrame, symbol: str, exchange: str, results: dict[str, Any], ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Automatically fix irregular intervals using the enhanced preprocessing strategy.
+        """Automatically fix irregular intervals using the enhanced preprocessing strategy."
 
         Args:
             data: Raw market data
@@ -452,7 +452,7 @@ class RawDataQualityChecker:
             return data, preprocessing_summary
 
     def _quick_validate_fixed_data(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
-        """Quick validation of fixed data to measure quality improvement.
+        """Quick validation of fixed data to measure quality improvement."
 
         Args:
             data: Fixed market data
@@ -493,7 +493,7 @@ class RawDataQualityChecker:
     def enhanced_preprocess_market_data(
         self, data: pd.DataFrame, symbol: str, exchange: str, expected_interval_seconds: int = 60, max_forward_fill_seconds: int = 10, download_missing_data: bool = True
     ) -> pd.DataFrame:
-        """Enhanced preprocessing with intelligent gap handling.
+        """Enhanced preprocessing with intelligent gap handling."
 
         Strategy:
         1. Resample to expected intervals
@@ -543,7 +543,7 @@ class RawDataQualityChecker:
             resampled_time = orig_time.floor(freq)
         if resampled_time in combined_data.index:
         # Original data takes precedence
-                combined_data.loc[resampled_time] = orig_row
+        combined_data.loc[resampled_time] = orig_row
 
         # Step 4: Analyze gaps and handle them intelligently
         self.logger.info("🔧 Step 3: Analyzing gaps and applying intelligent handling")
@@ -596,7 +596,7 @@ class RawDataQualityChecker:
 
     def _download_and_fill_missing_data(
         self, data: pd.DataFrame, symbol: str, exchange: str, gaps: pd.Series, ) -> pd.DataFrame:
-        """Download missing data for large gaps using existing data download functions.
+        """Download missing data for large gaps using existing data download functions."
 
         Args:
             data: Current data with gaps
@@ -648,7 +648,7 @@ class RawDataQualityChecker:
             return data
 
     def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
-        """Determine the timeframe from the data intervals.
+        """Determine the timeframe from the data intervals."
 
         Args:
             data: Market data with datetime index
@@ -689,7 +689,7 @@ class RawDataQualityChecker:
 
     def _load_and_filter_downloaded_data(
         self, symbol: str, exchange: str, timeframe: str, start_time: datetime, end_time: datetime, ) -> pd.DataFrame | None:
-        """Load downloaded data and filter for the specific gap period.
+        """Load downloaded data and filter for the specific gap period."
 
         Args:
             symbol: Trading symbol
@@ -750,7 +750,7 @@ class RawDataQualityChecker:
 
     def _fill_gap_in_dataset(
         self, main_data: pd.DataFrame, gap_data: pd.DataFrame, gap_start: datetime, gap_end: datetime, ) -> pd.DataFrame:
-        """Fill a gap in the main dataset with downloaded data.
+        """Fill a gap in the main dataset with downloaded data."
 
         Args:
             main_data: Main dataset with gaps
@@ -788,8 +788,8 @@ class RawDataQualityChecker:
 
     def fix_irregular_intervals_automatically(
         self, data: pd.DataFrame, symbol: str, exchange: str, ) -> pd.DataFrame:
-        """Automatically fix irregular intervals that are causing data quality warnings.
-        This is specifically designed to address the warnings you're seeing.
+        """Automatically fix irregular intervals that are causing data quality warnings."
+        This is specifically designed to address the warnings you're seeing.'
 
         Args:
             data: Raw market data with irregular intervals
@@ -864,8 +864,8 @@ class RawDataQualityChecker:
 
     def validate_and_fix_data_quality_issues(
         self, data: pd.DataFrame, symbol: str, exchange: str, ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Comprehensive validation and automatic fixing of data quality issues.
-        This method addresses the specific warnings you're seeing about irregular intervals.
+        """Comprehensive validation and automatic fixing of data quality issues."
+        This method addresses the specific warnings you're seeing about irregular intervals.'
 
         Args:
             data: Raw market data
@@ -1009,7 +1009,7 @@ class RawDataQualityChecker:
         return True
 
     def _fix_datetime_index(self, data: pd.DataFrame, results: dict[str, Any]) -> pd.DataFrame | None:
-        """Attempt to fix missing datetime index by creating one from available data.
+        """Attempt to fix missing datetime index by creating one from available data."
 
         Args:
             data: DataFrame with missing datetime index
@@ -1022,7 +1022,7 @@ class RawDataQualityChecker:
         try:
             self.logger.info("🔧 Attempting to create datetime index...")
 
-            # Method 1: Check if there's a timestamp column
+            # Method 1: Check if there's a timestamp column'
             timestamp_columns = ["timestamp", "time", "date", "datetime", "index"]
             for col in timestamp_columns:
                 if col in data.columns:
@@ -1119,7 +1119,7 @@ class RawDataQualityChecker:
             return None
 
     def _estimate_timeframe_from_data(self, data: pd.DataFrame) -> str:
-        """Estimate the timeframe from data characteristics.
+        """Estimate the timeframe from data characteristics."
 
         Args:
             data: DataFrame to analyze
@@ -1550,11 +1550,11 @@ class RawDataQualityChecker:
         # Deduct points for warnings (less severe)
         score -= len(results["warnings"]) * 0.05
 
-        # Ensure score doesn't go below 0
+        # Ensure score doesn't go below 0'
         return max(0.0, score)
 
     def preprocess_irregular_intervals(self, data: pd.DataFrame, method: str = "forward_fill") -> pd.DataFrame:
-        """Preprocess data to handle irregular intervals.
+        """Preprocess data to handle irregular intervals."
 
         Args:
             data: Raw OHLCV data with irregular intervals
@@ -1609,7 +1609,7 @@ class RawDataQualityChecker:
 
     def _handle_missing_data_download(
         self, data: pd.DataFrame, symbol: str, exchange: str, results: dict[str, Any], ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Handle automatic downloading of missing data for large gaps.
+        """Handle automatic downloading of missing data for large gaps."
 
         Args:
             data: Current data
@@ -1712,7 +1712,7 @@ class RawDataQualityChecker:
     def download_data_for_timeframe(
         self, symbol: str, exchange: str, timeframe: str, start_time: datetime | None = None, end_time: datetime | None = None
     ) -> pd.DataFrame | None:
-        """Download data for a specific timeframe and optionally filter by time range.
+        """Download data for a specific timeframe and optionally filter by time range."
 
         Args:
             symbol: Trading symbol
@@ -1771,7 +1771,7 @@ class RawDataQualityChecker:
             return None
 
     def _load_downloaded_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame | None:
-        """Load the most recent downloaded data for a symbol/timeframe combination.
+        """Load the most recent downloaded data for a symbol/timeframe combination."
 
         Args:
             symbol: Trading symbol
@@ -1789,8 +1789,8 @@ class RawDataQualityChecker:
 import copy
 import os.path
 
+# Look for the most recent data file
 import numpy as np
-
             # Look for the most recent data file
             patterns = [
                 f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
@@ -1827,7 +1827,7 @@ import numpy as np
             return None
 
     def get_data_quality_report(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
-        """Generate a comprehensive data quality report without preprocessing.
+        """Generate a comprehensive data quality report without preprocessing."
 
         Args:
             data: Market data to analyze
@@ -1866,7 +1866,7 @@ import numpy as np
         return validation_results
 
     def validate_and_preprocess_data(self, data: pd.DataFrame, symbol: str, exchange: str, auto_preprocess: bool = True) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Validate data and optionally preprocess irregular intervals.
+        """Validate data and optionally preprocess irregular intervals."
 
         Args:
             data: Raw OHLCV data
@@ -2082,7 +2082,7 @@ def validate_raw_data_quality(
     config: dict[str, Any] | None = None,
     auto_download_missing: bool = False,
 ) -> dict[str, Any]:
-    """Convenience function to validate raw data quality with optional automatic data downloading.
+    """Convenience function to validate raw data quality with optional automatic data downloading."
 
     Args:
         data: Raw OHLCV data
@@ -2111,7 +2111,7 @@ def fix_irregular_intervals_automatically(
     exchange: str,
     config: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
-    """Convenience function to automatically fix irregular intervals that are causing data quality warnings.
+    """Convenience function to automatically fix irregular intervals that are causing data quality warnings."
 
     Args:
         data: Raw market data with irregular intervals
@@ -2133,7 +2133,7 @@ def validate_and_fix_data_quality_issues(
     exchange: str,
     config: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Convenience function for comprehensive validation and automatic fixing of data quality issues.
+    """Convenience function for comprehensive validation and automatic fixing of data quality issues."
 
     Args:
         data: Raw market data
@@ -2157,7 +2157,7 @@ def enhanced_preprocess_market_data(
     download_missing_data: bool = True,
     config: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
-    """Convenience function for enhanced preprocessing with intelligent gap handling.
+    """Convenience function for enhanced preprocessing with intelligent gap handling."
 
     Args:
         data: Raw market data
@@ -2185,8 +2185,8 @@ def enhanced_preprocess_market_data(
 
 # Decorator for automatic data quality fixing
 def auto_fix_data_quality_issues(func):
-    """Decorator that automatically fixes data quality issues before calling the decorated function.
-    This is specifically designed to address the irregular interval warnings you're seeing.
+    """Decorator that automatically fixes data quality issues before calling the decorated function."
+    This is specifically designed to address the irregular interval warnings you're seeing.'
 
     Usage:
         @auto_fix_data_quality_issues

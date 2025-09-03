@@ -1,4 +1,4 @@
-"""Abstract base classes for the modular training pipeline.
+"""Abstract base classes for the modular training pipeline."
 
 This module defines the core interfaces and base classes that all pipeline
 stages must implement.
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     asyncio,
@@ -23,10 +23,9 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 
-
 @dataclass
 class StageContext:
-    """Context passed between pipeline stages.
+    """Context passed between pipeline stages."
 
     This class contains all the data and configuration that flows through
     the pipeline, allowing stages to share information and results.
@@ -58,12 +57,11 @@ class StageContext:
         """Get metadata from the context."""
         return self.metadata.get(key, default)
 
-
 class PipelineStage:
     """Pipeline stage with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize pipeline stage with enhanced type safety.
+        """Initialize pipeline stage with enhanced type safety."
 
         Args:
             config: Configuration dictionary
@@ -90,7 +88,7 @@ class PipelineStage:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline stage configuration"),
             AttributeError: (False, "Missing required pipeline stage parameters"),
@@ -100,7 +98,7 @@ class PipelineStage:
         context="pipeline stage initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize pipeline stage with enhanced error handling.
+        """Initialize pipeline stage with enhanced error handling."
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -127,11 +125,7 @@ class PipelineStage:
             self.logger.exception(f"❌ Pipeline Stage initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_stage_configuration(self) -> None:
         """Load stage configuration."""
         try:
@@ -154,13 +148,9 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error loading stage configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate stage configuration.
+        """Validate stage configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -179,7 +169,7 @@ class PipelineStage:
 
             # Validate that at least one stage type is enabled
             if not any(
-                    [
+            [
                         self.enable_stage_execution == self.enable_stage_validation,
                         self.stage_config.get("enable_stage_monitoring", True),
                         self.stage_config.get("enable_stage_reporting", True),
@@ -195,11 +185,7 @@ class PipelineStage:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_stage_modules(self) -> None:
         """Initialize stage modules."""
         try:
@@ -224,17 +210,13 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage modules: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage execution initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_stage_execution(self) -> None:
         """Initialize stage execution module."""
         try:
             # Initialize stage execution components
             self.stage_execution_components = {
-                    "execution_planning": True,
+            "execution_planning": True,
                     "execution_coordination": True,
                     "execution_monitoring": True,
                     "execution_reporting": True,
@@ -245,17 +227,13 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage execution: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage validation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_stage_validation(self) -> None:
         """Initialize stage validation module."""
         try:
             # Initialize stage validation components
             self.stage_validation_components = {
-                    "input_validation": True,
+            "input_validation": True,
                     "output_validation": True,
                     "dependency_validation": True,
                     "metadata_validation": True,
@@ -266,17 +244,13 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage validation: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_stage_monitoring(self) -> None:
         """Initialize stage monitoring module."""
         try:
             # Initialize stage monitoring components
             self.stage_monitoring_components = {
-                    "performance_monitoring": True,
+            "performance_monitoring": True,
                     "health_monitoring": True,
                     "error_monitoring": True,
                     "resource_monitoring": True,
@@ -287,17 +261,13 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage monitoring: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage reporting initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_stage_reporting(self) -> None:
         """Initialize stage reporting module."""
         try:
             # Initialize stage reporting components
             self.stage_reporting_components = {
-                    "report_generation": True,
+            "report_generation": True,
                     "report_formatting": True,
                     "report_distribution": True,
                     "report_archiving": True,
@@ -308,7 +278,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage reporting: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid stage parameters"),
             AttributeError: (False, "Missing stage components"),
@@ -318,7 +288,7 @@ class PipelineStage:
         context="stage execution",
     )
     async def execute_stage(self, stage_input: dict[str, Any]) -> bool:
-        """Execute stage operations.
+        """Execute stage operations."
 
         Args:
             stage_input: Stage input dictionary
@@ -366,13 +336,9 @@ class PipelineStage:
             self.is_running = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="stage inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_stage_inputs(self, stage_input: dict[str, Any]) -> bool:
-        """Validate stage inputs.
+        """Validate stage inputs."
 
         Args:
             stage_input: Stage input dictionary
@@ -404,16 +370,12 @@ class PipelineStage:
             self.logger.exception(f"Error validating stage inputs: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage execution",
-    )
+    @handles_errors(fallback=None)
     async def _perform_stage_execution(
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform stage execution.
+        """Perform stage execution."
 
         Args:
             stage_input: Stage input dictionary
@@ -456,16 +418,12 @@ class PipelineStage:
             self.logger.exception(f"Error performing stage execution: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage validation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_stage_validation(
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform stage validation.
+        """Perform stage validation."
 
         Args:
             stage_input: Stage input dictionary
@@ -508,16 +466,12 @@ class PipelineStage:
             self.logger.exception(f"Error performing stage validation: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_stage_monitoring(
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform stage monitoring.
+        """Perform stage monitoring."
 
         Args:
             stage_input: Stage input dictionary
@@ -560,16 +514,12 @@ class PipelineStage:
             self.logger.exception(f"Error performing stage monitoring: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage reporting",
-    )
+    @handles_errors(fallback=None)
     async def _perform_stage_reporting(
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform stage reporting.
+        """Perform stage reporting."
 
         Args:
             stage_input: Stage input dictionary
@@ -622,7 +572,7 @@ class PipelineStage:
         try:
             # Simulate execution planning
             return {
-                    "execution_planning_completed": True,
+            "execution_planning_completed": True,
                     "planned_stages": 5,
                     "planning_algorithm": "topological_sort",
                     "training_time": datetime.now().isoformat(),
@@ -639,7 +589,7 @@ class PipelineStage:
         try:
             # Simulate execution coordination
             return {
-                    "execution_coordination_completed": True,
+            "execution_coordination_completed": True,
                     "coordinated_stages": 5,
                     "coordination_method": "sequential",
                     "training_time": datetime.now().isoformat(),
@@ -656,7 +606,7 @@ class PipelineStage:
         try:
             # Simulate execution monitoring
             return {
-                    "execution_monitoring_completed": True,
+            "execution_monitoring_completed": True,
                     "monitored_stages": 5,
                     "monitoring_metrics": "performance",
                     "training_time": datetime.now().isoformat(),
@@ -673,7 +623,7 @@ class PipelineStage:
         try:
             # Simulate execution reporting
             return {
-                    "execution_reporting_completed": True,
+            "execution_reporting_completed": True,
                     "reported_stages": 5,
                     "report_format": "json",
                     "training_time": datetime.now().isoformat(),
@@ -689,7 +639,7 @@ class PipelineStage:
         try:
             # Simulate input validation
             return {
-                    "input_validation_completed": True,
+            "input_validation_completed": True,
                     "validation_score": 0.98,
                     "validation_method": "type_check",
                     "training_time": datetime.now().isoformat(),
@@ -703,7 +653,7 @@ class PipelineStage:
         try:
             # Simulate output validation
             return {
-                    "output_validation_completed": True,
+            "output_validation_completed": True,
                     "validation_score": 0.96,
                     "validation_method": "quality_check",
                     "training_time": datetime.now().isoformat(),
@@ -720,7 +670,7 @@ class PipelineStage:
         try:
             # Simulate dependency validation
             return {
-                    "dependency_validation_completed": True,
+            "dependency_validation_completed": True,
                     "validation_score": 0.94,
                     "validation_method": "graph_check",
                     "training_time": datetime.now().isoformat(),
@@ -737,7 +687,7 @@ class PipelineStage:
         try:
             # Simulate metadata validation
             return {
-                    "metadata_validation_completed": True,
+            "metadata_validation_completed": True,
                     "metadata_score": 0.92,
                     "validation_method": "format_check",
                     "training_time": datetime.now().isoformat(),
@@ -756,7 +706,7 @@ class PipelineStage:
         try:
             # Simulate performance monitoring
             return {
-                    "performance_monitoring_completed": True,
+            "performance_monitoring_completed": True,
                     "performance_metrics": {"throughput": 100, "latency": 50},
                     "monitoring_interval": 60,
                     "training_time": datetime.now().isoformat(),
@@ -770,7 +720,7 @@ class PipelineStage:
         try:
             # Simulate health monitoring
             return {
-                    "health_monitoring_completed": True,
+            "health_monitoring_completed": True,
                     "health_status": "healthy",
                     "health_score": 0.95,
                     "training_time": datetime.now().isoformat(),
@@ -784,7 +734,7 @@ class PipelineStage:
         try:
             # Simulate error monitoring
             return {
-                    "error_monitoring_completed": True,
+            "error_monitoring_completed": True,
                     "error_count": 0,
                     "error_rate": 0.0,
                     "training_time": datetime.now().isoformat(),
@@ -801,7 +751,7 @@ class PipelineStage:
         try:
             # Simulate resource monitoring
             return {
-                    "resource_monitoring_completed": True,
+            "resource_monitoring_completed": True,
                     "cpu_usage": 0.65,
                     "memory_usage": 0.45,
                     "training_time": datetime.now().isoformat(),
@@ -817,7 +767,7 @@ class PipelineStage:
         try:
             # Simulate report generation
             return {
-                    "report_generation_completed": True,
+            "report_generation_completed": True,
                     "reports_generated": 3,
                     "generation_method": "automated",
                     "training_time": datetime.now().isoformat(),
@@ -831,7 +781,7 @@ class PipelineStage:
         try:
             # Simulate report formatting
             return {
-                    "report_formatting_completed": True,
+            "report_formatting_completed": True,
                     "format_type": "json",
                     "formatting_time": 0.3,
                     "training_time": datetime.now().isoformat(),
@@ -848,7 +798,7 @@ class PipelineStage:
         try:
             # Simulate report distribution
             return {
-                    "report_distribution_completed": True,
+            "report_distribution_completed": True,
                     "distribution_channels": ["email", "api"],
                     "distribution_time": 0.5,
                     "training_time": datetime.now().isoformat(),
@@ -862,7 +812,7 @@ class PipelineStage:
         try:
             # Simulate report archiving
             return {
-                    "report_archiving_completed": True,
+            "report_archiving_completed": True,
                     "archive_location": "/reports/archive/",
                     "archiving_method": "compressed",
                     "training_time": datetime.now().isoformat(),
@@ -871,11 +821,7 @@ class PipelineStage:
             self.logger.exception(f"Error performing report archiving: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_stage_results(self) -> None:
         """Store stage results."""
         try:
@@ -894,13 +840,9 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error storing stage results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage results getting",
-    )
+    @handles_errors(fallback=None)
     def get_stage_results(self, stage_type: str | None = None) -> dict[str, Any]:
-        """Get stage results.
+        """Get stage results."
 
         Args:
             stage_type: Optional stage type filter
@@ -918,13 +860,9 @@ class PipelineStage:
             self.logger.exception(f"Error getting stage results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage history getting",
-    )
+    @handles_errors(fallback=None)
     def get_stage_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get stage history.
+        """Get stage history."
 
         Args:
             limit: Optional limit on number of records
@@ -946,7 +884,7 @@ class PipelineStage:
             return []
 
     def get_stage_status(self) -> dict[str, Any]:
-        """Get stage status information.
+        """Get stage status information."
 
         Returns:
             dict[str, Any]: Stage status
@@ -969,11 +907,7 @@ class PipelineStage:
             "stage_history_count": len(self.stage_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="pipeline stage cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the pipeline stage."""
         self.logger.info("🛑 Stopping Pipeline Stage...")
@@ -993,20 +927,14 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error stopping pipeline stage: {e}")
 
-
 # Global pipeline stage instance
 pipeline_stage: PipelineStage | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="pipeline stage setup",
-)
+@handles_errors(fallback=None)
 async def setup_pipeline_stage(
     config: dict[str, Any] | None = None,
 ) -> PipelineStage | None:
-    """Setup global pipeline stage.
+    """Setup global pipeline stage."
 
     Args:
         config: Optional configuration dictionary

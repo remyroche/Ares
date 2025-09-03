@@ -1,304 +1,231 @@
 #!/usr/bin/env python3
 """
-Safe Syntax Error Fixer
-Fixes common=vs, syntax errors without breaking legitimate code.
+Comprehensive syntax error fixer for Python files.
+Addresses common syntax errors found in the codebase.
 """
 
 import os
 import re
+import json
+import shutil
 from pathlib import Path
+from typing import List, Dict, Any, Tuple
 
 
-def is_safe_to_fix(line: str) -> bool:
-    """Check if a line is safe to apply fixes to."""
-    # Skip lines that are clearly legitimate assignments
-    if re.match(r"^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^=]", line):
+class SyntaxErrorFixer:
+    """Fixes common syntax errors in Python files."""
+    
+    def __init__(self):
+        self.fixes_applied = []
+        self.backup_dir = Path("syntax_fix_backups")
+        self.backup_dir.mkdir(exist_ok=True)
+        
+    def backup_file(self, file_path: str) -> str:
+        """Create a backup of the file before modifying."""
+        backup_path = self.backup_dir / Path(file_path).name
+        shutil.copy2(file_path, backup_path)
+        return str(backup_path)
+        
+    def fix_unterminated_string_literal(self, content: str) -> Tuple[str, bool]:
+        """Fix unterminated string literals (e.g., quadruple quotes to triple quotes)."""
+        fixed = False
+        
+        # Fix quadruple quotes to triple quotes
+        if '""""' in content:
+            content = content.replace('""""', '"""')
+            fixed = True
+            
+        # Fix standalone quadruple quotes on separate lines
+        lines = content.split('\n')
+        for i, line in enumerate(lines):
+            if line.strip() == '""""':
+                lines[i] = line.replace('""""', '"""')
+                fixed = True
+                
+        if fixed:
+            content = '\n'.join(lines)
+            
+        return content, fixed
+        
+    def fix_invalid_regex_patterns(self, content: str) -> Tuple[str, bool]:
+        """Fix invalid regex patterns in re.sub calls."""
+        fixed = False
+        
+        # Common pattern fixes
+        replacements = [
+            # Fix unclosed parentheses in regex patterns
+            (r"re\.sub\(r'(\w+)'\)([^,]*?)', r'", r"re.sub(r'\1\2', r'"),
+            # Fix improper escaping
+            (r"re\.sub\(r'([^']*?)(\w+)'([^']*?)\)", r"re.sub(r'\1\2\3)"),
+            # Fix assignment in regex replacement
+            (r"= (\w+) = (\w+)", r", \1, \2"),
+        ]
+        
+        for pattern, replacement in replacements:
+            if re.search(pattern, content):
+                content = re.sub(pattern, replacement, content)
+                fixed = True
+                
+        return content, fixed
+        
+    def fix_assignment_in_expressions(self, content: str) -> Tuple[str, bool]:
+        """Fix assignments used in expressions where comparison was intended."""
+        fixed = False
+        
+        # Fix assignment in function arguments
+        pattern = r'(with open\([^,]+)="([^"]+)"\)'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'\1, "\2")', content)
+            fixed = True
+            
+        # Fix assignment in except clauses
+        pattern = r'except \((\w+) = (\w+)\):'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'except (\1, \2):', content)
+            fixed = True
+            
+        # Fix assignment in list append
+        pattern = r'\.append\(\(i=([^)]+)\)\)'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'.append((\1))', content)
+            fixed = True
+            
+        return content, fixed
+        
+    def fix_syntax_errors_in_function_definitions(self, content: str) -> Tuple[str, bool]:
+        """Fix syntax errors in function definitions."""
+        fixed = False
+        
+        # Fix quoted parameter names
+        pattern = r'def (\w+)\([^,)]*,\s*"(\w+)"'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'def \1(\2', content)
+            fixed = True
+            
+        # Fix parameter type annotations
+        pattern = r': (\w+)\[str=Any\]'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r': \1[str, Any]', content)
+            fixed = True
+            
+        return content, fixed
+        
+    def fix_file(self, file_path: str, errors: List[Dict[str, Any]]) -> bool:
+        """Fix syntax errors in a single file."""
+        try:
+            # Read file content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            original_content = content
+            any_fixed = False
+            
+            # Apply fixes based on error types
+            for error in errors:
+                error_msg = error.get('message', '')
+                
+                if 'unterminated string literal' in error_msg:
+                    content, fixed = self.fix_unterminated_string_literal(content)
+                    any_fixed |= fixed
+                    
+                elif 'invalid syntax' in error_msg:
+                    content, fixed = self.fix_invalid_regex_patterns(content)
+                    any_fixed |= fixed
+                    content, fixed = self.fix_syntax_errors_in_function_definitions(content)
+                    any_fixed |= fixed
+                    
+                elif 'cannot assign to function call' in error_msg:
+                    content, fixed = self.fix_assignment_in_expressions(content)
+                    any_fixed |= fixed
+                    
+            # Write fixed content if changes were made
+            if any_fixed and content != original_content:
+                # Create backup
+                backup_path = self.backup_file(file_path)
+                
+                # Write fixed content
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                    
+                self.fixes_applied.append({
+                    'file': file_path,
+                    'backup': backup_path,
+                    'errors_fixed': len(errors)
+                })
+                
+                return True
+                
+        except Exception as e:
+            print(f"Error fixing {file_path}: {str(e)}")
+            
         return False
-
-    # Skip lines with legitimate comparisons
-    if re.search(r"\s==\s", line):
-        return False
-
-    # Skip lines with legitimate assignments in function calls
-    if re.search(r"\(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^=]", line):
-        return False
-
-    return True
-
-
-def fix_import_statements(content: str) -> str:
-    """Fix malformed import statements."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: from pathlib import Path, from src.utils.logger import system_logger
-        if re.match(r"^\s*from\s+[^,]+,\s+from\s+", line):
-            # Split into multiple import statements
-            parts=re.split(r",\s+from\s+", line)
-            if len(parts) > 1:
-                # First part
-                fixed_lines.append(parts[0])
-                # Subsequent parts
-                for part in parts[1:]:
-                    fixed_lines.append(f"from {part}")
-            else:
-                fixed_lines.append(line)
-        else:
-            fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_function_parameters(content: str) -> str:
-    """Fix function parameter syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: def __init__(self = symbol: str = "ETHUSDT"):
-        if re.match(r"^\s*def\s+\w+\s*\(\s*self\s*=\s*", line):
-            line=re.sub(r"\(\s*self\s*=\s*", "(self, ", line)
-
-        # Fix: def some_function(param=value: type):
-        elif re.match(r"^\s*def\s+\w+\s*\([^)]*=\s*[a-zA-Z_][a-zA-Z0-9_]*\s*:", line):
-            line=re.sub(r"(\w+)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*\s*:)", r"\1, \2", line)
-
-        # Fix: async def function(self=param: type):
-        elif re.match(r"^\s*async\s+def\s+\w+\s*\(\s*self\s*=\s*", line):
-            line=re.sub(r"\(\s*self\s*=\s*", "(self, ", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_for_loops(content: str) -> str:
-    """Fix for loop syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: for test_name, result in test_results.items():
-        if re.search(r"for\s+[^=]+\s*=\s*[^=]+\s+in\s+", line):
-            line=re.sub(r"for\s+([^=]+)\s*=\s*([^=]+)\s+in\s+", r"for \1, \2 in ", line)
-
-        # Fix: for i, (file_name, gap_count) in enumerate(...):
-        elif re.search(r"for\s+[^=]+\s*=\s*\([^)]+\)\s+in\s+", line):
-            line=re.sub(r"for\s+([^=]+)\s*=\s*\(([^)]+)\)\s+in\s+", r"for \1, (\2) in ", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_dictionary_definitions(content: str) -> str:
-    """Fix dictionary definition syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: {"success": True, "gaps_fixed": 0}
-        if re.search(r'"[^"]+"\s*:\s*[^=]+\s*=\s*"[^"]+"\s*:', line) or re.search(r'"[^"]+"\s*:\s*[^=]+\s*=\s*"[^"]+"\s*:', line):
-            line=re.sub(r'("[^"]+"\s*:\s*[^=]+)\s*=\s*("[^"]+"\s*:)', r"\1, \2", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_type_hints(content: str) -> str:
-    """Fix type hint syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: -> tuple[bool, list[str]]:
-        if re.search(r"->\s*[^=]*\s*=\s*[^=]*\s*:", line):
-            line=re.sub(r"->\s*([^=]*)\s*=\s*([^=]*)\s*:", r"-> \1, \2:", line)
-
-        # Fix: dict[str, Any]
-        elif re.search(r"dict\[[^=]*\s*=\s*[^=]*\]", line):
-            line=re.sub(r"dict\[([^=]*)\s*=\s*([^=]*)\]", r"dict[\1, \2]", line)
-
-        # Fix: list[str, Any]
-        elif re.search(r"list\[[^=]*\s*=\s*[^=]*\]", line):
-            line=re.sub(r"list\[([^=]*)\s*=\s*([^=]*)\]", r"list[\1, \2]", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_function_calls(content: str) -> str:
-    """Fix function call syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: func(*args, **kwargs)
-        if re.search(r"\(\s*\*args\s*=\s*\*\*kwargs\s*\)", line):
-            line=re.sub(r"\(\s*\*args\s*=\s*\*\*kwargs\s*\)", "(*args, **kwargs)", line)
-
-        # Fix: func(param=value, other_param)
-        elif re.search(r"\(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^=]+\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\)", line):
-            # This is more complex, so we'll be conservative
-            pass
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_isinstance_calls(content: str) -> str:
-    """Fix isinstance syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: isinstance(df.index, pd.DatetimeIndex)
-        if re.search(r"isinstance\s*\(\s*[^=]+\s*=\s*[^=]+\s*\)", line):
-            line=re.sub(r"isinstance\s*\(\s*([^=]+)\s*=\s*([^=]+)\s*\)", r"isinstance(\1, \2)", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_return_statements(content: str) -> str:
-    """Fix return statement syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: return csv_exists or parquet_exists, files_found
-        if re.search(r"return\s+[^=]+\s+or\s+[^=]+\s*=\s*[^=]+", line):
-            line=re.sub(r"return\s+([^=]+)\s+or\s+([^=]+)\s*=\s*([^=]+)", r"return \1 or \2, \3", line)
-
-        # Fix: return (exists, file_types)
-        elif re.search(r"return\s*\(\s*[^=]+\s*=\s*[^=]+\s*\)", line):
-            line=re.sub(r"return\s*\(\s*([^=]+)\s*=\s*([^=]+)\s*\)", r"return (\1, \2)", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_assignment_statements(content: str) -> str:
-    """Fix assignment statement syntax errors."""
-    lines=content.split("\n")
-    fixed_lines=[]
-
-    for line in lines:
-        # Fix: exists, file_types=check_aggtrades_file_exists(date_str)
-        if re.search(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*", line):
-            line=re.sub(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*", r"\1, \2=", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
-
-def fix_file(file_path: Path) -> tuple[bool, list[str]]:
-    """Fix syntax errors in a single file."""
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            content=f.read()
-
-        original_content=content
-
-        # Apply fixes in order
-        content = fix_import_statements(content)
-        content=fix_function_parameters(content)
-        content=fix_for_loops(content)
-        content=fix_dictionary_definitions(content)
-        content=fix_type_hints(content)
-        content=fix_function_calls(content)
-        content=fix_isinstance_calls(content)
-        content=fix_return_statements(content)
-        content=fix_assignment_statements(content)
-
-        # Only write if content changed
-        if content != original_content:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return True, [f"Fixed {file_path}"]
-
-        return False, []
-
-    except Exception as e:
-        return False, [f"Error fixing {file_path}: {e}"]
-
-
-def find_python_files(directory: Path) -> list[Path]:
-    """Find all Python files in directory."""
-    python_files=[]
-    for root, dirs, files in os.walk(directory):
-        # Skip common directories that shouldn't be modified
-        dirs[:] = [d for d in dirs if d not in {".git", "__pycache__", "node_modules", ".venv", "venv"}]
-
-        for file in files:
-            if file.endswith(".py"):
-                python_files.append(Path(root) / file)
-
-    return python_files
+        
+    def fix_from_results_file(self, results_file: str) -> Dict[str, Any]:
+        """Fix syntax errors based on results from syntax checker."""
+        with open(results_file, 'r') as f:
+            results = json.load(f)
+            
+        files_to_fix = [
+            r for r in results['results'] 
+            if not r['valid'] and r['errors']
+        ]
+        
+        print(f"Found {len(files_to_fix)} files with syntax errors to fix")
+        
+        fixed_count = 0
+        for file_info in files_to_fix:
+            file_path = file_info['file']
+            errors = file_info['errors']
+            
+            # Skip certain fix scripts that might have complex regex patterns
+            if any(skip in file_path for skip in ['fix_', 'fixer.py', 'comprehensive_fix']):
+                continue
+                
+            if self.fix_file(file_path, errors):
+                fixed_count += 1
+                print(f"✓ Fixed {file_path}")
+                
+        return {
+            'total_files_with_errors': len(files_to_fix),
+            'files_fixed': fixed_count,
+            'fixes_applied': self.fixes_applied
+        }
 
 
 def main():
-    """Main function to fix syntax errors."""
-    print("🔧 Safe Syntax Error Fixer")
-    print("=" * 50)
-
-    # Get current directory
-    current_dir=Path.cwd()
-    print(f"Working directory: {current_dir}")
-
-    # Find all Python files
-    python_files=find_python_files(current_dir)
-    print(f"Found {len(python_files)} Python files")
-
-    # Files to skip (known to have issues or are generated)
-    skip_files={
-        "test_step1_pipeline.py",
-        "test_timeframe_loading.py",
-        "update_aggtrades_gaps.py",
-        "verify_aggtrades_downloads.py",
-    }
-
-    fixed_count=0
-    errors = []
-
-    for file_path in python_files:
-        if file_path.name in skip_files:
-            print(f"⏭️  Skipping {file_path.name} (known problematic file)")
-            continue
-
-        print(f"🔍 Checking {file_path.name}...")
-        fixed, messages=fix_file(file_path)
-
-        if fixed:
-            fixed_count += 1
-            print(f"✅ Fixed {file_path.name}")
-
-        errors.extend(messages)
-
-    print("\n" + "=" * 50)
-    print("📊 Summary:")
-    print(f"   Files processed: {len(python_files)}")
-    print(f"   Files fixed: {fixed_count}")
-    print(f"   Errors: {len(errors)}")
-
-    if errors:
-        print("\n❌ Errors encountered:")
-        for error in errors:
-            print(f"   {error}")
-
-    if fixed_count > 0:
-        print(f"\n🎉 Successfully fixed {fixed_count} files!")
-        print("💡 Run 'ruff check .' to verify the fixes.")
-    else:
-        print("\nℹ️  No files needed fixing.")
+    """Main function to run the syntax error fixer."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Fix syntax errors in Python files')
+    parser.add_argument('--results-file', default='syntax_check_results.json',
+                       help='Path to syntax check results JSON file')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show what would be fixed without making changes')
+    
+    args = parser.parse_args()
+    
+    if not os.path.exists(args.results_file):
+        print(f"Error: Results file '{args.results_file}' not found")
+        print("Please run the syntax checker first")
+        return 1
+        
+    fixer = SyntaxErrorFixer()
+    results = fixer.fix_from_results_file(args.results_file)
+    
+    print(f"\n{'='*60}")
+    print("SYNTAX FIX SUMMARY")
+    print(f"{'='*60}")
+    print(f"Total files with errors: {results['total_files_with_errors']}")
+    print(f"Files fixed: {results['files_fixed']}")
+    print(f"Backup directory: {fixer.backup_dir}")
+    
+    if results['files_fixed'] > 0:
+        print(f"\n✅ Successfully fixed {results['files_fixed']} files")
+        print("Run the syntax checker again to verify all errors are resolved")
+    
+    return 0
 
 
-if __name__== "__main__":
-    main()
+if __name__ == '__main__':
+    import sys
+    sys.exit(main())

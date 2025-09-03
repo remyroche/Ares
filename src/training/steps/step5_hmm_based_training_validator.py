@@ -36,7 +36,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """Validate the HMM-based training step.
+        """Validate the HMM-based training step."
 
         Args:
             training_input: Training input parameters
@@ -210,7 +210,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """Validate that all expected HMM model files exist.
+        """Validate that all expected HMM model files exist."
 
         Args:
             symbol: Trading symbol
@@ -267,7 +267,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """Validate HMM model performance metrics.
+        """Validate HMM model performance metrics."
 
         Args:
             symbol: Trading symbol
@@ -358,7 +358,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """Validate HMM training metrics and convergence.
+        """Validate HMM training metrics and convergence."
 
         Args:
             symbol: Trading symbol
@@ -556,7 +556,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                         )
                         return False
                 except Exception:  # pragma: no cover - defensive
-                    # If file size can't be determined, proceed as existence is
+                    # If file size can't be determined, proceed as existence is'
                     # validated
                     pass
 
@@ -577,7 +577,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         model_name: str,
         is_loss: bool = False,
     ) -> tuple[bool, dict[str, Any]]:
-        """Validate a performance metric against a threshold.
+        """Validate a performance metric against a threshold."
 
         Args:
             metric_value: The metric value to validate
@@ -629,7 +629,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
             return False, {"error": str(e)}
 
     def _unwrap_estimator(self, artifact: Any) -> Any:
-        """Unwrap a potentially wrapped model artifact to get the estimator.
+        """Unwrap a potentially wrapped model artifact to get the estimator."
 
         Supports:
         - Dicts with keys 'model' / 'estimator' / 'clf' / 'pipeline'
@@ -677,7 +677,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the step5_hmm_based_training validator.
+    """Run the step5_hmm_based_training validator."
 
     Args:
         training_input: Training input parameters
@@ -704,7 +704,7 @@ if __name__ == "__main__":
 import os.path
 
     # Example usage
-    async def test_validator() -> None:
+async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",

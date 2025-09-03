@@ -12,9 +12,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class ModelType(Enum):
     XGBOOST = "xgboost"
@@ -27,12 +26,10 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
 
-
 class PredictionType(Enum):
     REGRESSION = "regression"
     CLASSIFICATION = "classification"
     PROBABILITY = "probability"
-
 
 class EnhancedMLTracker:
     """Minimal Enhanced ML Tracker placeholder."""
@@ -42,7 +39,7 @@ class EnhancedMLTracker:
         self.logger = system_logger.getChild("EnhancedMLTracker")
         self.tracker_config = config.get("enhanced_ml_tracker", {})
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tracker configuration"),
             AttributeError: (False, "Missing tracker parameters"),

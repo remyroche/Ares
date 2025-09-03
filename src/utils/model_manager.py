@@ -18,6 +18,7 @@ import h5py
 import joblib
 import numpy as np
 
+from src.core.decorators import handles_errors
 from src.utils.common_operations import (
     ensure_directory,
     format_datetime,
@@ -32,10 +33,15 @@ from src.utils.error_handler import (
     handle_errors,
     handle_file_operations,
     handle_specific_errors,
+)
+from src.utils.warning_symbols import (
+    error,
+    failed,
     initialization_error,
     invalid,
     missing,
 )
+from src.utils.compat import handle_errors, handle_specific_errors
 from src.utils.error_handler import warning as eh_warning
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -46,10 +52,9 @@ from src.utils.warning_symbols import warning as warn_symbol
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
 
-
 # type: ignore[override]
 def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:
-    """Normalized ctor to keep picklable; avoids closures.
+    """Normalized ctor to keep picklable; avoids closures."
 
     Attempts to resolve the bit generator by name/class and call the original constructor
     with a possibly adjusted signature for cross-version compatibility.
@@ -60,7 +65,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
         if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
     except Exception:
         pass
 
@@ -80,7 +85,6 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
             return bitgen_cls()
         raise
 
-
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
     global _NUMPY_RNG_UNPICKLE_PATCHED, _NP_ORIGINAL_BITGEN_CTOR
@@ -91,7 +95,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
 
 import os.path
 
-        original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
+original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
             # Fallback implementation for original_ctor
             _NUMPY_RNG_UNPICKLE_PATCHED = True
@@ -115,7 +119,6 @@ import os.path
                 logger.warning(
                     f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
                 )
-
 
 class ModelManager:
     """
@@ -147,7 +150,7 @@ class ModelManager:
         self.auto_backup: bool = bool(self.model_config.get("auto_backup", True))
         self.max_models: int = int(self.model_config.get("max_models", 10))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model manager configuration"),
             AttributeError: (False, "Missing required model parameters"),
@@ -182,11 +185,7 @@ class ModelManager:
         self.logger.info("✅ Model Manager initialization completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_model_configuration(self) -> None:
         """Load model configuration."""
         # Set default model parameters
@@ -208,11 +207,7 @@ class ModelManager:
 
         self.logger.info("Model configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate model configuration.
@@ -238,7 +233,7 @@ class ModelManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="directory initialization",
     )
@@ -259,7 +254,7 @@ class ModelManager:
 
         self.logger.info("Directories initialized successfully")
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="existing models loading",
     )
@@ -305,7 +300,7 @@ class ModelManager:
 
         self.logger.info(f"Loaded {len(self.models)} existing models")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model parameters"),
             AttributeError: (False, "Missing model components"),
@@ -374,11 +369,7 @@ class ModelManager:
         self.logger.info(f"Model {model_name} registered successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model loading",
-    )
+    @handles_errors(fallback=None)
     async def load_model(self, model_name: str) -> Any | None:
         """
         Load a model.
@@ -413,11 +404,7 @@ class ModelManager:
         self.logger.info(f"Model {model_name} loaded successfully")
         return model
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="model saving",
-    )
+    @handles_errors(fallback=False)
     async def save_model(
         self,
         model: Any,
@@ -471,11 +458,7 @@ class ModelManager:
         self.logger.info(f"Model {model_name} saved successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="active model setting",
-    )
+    @handles_errors(fallback=False)
     async def set_active_model(self, model_name: str) -> bool:
         """
         Set the active model.
@@ -500,11 +483,7 @@ class ModelManager:
         self.logger.info(f"Active model set to: {model_name}")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="active model getting",
-    )
+    @handles_errors(fallback=None)
     async def get_active_model(self) -> str | None:
         """
         Get the active model name.
@@ -514,7 +493,7 @@ class ModelManager:
         """
         return self.active_model
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="metadata saving",
     )
@@ -527,7 +506,7 @@ class ModelManager:
 
         self.logger.info(f"Model metadata saved to: {metadata_path}")
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="model backup creation",
     )
@@ -578,11 +557,7 @@ class ModelManager:
             "last_updated": self.model_metadata.get("last_updated"),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="model manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the model manager."""
         self.logger.info("🛑 Stopping Model Manager...")
@@ -592,16 +567,10 @@ class ModelManager:
 
         self.logger.info("✅ Model Manager stopped successfully")
 
-
 # Global model manager instance
 model_manager: ModelManager | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="model manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:

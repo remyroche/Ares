@@ -40,7 +40,7 @@ try:
 
 import copy
 
-    OPTUNA_AVAILABLE = True
+OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
 

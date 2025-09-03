@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 
@@ -28,7 +28,7 @@ class Optimizer:
         self.optimization_results: dict[str, Any] = {}
         self.parameters: dict[str, Any] = {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid optimizer configuration"),
             AttributeError: (False, "Missing required optimizer parameters"),
@@ -50,11 +50,7 @@ class Optimizer:
             self.logger.error(f"❌ Optimizer initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="optimizer configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_optimizer_configuration(self) -> None:
         try:
             self.optimizer_config.setdefault("optimization_interval", 300)
@@ -65,11 +61,7 @@ class Optimizer:
         except Exception as e:
             self.logger.error(f"Error loading optimizer configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         try:
             if self.optimization_interval <= 0:
@@ -84,7 +76,7 @@ class Optimizer:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Optimizer run failed"),
         },
@@ -104,11 +96,7 @@ class Optimizer:
             self.is_running = False
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="optimization step",
-    )
+    @handles_errors(fallback=None)
     async def _perform_optimization(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -122,11 +110,7 @@ class Optimizer:
         except Exception as e:
             self.logger.error(f"Error in optimization step: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="parameter optimization",
-    )
+    @handles_errors(fallback=None)
     async def _optimize_parameters(self) -> None:
         try:
             # Simulate parameter optimization
@@ -141,11 +125,7 @@ class Optimizer:
         except Exception as e:
             self.logger.error(f"Error optimizing parameters: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="optimization results update",
-    )
+    @handles_errors(fallback=None)
     async def _update_optimization_results(self) -> None:
         try:
             # Update optimization results
@@ -156,11 +136,7 @@ class Optimizer:
         except Exception as e:
             self.logger.error(f"Error updating optimization results: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="optimizer stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Optimizer...")
         try:
@@ -185,11 +161,7 @@ class Optimizer:
     def get_parameters(self) -> dict[str, Any]:
         return self.parameters.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="global system optimization",
-    )
+    @handles_errors(fallback=None)
     async def implement_global_system_optimization(
         self,
         historical_pnl_data: pd.DataFrame,  # pylint: disable=unused-argument
@@ -283,15 +255,9 @@ class Optimizer:
             self.logger.error(f"Error calculating SR levels: {e}")
             return []
 
-
 optimizer: Optimizer | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="optimizer setup",
-)
+@handles_errors(fallback=None)
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
     try:
         global optimizer

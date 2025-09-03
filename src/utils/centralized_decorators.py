@@ -41,14 +41,12 @@ numpy = PipelineStandards.safe_import("numpy", None)
 pandas = PipelineStandards.safe_import("pandas", None)
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 
-
 # Fallback functions if imports fail
 def create_fallback_logger():
     import logging
 
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger("CentralizedDecorators")
-
 
 # Initialize fallbacks
 if system_logger is None:
@@ -80,8 +78,8 @@ from src.utils.decorators import (
     pa_check_io,
     pa_check_output,
     validate_call_or_runtime_types,
-    with_tracing_span,
 )
+from src.core.decorators import traced as with_tracing_span
 from src.utils.enhanced_data_quality_decorators import (
     comprehensive_data_validation,
     optimize_memory_usage,
@@ -99,11 +97,7 @@ from src.utils.enhanced_data_quality_decorators import (
 )
 
 # Import all decorators from their respective modules
-from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
@@ -129,7 +123,6 @@ from src.utils.training_pipeline_decorators import (
 # ============================================================================
 # VALIDATE_DATA_QUALITY DECORATOR IMPLEMENTATION
 # ============================================================================
-
 
 def validate_data_quality(
     validation_level: str = "WARNING",
@@ -300,7 +293,6 @@ def validate_data_quality(
 
     return decorator
 
-
 def _validate_data_quality_internal(
     args: tuple,
     kwargs: dict,
@@ -360,7 +352,6 @@ def _validate_data_quality_internal(
         issues.extend(df_issues)
 
     return issues
-
 
 def _validate_single_dataframe(
     df: Any,
@@ -462,7 +453,6 @@ def _validate_single_dataframe(
 
     return issues
 
-
 def _is_boolean_feature(series: Any) -> bool:
     """Check if a series represents a boolean feature."""
     if not PANDAS_AVAILABLE:
@@ -489,11 +479,9 @@ def _is_boolean_feature(series: Any) -> bool:
 
     return False
 
-
 # ============================================================================
 # QUALITY_GATE DECORATOR IMPLEMENTATION
 # ============================================================================
-
 
 def quality_gate(
     min_quality_score: float = 0.8,
@@ -588,7 +576,6 @@ def quality_gate(
 
     return decorator
 
-
 def _extract_dataframe_from_result(result: Any) -> Optional[Any]:
     """Extract DataFrame from function result."""
     if not PANDAS_AVAILABLE:
@@ -607,7 +594,6 @@ def _extract_dataframe_from_result(result: Any) -> Optional[Any]:
             if isinstance(item, pd.DataFrame):
                 return item
     return None
-
 
 def _calculate_quality_score(df: Any, validation_level: str) -> Tuple[float, str]:
     """Calculate quality score and grade for a DataFrame."""
@@ -658,7 +644,6 @@ def _calculate_quality_score(df: Any, validation_level: str) -> Tuple[float, str
 
     return overall_score, grade
 
-
 def _check_quality_gates(
     quality_score: float,
     grade: str,
@@ -679,11 +664,9 @@ def _check_quality_gates(
 
     return True
 
-
 # ============================================================================
 # STEP_SPECIFIC_ML_VALIDATION DECORATOR IMPLEMENTATION
 # ============================================================================
-
 
 def step_specific_ml_validation(step_name: str, **kwargs):
     """
@@ -710,11 +693,9 @@ def step_specific_ml_validation(step_name: str, **kwargs):
 
     return quality_gate(**config)
 
-
 # ============================================================================
 # MONITOR DECORATORS
 # ============================================================================
-
 
 def monitor_feature_engineering(
     validation_level: str = "WARNING",
@@ -726,7 +707,6 @@ def monitor_feature_engineering(
 
     return decorator
 
-
 def monitor_data_collection(
     validation_level: str = "WARNING",
 ):
@@ -736,7 +716,6 @@ def monitor_data_collection(
         return func
 
     return decorator
-
 
 def monitor_model_training(
     validation_level: str = "WARNING",
@@ -748,7 +727,6 @@ def monitor_model_training(
 
     return decorator
 
-
 def monitor_validation(
     validation_level: str = "WARNING",
 ):
@@ -759,7 +737,6 @@ def monitor_validation(
 
     return decorator
 
-
 def monitor_optimization(
     validation_level: str = "WARNING",
 ):
@@ -769,7 +746,6 @@ def monitor_optimization(
         return func
 
     return decorator
-
 
 def monitor_step_execution(
     step_name: str = None,
@@ -785,7 +761,6 @@ def monitor_step_execution(
 
     return decorator
 
-
 def secure_step_execution(
     error_handling: bool = True,
     rollback_on_failure: bool = True,
@@ -799,76 +774,61 @@ def secure_step_execution(
 
     return decorator
 
-
 # ============================================================================
 # PLACEHOLDER DECORATORS FOR BACKWARD COMPATIBILITY
 # ============================================================================
-
 
 def validate_klines_data(func):
     """Placeholder decorator for klines data validation."""
     return func
 
-
 def format_klines_data(func):
     """Placeholder decorator for klines data formatting."""
     return func
-
 
 def validate_aggtrades_data(func):
     """Placeholder decorator for aggtrades data validation."""
     return func
 
-
 def format_aggtrades_data(func):
     """Placeholder decorator for aggtrades data formatting."""
     return func
-
 
 def validate_futures_data(func):
     """Placeholder decorator for futures data validation."""
     return func
 
-
 def format_futures_data(func):
     """Placeholder decorator for futures data formatting."""
     return func
-
 
 def log_step_metrics(func):
     """Placeholder decorator for step metrics logging."""
     return func
 
-
 def validate_wavelet_data_quality(func):
     """Placeholder decorator for wavelet data quality validation."""
     return func
-
 
 def validate_feature_engineering_with_lookahead_bias_detection(func):
     """Placeholder decorator for feature engineering with lookahead bias detection."""
     return func
 
-
 def validate_klines_data_quality(func):
     """Placeholder decorator for klines data quality validation."""
     return func
-
 
 def validate_ml_data_quality_decorator(func):
     """Placeholder decorator for ML data quality validation."""
     return func
 
-
 def continuous_quality_monitoring(func):
     """Placeholder decorator for continuous quality monitoring."""
     return func
 
-
 # ============================================================================
 # AUTO_FIX_DATA_QUALITY_ISSUES DECORATOR IMPLEMENTATION
 # ============================================================================
-
 
 def auto_fix_data_quality_issues(
     fix_nan: bool = True,
@@ -919,7 +879,6 @@ def auto_fix_data_quality_issues(
 
     return decorator
 
-
 def _auto_fix_data_quality(
     args: tuple,
     kwargs: dict,
@@ -955,7 +914,6 @@ def _auto_fix_data_quality(
             fixed_kwargs[key] = fixed_df
 
     return tuple(fixed_args), fixed_kwargs
-
 
 def _fix_dataframe_quality(
     df: Any,
@@ -1018,7 +976,6 @@ def _fix_dataframe_quality(
                     fixed_df = fixed_df.resample(freq).mean()
 
     return fixed_df
-
 
 # Export all decorators for easy import
 __all__ = [

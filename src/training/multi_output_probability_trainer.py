@@ -35,7 +35,6 @@ from .advanced_neural_models import (
 
 logger = system_logger
 
-
 class ProbabilityTargetGenerator:
     """Generates probability targets for multi-output training.
 
@@ -273,7 +272,6 @@ class ProbabilityTargetGenerator:
 
         self.logger.info(f"Generated targets for {len(X)} samples")
         return targets
-
 
 class MultiOutputModel:
     """Multi-output model architecture for training 4 probability outputs.
@@ -638,14 +636,17 @@ class MultiOutputModel:
 
         return probabilities
 
-
 class MultiOutputProbabilityTrainer:
     """Main class for multi-output probability training.
 
     This class coordinates the entire multi-output training process, from target
     generation to model training and prediction.
     """
-
+    Main class for multi-output probability training.
+    This class coordinates the entire multi-output training process,
+    from target generation to model training and prediction.
+from src.core.decorators import handles_errors
+    """
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.logger = logger

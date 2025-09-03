@@ -1,6 +1,6 @@
 # src/training/performance_comparison.py
 
-"""Performance Comparison Module.
+"""Performance Comparison Module."
 
 This module provides comprehensive performance comparison capabilities for:
 1. Model performance across different optimization strategies

@@ -37,6 +37,9 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 from src.utils.enhanced_mlflow_integration import (
+from src.core.decorators import handles_errors
+    with_enhanced_mlflow_logging,
+    log_step_report,
     create_detailed_step_report,
     log_step_artifact_with_standardized_name,
     log_step_dataframe_with_standardized_name,
@@ -50,7 +53,6 @@ from src.utils.logger import system_logger
 warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step9_5_HMM_LM_Generalist")
-
 
 class HMMLMGeneralistTrainingStep:
     """Step 9.5: Generalist HMM-LM Model Training for Regime Change Prediction."""
@@ -111,11 +113,7 @@ class HMMLMGeneralistTrainingStep:
 
         return vocab
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="HMM-LM generalist training step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the HMM-LM generalist training step."""
         self.logger.info("Initializing HMM-LM Generalist Training Step...")
@@ -125,8 +123,7 @@ class HMMLMGeneralistTrainingStep:
     @with_tracing_span("step9_5.execute", log_args=False)
     @validate_data_quality(validation_level="WARNING")
     @with_enhanced_mlflow_logging("step9_5_hmm_lm_generalist_training")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-LM generalist training step execution",
     )
@@ -957,9 +954,7 @@ class HMMLMGeneralistTrainingStep:
         except Exception as e:  # noqa: BLE001
             self.logger.exception(f"❌ Failed to save generalist model: {e}")
 
-
 # Efficient Regime Prediction Architecture
-
 
 class EfficientRegimePredictor(nn.Module):
     """Efficient regime prediction model for financial time series."""
@@ -1073,7 +1068,6 @@ class EfficientRegimePredictor(nn.Module):
             "time_to_target": time_to_target,
         }
 
-
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
@@ -1095,7 +1089,6 @@ class PositionalEncoding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.pe[: x.size(0), :]
 
-
 class EfficientRegimeDataset(Dataset[Tuple[torch.Tensor, Dict[str, torch.Tensor]]]):
     """Custom dataset to return features and dict targets."""
 
@@ -1109,7 +1102,6 @@ class EfficientRegimeDataset(Dataset[Tuple[torch.Tensor, Dict[str, torch.Tensor]
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         return self.X[idx], {k: v[idx] for k, v in self.targets.items()}
-
 
 class EfficientRegimeTrainer:
     """Efficient trainer for regime prediction model."""
@@ -1315,7 +1307,6 @@ class EfficientRegimeTrainer:
             )
         return loss, accuracy
 
-
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step9_5_hmm_lm_generalist_training")
@@ -1417,7 +1408,6 @@ async def run_step(
     except Exception as e:  # noqa: BLE001
         logger.exception(f"HMM-LM generalist training failed: {e}")
         return False
-
 
 if __name__ == "__main__":
     # Test the step

@@ -19,6 +19,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+from src.core.decorators import handles_errors
     handle_errors,
     validate_data_quality,
     validate_data_structure,
@@ -26,7 +27,6 @@ from src.utils.centralized_decorators import (
 )
 
 logger = system_logger.getChild("AggtradesFormatValidator")
-
 
 class AggtradesFormatValidator:
     """Validates and fixes aggtrades data format for pipeline compatibility."""
@@ -101,17 +101,7 @@ class AggtradesFormatValidator:
 
     @validate_data_structure
     @with_tracing_span("validate_file_format")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            pd.errors.EmptyDataError,
-            FileNotFoundError,
-            PermissionError,
-            pd.errors.ParserError,
-        ),
+    @handles_errors
         default_return={
             "valid": False,
             "issues": ["Validation failed"],
@@ -496,15 +486,7 @@ class AggtradesFormatValidator:
             return False
 
     @with_tracing_span("validate_all_aggtrades")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            FileNotFoundError,
-            PermissionError,
-        ),
+    @handles_errors
         default_return={
             "total_files": 0,
             "valid_files": 0,

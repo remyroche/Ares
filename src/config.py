@@ -171,7 +171,9 @@ class RiskConfig:
     take_profit_pct: float = 0.1
     max_leverage: int = 10
 
-
+# Legacy ConfigurationManager class for backward compatibility
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import invalid, warning, failed
 import copy
 
 # Legacy ConfigurationManager class for backward compatibility
@@ -209,7 +211,7 @@ class ConfigurationManager:
             100,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid configuration manager configuration"),
             AttributeError: (
@@ -353,7 +355,7 @@ class ConfigurationManager:
             self.print(failed("❌ Failed to initialize configuration service: {e}"))
             raise
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Configuration manager run failed"),
         },

@@ -1,6 +1,6 @@
 # src/training/steps/step15_tactician_specialist_training.py
 
-"""Step 15: Tactician Specialist Training with Standardized Data Quality Management.
+"""Step 15: Tactician Specialist Training with Standardized Data Quality Management."
 
 This step performs tactician specialist model training with S/R level integration
 using standardized data quality management patterns.
@@ -96,7 +96,6 @@ if warning_symbols is None:
 else:
     error = warning_symbols.error
 
-
 class RegimeAwareTacticianSpecialistTrainingStep:
     """Step 15: Regime-Aware Tactician Specialist Models Training with Standardized Data Quality Management."""
 
@@ -177,11 +176,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tactician specialist training step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the tactician specialist training step."""
         self.logger.info("Initializing Tactician Specialist Training Step...")
@@ -354,7 +349,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             return labeled_data
 
     def _get_timeframe_minutes(self, timeframe: str) -> int:
-        """Convert timeframe string to minutes for adaptive processing.
+        """Convert timeframe string to minutes for adaptive processing."
         Step9 only supports 1m and 5m timeframes.
         """
         tf = timeframe.lower()
@@ -368,8 +363,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         )
         return 1
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician specialist training step execution",
     )
@@ -736,7 +730,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             # Calculate overall accuracy from probability outputs
             overall_accuracy = 0.0
             prob_values = [v for k, v in price_action_probabilities.items() 
-                          if k not in ["generation_timestamp", "model_type"]]
+            if k not in ["generation_timestamp", "model_type"]]
             if prob_values:
                 overall_accuracy = sum(prob_values) / len(prob_values)
 
@@ -1125,7 +1119,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             self.logger.exception(error(f"Error training Random Forest: {e}"))
             raise
 
-
 from src.utils.enhanced_mlflow_integration import (
     copy,
     create_detailed_step_report,
@@ -1138,7 +1131,6 @@ from src.utils.enhanced_mlflow_integration import (
 from src.utils.enhanced_mlflow_integration import numpy as np
 from src.utils.enhanced_mlflow_integration import pandas as pd
 from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -1157,7 +1149,18 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-
+from src.utils.enhanced_mlflow_integration import (
+import copy
+import numpy as np
+import pandas as pd
+from src.core.decorators import handles_errors
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1265,7 +1268,7 @@ async def run_step(
     symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the tactician specialist training step.
+    """Run the tactician specialist training step."
 
     Args:
         symbol: Trading symbol

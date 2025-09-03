@@ -9,9 +9,8 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_selection import RFE, mutual_info_classif
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class FeatureSelectionManager:
     """Feature Selection Manager for Step 2 - Reduces features from ~220 to 100
@@ -40,11 +39,7 @@ class FeatureSelectionManager:
         self.feature_importance_cache = {}
         self.selection_metadata = {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="feature selection step02",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def select_features_step2(
         self,
         features_df: pd.DataFrame,

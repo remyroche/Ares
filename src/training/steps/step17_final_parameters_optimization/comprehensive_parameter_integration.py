@@ -31,7 +31,7 @@ try:
 
 import os.path
 
-    MLFLOW_AVAILABLE = True
+MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
 
@@ -55,7 +55,7 @@ class ComprehensiveParameterIntegration:
         self.parameter_validation = {}
     
     def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
-        """Create comprehensive mapping of ML model trading parameters from all steps.
+        """Create comprehensive mapping of ML model trading parameters from all steps."
         
         Note: Only parameters that are actually used during live trading are included.
         Data collection, training settings, validation parameters, etc. are excluded.

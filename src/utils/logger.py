@@ -68,7 +68,7 @@ else:
 
 
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
-    """Filter to suppress noisy TensorFlow TPU client fallback warning.
+    """Filter to suppress noisy TensorFlow TPU client fallback warning."
 
     Suppresses messages like:
     "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
@@ -91,7 +91,7 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
 def _configure_tensorflow_logging_suppression(
     system_logger: logging.Logger | None,
 ) -> None:
-    """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning.
+    """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning."
 
     This avoids requiring cloud-tpu-client installation when TPU is not needed.
     """
@@ -551,10 +551,10 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
         import asyncio
 
         try:
-            # Check if there's already an event loop running
+            # Check if there's already an event loop running'
             try:
                 loop = asyncio.get_running_loop()
-                # If we're in an async context, use it
+                # If we're in an async context, use it'
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -716,7 +716,7 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
         def getChild(self, name: str) -> logging.Logger:
             """Get child logger with comprehensive logging integration."""
             if self.comprehensive_logger:
-                # Return the comprehensive logger's component logger directly
+                # Return the comprehensive logger's component logger directly'
                 return self.comprehensive_logger.get_component_logger(name)
             return self.base_logger.getChild(name)
 
@@ -742,9 +742,11 @@ def ensure_comprehensive_logging_available():
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
-import os.path
+    except Exception as e:
+        pass  # TODO: Handle exception properly
+import os
 
-        comprehensive_logger = get_comprehensive_logger()
+comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             # Initialize integration if comprehensive logging is available
             initialize_comprehensive_integration()
@@ -781,7 +783,7 @@ def log_io_operation(
     path: str | os.PathLike | None = None,
     **context: Any,
 ):
-    """Context-managed I/O logging with duration and best-effort file size.
+    """Context-managed I/O logging with duration and best-effort file size."
 
     - Logs start and end of an I/O operation with optional context (e.g., columns, filters, compression)
     - On exception, logs with exception() and re-raises (no swallowing)
@@ -832,7 +834,7 @@ def log_dataframe_overview(
     name: str | None = None,
     sample_rows: int = 3,
 ) -> None:
-    """Log essential DataFrame diagnostics without heavy output.
+    """Log essential DataFrame diagnostics without heavy output."
 
     - shape, columns count, memory usage, dtype summary
     - null counts for up to first 10 columns

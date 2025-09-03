@@ -31,7 +31,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step2_5SROptimizationValidator")
 
-
 class SROptimizationValidator:
     """Validator for S/R detection optimization step."""
 
@@ -97,8 +96,7 @@ class SROptimizationValidator:
             self.logger.error(f"Failed to validate S/R optimization: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="optimization_results_validation",
     )
@@ -160,8 +158,7 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Validation error: {e}"]}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="optimized_parameters_validation",
     )
@@ -235,8 +232,7 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Parameter validation error: {e}"]}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="configuration_validation",
     )
@@ -288,8 +284,7 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Configuration validation error: {e}"]}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="artifact_quality_validation",
     )
@@ -390,11 +385,10 @@ async def run_validation(
         logger.error(f"Failed to run S/R optimization validation: {e}")
         return False
 
-
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-
+from src.core.decorators import handles_errors
     # Test configuration
     test_config = {
         "sr_breakout_predictor": {

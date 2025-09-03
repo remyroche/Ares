@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Data Quality Monitor for Real-time Monitoring and Alerting.
+"""Data Quality Monitor for Real-time Monitoring and Alerting."
 
 This module provides real-time monitoring of data quality metrics and alerting
 capabilities for the enhanced data quality system.
@@ -26,7 +26,6 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("DataQualityMonitor")
-
 
 class DataQualityAlert:
     """Represents a data quality alert."""
@@ -71,7 +70,6 @@ class DataQualityAlert:
     def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
 
-
 class DataQualityMonitor:
     """Real-time data quality monitor with alerting capabilities."""
 
@@ -103,11 +101,7 @@ class DataQualityMonitor:
         }
 
     @with_tracing_span("start_monitoring")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="data_quality_monitor.start_monitoring"
-    )
+    @handles_errors(fallback=False)
     async def start_monitoring(
         self,
         symbols: List[str],
@@ -115,7 +109,7 @@ class DataQualityMonitor:
         timeframes: List[str],
         interval_seconds: int = 300
     ) -> bool:
-        """Start real-time monitoring of data quality.
+        """Start real-time monitoring of data quality."
         
         Args:
             symbols: List of symbols to monitor
@@ -150,7 +144,7 @@ class DataQualityMonitor:
 
     @with_tracing_span("add_alert_callback")
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
-        """Add a callback function to be called when alerts are generated.
+        """Add a callback function to be called when alerts are generated."
         
         Args:
             callback: Function to call with alert data
@@ -160,7 +154,7 @@ class DataQualityMonitor:
 
     @with_tracing_span("set_quality_thresholds")
     def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
-        """Set quality monitoring thresholds.
+        """Set quality monitoring thresholds."
         
         Args:
             thresholds: Dictionary of threshold values
@@ -214,19 +208,21 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
-
+from src.core.decorators import handles_errors
+manager = EnhancedDataQualityManager(str(self.data_cache_path))
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
             # Run quality check
-            quality_results = await manager.comprehensive_quality_check(
+quality_results = await manager.comprehensive_quality_check(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
                 check_gaps=True,
-                fill_gaps=False,  # Don't auto-fill during monitoring
+                fill_gaps=False,  # Don't auto-fill during monitoring'
                 validate_format=True
             )
             
@@ -443,7 +439,7 @@ import os.path
         end_time: Optional[datetime] = None,
         limit: int = 100
     ) -> List[DataQualityAlert]:
-        """Get filtered alerts.
+        """Get filtered alerts."
         
         Args:
             symbol: Filter by symbol
@@ -483,7 +479,7 @@ import os.path
 
     @with_tracing_span("acknowledge_alert")
     def acknowledge_alert(self, alert_index: int) -> bool:
-        """Acknowledge an alert by index.
+        """Acknowledge an alert by index."
         
         Args:
             alert_index: Index of alert to acknowledge
@@ -503,7 +499,7 @@ import os.path
 
     @with_tracing_span("resolve_alert")
     def resolve_alert(self, alert_index: int) -> bool:
-        """Mark an alert as resolved.
+        """Mark an alert as resolved."
         
         Args:
             alert_index: Index of alert to resolve
@@ -576,7 +572,6 @@ import os.path
         report.append("=" * 80)
         return "\n".join(report)
 
-
 # Convenience functions for easy integration
 async def start_data_quality_monitoring(
     symbols: List[str],
@@ -596,7 +591,6 @@ async def start_data_quality_monitoring(
     
     return monitor
 
-
 def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAlert], None]:
     """Create an email alert callback function."""
     def email_callback(alert: DataQualityAlert) -> None:
@@ -604,7 +598,6 @@ def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAler
         logger.info(f"📧 Would send email to {email_address}: {alert}")
     
     return email_callback
-
 
 def create_slack_alert_callback(webhook_url: str) -> Callable[[DataQualityAlert], None]:
     """Create a Slack alert callback function."""

@@ -1,6 +1,6 @@
 # src/training/integration_guide.py
 
-"""Integration guide showing how to integrate the optimized enhanced training manager
+"""Integration guide showing how to integrate the optimized enhanced training manager"
 with the existing Ares training system.
 """
 
@@ -23,7 +23,7 @@ from src.utils.warning_symbols import copy, failed, import
 
 
 class OptimizedTrainingIntegration:
-    """Integration class that shows how to replace the existing training manager
+    """Integration class that shows how to replace the existing training manager"
     with the optimized version while maintaining compatibility.
     """
 
@@ -42,7 +42,7 @@ class OptimizedTrainingIntegration:
     async def replace_enhanced_training_manager(
         self,
     ) -> EnhancedTrainingManagerOptimized:
-        """Replace the existing enhanced training manager with the optimized version.
+        """Replace the existing enhanced training manager with the optimized version."
         This method shows how to maintain the same interface while adding optimizations.
         """
         self.logger.info("Creating optimized enhanced training manager...")
@@ -63,7 +63,7 @@ class OptimizedTrainingIntegration:
         symbol: str,
         exchange: str,
     ) -> dict[str, Any]:
-        """Execute regime training with optimizations.
+        """Execute regime training with optimizations."
         Compatible with the existing regime training command.
         """
         self.logger.info(

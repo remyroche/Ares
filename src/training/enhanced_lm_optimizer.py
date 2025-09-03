@@ -1,6 +1,6 @@
 # src/training/enhanced_lm_optimizer.py
 
-"""Enhanced LM Model Optimizer for Step6, Step6_5, and Step9.
+"""Enhanced LM Model Optimizer for Step6, Step6_5, and Step9."
 
 This module provides comprehensive optimization for Language Model (LM) components:
 1. Advanced feature selection with multiple algorithms
@@ -52,7 +52,7 @@ except ImportError:
 
 
 class EnhancedLMOptimizer:
-    """Enhanced LM Model Optimizer with comprehensive optimization features.
+    """Enhanced LM Model Optimizer with comprehensive optimization features."
 
     Features:
     - Multi-algorithm feature selection
@@ -460,7 +460,7 @@ class EnhancedLMOptimizer:
         architecture: str,
         **kwargs,
     ) -> dict[str, Any]:
-        """Comprehensive optimization for LM models. No fallbacks - it has to work.
+        """Comprehensive optimization for LM models. No fallbacks - it has to work."
 
         Args:
             step_name: Step name (step06, step6_5, step09)
@@ -770,7 +770,7 @@ class EnhancedLMOptimizer:
                 params = self._suggest_unified_neural_network_params(trial, architecture, step_name)
 
                 # For neural networks, we need a proper training loop
-                # Note: This is a synchronous method, so we'll use a simplified evaluation
+                # Note: This is a synchronous method, so we'll use a simplified evaluation'
                 cv_scores = self._evaluate_neural_network_sync(
                     params, features_df, target, architecture, model_type,
                 )
@@ -959,7 +959,7 @@ class EnhancedLMOptimizer:
 
     def _create_neural_network_model(self, params: dict[str, Any], architecture: str, input_size: int, model_type: str):
         """Create neural network model based on architecture."""
-        # This is a simplified version - in practice, you'd have more sophisticated model creation
+        # This is a simplified version - in practice, you'd have more sophisticated model creation'
         if architecture == "CNN":
             return SimpleCNNModel(input_size, params, model_type)
         if architecture == "TCN":
@@ -1362,8 +1362,8 @@ class EnhancedFeatureSelector:
 
 import copy
 
-            feature_stability = dict.fromkeys(features_df.columns, 0)
-            n_folds = 5
+feature_stability = dict.fromkeys(features_df.columns, 0)
+n_folds = 5
 
             # Time series cross-validation for stability analysis
             tscv = TimeSeriesSplit(n_splits=n_folds)

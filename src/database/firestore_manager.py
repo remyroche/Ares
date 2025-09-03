@@ -10,11 +10,16 @@ import firebase_admin
 from firebase_admin import auth, credentials, firestore
 
 from src.config import CONFIG, get_environment_settings  # Import CONFIG
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import (
+    error,
+    missing,
+    warning,
+)
 from src.utils.error_handler import (
     ErrorRecoveryStrategies,
     error_context,
     handle_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, missing, warning
 
@@ -39,11 +44,7 @@ class FirestoreManager:
         self._initialized = False
         self._firestore_enabled = False  # This will be set based on config
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="firestore_initialization",
-    )
+    @handles_errors(fallback=None)
     async def initialize(self):
         """Asynchronously initializes the Firestore connection."""
         if self._initialized:
@@ -92,11 +93,7 @@ class FirestoreManager:
                 "Ensure Firestore Security Rules are configured for user data access.",
             )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="firebase_blocking_initialization",
-    )
+    @handles_errors(fallback=None)
     def _blocking_initialize(self):
         """Synchronous part of the initialization.
 
@@ -118,11 +115,7 @@ class FirestoreManager:
         self._db = firestore.client()
         self._auth = auth
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="user_id_determination",
-    )
+    @handles_errors(fallback=None)
     def _determine_user_id(self, initial_auth_token: str | None):
         """Determines the user ID for Firestore document paths."""
         if initial_auth_token:
@@ -136,11 +129,7 @@ class FirestoreManager:
                 f"Using anonymous user ID for Firestore paths: {self._user_id}",
             )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="collection_path_construction",
-    )
+    @handles_errors(fallback=None)
     def _get_collection_path(
         self, collection_name: str, is_public: bool = False
     ) -> str | None:
@@ -161,11 +150,7 @@ class FirestoreManager:
             return None
         return f"{base_path}/users/{self._user_id}/{collection_name}"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="firestore_blocking_execution",
-    )
+    @handles_errors(fallback=None)
     async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Helper to run any blocking function in a thread pool."""
         if not self._firestore_enabled or not self._initialized or not self._db:
@@ -178,11 +163,7 @@ class FirestoreManager:
         p_func = partial(func, *args, **kwargs)
         return await loop.run_in_executor(None, p_func)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="firestore_set_document",
-    )
+    @handles_errors(fallback=False)
     async def set_document(
         self,
         collection_name: str,
@@ -215,11 +196,7 @@ class FirestoreManager:
             return True
         return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="firestore_get_document",
-    )
+    @handles_errors(fallback=None)
     async def get_document(
         self, collection_name: str, doc_id: str, is_public: bool = False
     ) -> dict[str, Any] | None:
@@ -251,11 +228,7 @@ class FirestoreManager:
             )
         return result
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="firestore_add_document",
-    )
+    @handles_errors(fallback=None)
     async def add_document(
         self, collection_name: str, data: dict[str, Any], is_public: bool = False
     ) -> str | None:
@@ -282,11 +255,7 @@ class FirestoreManager:
             self.logger.info(f"Document added to {collection_name} with ID: {doc_id}.")
         return doc_id
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=[],
-        context="firestore_get_collection",
-    )
+    @handles_errors(fallback=[])
     async def get_collection(
         self,
         collection_name: str,
@@ -322,11 +291,7 @@ class FirestoreManager:
             return docs
         return []
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="firestore_delete_document",
-    )
+    @handles_errors(fallback=False)
     async def delete_document(
         self, collection_name: str, doc_id: str, is_public: bool = False
     ) -> bool:

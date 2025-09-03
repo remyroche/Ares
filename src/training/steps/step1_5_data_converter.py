@@ -147,7 +147,6 @@ if download_all_data_with_consolidation is None:
     def download_all_data_with_consolidation(*_args, **_kwargs):
         raise RuntimeError("download_all_data_with_consolidation not available")
 
-
 # ----------------------------------------------------------------------------
 # Column Verification and Calculation Utilities
 # ----------------------------------------------------------------------------
@@ -488,7 +487,6 @@ class ColumnVerifier:
 
         return calculated
 
-
 # ----------------------------------------------------------------------------
 # Utilities: Timing and Memory trackers (lightweight but featureful)
 # ----------------------------------------------------------------------------
@@ -546,9 +544,7 @@ class TimingTracker:
                     print(f"    └─ {cp_name}: {cp_dur:.2f}s")
         print("=" * 60)
 
-
 timing_tracker = TimingTracker()
-
 
 class MemoryTracker:
     @staticmethod
@@ -572,7 +568,6 @@ class MemoryTracker:
         print(
             f"💾 [MEMORY] {context}: RSS={mem['rss_mb']:.1f}MB, VMS={mem['vms_mb']:.1f}MB, {mem['percent']:.1f}%"
         )
-
 
 # ----------------------------------------------------------------------------
 # ParquetDatasetManager - high-level parquet IO with optional pyarrow
@@ -1038,7 +1033,6 @@ class ParquetDatasetManager:
         except Exception:
             return None
         return None
-
 
 # ----------------------------------------------------------------------------
 # UnifiedDataConverter - convert and unify datasets
@@ -1588,6 +1582,21 @@ class UnifiedDataConverter:
                 unified = await self._merge_daily_futures(unified, daily_futures)
             unified = await self._fill_missing_values(unified)
 
+	@validate_klines_data_quality
+	@secure_data_processing
+	@prevent_data_leakage
+	@resource_monitor
+	@memory_efficient
+	@quality_gate
+	@handles_errors(fallback=None)
+	async def _create_klines_from_aggtrades(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+		import warnings
+		warnings.warn(
+			"_create_klines_from_aggtrades is deprecated. Use _download_klines_data instead.",
+			DeprecationWarning,
+			stacklevel=2,
+		)
+		return None
             # Step 1.5 Enhancement: Column verification and calculation
             unified = await self._verify_and_calculate_missing_columns(
                 unified, symbol, exchange, timeframe
@@ -2176,7 +2185,6 @@ class UnifiedDataConverter:
             )
             return unified
 
-
 # ----------------------------------------------------------------------------
 # Public entry point
 # ----------------------------------------------------------------------------
@@ -2290,7 +2298,6 @@ async def run_step(
         system_logger.exception(f"❌ Step 1.5 failed: {e}")
         return False
 
-
 if __name__ == "__main__":
     import argparse
 
@@ -2329,5 +2336,6 @@ if __name__ == "__main__":
         import gc
 import copy
 import os.path
+from src.core.decorators import handles_errors
 
 gc.collect()

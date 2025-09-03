@@ -27,11 +27,10 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
 
-
 @with_tracing_span("validate_triple_barrier_method")
 @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
 @comprehensive_data_validation
-@handle_errors
+@handles_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -90,7 +89,7 @@ async def run_validator(
         # Try to read the file to validate structure
         try:
             import pandas as pd
-
+from src.core.decorators import handles_errors
             data = pd.read_parquet(triple_barrier_path)
 
             # Check required columns (expect 'triple_barrier_label')
@@ -155,7 +154,6 @@ async def run_validator(
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }
-
 
 if __name__ == "__main__":
     # Test the validator

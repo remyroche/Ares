@@ -34,7 +34,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
@@ -44,7 +44,6 @@ import os.path
 
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
-
 
 @dataclass
 class TimeframeConfig:
@@ -58,7 +57,6 @@ class TimeframeConfig:
         False  # Hazard models are for regime transitions only
     )
 
-
 @dataclass
 class EnsembleConfig:
     """Configuration for the multi-timeframe ensemble."""
@@ -71,7 +69,6 @@ class EnsembleConfig:
     ensemble_method: str = (
         "weighted_average"  # "weighted_average", "meta_learner", "stacking"
     )
-
 
 class MultiTimeframeHMMEnsemble:
     """Multi-timeframe HMM cluster ensemble that combines predictions from HMM clusters
@@ -134,11 +131,7 @@ class MultiTimeframeHMMEnsemble:
 
         self.logger.info(f"📈 Initial weights: {self.ensemble_weights}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="multi-timeframe training",
-    )
+    @handles_errors(fallback=False)
     def train_ensemble(self, timeframe_data: dict[str, pd.DataFrame]) -> bool:
         """Train the multi-timeframe HMM ensemble.
 
@@ -223,11 +216,7 @@ class MultiTimeframeHMMEnsemble:
             self.logger.exception(f"💥 Error in multi-timeframe ensemble training: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="timeframe model training",
-    )
+    @handles_errors(fallback=False)
     def _train_timeframe_models(
         self,
         data: pd.DataFrame,
@@ -283,9 +272,7 @@ class MultiTimeframeHMMEnsemble:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=False, context="meta-learner training"
-    )
+    @handles_errors(fallback=False)
     def _train_meta_learner(self, timeframe_data: dict[str, pd.DataFrame]) -> bool:
         """Train the meta-learner to combine predictions from all timeframes."""
         try:
@@ -405,9 +392,7 @@ class MultiTimeframeHMMEnsemble:
             self.logger.exception(f"💥 Error extracting regime transitions: {e}")
             return pd.Series(0, index=data.index)
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="ensemble prediction"
-    )
+    @handles_errors(fallback=None)
     def predict(self, current_data: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """Get ensemble prediction combining all timeframe models.
 

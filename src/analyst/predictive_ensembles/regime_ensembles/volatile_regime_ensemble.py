@@ -1,4 +1,19 @@
 import numpy as np
+import logging
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import pandas as pd
 from arch import arch_model
 from keras.layers import (
@@ -119,7 +134,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.info("Training GARCH model for volatility modeling...")
             self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
         except Exception as e:
-            self.logger.error(failed("GARCH training failed: {e}"))
+            self.logger.error(failed(f"GARCH training failed: {e}"))
 
 
         self.logger.info("✅ VolatileRegime base models training completed")
@@ -147,7 +162,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return np.array([]), np.array([])
 
         except Exception as e:
-            self.logger.error("Error preparing sequence data: {e}")
+            self.logger.error(f"Error preparing sequence data: {e}")
 
             return np.array([]), np.array([])
 
@@ -168,7 +183,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
 
         except Exception as e:
-            self.logger.error("Error training DL model: {e}")
+            self.logger.error(f"Error training DL model: {e}")
 
             return None
 
@@ -211,7 +226,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.logger.error("Error building LSTM model: {e}")
+            self.logger.error(f"Error building LSTM model: {e}")
 
             return None
 
@@ -263,7 +278,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.logger.error("Error building Transformer model: {e}")
+            self.logger.error(f"Error building Transformer model: {e}")
 
             return None
 
@@ -280,7 +295,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
             return tabnet
         except Exception as e:
-            self.logger.error(failed("TabNet training failed: {e}"))
+            self.logger.error(failed(f"TabNet training failed: {e}"))
 
             return None
 
@@ -295,7 +310,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return garch_model.fit(disp="off")
 
         except Exception as e:
-            self.logger.error(failed("GARCH model training failed: {e}"))
+            self.logger.error(failed(f"GARCH model training failed: {e}"))
 
             return None
 

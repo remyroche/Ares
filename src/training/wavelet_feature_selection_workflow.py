@@ -1,4 +1,4 @@
-"""Wavelet Feature Selection Workflow.
+"""Wavelet Feature Selection Workflow."
 
 This module implements a comprehensive workflow using the two-model strategy:
 1. Discovery Model: Trained on full feature set to identify winning features
@@ -34,10 +34,9 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     asyncio,
     import,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error
-
 
 @dataclass
 class FeatureImportanceResult:
@@ -50,9 +49,8 @@ class FeatureImportanceResult:
     feature_type: str  # 'wavelet', 'technical', 'other'
     computation_cost: float  # Estimated computation time in ms
 
-
 class WaveletFeatureSelectionWorkflow:
-    """Comprehensive workflow for wavelet feature selection using two-model strategy.
+    """Comprehensive workflow for wavelet feature selection using two-model strategy."
 
     This workflow:
     1. Runs full wavelet analysis with all features
@@ -130,11 +128,7 @@ class WaveletFeatureSelectionWorkflow:
         self.discovery_model: Any | None = None
         self.production_model: Any | None = None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="wavelet feature selection workflow initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the wavelet feature selection workflow."""
         try:
@@ -171,17 +165,13 @@ class WaveletFeatureSelectionWorkflow:
             self.print(initialization_error(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="full wavelet analysis execution",
-    )
+    @handles_errors(fallback=None)
     async def run_full_wavelet_analysis(
         self,
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> dict[str, Any] | None:
-        """Step 1: Run full, extensive wavelet analysis as in backtesting/training.
+        """Step 1: Run full, extensive wavelet analysis as in backtesting/training."
 
         Args:
             price_data: OHLCV price data
@@ -226,17 +216,13 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="discovery model training",
-    )
+    @handles_errors(fallback=None)
     async def train_discovery_model(
         self,
         features: dict[str, Any],
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """Step 2: Train Discovery Model using the rich feature set.
+        """Step 2: Train Discovery Model using the rich feature set."
 
         Args:
             features: All engineered features
@@ -352,16 +338,12 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature importance analysis",
-    )
+    @handles_errors(fallback=None)
     async def perform_feature_selection(
         self,
         discovery_model_data: dict[str, Any],
     ) -> list[FeatureImportanceResult] | None:
-        """Step 3: Perform feature selection using permutation importance and SHAP.
+        """Step 3: Perform feature selection using permutation importance and SHAP."
 
         Args:
             discovery_model_data: Results from discovery model training
@@ -477,13 +459,9 @@ class WaveletFeatureSelectionWorkflow:
             return 1.0  # Technical indicators are fast
         return 5.0  # Other features are moderate
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="winner feature identification",
-    )
+    @handles_errors(fallback=None)
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
-        """Step 4: Identify the most important features for live trading.
+        """Step 4: Identify the most important features for live trading."
 
         Returns:
             List of winner features optimized for live trading
@@ -541,18 +519,14 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="lean dataset creation",
-    )
+    @handles_errors(fallback=None)
     async def create_lean_dataset(
         self,
         winner_features: list[FeatureImportanceResult],
         original_features: dict[str, Any],
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """Step 5: Create lean dataset with only winning features.
+        """Step 5: Create lean dataset with only winning features."
 
         Args:
             winner_features: List of identified winner features
@@ -603,16 +577,12 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="production model training",
-    )
+    @handles_errors(fallback=None)
     async def train_production_model(
         self,
         lean_dataset: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Step 6: Train Production Model on lean dataset.
+        """Step 6: Train Production Model on lean dataset."
 
         Args:
             lean_dataset: Lean dataset with only winning features
@@ -715,17 +685,13 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="live configuration creation",
-    )
+    @handles_errors(fallback=None)
     async def create_live_configurations(
         self,
         winner_features: list[FeatureImportanceResult],
         production_model_data: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Step 7: Create optimized live trading configurations.
+        """Step 7: Create optimized live trading configurations."
 
         Args:
             winner_features: List of identified winner features
@@ -928,7 +894,7 @@ class WaveletFeatureSelectionWorkflow:
         volume_data: pd.DataFrame,
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """Run the complete wavelet feature selection workflow using two-model strategy.
+        """Run the complete wavelet feature selection workflow using two-model strategy."
 
         Args:
             price_data: OHLCV price data

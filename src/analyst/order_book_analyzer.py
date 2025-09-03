@@ -2,7 +2,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
+import logging
+import copy
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     copy,
@@ -15,7 +16,7 @@ from src.utils.logger import system_logger
 
 
 class OrderBookAnalyzer:
-    """Analyze order book snapshots for walls and compute features.
+    """Analyze order book snapshots for walls and compute features."
 
     Assumptions:
     - Input snapshots as DataFrame with columns: ['bid_price','bid_size','ask_price','ask_size'] or aggregated ladders

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 1 Runner Script.
+"""Step 1 Runner Script."
 
 This script demonstrates how to use the step01 module to:
 1. Detect missing data gaps

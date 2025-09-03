@@ -6,6 +6,10 @@ This module provides memory monitoring and optimization capabilities for the tra
 
 import asyncio
 import functools
+
+
+
+
 import gc
 import logging
 import time
@@ -104,7 +108,7 @@ class MemoryMonitor:
 
     def should_trigger_gc(self) -> bool:
         """Check if garbage collection should be triggered."""
-        if time.time() - self._last_gc_time < 10:  # Don't GC too frequently
+        if time.time() - self._last_gc_time < 10:  # Don't GC too frequently'
             return False
 
         return self.is_memory_pressure(self.config.gc_threshold)
@@ -183,7 +187,7 @@ def memory_efficient(max_memory_mb: float = 1024.0, optimize_dtypes: bool = True
                         f"Peak memory usage ({peak_memory:.1f}MB) exceeded limit ({max_memory_mb:.1f}MB)"
                     )
 
-                # Optimize result if it's a DataFrame
+                # Optimize result if it's a DataFrame'
                 if optimize_dtypes and PANDAS_AVAILABLE and isinstance(result, pd.DataFrame):
                     result = optimize_dataframe_dtypes(result)
 

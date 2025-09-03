@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic.
+"""Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic."
 
 This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
@@ -73,7 +73,7 @@ from src.utils.logger import system_logger
 warnings.filterwarnings("ignore")
 
 class EnhancedHMMBasedTrainingStep:
-    """Enhanced HMM-Based Model Training with Multi-Output Support and Regime-Specific Logic.
+    """Enhanced HMM-Based Model Training with Multi-Output Support and Regime-Specific Logic."
 
     Extends the existing HMM-based training to support intelligent multi-output
     prediction for both direction and profit using the triple barrier method
@@ -146,7 +146,7 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -541,18 +541,14 @@ class EnhancedHMMBasedTrainingStep:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError, MemoryError),
-        default_return=None,
-        context="enhanced_data_preparation"
-    )
+    @handles_errors(fallback=None)
     async def prepare_enhanced_data(
         self,
         data: pd.DataFrame,
         timeframe: str,
         regime_key: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Prepare data for enhanced training with multi-output support.
+        """Prepare data for enhanced training with multi-output support."
         
         Args:
             data: Input DataFrame with features and targets
@@ -655,18 +651,14 @@ class EnhancedHMMBasedTrainingStep:
         
         return prepared_data
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="enhanced_model_training"
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     async def train_enhanced_model(
         self,
         prepared_data: Dict[str, Any],
         model_name: str = "enhanced_model"
     ) -> Dict[str, Any]:
-        """Train enhanced model with multi-output support.
+        """Train enhanced model with multi-output support."
         
         Args:
             prepared_data: Prepared data dictionary
@@ -757,7 +749,7 @@ class EnhancedHMMBasedTrainingStep:
         timeframe: str,
         regime_key: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Train single-output model (backward compatibility).
+        """Train single-output model (backward compatibility)."
         
         Args:
             features: Feature DataFrame
@@ -869,17 +861,13 @@ class EnhancedHMMBasedTrainingStep:
             self.logger.exception(f"❌ Failed to train single-output model: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="enhanced_regime_specific_training"
-    )
+    @handles_errors(fallback=None)
     async def train_enhanced_regime_specific_models(
         self,
         timeframe: str,
         regime_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Train enhanced regime-specific models with multi-output support.
+        """Train enhanced regime-specific models with multi-output support."
         
         Args:
             timeframe: Timeframe for training
@@ -932,7 +920,7 @@ class EnhancedHMMBasedTrainingStep:
         model_name: str = "enhanced_model",
         prediction_type: str = "multi_output"  # "multi_output" or "single_output"
     ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
-        """Make predictions using enhanced model.
+        """Make predictions using enhanced model."
         
         Args:
             features: Feature DataFrame
@@ -974,7 +962,7 @@ class EnhancedHMMBasedTrainingStep:
         results: Dict[str, Any],
         save_path: str
     ) -> None:
-        """Save enhanced models to disk.
+        """Save enhanced models to disk."
         
         Args:
             results: Training results dictionary
@@ -1029,7 +1017,7 @@ class EnhancedHMMBasedTrainingStep:
         model_name: str,
         load_path: str
     ) -> None:
-        """Load enhanced models from disk.
+        """Load enhanced models from disk."
         
         Args:
             model_name: Name of the model to load
@@ -1056,9 +1044,10 @@ class EnhancedHMMBasedTrainingStep:
 
 import copy
 import os.path
+from src.core.decorators import handles_errors
 
-                    model = joblib.load(model_path)
-                    scaler = joblib.load(scaler_path)
+model = joblib.load(model_path)
+scaler = joblib.load(scaler_path)
                     
                     # Store in models dict
                     self.models[f"{model_name}_single"] = {
@@ -1075,7 +1064,7 @@ import os.path
     async def _apply_regime_specific_feature_selection(
         self, features_df: pd.DataFrame, regime: str
     ) -> pd.DataFrame:
-        """Apply simple regime-aware feature selection placeholder.
+        """Apply simple regime-aware feature selection placeholder."
 
         Drops all-zero columns and ensures numeric dtype; keeps columns with variance.
         """
@@ -1093,14 +1082,13 @@ import os.path
             self.logger.warning(f"⚠️ Feature selection fallback for regime {regime}: {e}")
             return features_df
 
-
 async def run_enhanced_step(
     symbol: str = "ETHUSDT",
     data_dir: str = "data/training",
     method_a_mixture_of_experts: Optional[Dict] = None,
     enable_multi_output: bool = True
 ) -> bool:
-    """Run enhanced HMM-based training step with multi-output support.
+    """Run enhanced HMM-based training step with multi-output support."
     
     Args:
         symbol: Trading symbol

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validator for Step 2: Data Reading.
+"""Validator for Step 2: Data Reading."
 
 This module validates the data reading step outputs with comprehensive quality checks.
 """
@@ -28,7 +28,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step2DataReadingValidator")
 
-
 @with_tracing_span("validate_data_reading")
 @quality_gate(
     min_quality_score=0.8,
@@ -36,7 +35,7 @@ logger = system_logger.getChild("Step2DataReadingValidator")
     required_grade="B"
 )
 @comprehensive_data_validation
-@handle_errors
+@handles_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -45,7 +44,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 2: Data Reading.
+    """Run validation for Step 2: Data Reading."
 
     Args:
         training_input: Training input parameters
@@ -91,9 +90,11 @@ async def run_validator(
         try:
             import pandas as pd
             import json
-
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import numpy as np
-
+from src.core.decorators import handles_errors
+# Read the most recent data file
             # Read the most recent data file
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
             data = pd.read_parquet(latest_file)
@@ -176,7 +177,7 @@ import numpy as np
             ohlc_errors = 0
             for idx, row in data.iterrows():
                 if not (row['low'] <= row['open'] <= row['high'] and 
-                       row['low'] <= row['close'] <= row['high']):
+                row['low'] <= row['close'] <= row['high']):
                     ohlc_errors += 1
             
             if ohlc_errors > 0:
@@ -239,7 +240,6 @@ import numpy as np
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }
-
 
 if __name__ == "__main__":
     # Test the validator

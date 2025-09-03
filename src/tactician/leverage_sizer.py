@@ -11,9 +11,11 @@ from datetime import datetime
 from typing import Any
 
 from src.config_optuna import get_parameter_value
+from src.core.decorators import handles_errors
+import copy
+import asyncio
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-
 
 class LeverageSizer:
     """Simplified leverage sizer that uses ML confidence scores and liquidation risk
@@ -76,7 +78,7 @@ class LeverageSizer:
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid leverage sizer configuration"),
             AttributeError: (False, "Missing required leverage parameters"),
@@ -178,7 +180,7 @@ class LeverageSizer:
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for leverage sizing"),
             AttributeError: (None, "Sizer not properly initialized"),
@@ -509,11 +511,7 @@ class LeverageSizer:
             return self.leverage_sizing_history[-limit:]
         return self.leverage_sizing_history.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="leverage sizer cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the leverage sizer."""
         try:
@@ -523,11 +521,7 @@ class LeverageSizer:
         except Exception as e:
             self.logger.error(f"❌ Failed to stop leverage sizer: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="leverage sizer cleanup",
-    )
+    @handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup leverage sizer resources."""
         try:
@@ -538,12 +532,7 @@ class LeverageSizer:
         except Exception as e:
             self.logger.error(f"Error cleaning up leverage sizer: {e}")
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="leverage sizer setup",
-)
+@handles_errors(fallback=None)
 async def setup_leverage_sizer(
     config: dict[str, Any] | None = None,
 ) -> LeverageSizer | None:

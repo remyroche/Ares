@@ -8,9 +8,11 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, missing
+from copy import copy
+import asyncio
 
 
 class Tactician:
@@ -24,7 +26,7 @@ fractal scenario analysis with comprehensive technical indicators.
         """
 Initialize refactored tactician with enhanced scenario-based predictions.
 
-        Args:
+Args:
             config: Configuration dictionary
 """
 self.config: dict[str, Any] = config
@@ -99,7 +101,7 @@ self.is_initialized = False
 self.current_position = None
 self.position_history = []
 
-@handle_specific_errors(
+@handles_errors(
 error_handlers={
 ValueError: (False, "Invalid tactician configuration"),
 AttributeError: (False, "Missing required tactician parameters"),
@@ -136,7 +138,7 @@ async def initialize(self) -> bool:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tactician configuration"),
             AttributeError: (False, "Missing required tactician parameters"),
@@ -161,17 +163,18 @@ async def initialize(self) -> bool:
             # Validate configuration
             if not self._validate_configuration():
                 self.logger.error(invalid("Invalid configuration for tactician"))
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 return False
 
 self.logger.info("✅ Refactored Tactician initialized successfully")
 return True
 
 except Exception as e:
-            self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
+    self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
 return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
+@handles_errors
 default_return=None,
 context="component managers initialization",
 )
@@ -212,11 +215,10 @@ if not success:
 self.logger.info("✅ All component managers initialized")
 
 except Exception as e:
-            self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
+    self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
 raise
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
+@handles_errors
 default_return=False,
 context="configuration validation",
 )
@@ -225,7 +227,7 @@ def _validate_configuration(self) -> bool:
 Validate tactician configuration.
 
 Returns:
-            bool: True if configuration is valid, False otherwise
+    bool: True if configuration is valid, False otherwise
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -235,7 +237,7 @@ except Exception as e:
 required_sections = ["tactician", "tactics_orchestrator"]
 
 for section in required_sections:
-                if section not in self.config:
+    if section not in self.config:
                     self.logger.error(
 f"Missing required configuration section: {section}",
 )
@@ -243,20 +245,20 @@ return False
 
 # Validate tactician specific settings
 if self.tactics_interval <= 0:
-                self.logger.error(invalid("Invalid tactics_interval configuration"))
+    self.logger.error(invalid("Invalid tactics_interval configuration"))
 return False
 
 if self.max_history <= 0:
-                self.logger.error(invalid("Invalid max_history configuration"))
+    self.logger.error(invalid("Invalid max_history configuration"))
 return False
 
 return True
 
 except Exception as e:
-            self.logger.error(failed(f"Configuration validation failed: {e}"))
+    self.logger.error(failed(f"Configuration validation failed: {e}"))
 return False
 
-@handle_specific_errors(
+@handles_errors(
 error_handlers={
 ValueError: (False, "Invalid tactics parameters"),
 AttributeError: (False, "Missing tactics components"),
@@ -272,10 +274,10 @@ self, tactics_input: dict[str, Any]
 Execute the complete tactics pipeline.
 
 Args:
-            tactics_input: Tactics input parameters
+    tactics_input: Tactics input parameters
 
 Returns:
-            bool: True if tactics successful, False otherwise
+    bool: True if tactics successful, False otherwise
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -285,7 +287,7 @@ self.logger.info("🚀 Starting tactics pipeline execution...")
 
 # Validate tactics input
 if not self._validate_tactics_input(tactics_input):
-                return False
+    return False
 
             self.logger.info("✅ Refactored Tactician initialized successfully")
             return True
@@ -294,11 +296,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="component managers initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_component_managers(self) -> None:
         """Initialize all component managers."""
         try:
@@ -331,11 +329,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate tactician configuration.
@@ -369,7 +363,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"Configuration validation failed: {e}"))
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tactics parameters"),
             AttributeError: (False, "Missing tactics components"),
@@ -412,11 +406,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"❌ Tactics execution failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="tactics input validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
         """
         Validate tactics input parameters.
@@ -446,11 +436,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"Tactics input validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactics results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_tactics_results(self, tactics_input: dict[str, Any]) -> None:
         """
         Store tactics results for later retrieval.
@@ -481,7 +467,7 @@ if not self._validate_tactics_input(tactics_input):
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to store tactics results: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Tactician run failed"),
         },
@@ -499,13 +485,15 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.info("🚀 Starting Tactician...")
             self.is_running = True
 
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 # Update status
 self.status = {
 "is_running": True, "start_time": datetime.now(),
 "component_count": 5,  # tactics_orchestrator, position_sizer, leverage_sizer, position_division_strategy, scenario_predictor
 }
 
-            self.logger.info("✅ Tactician run completed successfully")
+self.logger.info("✅ Tactician run completed successfully")
             return True
 
         except Exception as e:
@@ -562,7 +550,7 @@ return {
 "scenario_predictor": self.scenario_predictor is not None,
 }
 
-@handle_specific_errors(
+@handles_errors(
 error_handlers={
 ValueError: (None, "Invalid prediction parameters"),
 AttributeError: (None, "Missing prediction components"),
@@ -583,14 +571,14 @@ analyst_confidence: float = 0.5
 Generate enhanced predictions using scenario-based analysis.
 
 Args:
-            market_data: Market data with OHLCV
-analyst_barriers: Analyst's barrier values (for reference)
+    market_data: Market data with OHLCV
+analyst_barriers: Analyst's barrier values (for reference)'
 symbol: Trading symbol
 timeframe: Current timeframe
-analyst_confidence: Analyst's confidence score
+analyst_confidence: Analyst's confidence score'
 
 Returns:
-            dict: Enhanced predictions and decisions
+    dict: Enhanced predictions and decisions
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -650,12 +638,12 @@ market_data: pd.DataFrame
 Make trading decisions based on scenario analysis.
 
 Args:
-            scenario_predictions: Scenario predictions
-analyst_confidence: Analyst's confidence score
+    scenario_predictions: Scenario predictions
+analyst_confidence: Analyst's confidence score'
 market_data: Market data
 
 Returns:
-            dict: Trading decisions
+    dict: Trading decisions
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -747,12 +735,12 @@ analyst_barriers: Dict[str, float]
 Calculate position sizing and leverage based on scenario analysis.
 
 Args:
-            scenario_predictions: Scenario predictions
+    scenario_predictions: Scenario predictions
 trading_decisions: Trading decisions
-analyst_barriers: Analyst's barrier values
+analyst_barriers: Analyst's barrier values'
 
 Returns:
-            dict: Position management parameters
+    dict: Position management parameters
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -820,12 +808,12 @@ analyst_confidence: float
 Calculate decision confidence combining scenario analysis and analyst confidence.
 
 Args:
-            scenario_analysis: Scenario analysis results
+    scenario_analysis: Scenario analysis results
 model_confidence: Model confidence
 analyst_confidence: Analyst confidence
 
 Returns:
-            float: Combined decision confidence
+    float: Combined decision confidence
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -866,14 +854,14 @@ analyst_confidence: float
 Generate human-readable reasoning for decisions.
 
 Args:
-            entry_signal: Entry signal
+    entry_signal: Entry signal
 exit_signal: Exit signal
 scenario_analysis: Scenario analysis results
 model_confidence: Model confidence
 analyst_confidence: Analyst confidence
 
 Returns:
-            str: Decision reasoning
+    str: Decision reasoning
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -917,11 +905,11 @@ def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, 
 Generate error predictions when something goes wrong.
 
 Args:
-            symbol: Trading symbol
+    symbol: Trading symbol
 timeframe: Timeframe
 
 Returns:
-            dict: Error predictions
+    dict: Error predictions
 """
 return {
 "scenario_predictions": {
@@ -973,7 +961,7 @@ def update_position(self, position_data: Dict[str, Any]) -> None:
 Update current position information.
 
 Args:
-            position_data: Position data
+    position_data: Position data
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -997,7 +985,7 @@ def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
 Update performance metrics with trade result.
 
 Args:
-            trade_result: Trade result data
+    trade_result: Trade result data
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -1027,7 +1015,7 @@ def get_performance_summary(self) -> Dict[str, Any]:
 Get performance summary.
 
 Returns:
-            dict: Performance summary
+    dict: Performance summary
 """
 return {
 "performance_metrics": self.performance_metrics,
@@ -1046,7 +1034,7 @@ def get_configuration_summary(self) -> Dict[str, Any]:
 Get configuration summary for step17 optimization.
 
 Returns:
-            dict: Configuration summary
+    dict: Configuration summary
 """
 return {
 "decision_thresholds": self.decision_thresholds,
@@ -1055,11 +1043,7 @@ return {
 "is_initialized": self.is_initialized
 }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="tactician stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the tactician and cleanup resources."""
         try:
@@ -1074,8 +1058,10 @@ return {
                 await self.leverage_sizer.stop()
             if self.position_division_strategy:
                 await self.position_division_strategy.stop()
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 if self.scenario_predictor:
-                await self.scenario_predictor.stop()
+    await self.scenario_predictor.stop()
 
             self.is_running = False
             self.logger.info("✅ Tactician stopped successfully")
@@ -1083,11 +1069,7 @@ if self.scenario_predictor:
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to stop Tactician: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="tactician cleanup",
-    )
+    @handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup tactician resources."""
         try:
@@ -1103,8 +1085,10 @@ if self.scenario_predictor:
                 await self.leverage_sizer.cleanup()
             if self.position_division_strategy:
                 await self.position_division_strategy.cleanup()
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 if self.scenario_predictor:
-                await self.scenario_predictor.cleanup()
+    await self.scenario_predictor.cleanup()
 
             # Clear history and results
             self.history.clear()
@@ -1115,11 +1099,7 @@ if self.scenario_predictor:
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to cleanup Tactician: {e}"))
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="tactician setup",
-)
+@handles_errors(fallback=None)
 async def setup_tactician(config: dict[str, Any] | None = None) -> Tactician | None:
     """
     Setup and return a configured Tactician instance.

@@ -1084,10 +1084,12 @@ async def _validate_pipeline_input_and_execute(
         # Disk space check
         if min_disk_gb > 0:
             import shutil
+    except Exception as e:
+        pass  # TODO: Handle exception properly
 import os.path
 
-            disk_usage = shutil.disk_usage(".")
-            available_disk_gb = disk_usage.free / (1024**3)
+disk_usage = shutil.disk_usage(".")
+available_disk_gb = disk_usage.free / (1024**3)
             print(f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB")
             logger.info(f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB")
 

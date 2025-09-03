@@ -17,6 +17,8 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import talib
+import asyncio
+from src.core.decorators import handles_errors
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
@@ -37,7 +39,6 @@ def handle_errors(func):
             return None
 
     return wrapper
-
 
 class EnhancedScenarioBasedPredictor:
     """Enhanced scenario-based predictor with fractal scenarios and comprehensive
@@ -509,7 +510,7 @@ class EnhancedScenarioBasedPredictor:
             self.logger.error(f"❌ Comprehensive feature extraction failed: {e}")
             return np.array([0.5] * 150)
 
-    @handle_errors
+    @handles_errors
     def prepare_scenario_targets(
         self, X: np.ndarray, market_data: pd.DataFrame, base_price_column: str = "close"
     ) -> np.ndarray:
@@ -617,7 +618,7 @@ class EnhancedScenarioBasedPredictor:
             self.logger.error(f"❌ Scenario trigger check failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def train_model(
         self,
         X_train: np.ndarray,
@@ -694,7 +695,7 @@ class EnhancedScenarioBasedPredictor:
             self.logger.error(f"❌ Enhanced model training failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def predict_scenarios(
         self, X: np.ndarray, market_data: Optional[pd.DataFrame] = None
     ) -> Dict[str, Any]:

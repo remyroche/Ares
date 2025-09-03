@@ -8,10 +8,9 @@ from typing import Any
 
 import optuna
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, warning
-
 
 @dataclass
 class ParallelConfig:
@@ -23,7 +22,6 @@ class ParallelConfig:
     chunk_size: int = 10
     timeout_seconds: int = 300
     enable_async: bool = True
-
 
 class ParallelParameterOptimizer:
     """Implements parallel optimization for time efficiency."""
@@ -42,11 +40,7 @@ class ParallelParameterOptimizer:
             f"Initialized parallel optimizer with {self.parallel_config.max_workers} workers",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="parameter grouping",
-    )
+    @handles_errors
     def group_parameters_by_optimization_type(
         self,
         all_parameters: dict[str, Any],
@@ -89,11 +83,7 @@ class ParallelParameterOptimizer:
             self.print(error("Error grouping parameters: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="confidence parameters optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_confidence_parameters(
         self,
         confidence_params: list[str],
@@ -132,11 +122,7 @@ class ParallelParameterOptimizer:
             self.print(error("Error optimizing confidence parameters: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="sizing parameters optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_sizing_parameters(
         self,
         sizing_params: list[str],
@@ -175,11 +161,7 @@ class ParallelParameterOptimizer:
             self.print(error("Error optimizing sizing parameters: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="risk parameters optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_risk_parameters(
         self,
         risk_params: list[str],
@@ -218,11 +200,7 @@ class ParallelParameterOptimizer:
             self.print(error("Error optimizing risk parameters: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="parallel optimization execution",
-    )
+    @handles_errors(fallback=None)
     async def optimize_parameters_parallel(
         self,
         all_parameters: dict[str, Any],
@@ -274,11 +252,7 @@ class ParallelParameterOptimizer:
             self.print(error("Error in parallel optimization: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="optimization results combination",
-    )
+    @handles_errors
     def combine_optimization_results(
         self,
         results: list[dict[str, Any] | None],

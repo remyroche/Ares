@@ -8,10 +8,10 @@ from typing import Any
 
 # Temporarily commented out due to syntax errors
 # from src.config_optuna import get_optuna_config, update_parameter_value
+from src.core.decorators import handles_errors
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, missing
-
 
 @dataclass
 class RollbackPoint:
@@ -25,7 +25,6 @@ class RollbackPoint:
     optimization_results: dict[str, Any] | None = None
     notes: str | None = None
 
-
 @dataclass
 class RollbackOperation:
     """Rollback operation details."""
@@ -36,7 +35,6 @@ class RollbackOperation:
     parameters_changed: list[str]
     success: bool
     error_message: str | None = None
-
 
 class RollbackManager:
     """Manages rollback points and allows manual reversion to previous parameter
@@ -65,11 +63,7 @@ class RollbackManager:
         # Initialize storage
         self._initialize_storage()
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="storage initialization",
-    )
+    @handles_errors(fallback=None)
     def _initialize_storage(self) -> None:
         """Initialize rollback storage directory."""
         try:
@@ -81,7 +75,7 @@ class RollbackManager:
         except Exception:
             self.print(initialization_error("Error initializing rollback storage: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid rollback point data"),
             AttributeError: (False, "Missing rollback point parameters"),
@@ -146,11 +140,7 @@ class RollbackManager:
             self.print(error("❌ Error creating rollback point: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="rollback point saving",
-    )
+    @handles_errors(fallback=None)
     def _save_rollback_point(
         self,
         point_id: str,
@@ -179,11 +169,7 @@ class RollbackManager:
         except Exception:
             self.print(error("Error saving rollback point: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="rollback point loading",
-    )
+    @handles_errors(fallback=None)
     def load_rollback_points(self) -> None:
         """Load rollback points from storage."""
         try:
@@ -225,11 +211,7 @@ class RollbackManager:
         except Exception:
             self.print(error("Error loading rollback points: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="old rollback points cleanup",
-    )
+    @handles_errors(fallback=None)
     def _cleanup_old_rollback_points(self) -> None:
         """Cleanup old rollback points based on configuration."""
         try:
@@ -261,11 +243,7 @@ class RollbackManager:
         except Exception:
             self.print(error("Error cleaning up old rollback points: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="rollback point removal",
-    )
+    @handles_errors(fallback=None)
     def _remove_rollback_point(self, point_id: str) -> None:
         """Remove a rollback point.
 
@@ -287,7 +265,7 @@ class RollbackManager:
         except Exception:
             self.print(error("Error removing rollback point {point_id}: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid rollback operation"),
             AttributeError: (False, "Missing rollback parameters"),
@@ -353,11 +331,7 @@ class RollbackManager:
             self.print(error("❌ Error executing rollback: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="rollback configuration application",
-    )
+    @handles_errors(fallback=False)
     def _apply_rollback_configuration(self, config_snapshot: dict[str, Any]) -> bool:
         """Apply rollback configuration to current system.
 
@@ -401,11 +375,7 @@ class RollbackManager:
             self.print(error("Error applying rollback configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=[],
-        context="changed parameters detection",
-    )
+    @handles_errors(fallback=[])
     def _get_changed_parameters(self, target_config: dict[str, Any]) -> list[str]:
         """Get list of parameters that would be changed by rollback.
 
@@ -558,12 +528,7 @@ class RollbackManager:
             self.print(error("Error getting rollback summary: {e}"))
             return {"error": str(e)}
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="rollback manager setup",
-)
+@handles_errors(fallback=None)
 def setup_rollback_manager(
     config: dict[str, Any] | None = None,
 ) -> RollbackManager | None:

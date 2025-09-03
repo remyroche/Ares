@@ -30,7 +30,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> bool:
-        """Validate the tactician labeling step.
+        """Validate the tactician labeling step."
 
         Args:
             training_input: Training input parameters
@@ -114,7 +114,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def _validate_labeling_files_existence(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate that tactician labeling files exist.
+        """Validate that tactician labeling files exist."
 
         Args:
             symbol: Trading symbol
@@ -158,7 +158,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def _validate_signal_quality(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate the quality of generated trading signals.
+        """Validate the quality of generated trading signals."
 
         Args:
             symbol: Trading symbol
@@ -328,7 +328,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def _validate_labeling_consistency(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate consistency of tactician labeling.
+        """Validate consistency of tactician labeling."
 
         Args:
             symbol: Trading symbol
@@ -523,7 +523,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def _validate_signal_distribution(
         self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """Validate the distribution of trading signals.
+        """Validate the distribution of trading signals."
 
         Args:
             symbol: Trading symbol
@@ -647,7 +647,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the step8_tactician_labeling validator.
+    """Run the step8_tactician_labeling validator."
 
     Args:
         training_input: Training input parameters
@@ -675,7 +675,7 @@ if __name__ == "__main__":
 import os.path
 
     # Example usage
-    async def test_validator() -> None:
+async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",

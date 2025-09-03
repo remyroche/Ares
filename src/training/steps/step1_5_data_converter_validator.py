@@ -46,7 +46,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """Validate the data converter step.
+        """Validate the data converter step."
 
         Args:
             training_input: Training input parameters
@@ -101,7 +101,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     async def _check_unified_data_structure(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str
     ) -> dict[str, Any]:
-        """Check for unified data structure in the data directory.
+        """Check for unified data structure in the data directory."
 
         Args:
             symbol: Trading symbol
@@ -138,7 +138,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     async def _validate_unified_files(
         self, base_path: str, symbol: str, exchange: str, timeframe: str
     ) -> bool:
-        """Validate the unified data files.
+        """Validate the unified data files."
 
         Args:
             base_path: Base path to unified data
@@ -198,7 +198,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         exchange: str,
         timeframe: str,
     ) -> dict[str, Any]:
-        """Validate a single unified data file.
+        """Validate a single unified data file."
 
         Args:
             file_path: Path to the parquet file
@@ -317,7 +317,7 @@ class Step1_5DataConverterValidator(BaseValidator):
     async def _validate_unified_config(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str
     ) -> bool:
-        """Validate the unified data configuration file.
+        """Validate the unified data configuration file."
 
         Args:
             symbol: Trading symbol
@@ -391,7 +391,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the Step 1.5 Data Converter validator.
+    """Run the Step 1.5 Data Converter validator."
 
     Args:
         training_input: Training input parameters
@@ -418,7 +418,7 @@ if __name__ == "__main__":
 import os.path
 
     # Example usage
-    async def test_validator() -> None:
+async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",

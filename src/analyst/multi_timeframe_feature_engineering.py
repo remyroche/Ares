@@ -25,7 +25,7 @@ import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
 
@@ -294,11 +294,7 @@ class MultiTimeframeFeatureEngineering:
             },
         }
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=pd.DataFrame(),
-        context="multi-timeframe feature generation",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def generate_multi_timeframe_features(
         self,
         data_dict: dict[str, pd.DataFrame],
@@ -831,7 +827,7 @@ class MultiTimeframeFeatureEngineering:
                 del self.feature_cache[oldest_key]
 
         except Exception:
-            self.print(error("Error caching features for {timeframe}: {e}"))
+            self.print(error(f"Error caching features for {timeframe}: {e}"))
 
     def _clean_cache(self) -> None:
         """Clean old entries from the feature cache."""
@@ -860,7 +856,7 @@ class MultiTimeframeFeatureEngineering:
                 self.last_cache_cleanup = current_time
 
         except Exception:
-            self.print(error("Error cleaning cache: {e}"))
+            self.print(error(f"Error cleaning cache: {e}"))
 
     def get_timeframe_parameters(self, timeframe: str) -> dict[str, Any]:
         """Get parameters for a specific timeframe.

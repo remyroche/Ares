@@ -21,10 +21,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class DatabaseType:
     """Database type enumeration."""
@@ -34,7 +33,6 @@ class DatabaseType:
     SQLITE = "sqlite"
     MONGODB = "mongodb"
     REDIS = "redis"
-
 
 class DatabaseSecurityManager:
     """Manages database security and secure connections."""
@@ -114,7 +112,7 @@ class DatabaseSecurityManager:
 
     @contextmanager
     def get_secure_connection(self, db_type: str, connection_params: Dict[str, Any]):
-        """Get a secure database connection with context management.
+        """Get a secure database connection with context management."
 
         Args:
             db_type: Type of database
@@ -343,9 +341,11 @@ class DatabaseSecurityManager:
         """Create secure Redis connection."""
         try:
             import redis
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-            connection_params = {
+connection_params = {
                 "host": params["host"],
                 "port": params["port"],
                 "db": params.get("database", 0),
@@ -368,11 +368,11 @@ import copy
         except ImportError:
             raise Exception("redis not installed for Redis connections")
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="secure query execution")
+    @handles_errors(fallback=None)
     def execute_secure_query(
         self, connection: Any, query: str, parameters: Optional[List[Any]] = None
     ) -> Optional[List[Dict[str, Any]]]:
-        """Execute a secure database query.
+        """Execute a secure database query."
 
         Args:
             connection: Database connection
@@ -421,8 +421,8 @@ import copy
 
             elif hasattr(connection, "get"):  # Redis
                 if query.strip().upper().startswith("SELECT"):
-                    # Redis doesn't support SQL queries
-                    return [{"error": "Redis doesn't support SQL queries"}]
+                    # Redis doesn't support SQL queries'
+                    return [{"error": "Redis doesn't support SQL queries"}]'
                 else:
                     return [{"message": "Redis operation executed"}]
 
@@ -444,9 +444,9 @@ import copy
 
             # Check for SQL injection indicators
             injection_indicators = [
-                r"';?\s*--",
-                r"';?\s*#",
-                r"';?\s*/\*",
+                r"';?\s*--",'
+                r"';?\s*#",'
+                r"';?\s*/\*",'
                 r"UNION\s+SELECT",
                 r"OR\s+1\s*=\s*1",
                 r"AND\s+1\s*=\s*1",
@@ -460,7 +460,7 @@ import copy
             # Check query structure
             query_upper = query.upper().strip()
             if not any(query_upper.startswith(keyword) for keyword in self.security_policies["allowed_sql_keywords"]):
-                self.logger.error(f"Query doesn't start with allowed keyword: {query}")
+                self.logger.error(f"Query doesn't start with allowed keyword: {query}")'
                 return False
 
             return True
@@ -471,7 +471,7 @@ import copy
 
     def _convert_sql_to_mongo(self, sql_query: str, parameters: Optional[List[Any]]) -> Dict[str, Any]:
         """Convert SQL-like query to MongoDB query format."""
-        # This is a simplified conversion - in practice, you'd use a proper SQL-to-MongoDB parser
+        # This is a simplified conversion - in practice, you'd use a proper SQL-to-MongoDB parser'
         try:
             # Extract table name (collection name)
             from_match = re.search(r"FROM\s+(\w+)", sql_query, re.IGNORECASE)
@@ -495,7 +495,7 @@ import copy
 
     def _parse_where_clause(self, where_clause: str, parameters: Optional[List[Any]]) -> Dict[str, Any]:
         """Parse WHERE clause and convert to MongoDB query format."""
-        # This is a simplified parser - in practice, you'd use a proper SQL parser
+        # This is a simplified parser - in practice, you'd use a proper SQL parser'
         mongo_query = {}
 
         try:
@@ -564,7 +564,7 @@ import copy
             self.logger.error(f"Failed to audit query execution: {e}")
 
     def encrypt_sensitive_data(self, data: Dict[str, Any], sensitive_fields: List[str]) -> Dict[str, Any]:
-        """Encrypt sensitive data fields.
+        """Encrypt sensitive data fields."
 
         Args:
             data: Data dictionary
@@ -578,13 +578,13 @@ import copy
         for field in sensitive_fields:
             if field in encrypted_data:
                 # In a real implementation, you would encrypt this value
-                # For now, we'll just mark it as encrypted
+                # For now, we'll just mark it as encrypted'
                 encrypted_data[field] = f"[ENCRYPTED]{str(encrypted_data[field])[:4]}..."
 
         return encrypted_data
 
     def decrypt_sensitive_data(self, data: Dict[str, Any], sensitive_fields: List[str]) -> Dict[str, Any]:
-        """Decrypt sensitive data fields.
+        """Decrypt sensitive data fields."
 
         Args:
             data: Data dictionary
@@ -598,7 +598,7 @@ import copy
         for field in sensitive_fields:
             if field in decrypted_data:
                 # In a real implementation, you would decrypt this value
-                # For now, we'll just remove the encryption marker
+                # For now, we'll just remove the encryption marker'
                 value = str(decrypted_data[field])
                 if value.startswith("[ENCRYPTED]"):
                     decrypted_data[field] = value[12:]  # Remove "[ENCRYPTED]" prefix
@@ -606,7 +606,7 @@ import copy
         return decrypted_data
 
     def get_database_security_report(self) -> Dict[str, Any]:
-        """Get database security report.
+        """Get database security report."
 
         Returns:
             Database security report
@@ -653,7 +653,6 @@ import copy
         except Exception as e:
             self.logger.error(f"Failed to generate database security report: {e}")
             return {"error": str(e)}
-
 
 # Global database security manager instance
 database_security_manager = DatabaseSecurityManager()

@@ -62,10 +62,12 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         try:
             # Calculate R-squared
             from sklearn.linear_model import LinearRegression
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-            model = LinearRegression()
-            model.fit(X_clean, y_clean)
+model = LinearRegression()
+model.fit(X_clean, y_clean)
             r_squared = model.score(X_clean, y_clean)
 
             # Calculate VIF

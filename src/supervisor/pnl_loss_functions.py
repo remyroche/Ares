@@ -5,7 +5,7 @@ from typing import Any
 
 from keras import backend as K
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 
@@ -67,7 +67,6 @@ def create_pnl_aware_loss(
 
     return pnl_aware_loss
 
-
 class PnLLossFunctions:
     """PnL Loss Functions with comprehensive error handling and type safety."""
 
@@ -118,7 +117,7 @@ class PnLLossFunctions:
         self.performance_metrics_components: dict[str, bool] = {}
         self.optimization_metrics_components: dict[str, bool] = {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid PnL loss functions configuration"),
             AttributeError: (False, "Missing required PnL loss functions parameters"),
@@ -156,11 +155,7 @@ class PnLLossFunctions:
             self.logger.error(f"❌ PnL Loss Functions initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="PnL configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_pnl_configuration(self) -> None:
         """Load PnL loss functions configuration."""
         try:
@@ -191,11 +186,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error loading PnL configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate PnL loss functions configuration.
 
@@ -233,11 +224,7 @@ class PnLLossFunctions:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="PnL modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pnl_modules(self) -> None:
         """Initialize PnL loss functions modules."""
         try:
@@ -266,11 +253,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error initializing PnL modules: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="PnL calculation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pnl_calculation(self) -> None:
         """Initialize PnL calculation components."""
         try:
@@ -286,11 +269,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error initializing PnL calculation: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="loss calculation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_loss_calculation(self) -> None:
         """Initialize loss calculation components."""
         try:
@@ -306,11 +285,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error initializing loss calculation: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk metrics initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_risk_metrics(self) -> None:
         """Initialize risk metrics components."""
         try:
@@ -328,11 +303,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error initializing risk metrics: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance metrics initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_performance_metrics(self) -> None:
         """Initialize performance metrics components."""
         try:
@@ -350,11 +321,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error initializing performance metrics: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="optimization metrics initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_optimization_metrics(self) -> None:
         """Initialize optimization metrics components."""
         try:
@@ -370,7 +337,7 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error initializing optimization metrics: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid calculation parameters"),
             AttributeError: (False, "Missing calculation components"),
@@ -435,11 +402,7 @@ class PnLLossFunctions:
             self.logger.error(f"❌ PnL Loss Functions Calculation failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="calculation inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_calculation_inputs(self, calculation_input: dict[str, Any]) -> bool:
         """Validate calculation inputs.
 
@@ -1027,11 +990,7 @@ class PnLLossFunctions:
             self.logger.error(f"Error performing reward functions: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="calculation results storage",
-    )
+    @handles_errors(fallback=None)
     def _update_calculation_history(self) -> None:
         """Store calculation results."""
         try:
@@ -1075,11 +1034,7 @@ class PnLLossFunctions:
             self.logger.error(f"Error getting calculation results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="calculation history getting",
-    )
+    @handles_errors(fallback=None)
     def get_calculation_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get calculation history.
 
@@ -1119,11 +1074,7 @@ class PnLLossFunctions:
             "calculation_history_count": len(self.calculation_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="PnL loss functions cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the PnL loss functions."""
         self.logger.info("🛑 Stopping PnL Loss Functions...")
@@ -1143,16 +1094,10 @@ class PnLLossFunctions:
         except Exception as e:
             self.logger.error(f"Error stopping PnL loss functions: {e}")
 
-
 # Global PnL loss functions instance
 pnl_loss_functions: PnLLossFunctions | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="PnL loss functions setup",
-)
+@handles_errors(fallback=None)
 async def setup_pnl_loss_functions(
     config: dict[str, Any] | None = None,
 ) -> PnLLossFunctions | None:

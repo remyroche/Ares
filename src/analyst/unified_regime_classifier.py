@@ -12,6 +12,11 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import (
+    warning,
+)
 from src.utils.centralized_decorators_simple import (
     comprehensive_data_validation,
     validate_data_quality,
@@ -20,7 +25,6 @@ from src.utils.centralized_decorators_simple import (
 from src.utils.error_handler import handle_errors, import, logging
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import warning
-
 
 class UnifiedRegimeClassifier:
     """
@@ -41,7 +45,7 @@ class UnifiedRegimeClassifier:
     ):
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
-        self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
+        self.config = config.get("analystf", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
         self.exchange = exchange
@@ -220,7 +224,7 @@ class UnifiedRegimeClassifier:
     # Some pickles created with older/newer NumPy versions may store the BitGenerator
     # as a class object instead of a simple string (e.g.,
     # <class 'numpy.random._mt19937.MT19937'>). Newer NumPy expects a string name.
-    # We normalize the argument before delegating to NumPy's constructor.
+    # We normalize the argument before delegating to NumPy's constructor.'
     _NUMPY_RNG_UNPICKLE_PATCHED = False
 
     async def initialize_sr_predictor(self) -> bool:
@@ -249,7 +253,7 @@ class UnifiedRegimeClassifier:
 
     @staticmethod
     def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
-        """Enable compatibility for unpickling NumPy RNG BitGenerators.
+        """Enable compatibility for unpickling NumPy RNG BitGenerators."
 
         Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to
         accept class objects or repr strings by converting them to their class name.
@@ -280,7 +284,7 @@ class UnifiedRegimeClassifier:
                     elif isinstance(name_candidate, str) and name_candidate.startswith(
                         "<class "
                     ):
-                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
                 except Exception as _name_exc:
                     if logger is not None:
                         logger.debug(
@@ -328,11 +332,7 @@ class UnifiedRegimeClassifier:
                     warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
                 )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="UnifiedRegimeClassifier.initialize",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """
         Initialize the UnifiedRegimeClassifier.
@@ -344,7 +344,7 @@ class UnifiedRegimeClassifier:
             f"Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}",
         )
 
-        # Create model directory if it doesn't exist
+        # Create model directory if it doesn't exist'
         os.makedirs(self.model_dir, exist_ok=True)
 
         # Try to load existing models
@@ -695,7 +695,7 @@ class UnifiedRegimeClassifier:
                                 features_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
                 
                 except Exception as e:
-                    # Continue with next data point if there's an error
+                    # Continue with next data point if there's an error'
                     self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
                     continue
             
@@ -769,7 +769,7 @@ class UnifiedRegimeClassifier:
                     features_df.loc[features_df.index[i], "sr_isolation_score"] = 0.5
                 
                 except Exception as e:
-                    # Continue with next data point if there's an error
+                    # Continue with next data point if there's an error'
                     self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
                     continue
             
@@ -780,11 +780,7 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"Error adding basic S/R features: {e}")
             return features_df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_rsi",
-    )
+    @handles_errors(fallback=None)
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate RSI indicator using price differences."""
         # Use price differences instead of absolute prices
@@ -795,11 +791,7 @@ class UnifiedRegimeClassifier:
         df["rsi"] = 100 - (100 / (1 + rs))
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_macd",
-    )
+    @handles_errors(fallback=None)
     def _calculate_macd(
         self,
         df: pd.DataFrame,
@@ -817,11 +809,7 @@ class UnifiedRegimeClassifier:
         df["macd_histogram"] = df["macd"] - df["macd_signal"]
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_adx",
-    )
+    @handles_errors(fallback=None)
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate the Average Directional Index (ADX)."""
         high = df["high"]
@@ -855,11 +843,7 @@ class UnifiedRegimeClassifier:
 
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_bollinger_bands",
-    )
+    @handles_errors(fallback=None)
     def _calculate_bollinger_bands(
         self,
         df: pd.DataFrame,
@@ -879,11 +863,7 @@ class UnifiedRegimeClassifier:
         df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / sma
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_atr",
-    )
+    @handles_errors(fallback=None)
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate Average True Range using price differences."""
         # Use price differences instead of absolute prices
@@ -941,7 +921,7 @@ class UnifiedRegimeClassifier:
             # Check for sideways movement (moderate directional strength)
             is_sideways = mean_adx < adx_sideways_threshold
 
-            # First check if it's clearly sideways (low ADX and small returns)
+            # First check if it's clearly sideways (low ADX and small returns)'
             if is_sideways and abs(mean_return) < 0.0003:  # Reduced sideways return threshold
                 regime = "SIDEWAYS"
             # Then check for strong directional movements (reduced ADX requirement)
@@ -1163,7 +1143,7 @@ class UnifiedRegimeClassifier:
 
     async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
         """
-        Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.
+        Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.'
         """
         try:
             if not self.sr_predictor or not self.enable_sr_integration:
@@ -1502,7 +1482,7 @@ class UnifiedRegimeClassifier:
 import copy
 import os.path
 
-            try:
+try:
                 # Create event loop if none exists
                 try:
                     loop = asyncio.get_event_loop()
@@ -2277,7 +2257,7 @@ import os.path
                     self.state_to_regime_map.get(state, "SIDEWAYS")
                     for state in state_sequence
                 ]
-                # For HMM, use a default confidence score since we don't have probabilities
+                # For HMM, use a default confidence score since we don't have probabilities'
                 confidence_scores = [0.8] * len(
                     regimes
                 )  # Default high confidence for HMM

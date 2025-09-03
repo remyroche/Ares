@@ -15,7 +15,7 @@ from src.utils.centralized_decorators import (
     performance_monitor,
 )
 from src.utils.logger import system_logger
-
+from src.core.decorators import handles_errors
 
 class LifecycleManager:
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -23,7 +23,7 @@ class LifecycleManager:
         self.logger = system_logger.getChild("LifecycleManager")
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid lifecycle configuration"),
             AttributeError: (False, "Missing lifecycle parameters"),

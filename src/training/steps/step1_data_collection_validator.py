@@ -36,7 +36,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		training_input: Dict[str, Any],
 		pipeline_state: Dict[str, Any],
 	) -> Dict[str, Any]:
-		"""Validate the data collection step with comprehensive checks.
+		"""Validate the data collection step with comprehensive checks."
 
 		Args:
 			training_input: Training input parameters
@@ -146,7 +146,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		timeframe: str,
 		data_dir: str,
 	) -> Dict[str, Any]:
-		"""Check for consolidated files in the data directory.
+		"""Check for consolidated files in the data directory."
 
 		Args:
 			symbol: Trading symbol
@@ -197,7 +197,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		exchange: str,
 		timeframe: str,
 	) -> Dict[str, Any]:
-		"""Validate the quality of consolidated data files.
+		"""Validate the quality of consolidated data files."
 
 		Args:
 			files: List of file paths to validate
@@ -297,7 +297,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		symbol: str,
 		exchange: str,
 	) -> bool:
-		"""Validate specific characteristics of the collected data.
+		"""Validate specific characteristics of the collected data."
 
 		Args:
 			data: Historical data DataFrame
@@ -393,7 +393,7 @@ async def run_validator(
 	training_input: Dict[str, Any],
 	pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-	"""Run the Step 1 Data Collection validator.
+	"""Run the Step 1 Data Collection validator."
 
 	Args:
 		training_input: Training input parameters
@@ -420,7 +420,7 @@ if __name__ == "__main__":
 import os.path
 
 	# Example usage
-	async def test_validator() -> None:
+async def test_validator() -> None:
 		training_input = {
 			"symbol": "ETHUSDT",
 			"exchange": "BINANCE",

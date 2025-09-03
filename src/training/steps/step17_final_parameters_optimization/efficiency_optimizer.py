@@ -1,6 +1,6 @@
 # src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py
 
-"""Efficiency Optimizer for Hyperparameter Optimization.
+"""Efficiency Optimizer for Hyperparameter Optimization."
 
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
@@ -17,9 +17,8 @@ from typing import Any
 
 import numpy as np
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class EfficiencyConfig:
@@ -57,7 +56,6 @@ class EfficiencyConfig:
     batch_size: int = 50  # Process trials in smaller batches
     clear_cache_interval: int = 25  # Clear cache more frequently
 
-
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
 
@@ -83,11 +81,7 @@ class EfficiencyOptimizer:
             f"Efficiency optimizer initialized with {self.max_workers} workers",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="efficiency optimizer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
@@ -101,15 +95,14 @@ class EfficiencyOptimizer:
 
         self.logger.info("✅ Efficiency optimizer initialized successfully")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Optimization failed"},
         context="efficiency optimizer trial optimization",
     )
     async def optimize_trial_efficiency(
         self, objective_function, search_space: dict[str, Any], n_trials: int, timeout_seconds: int = 3600
     ) -> dict[str, Any]:
-        """Run efficient hyperparameter optimization.
+        """Run efficient hyperparameter optimization."
 
         Args:
             objective_function: Function to optimize
@@ -736,11 +729,9 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f"Error during cleanup: {e}")
 
-
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:
     """Create an efficiency optimizer instance."""
     return EfficiencyOptimizer(config)
-
 
 if __name__ == "__main__":
     # Test the efficiency optimizer
@@ -773,7 +764,7 @@ if __name__ == "__main__":
     import asyncio
 import os.path
 
-    async def test() -> None:
+async def test() -> None:
         await optimizer.initialize()
         await optimizer.optimize_trial_efficiency(
             test_objective,

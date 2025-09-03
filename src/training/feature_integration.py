@@ -1,6 +1,6 @@
 # src/training/feature_integration.py
 
-"""Feature Integration Module for ML Training Pipeline.
+"""Feature Integration Module for ML Training Pipeline."
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
 """
@@ -12,13 +12,12 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import asyncio, error, import, initialization_error
 
-
 class FeatureIntegrationManager:
-    """Manages integration of advanced features (including liquidity features)
+    """Manages integration of advanced features (including liquidity features)"
     into the ML training pipeline.
     """
 
@@ -48,11 +47,7 @@ class FeatureIntegrationManager:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature integration initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize feature integration manager."""
         try:
@@ -61,6 +56,10 @@ class FeatureIntegrationManager:
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
                 from src.analyst.advanced_feature_engineering import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
+import copy
+AdvancedFeatureEngineering,
                     AdvancedFeatureEngineering,
                 )
 
@@ -79,18 +78,14 @@ class FeatureIntegrationManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature integration",
-    )
+    @handles_errors(fallback=None)
     async def integrate_features(
         self,
         historical_data: pd.DataFrame,
         market_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
-        """Integrate advanced features (including liquidity features) into training data.
+        """Integrate advanced features (including liquidity features) into training data."
 
         Args:
             historical_data: Historical price and volume data
@@ -211,7 +206,7 @@ class FeatureIntegrationManager:
                 liquidity_features["amihud_illiquidity"].rolling(20).mean()
             )
 
-            # Kyle's lambda
+            # Kyle's lambda'
             liquidity_features["kyle_lambda"] = (
                 np.abs(price_changes).rolling(50).mean() / volume.rolling(50).mean()
             )

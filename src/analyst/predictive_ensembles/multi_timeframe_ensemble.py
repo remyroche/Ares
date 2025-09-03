@@ -22,6 +22,12 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+import logging
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    warning,
+)
 from src.utils.warning_symbols import error, failed, import, logging, warning
 
 
@@ -151,7 +157,7 @@ class MultiTimeframeEnsemble:
                         f"avg confidence: {np.mean(confidences):.3f}",
                     )
                 else:
-                    self.logger.error(failed("❌ {timeframe} training failed"))
+                    self.logger.error(failed(f"❌ {timeframe} training failed"))
 
                     training_stats[timeframe] = {
                         "training_time": tf_training_time,
@@ -200,7 +206,7 @@ class MultiTimeframeEnsemble:
                                 f"avg confidence: {stats['avg_confidence']:.3f}",
                             )
                         else:
-                            self.logger.error(failed("   - {tf}: FAILED"))
+                            self.logger.error(failed(f"   - {tf}: FAILED"))
 
 
                     return True
@@ -213,7 +219,7 @@ class MultiTimeframeEnsemble:
             return False
 
         except Exception:
-            self.logger.error("💥 Error in multi-timeframe ensemble training: {e}")
+            self.logger.error(f"💥 Error in multi-timeframe ensemble training: {e}")
 
             return False
 
@@ -233,7 +239,7 @@ class MultiTimeframeEnsemble:
             X, y = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning("⚠️ No valid data for {timeframe}")
+                self.logger.warning(f"⚠️ No valid data for {timeframe}")
 
                 return False
 
@@ -248,7 +254,7 @@ class MultiTimeframeEnsemble:
             elif model_type == "random_forest":
                 model = self._train_random_forest_model(X, y)
             else:
-                self.logger.error("❌ Unknown model type: {model_type}")
+                self.logger.error(f"❌ Unknown model type: {model_type}")
 
                 return False
 
@@ -270,7 +276,7 @@ class MultiTimeframeEnsemble:
             return False
 
         except Exception:
-            self.logger.error("💥 Error training {timeframe} model: {e}")
+            self.logger.error(f"💥 Error training {timeframe} model: {e}")
 
             return False
 
@@ -313,7 +319,7 @@ class MultiTimeframeEnsemble:
             return model
 
         except Exception:
-            self.logger.error("💥 Error training XGBoost model: {e}")
+            self.logger.error(f"💥 Error training XGBoost model: {e}")
 
             return None
 
@@ -327,9 +333,9 @@ class MultiTimeframeEnsemble:
             from sklearn.neural_network import MLPClassifier
 
 import copy
-import os.path
+import os
 
-            model = MLPClassifier(
+model = MLPClassifier(
                 hidden_layer_sizes=(100, 50),
                 max_iter=200,
                 random_state=42,
@@ -340,7 +346,7 @@ import os.path
             return model
 
         except Exception:
-            self.logger.error("💥 Error training LSTM model: {e}")
+            self.logger.error(f"💥 Error training LSTM model: {e}")
 
             return None
 
@@ -364,7 +370,7 @@ import os.path
             return model
 
         except Exception:
-            self.logger.error("💥 Error training Random Forest model: {e}")
+            self.logger.error(f"💥 Error training Random Forest model: {e}")
 
             return None
 
@@ -441,7 +447,7 @@ import os.path
             return X, y
 
         except Exception:
-            self.logger.error("💥 Error preparing features/target: {e}")
+            self.logger.error(f"💥 Error preparing features/target: {e}")
 
             return pd.DataFrame(), pd.Series()
 
@@ -453,7 +459,7 @@ import os.path
         """Get predictions and confidences for a timeframe."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning("⚠️ No trained model for {timeframe}")
+                self.logger.warning(f"⚠️ No trained model for {timeframe}")
 
                 return [], []
 
@@ -463,7 +469,7 @@ import os.path
             X, _ = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning("⚠️ No valid features for {timeframe}")
+                self.logger.warning(f"⚠️ No valid features for {timeframe}")
 
                 return [], []
 
@@ -481,13 +487,13 @@ import os.path
             else:
                 confidences = [0.5] * len(predictions)
                 self.logger.warning(
-                    f"⚠️ {timeframe}: Model doesn't support predict_proba, using default confidence",
+                    f"⚠️ {timeframe}: Model doesn't support predict_proba, using default confidence",'
                 )
 
             return predictions, confidences
 
         except Exception:
-            self.logger.error("💥 Error getting predictions for {timeframe}: {e}")
+            self.logger.error(f"💥 Error getting predictions for {timeframe}: {e}")
 
             return [], []
 
@@ -556,7 +562,7 @@ import os.path
             return True
 
         except Exception:
-            self.logger.error("💥 Error training meta-learner: {e}")
+            self.logger.error(f"💥 Error training meta-learner: {e}")
 
             return False
 
@@ -613,7 +619,7 @@ import os.path
             return result_df
 
         except Exception:
-            self.logger.error("💥 Error preparing meta-learner data: {e}")
+            self.logger.error(f"💥 Error preparing meta-learner data: {e}")
 
             return pd.DataFrame()
 
@@ -692,7 +698,7 @@ import os.path
             }
 
         except Exception:
-            self.logger.error("💥 Error getting prediction: {e}")
+            self.logger.error(f"💥 Error getting prediction: {e}")
 
             return {"prediction": "HOLD", "confidence": 0.0}
 
@@ -704,7 +710,7 @@ import os.path
         """Get prediction from single timeframe model."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning("⚠️ No trained model for {timeframe}")
+                self.logger.warning(f"⚠️ No trained model for {timeframe}")
 
                 return "HOLD", 0.0
 
@@ -715,7 +721,7 @@ import os.path
             X, _ = self._prepare_features_target(features)
 
             if len(X) == 0:
-                self.logger.warning("⚠️ No valid features for {timeframe}")
+                self.logger.warning(f"⚠️ No valid features for {timeframe}")
 
                 return "HOLD", 0.0
 
@@ -732,7 +738,7 @@ import os.path
             return prediction, confidence
 
         except Exception:
-            self.logger.error("💥 Error getting prediction for {timeframe}: {e}")
+            self.logger.error(f"💥 Error getting prediction for {timeframe}: {e}")
 
             return "HOLD", 0.0
 
@@ -785,7 +791,7 @@ import os.path
             return prediction, confidence
 
         except Exception:
-            self.logger.error("💥 Error combining with meta-learner: {e}")
+            self.logger.error(f"💥 Error combining with meta-learner: {e}")
 
             return "HOLD", 0.0
 
@@ -829,7 +835,7 @@ import os.path
             return final_prediction, final_confidence
 
         except Exception:
-            self.logger.error("💥 Error in simple prediction combination: {e}")
+            self.logger.error(f"💥 Error in simple prediction combination: {e}")
 
             return "HOLD", 0.0
 
@@ -873,7 +879,7 @@ import os.path
             return True
 
         except Exception:
-            self.logger.error("💥 Error saving model: {e}")
+            self.logger.error(f"💥 Error saving model: {e}")
 
             return False
 
@@ -907,7 +913,7 @@ import os.path
                     }
                     self.logger.debug(f"📂 Loaded {timeframe} model")
                 else:
-                    self.logger.warning("⚠️ No model file found for {timeframe}")
+                    self.logger.warning(f"⚠️ No model file found for {timeframe}")
 
 
             # Load meta-learner
@@ -932,6 +938,6 @@ import os.path
             return True
 
         except Exception:
-            self.logger.error("💥 Error loading model: {e}")
+            self.logger.error(f"💥 Error loading model: {e}")
 
             return False

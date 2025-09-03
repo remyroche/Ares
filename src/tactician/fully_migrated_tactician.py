@@ -15,6 +15,9 @@ import numpy as np
 import pandas as pd
 
 from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+import os.path
+import asyncio
+from src.core.decorators import handles_errors
 
 # Simple logger setup
 logger = logging.getLogger(__name__)
@@ -32,7 +35,6 @@ def handle_errors(func):
             return None
 
     return wrapper
-
 
 class FullyMigratedTactician:
     """Fully migrated Tactician using only enhanced scenario-based predictions.
@@ -170,7 +172,7 @@ class FullyMigratedTactician:
             self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def generate_predictions(
         self,
         market_data: pd.DataFrame,

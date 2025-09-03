@@ -12,9 +12,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class TrackingType(Enum):
     ENSEMBLE_DECISION = "ensemble_decision"
@@ -23,7 +22,6 @@ class TrackingType(Enum):
     DECISION_PATH = "decision_path"
     MODEL_BEHAVIOR = "model_behavior"
 
-
 class TrackingSystem:
     """Comprehensive tracking system (scaffold)."""
 
@@ -31,7 +29,7 @@ class TrackingSystem:
         self.config = config
         self.logger = system_logger.getChild("TrackingSystem")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tracking configuration"),
             AttributeError: (False, "Missing tracking parameters"),

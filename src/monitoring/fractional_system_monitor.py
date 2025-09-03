@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import get_logger
-
+from src.core.decorators import handles_errors
+from src.utils.error_handler import handle_errors
 
 class FractionalSystemMonitor:
     """Monitor performance of combined fractional system in production."""
@@ -751,7 +751,6 @@ class FractionalSystemMonitor:
         except Exception as e:
             self.logger.error(f"Failed to export monitoring report: {e}")
             return ""
-
 
 # Configuration helper
 def get_fractional_system_monitor_config(

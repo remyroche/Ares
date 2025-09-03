@@ -1,5 +1,11 @@
 # src/components/modular_supervisor.py
 
+from datetime import datetime
+from src.utils.logger import system_logger
+from typing import Any
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
+import copy
 import asyncio
 import copy
 from datetime import datetime
@@ -55,7 +61,7 @@ class ModularSupervisor:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid modular supervisor configuration"),
             AttributeError: (False, "Missing required supervisor parameters"),
@@ -97,11 +103,7 @@ class ModularSupervisor:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervisor configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_supervisor_configuration(self) -> None:
         """Load supervisor configuration."""
         try:
@@ -130,11 +132,7 @@ class ModularSupervisor:
         except Exception as e:
             self.logger.error(error(f"Error loading supervisor configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate supervisor configuration.
 
@@ -173,11 +171,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervision modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_supervision_modules(self) -> None:
         """Initialize supervision modules."""
         try:
@@ -204,11 +198,7 @@ class ModularSupervisor:
                 initialization_error(f"Error initializing supervision modules: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring module."""
         try:
@@ -229,11 +219,7 @@ class ModularSupervisor:
                 initialization_error(f"Error initializing performance monitoring: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_risk_monitoring(self) -> None:
         """Initialize risk monitoring module."""
         try:
@@ -254,11 +240,7 @@ class ModularSupervisor:
                 initialization_error(f"Error initializing risk monitoring: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="system monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_system_monitoring(self) -> None:
         """Initialize system monitoring module."""
         try:
@@ -279,11 +261,7 @@ class ModularSupervisor:
                 initialization_error(f"Error initializing system monitoring: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="alerting initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_alerting(self) -> None:
         """Initialize alerting module."""
         try:
@@ -300,7 +278,7 @@ class ModularSupervisor:
         except Exception as e:
             self.logger.error(initialization_error(f"Error initializing alerting: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid supervision parameters"),
             AttributeError: (False, "Missing supervision components"),
@@ -374,11 +352,7 @@ class ModularSupervisor:
             self.is_supervising = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="supervision inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_supervision_inputs(
         self,
         trading_data: dict[str, Any],
@@ -427,11 +401,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error validating supervision inputs: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_performance_monitoring(
         self,
         trading_data: dict[str, Any],
@@ -490,11 +460,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error performing performance monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_risk_monitoring(
         self,
         trading_data: dict[str, Any],
@@ -549,11 +515,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error performing risk monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="system monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_system_monitoring(
         self,
         trading_data: dict[str, Any],
@@ -612,11 +574,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error performing system monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="alerting",
-    )
+    @handles_errors(fallback=None)
     async def _perform_alerting(
         self,
         trading_data: dict[str, Any],
@@ -1003,11 +961,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error checking threshold alerts: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervision results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_supervision_results(self) -> None:
         """Store supervision results."""
         try:
@@ -1026,11 +980,7 @@ class ModularSupervisor:
         except Exception as e:
             self.logger.error(error(f"Error storing supervision results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervision results getting",
-    )
+    @handles_errors(fallback=None)
     def get_supervision_results(
         self,
         supervision_type: str | None = None,
@@ -1052,11 +1002,7 @@ class ModularSupervisor:
             self.logger.error(error(f"Error getting supervision results: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervision history getting",
-    )
+    @handles_errors(fallback=None)
     def get_supervision_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get supervision history.
 
@@ -1101,11 +1047,7 @@ class ModularSupervisor:
             "supervision_history_count": len(self.supervision_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="modular supervisor cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the modular supervisor."""
         self.logger.info("🛑 Stopping Modular Supervisor...")

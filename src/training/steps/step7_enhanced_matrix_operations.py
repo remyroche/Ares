@@ -1,6 +1,6 @@
 # src/training/steps/step7_enhanced_matrix_operations.py
 
-"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
+"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management."
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
 """
 
@@ -104,7 +104,6 @@ else:
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
-
 class Step7EnhancedMatrixOperations:
     """Step 7: Enhanced Matrix Operations with standardized data quality management."""
 
@@ -154,7 +153,7 @@ class Step7EnhancedMatrixOperations:
         data_quality_metrics={"completeness": 0.95}
     )
     @with_enhanced_mlflow_logging("step7_enhanced_matrix_operations")
-    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=False)
+    @handles_errors(fallback=False)
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -446,7 +445,7 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     def _prepare_matrix_operations_config(
         self, 
@@ -936,8 +935,6 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             return {"error": str(e)}
-
-
 
     def _analyze_sr_optimization_parameters(self, optimization_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze SR optimization parameters."""
@@ -1645,7 +1642,6 @@ class Step7EnhancedMatrixOperations:
         self.logger.info(f"💾 Saved matrix operations results to {self.output_dir}")
         return output_files
 
-
 # Step execution function
 async def run_step(
     symbol: str,
@@ -1676,16 +1672,19 @@ async def run_step(
         
         # Load configuration
         from src.config.training import get_training_config
-
+    except Exception as e:
+        pass  # TODO: Handle exception properly
+import numpy as np
 import os.path
 
 import numpy as np
 import pandas as pd
+from src.core.decorators import handles_errors
 
-        config = get_training_config()
+config = get_training_config()
         
         # Create step instance
-        step = Step7EnhancedMatrixOperations(config)
+step = Step7EnhancedMatrixOperations(config)
         
         # Prepare training input
         training_input = {
@@ -1711,7 +1710,6 @@ import pandas as pd
     except Exception as e:
         system_logger.error(f"❌ Step 7 failed: {str(e)}")
         return False
-
 
 # Export the main class for external use
 __all__ = ["Step7EnhancedMatrixOperations", "run_step"]

@@ -12,10 +12,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
+from src.core.decorators import handles_errors
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
+from src.utils.warning_symbols import (
+import copy
+import asyncio
+from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import asyncio, copy, failed, import, missing
 
 
@@ -135,11 +138,7 @@ class EnhancedOrderManager:
         # Metrics
         self.metrics = metrics
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order manager initialization"
-    )
+    @handles_errors(fallback=None)
     async def initialize(self) -> bool:
         """
         Initialize the order manager.
@@ -161,11 +160,7 @@ class EnhancedOrderManager:
             self.logger.error(failed(f"❌ Enhanced Order Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order creation"
-    )
+    @handles_errors(fallback=None)
     async def create_order(self, order_request: OrderRequest) -> Optional[OrderState]:
         """
         Create a new order.
@@ -243,11 +238,7 @@ class EnhancedOrderManager:
             self.logger.error(failed(f"❌ Order validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order update"
-    )
+    @handles_errors(fallback=None)
     async def update_order(self, order_id: str, updates: Dict[str, Any]) -> Optional[OrderState]:
         """
         Update an existing order.
@@ -280,11 +271,7 @@ class EnhancedOrderManager:
             self.logger.error(failed(f"❌ Order update failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order cancellation"
-    )
+    @handles_errors(fallback=None)
     async def cancel_order(self, order_id: str) -> bool:
         """
         Cancel an active order.
@@ -318,11 +305,7 @@ class EnhancedOrderManager:
             self.logger.error(failed(f"❌ Order cancellation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order fill processing"
-    )
+    @handles_errors(fallback=None)
     async def process_fill(self, order_id: str, fill: OrderFill) -> Optional[OrderState]:
         """
         Process an order fill.

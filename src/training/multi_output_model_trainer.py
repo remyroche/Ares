@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-Output Model Trainer for Direction and Profit Prediction.
+"""Multi-Output Model Trainer for Direction and Profit Prediction."
 
 This module provides intelligent multi-output prediction capabilities for both
 price direction and expected profit using the triple barrier method and
@@ -79,7 +79,6 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
-
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
     
@@ -154,7 +153,6 @@ class MultiOutputModelConfig:
         else:
             self.supported_model_types = supported_model_types
 
-
 class MultiOutputNeuralNetwork(nn.Module):
     """Neural network for multi-output prediction (direction + profit)."""
     
@@ -210,7 +208,6 @@ class MultiOutputNeuralNetwork(nn.Module):
         profit_pred = self.profit_head(shared_features)
         return direction_pred, profit_pred
 
-
 class MultiOutputModelTrainer:
     """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
     
@@ -255,11 +252,7 @@ class MultiOutputModelTrainer:
         
         self.logger.info("🔧 Multi-output model trainer initialized with comprehensive SR feature integration")
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
-        default_return=False,
-        context="step7_features_loading"
-    )
+    @handles_errors(fallback=False)
     async def load_step7_features(self, step7_output_path: str) -> bool:
         """
         Load comprehensive SR features from step07 enhanced matrix operations.
@@ -316,11 +309,7 @@ class MultiOutputModelTrainer:
             self.logger.error(f"❌ Error loading step07 features: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
-        default_return=False,
-        context="step2_5_sr_levels_loading"
-    )
+    @handles_errors(fallback=False)
     async def load_step2_5_sr_levels(self, step2_5_output_path: str) -> bool:
         """
         Load SR levels from step2_5 SR optimization.
@@ -665,11 +654,7 @@ class MultiOutputModelTrainer:
             self.logger.error(f"❌ Error analyzing SR features: {e}")
             return {"sr_feature_count": 0, "error": str(e)}
     
-    @handle_errors(
-        exceptions=(ValueError, TypeError, MemoryError),
-        default_return=None,
-        context="multi_output_data_preparation"
-    )
+    @handles_errors(fallback=None)
     async def prepare_multi_output_data(
         self,
         data: pd.DataFrame,
@@ -678,7 +663,7 @@ class MultiOutputModelTrainer:
         feature_columns: Optional[List[str]] = None,
         use_enhanced_feature_selection: bool = True
     ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
-        """Prepare data for multi-output training with comprehensive SR features.
+        """Prepare data for multi-output training with comprehensive SR features."
         
         Args:
             data: Input DataFrame with features and targets
@@ -774,7 +759,7 @@ class MultiOutputModelTrainer:
         return features, direction_target, profit_target
     
     def get_feature_importance_summary(self) -> Dict[str, Any]:
-        """Get a summary of feature importance scores from data-driven selection.
+        """Get a summary of feature importance scores from data-driven selection."
         
         Returns:
             Dictionary containing feature importance summaries by method
@@ -968,11 +953,7 @@ class MultiOutputModelTrainer:
             }
         }
     
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="multi_output_model_training"
-    )
+    @handles_errors(fallback=None)
     @performance_monitor
     @memory_efficient
     async def train_multi_output_model(
@@ -982,7 +963,7 @@ class MultiOutputModelTrainer:
         profit_target: pd.Series,
         model_name: str = "multi_output_model"
     ) -> Dict[str, Any]:
-        """Train a multi-output model for direction and profit prediction with comprehensive SR features.
+        """Train a multi-output model for direction and profit prediction with comprehensive SR features."
         
         Args:
             features: Feature DataFrame
@@ -1371,7 +1352,7 @@ class MultiOutputModelTrainer:
             "profit_metrics": profit_metrics,
             "combined_metrics": combined_metrics,
             "feature_importance": {
-                "direction": {},  # Neural networks don't have direct feature importance
+                "direction": {},  # Neural networks don't have direct feature importance'
                 "profit": {}
             }
         }
@@ -1457,7 +1438,7 @@ class MultiOutputModelTrainer:
         model_name: str = "multi_output_model",
         current_prices: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Make predictions using trained multi-output model.
+        """Make predictions using trained multi-output model."
         
         Args:
             features: Feature DataFrame
@@ -1500,7 +1481,7 @@ class MultiOutputModelTrainer:
         current_prices: Optional[np.ndarray] = None,
         confidence_threshold: float = 0.7
     ) -> Dict[str, np.ndarray]:
-        """Make predictions with confidence scoring using existing confidence utility.
+        """Make predictions with confidence scoring using existing confidence utility."
         
         Args:
             features: Feature DataFrame
@@ -1636,7 +1617,7 @@ class MultiOutputModelTrainer:
             raise FileNotFoundError(f"Model files not found in {load_path}")
     
     # NEW: Probability target generation methods
-    @handle_errors(default_return={}, context="generate_probability_targets")
+    @handles_errors(fallback={})
     def generate_probability_targets(
         self, 
         X: np.ndarray, 
@@ -1661,7 +1642,7 @@ class MultiOutputModelTrainer:
         self.logger.info("🔧 Generating probability targets for multi-output training")
         return self.probability_target_generator.generate_all_targets(X, y, market_data)
     
-    @handle_errors(default_return={}, context="train_with_probability_targets")
+    @handles_errors(fallback={})
     def train_with_probability_targets(
         self,
         X_train: np.ndarray,
@@ -1772,8 +1753,9 @@ class MultiOutputModelTrainer:
             from sklearn.utils.class_weight import compute_class_weight
 
 import copy
+from src.core.decorators import handles_errors
 
-            class_weights = compute_class_weight(
+class_weights = compute_class_weight(
                 'balanced', 
                 classes=np.unique(y_train), 
                 y=y_train
@@ -2063,13 +2045,12 @@ import copy
             "note": "Standard training used (probability outputs disabled)"
         }
 
-
 def create_multi_output_trainer(
     model_type: str = "LightGBM",
     use_profit_features: bool = True,
     **kwargs
 ) -> MultiOutputModelTrainer:
-    """Factory function to create a multi-output model trainer.
+    """Factory function to create a multi-output model trainer."
     
     Args:
         model_type: Type of model to use ("LightGBM", "RandomForest", "NeuralNetwork")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 5: Labeling with Standardized Data Quality Management.
+"""Step 5: Labeling with Standardized Data Quality Management."
 
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
@@ -7,7 +7,7 @@ labels with additional labeling strategies and meta-labeling features.
 Key Enhancements:
 - Dynamic Label Generation: Added the ability to generate triple barrier labels directly within step05 using regime-aware methods
 - Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
-- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available
+- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available'
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
 
@@ -125,7 +125,6 @@ else:
 
 logger = system_logger.getChild("Step5Labeling")
 
-
 class LabelingStep:
     """Step 5: Labeling with standardized data quality management and regime-aware triple barrier method."""
 
@@ -232,7 +231,7 @@ class LabelingStep:
     @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
     @with_enhanced_mlflow_logging("step5_labeling")
     @comprehensive_data_validation
-    @handle_errors
+    @handles_errors
     @memory_efficient
     @resource_monitor
     @secure_data_processing
@@ -245,7 +244,7 @@ class LabelingStep:
         data_dir: str = "data_cache",
         force_rerun: bool = False,
     ) -> bool:
-        """Execute the labeling step.
+        """Execute the labeling step."
 
         Args:
             symbol: Trading symbol
@@ -497,7 +496,7 @@ class LabelingStep:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     async def _generate_comprehensive_labels(
         self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str
@@ -735,6 +734,13 @@ class LabelingStep:
             try:
                 # Use the regime-aware triple barrier labeling
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+            except Exception as e:
+                pass  # TODO: Handle exception properly
+import copy
+import numpy as np
+import pandas as pd
+from src.core.decorators import handles_errors
+RegimeAwareTripleBarrierLabeling
                     RegimeAwareTripleBarrierLabeling,
                     np,
                     pd,
@@ -769,7 +775,6 @@ class LabelingStep:
             self.logger.exception(f"❌ Error in regime-aware labeling: {e}")
             return None
 
-
 async def run_step(
     symbol: str,
     exchange: str,
@@ -778,7 +783,7 @@ async def run_step(
     force_rerun: bool = False,
     config: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Run the labeling step with standardized data quality management.
+    """Run the labeling step with standardized data quality management."
 
     Args:
         symbol: Trading symbol
@@ -831,7 +836,6 @@ async def run_step(
         data_dir=data_dir,
         force_rerun=force_rerun,
     )
-
 
 if __name__ == "__main__":
     # Test the step

@@ -8,7 +8,7 @@ Handles position closure based on dual model confidence scores and ATR-based exi
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import asyncio, copy, failed, import, invalid
 
@@ -52,11 +52,7 @@ class PositionCloser:
         self.closed_positions = []
         self.position_history = []
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="position closer initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """
         Initialize the position closer.
@@ -134,11 +130,7 @@ class PositionCloser:
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="position closure evaluation"
-    )
+    @handles_errors(fallback=False)
     async def should_close_position(
         self,
         position_data: Dict[str, Any],
@@ -246,11 +238,7 @@ class PositionCloser:
             self.logger.error(failed(f"❌ Time-based closure check failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position closure execution"
-    )
+    @handles_errors(fallback=None)
     async def close_position(
         self,
         position_data: Dict[str, Any],

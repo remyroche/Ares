@@ -45,6 +45,7 @@ import contextlib
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.core.decorators import handles_errors
 from src.utils.enhanced_mlflow_integration import (
     create_detailed_step_report,
     log_step_artifact_with_standardized_name,
@@ -58,7 +59,7 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, failed, timeout, warning
 
-# Suppress Optuna's verbose logging to keep the output clean
+# Suppress Optuna's verbose logging to keep the output clean'
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Required modules for this step
@@ -78,9 +79,8 @@ REQUIRED_MODULES = [
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
-
 class AnalystCreationStep:
-    """Step 11: Analyst Creation - Creates base analyst models for each regime.
+    """Step 11: Analyst Creation - Creates base analyst models for each regime."
 
     This step creates the initial analyst models for each regime using the
     regime-specific data and features. It focuses on creating robust base models
@@ -88,7 +88,7 @@ class AnalystCreationStep:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the AnalystCreationStep.
+        """Initializes the AnalystCreationStep."
 
         Args:
             config (Dict[str, Any]): Configuration dictionary for the step.
@@ -99,7 +99,7 @@ class AnalystCreationStep:
         self._validate_environment()
         
         # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
-        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
+        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.'
         # Fallback to 'cpu' if MPS is not available or hangs.
         self.device = self._safe_get_device()
         self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
@@ -144,9 +144,9 @@ class AnalystCreationStep:
 import copy
 import os.path
 
-            result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
+result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
-            def check_mps() -> None:
+def check_mps() -> None:
                 try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
@@ -175,25 +175,20 @@ import os.path
             self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
             return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="analyst creation step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the analyst creation step."""
         self.logger.info("Initializing Analyst Creation Step...")
         self.logger.info("Analyst Creation Step initialized successfully.")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="analyst creation step execution",
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Executes the analyst model creation pipeline for each regime.
+        """Executes the analyst model creation pipeline for each regime."
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
@@ -378,7 +373,7 @@ import os.path
         try:
             # Separate features and labels
             feature_columns = [col for col in regime_data.columns 
-                             if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
+            if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
             
             X = regime_data[feature_columns]
             y = regime_data["label"] if "label" in regime_data.columns else pd.Series([0] * len(regime_data))
@@ -642,12 +637,7 @@ import os.path
         except Exception as e:
             self.logger.exception(f"❌ Error saving analyst models: {e}")
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step11_analyst_creation"
-)
+@handles_errors(fallback=False)
 async def run_step(
     symbol: str,
     exchange: str,
@@ -656,7 +646,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the analyst creation step.
+    """Run the analyst creation step."
 
     Args:
         symbol: Trading symbol (e.g., "ETHUSDT")

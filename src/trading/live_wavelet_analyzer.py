@@ -10,8 +10,9 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import error, initialization_error, timeout, warning
 from typing import Any
-
 import numpy as np
 import pandas as pd
 import pywt
@@ -79,11 +80,7 @@ class LiveWaveletAnalyzer:
         self.computation_lock = threading.Lock()
         self.latest_signal: WaveletSignal | None = None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="live wavelet analyzer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the live wavelet analyzer."""
         try:
@@ -163,11 +160,7 @@ class LiveWaveletAnalyzer:
         except Exception:
             return max(1, self.decomposition_level)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="live wavelet signal generation",
-    )
+    @handles_errors(fallback=None)
     async def generate_signal(
         self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
     ) -> WaveletSignal | None:

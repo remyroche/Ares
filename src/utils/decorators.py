@@ -242,7 +242,7 @@ def _log_performance_metrics(metrics: Dict[str, Any], level: str):
     tags=["validation", "type-checking", "enhanced"],
 )
 def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F], F]:
-    """Enhanced decorator factory that prefers pydantic.validate_call if available.
+    """Enhanced decorator factory that prefers pydantic.validate_call if available."
 
     Falls back to beartype or typeguard if pydantic is unavailable.
     If none are available, acts as a no-op decorator.
@@ -283,7 +283,7 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
 def pa_check_input(
     schema: Any, *, arg_name: str | None = None, arg_index: int = 0, strict: bool = True
 ) -> Callable[[F], F]:
-    """Enhanced compatibility wrapper for pandera.check_input.
+    """Enhanced compatibility wrapper for pandera.check_input."
 
     ENHANCED FEATURES:
     - Intelligent caching for schema validation results
@@ -321,7 +321,7 @@ def pa_check_input(
     tags=["validation", "pandera", "dataframe", "enhanced"],
 )
 def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
-    """Enhanced compatibility wrapper for pandera.check_output.
+    """Enhanced compatibility wrapper for pandera.check_output."
 
     ENHANCED FEATURES:
     - Intelligent caching for schema validation results
@@ -361,7 +361,7 @@ def pa_check_io(
     df_arg_index: int = 0,
     strict: bool = True,
 ) -> Callable[[F], F]:
-    """Enhanced validate DataFrame input/output with pandera if available.
+    """Enhanced validate DataFrame input/output with pandera if available."
 
     ENHANCED FEATURES:
     - Intelligent caching for validation results
@@ -482,7 +482,7 @@ def enforce_ndarray(
     forbid_lists: bool = False,
     require_vector: bool = False,
 ) -> Callable[[F], F]:
-    """Enhanced coerce the selected argument to numpy.ndarray and optionally forbid lists.
+    """Enhanced coerce the selected argument to numpy.ndarray and optionally forbid lists."
 
     ENHANCED FEATURES:
     - Performance monitoring for vectorization operations
@@ -547,7 +547,7 @@ def enforce_ndarray(
     tags=["vectorization", "numpy", "enhanced"],
 )
 def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
-    """Enhanced wrap a scalar function so that it transparently handles numpy arrays.
+    """Enhanced wrap a scalar function so that it transparently handles numpy arrays."
 
     ENHANCED FEATURES:
     - Intelligent caching for vectorization results
@@ -595,7 +595,7 @@ def guard_array_nan_inf(
     coerce_value: float = 0.0,
     arg_indices: Iterable[int] = (0,),
 ) -> Callable[[F], F]:
-    """Enhanced pre-check numpy arrays or pandas objects for NaN/Inf before executing.
+    """Enhanced pre-check numpy arrays or pandas objects for NaN/Inf before executing."
 
     ENHANCED FEATURES:
     - Intelligent caching for validation results
@@ -708,7 +708,7 @@ def guard_dataframe_nulls(
     fill_value: float | int | str | None = 0,
     arg_index: int = 0,
 ) -> Callable[[F], F]:
-    """Enhanced check a pandas DataFrame argument for nulls/NaN/Inf.
+    """Enhanced check a pandas DataFrame argument for nulls/NaN/Inf."
 
     ENHANCED FEATURES:
     - Intelligent caching for validation results
@@ -836,7 +836,7 @@ try:  # aiohttp
 
 import copy
 
-    _EXCEPTION_MAP[aiohttp.ClientError] = ExternalServiceError  # type: ignore
+_EXCEPTION_MAP[aiohttp.ClientError] = ExternalServiceError  # type: ignore
 except Exception:  # pragma: no cover
     pass
 
@@ -853,7 +853,7 @@ def normalize_errors(
     default_error: type[DomainError] = DomainError,
     reraise: bool = False,
 ) -> Callable[[F], F]:
-    """Enhanced normalize heterogeneous exceptions into domain-specific errors.
+    """Enhanced normalize heterogeneous exceptions into domain-specific errors."
 
     ENHANCED FEATURES:
     - Intelligent error recovery strategies
@@ -942,7 +942,7 @@ _SENSITIVE_KEYS = {
 
 
 def _sanitize(value: Any) -> Any:
-    """Best-effort PII scrubbing for dict-like inputs and sequences.
+    """Best-effort PII scrubbing for dict-like inputs and sequences."
 
     Masks values of known sensitive keys. Keeps structure to aid debugging.
     """
@@ -974,7 +974,7 @@ def with_tracing_span(
     log_args: bool = False,
     log_result_len_only: bool = True,
 ) -> Callable[[F], F]:
-    """Enhanced add correlation-aware entry/exit logs around a function call.
+    """Enhanced add correlation-aware entry/exit logs around a function call."
 
     ENHANCED FEATURES:
     - Performance monitoring and metrics collection
@@ -989,7 +989,7 @@ def with_tracing_span(
 
     def decorator(func: F) -> F:
         resolved_span = span_name or func.__name__
-        # Base fallback logger on the wrapped function's module
+        # Base fallback logger on the wrapped function's module'
         module_logger = logging.getLogger(func.__module__)
 
         @functools.wraps(func)

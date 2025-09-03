@@ -12,8 +12,9 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import failed, missing
 from typing import Any
-
 import numpy as np
 import pandas as pd
 from dataclasses_json import dataclass_json
@@ -215,7 +216,7 @@ class TradeTracker:
 
         self.logger.info("🚀 Trade Tracker initialized")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ("Invalid trade data", False),
             KeyError: ("Missing required trade fields", False),
@@ -295,11 +296,7 @@ class TradeTracker:
             self.logger.error(failed(f"❌ Failed to record trade: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="performance metrics update",
-    )
+    @handles_errors(fallback=None)
     def _update_performance_metrics(self, trade_record: TradeRecord) -> None:
         """Update performance metrics with new trade."""
         self.performance_metrics["total_trades"] += 1
@@ -320,11 +317,7 @@ class TradeTracker:
                 winning_trades / total_trades if total_trades > 0 else 0.0
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="model performance tracking",
-    )
+    @handles_errors(fallback=None)
     async def _track_model_performance(self, trade_record: TradeRecord) -> None:
         """Track individual model performance."""
         for model_behavior in trade_record.model_behaviors:
@@ -346,11 +339,7 @@ class TradeTracker:
 
             self.model_performance_history[model_type].append(performance_record)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trade update",
-    )
+    @handles_errors(fallback=None)
     async def update_trade(
         self,
         trade_id: str,

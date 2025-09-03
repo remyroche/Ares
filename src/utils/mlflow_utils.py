@@ -7,6 +7,7 @@ from typing import Any, Optional
 import mlflow
 
 from src.config import ARES_VERSION
+from src.core.decorators import handles_errors
 from src.utils.common_operations import (
     ensure_directory,
     format_datetime,
@@ -19,7 +20,6 @@ from src.utils.common_operations import (
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
     """Extract required metadata from enhanced training manager configuration.
@@ -53,7 +53,6 @@ def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
         "lookback_period": lookback_period,
         "project_version": project_version,
     }
-
 
 def with_enhanced_metadata(func):
     """Decorator to automatically add enhanced metadata to MLflow operations.
@@ -89,8 +88,7 @@ def with_enhanced_metadata(func):
 
     return wrapper
 
-
-@handle_errors(default_return=None, context="mlflow_utils.log_bot_version_to_mlflow")
+@handles_errors(fallback=None)
 def log_bot_version_to_mlflow(run_id: str | None = None) -> None:
     """Log the current bot version to MLFlow.
 
@@ -221,8 +219,7 @@ def log_enhanced_training_metadata(
             mlflow.set_tag(key, value)
         system_logger.info("✅ Logged enhanced training metadata to active MLFlow run")
 
-
-@handle_errors(default_return=None, context="mlflow_utils.log_model_with_metadata")
+@handles_errors(fallback=None)
 def log_model_with_metadata(
     model,
     model_name: str,
@@ -294,8 +291,7 @@ def log_model_with_metadata(
             f"✅ Logged model '{model_name}' with metadata to active MLFlow run"
         )
 
-
-@handle_errors(default_return=None, context="mlflow_utils.log_artifacts_with_metadata")
+@handles_errors(fallback=None)
 def log_artifacts_with_metadata(
     local_path: str,
     artifact_path: str,
@@ -367,8 +363,7 @@ def log_artifacts_with_metadata(
             f"✅ Logged artifact '{artifact_path}' with metadata to active MLFlow run"
         )
 
-
-@handle_errors(default_return=None, context="mlflow_utils.log_metrics_with_metadata")
+@handles_errors(fallback=None)
 def log_metrics_with_metadata(
     metrics: dict[str, float],
     asset: str,
@@ -447,8 +442,7 @@ def log_metrics_with_metadata(
             f"✅ Logged {len(metrics)} metrics with metadata to active MLFlow run"
         )
 
-
-@handle_errors(default_return=None, context="mlflow_utils.log_params_with_metadata")
+@handles_errors(fallback=None)
 def log_params_with_metadata(
     params: dict[str, Any],
     asset: str,
@@ -519,8 +513,7 @@ def log_params_with_metadata(
             f"✅ Logged {len(params)} parameters with metadata to active MLFlow run"
         )
 
-
-@handle_errors(default_return=dict, context="mlflow_utils.get_run_with_bot_version")
+@handles_errors(fallback=dict)
 def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
     """Get MLFlow run information including bot version.
 
@@ -550,8 +543,7 @@ def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
         "project_version": run.data.tags.get("project_version", "Unknown"),
     }
 
-
-@handle_errors(default_return=dict, context="mlflow_utils.get_enhanced_run_metadata")
+@handles_errors(fallback=dict)
 def get_enhanced_run_metadata(run_id: str) -> dict[str, Any] | None:
     """Get enhanced MLFlow run information with all required metadata.
 
@@ -585,8 +577,7 @@ def get_enhanced_run_metadata(run_id: str) -> dict[str, Any] | None:
         "metrics": run.data.metrics,
     }
 
-
-@handle_errors(default_return=None, context="mlflow_utils.validate_run_metadata")
+@handles_errors(fallback=None)
 def validate_run_metadata(run_id: str) -> bool:
     """Validate that a run has all required metadata associations.
 
@@ -623,8 +614,7 @@ def validate_run_metadata(run_id: str) -> bool:
         system_logger.error(f"Error validating run metadata for {run_id}: {e}")
         return False
 
-
-@handle_errors(default_return=None, context="mlflow_utils.ensure_enhanced_mlflow_run")
+@handles_errors(fallback=None)
 def ensure_enhanced_mlflow_run(
     config: dict[str, Any],
     run_name: Optional[str] = None,

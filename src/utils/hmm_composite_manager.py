@@ -21,7 +21,7 @@ from typing import Any
 import pandas as pd
 
 from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -29,7 +29,6 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 # This prevents log spam when different components instantiate the manager separately
 _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
-
 
 class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
@@ -113,11 +112,7 @@ class HMMCompositeManager:
                 f"🧹 Cache cleanup completed - removed {len(old_keys)} old entries",
             )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="HMM block states loading",
-    )
+    @handles_errors(fallback=None)
     def load_block_states(
         self,
         exchange: str,
@@ -167,11 +162,7 @@ class HMMCompositeManager:
             self.logger.warning(f"Failed to load HMM block states: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="HMM composite cluster loading",
-    )
+    @handles_errors(fallback=None)
     def load_composite_clusters(
         self,
         exchange: str,
@@ -236,11 +227,7 @@ class HMMCompositeManager:
             self.logger.warning(f"Failed to load HMM composite clusters: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="HMM meta loading",
-    )
+    @handles_errors(fallback=None)
     def load_meta(
         self,
         exchange: str,
@@ -289,11 +276,7 @@ class HMMCompositeManager:
             self.logger.warning(f"Failed to load HMM meta: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="HMM intensity loading",
-    )
+    @handles_errors(fallback=None)
     def load_intensity(
         self,
         exchange: str,
@@ -343,11 +326,7 @@ class HMMCompositeManager:
             self.logger.warning(f"Failed to load HMM intensity: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="HMM basic meta loading",
-    )
+    @handles_errors(fallback=None)
     def load_basic_meta(
         self,
         exchange: str,
@@ -398,11 +377,7 @@ class HMMCompositeManager:
             self.logger.warning(f"Failed to load HMM basic meta: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="HMM composite cluster creation",
-    )
+    @handles_errors(fallback=False)
     async def create_composite_clusters(
         self,
         exchange: str,
@@ -468,11 +443,7 @@ class HMMCompositeManager:
         )
         return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="HMM composite cluster management",
-    )
+    @handles_errors(fallback=None)
     async def get_or_create_composite_clusters(
         self,
         exchange: str,
@@ -677,10 +648,8 @@ class HMMCompositeManager:
             "last_cleanup": self._last_cleanup,
         }
 
-
 # Global instance for easy access
 _hmm_composite_manager: HMMCompositeManager | None = None
-
 
 def get_hmm_composite_manager() -> HMMCompositeManager:
     """Get the global HMM composite manager instance."""

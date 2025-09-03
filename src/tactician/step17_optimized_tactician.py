@@ -10,9 +10,12 @@ import os.path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
+import os.path
+import asyncio
+from src.core.decorators import handles_errors
 import numpy as np
 import pandas as pd
-
 from .comprehensive_enhanced_scenario_predictor import (
     ComprehensiveEnhancedScenarioPredictor,
 )
@@ -33,7 +36,6 @@ def handle_errors(func):
             return None
 
     return wrapper
-
 
 class Step17OptimizedTactician:
     """Step17 Optimized Tactician with ALL decision logic configurable.
@@ -303,7 +305,7 @@ class Step17OptimizedTactician:
             self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def generate_predictions(
         self,
         market_data: pd.DataFrame,

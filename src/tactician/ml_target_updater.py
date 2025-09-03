@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import validate_data_quality
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger

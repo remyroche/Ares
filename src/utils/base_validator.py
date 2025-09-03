@@ -301,7 +301,7 @@ class BaseValidator(ABC):
 
 import os.path
 
-                    with open(model_path, "rb") as f:
+with open(model_path, "rb") as f:
                         model = pickle.load(f)
 
                     # Basic model validation
@@ -510,7 +510,7 @@ import os.path
                 )
                 return False, metrics
 
-            # Check if it's actually a directory
+            # Check if it's actually a directory'
             if not is_directory:
                 self.logger.warning(
                     f"⚠️ Path exists but is not a directory: {directory}",

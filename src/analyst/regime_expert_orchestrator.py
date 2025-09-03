@@ -10,6 +10,10 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.analyst.predictive_ensembles.ensemble_orchestrator import (
+import logging
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
     import,
@@ -21,7 +25,6 @@ from src.utils.logger import system_logger
 
 # TransitionRegimeHandler and TransitionAnalysis have been removed
 # as they were part of the deprecated bull/bear/sideways market classification
-
 
 class RegimeExpertOrchestrator:
     """
@@ -86,11 +89,7 @@ class RegimeExpertOrchestrator:
         self.last_regime_update = None
         self.cache_ttl = 300  # 5 minutes
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="regime expert initialization",
-    )
+    @handles_errors(fallback=None)
     async def initialize(self) -> bool:
         """Initialize the regime expert orchestrator."""
         try:
@@ -114,9 +113,7 @@ class RegimeExpertOrchestrator:
         regime_name = self.get_current_regime_from_cluster(cluster_id)
         return self.regime_ensembles.get_regime_expert(cluster_id)
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="current regime detection"
-    )
+    @handles_errors(fallback=None)
     async def get_current_regime_info(
         self, exchange: str, symbol: str, timeframe: str
     ) -> Optional[Dict[str, Any]]:
@@ -154,9 +151,7 @@ class RegimeExpertOrchestrator:
             self.logger.error(f"Error getting current regime info: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="regime expert prediction"
-    )
+    @handles_errors(fallback=None)
     async def get_regime_expert_prediction(
         self, current_features: pd.DataFrame, regime_info: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -277,7 +272,7 @@ class RegimeExpertOrchestrator:
             if cluster_id is None:
                 continue
 
-            # Get prediction from this regime's expert
+            # Get prediction from this regime's expert'
             expert = self.get_regime_expert(cluster_id)
             if expert is None:
                 continue
@@ -318,9 +313,7 @@ class RegimeExpertOrchestrator:
                 return cluster_id
         return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="step9_5 integration"
-    )
+    @handles_errors(fallback=None)
     async def integrate_step9_5_prediction(
         self, regime_info: Dict[str, Any], step9_5_prediction: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -365,9 +358,7 @@ class RegimeExpertOrchestrator:
             self.logger.error(f"Error integrating Step 9.5 prediction: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="step10 integration"
-    )
+    @handles_errors(fallback=None)
     async def integrate_step10_prediction(
         self, regime_info: Dict[str, Any], step10_prediction: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -411,9 +402,7 @@ class RegimeExpertOrchestrator:
             self.logger.error(f"Error integrating Step 10 prediction: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="two-tier decision system"
-    )
+    @handles_errors(fallback=None)
     async def get_two_tier_decision(
         self,
         exchange: str,
@@ -524,9 +513,7 @@ class RegimeExpertOrchestrator:
 
         return final_decision
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=False, context="continuous monitoring"
-    )
+    @handles_errors(fallback=False)
     async def start_continuous_monitoring(
         self, exchange: str, symbol: str, timeframe: str
     ) -> bool:
@@ -554,7 +541,6 @@ class RegimeExpertOrchestrator:
         except Exception as e:
             self.logger.error(f"Error in continuous monitoring: {e}")
             return False
-
 
 # Convenience function for easy integration
 async def get_regime_expert_decision(

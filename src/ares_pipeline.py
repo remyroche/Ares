@@ -38,6 +38,17 @@ from src.monitoring.performance_monitor import (
     PerformanceMonitor,
     setup_performance_monitor,
 )
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import (
+    critical,
+    error,
+    failed,
+    warning,
+)
+from src.utils.logger import system_logger, setup_logging
+from src.core.dependency_injection import DependencyContainer, ServiceLocator
+from src.monitoring.dual_model_system import DualModelSystem, setup_dual_model_system
+from src.core.config_service import ConfigurationService
 from src.strategist.strategist import Strategist
 from src.supervisor.supervisor import Supervisor
 from src.tactician.tactician import Tactician
@@ -96,7 +107,7 @@ class AresPipeline:
         self.cycle_count: int = 0
         self.last_cycle_time: datetime | None = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline configuration"),
             AttributeError: (False, "Missing required pipeline components"),
@@ -440,7 +451,7 @@ class AresPipeline:
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         asyncio.create_task(self.stop())
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ConnectionError: (None, "Failed to connect to exchange"),
             TimeoutError: (None, "Pipeline operation timed out"),
@@ -1106,7 +1117,6 @@ class AresPipeline:
                     "enable_ensemble_analysis": True,
                 },
             }
-
 
 async def main():
     """Main entry point for the Ares Pipeline."""

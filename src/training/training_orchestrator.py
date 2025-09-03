@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from src.core.decorators import handles_errors
 from src.utils.error_handler import (
     asyncio,
     handle_errors,
@@ -12,14 +13,13 @@ from src.utils.error_handler import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, missing
 
-
 class TrainingOrchestrator:
-    """Training orchestrator responsible for coordinating the overall training pipeline.
+    """Training orchestrator responsible for coordinating the overall training pipeline."
     This module handles the high-level coordination between different training components.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training orchestrator.
+        """Initialize training orchestrator."
 
         Args:
             config: Configuration dictionary
@@ -39,7 +39,7 @@ class TrainingOrchestrator:
         self.ensemble_manager = None
         self.calibration_manager = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid training orchestrator configuration"),
             AttributeError: (False, "Missing required training components"),
@@ -49,7 +49,7 @@ class TrainingOrchestrator:
         context="training orchestrator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training orchestrator and all component managers.
+        """Initialize training orchestrator and all component managers."
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -78,11 +78,7 @@ class TrainingOrchestrator:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="validation framework initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_validation_framework(self) -> None:
         """Initialize the validation framework components."""
         try:
@@ -292,7 +288,7 @@ class TrainingOrchestrator:
                 "health_issues": [],
             }
             
-            # Check each component's health
+            # Check each component's health'
             components = [
                 "model_trainer",
                 "optimization_manager",
@@ -382,11 +378,7 @@ class TrainingOrchestrator:
         
         return recommendations
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="component managers initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_component_managers(self) -> None:
         """Initialize all component managers."""
         try:
@@ -413,7 +405,7 @@ class TrainingOrchestrator:
 
 import copy
 
-            self.calibration_manager = CalibrationManager(self.config)
+self.calibration_manager = CalibrationManager(self.config)
             await self.calibration_manager.initialize()
 
             self.logger.info("✅ All component managers initialized")
@@ -424,13 +416,9 @@ import copy
             self.print(failed(error_msg))
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate training orchestrator configuration.
+        """Validate training orchestrator configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -466,7 +454,7 @@ import copy
             self.print(failed(error_msg))
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid training parameters"),
             AttributeError: (False, "Missing training components"),
@@ -479,7 +467,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the complete training pipeline.
+        """Execute the complete training pipeline."
 
         Args:
             training_input: Training input parameters
@@ -516,13 +504,9 @@ import copy
             self.is_training = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="training input validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
-        """Validate training input parameters.
+        """Validate training input parameters."
 
         Args:
             training_input: Training input parameters
@@ -552,16 +536,12 @@ import copy
             self.print(failed("Training input validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="training pipeline execution",
-    )
+    @handles_errors(fallback=False)
     async def _execute_training_pipeline(
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the main training pipeline.
+        """Execute the main training pipeline."
 
         Args:
             training_input: Training input parameters
@@ -627,13 +607,9 @@ import copy
             self.print(failed("❌ Training pipeline execution failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="training results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_training_results(self, training_input: dict[str, Any]) -> None:
-        """Store training results for later retrieval.
+        """Store training results for later retrieval."
 
         Args:
             training_input: Training input parameters
@@ -650,7 +626,7 @@ import copy
             self.print(failed("❌ Failed to store training results: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get current training status.
+        """Get current training status."
 
         Returns:
             dict: Training status information
@@ -666,7 +642,7 @@ import copy
         }
 
     def get_training_results(self) -> dict[str, Any]:
-        """Get the latest training results.
+        """Get the latest training results."
 
         Returns:
             dict: Training results
@@ -674,11 +650,7 @@ import copy
         """
         return self.training_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="training orchestrator cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the training orchestrator and cleanup resources."""
         try:
@@ -700,16 +672,11 @@ import copy
         except Exception:
             self.print(failed("❌ Failed to stop Training Orchestrator: {e}"))
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="training orchestrator setup",
-)
+@handles_errors(fallback=None)
 async def setup_training_orchestrator(
     config: dict[str, Any] | None = None,
 ) -> TrainingOrchestrator | None:
-    """Setup and return a configured TrainingOrchestrator instance.
+    """Setup and return a configured TrainingOrchestrator instance."
 
     Args:
         config: Configuration dictionary

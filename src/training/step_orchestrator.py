@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step Orchestrator for Training Pipeline.
+"""Step Orchestrator for Training Pipeline."
 
 This module orchestrates the execution of training steps with progress saving
 and resuming capabilities. Now uses EnhancedTrainingManager for 16-step pipeline.
@@ -64,7 +64,7 @@ class StepOrchestrator:
         self.logger.info(message)
 
     async def _setup_enhanced_training_manager(self, config: dict[str, Any]) -> bool:
-        """Set up the enhanced training manager.
+        """Set up the enhanced training manager."
 
         Args:
             config: Configuration dictionary
@@ -98,7 +98,7 @@ class StepOrchestrator:
             return False
 
     def get_step_module(self, step_name: str) -> Any | None:
-        """Import and return a step module.
+        """Import and return a step module."
 
         Args:
             step_name: Name of the step (e.g., 'step1_data_collection')
@@ -117,7 +117,7 @@ class StepOrchestrator:
             return None
 
     def get_step_class(self, step_name: str) -> Any | None:
-        """Get the main step class from a step module.
+        """Get the main step class from a step module."
 
         Args:
             step_name: Name of the step
@@ -151,7 +151,7 @@ class StepOrchestrator:
         config: dict[str, Any],
         force_rerun: bool = False,
     ) -> bool:
-        """Execute a single training step using enhanced training manager.
+        """Execute a single training step using enhanced training manager."
 
         Args:
             step_name: Name of the step to execute
@@ -235,7 +235,7 @@ class StepOrchestrator:
             return False
 
     def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
-        """Build pipeline state from previous step progress.
+        """Build pipeline state from previous step progress."
 
         Args:
             current_step: Current step being executed
@@ -268,7 +268,7 @@ class StepOrchestrator:
         config: dict[str, Any],
         force_rerun: bool = False,
     ) -> bool:
-        """Execute training pipeline starting from a specific step using enhanced training manager.
+        """Execute training pipeline starting from a specific step using enhanced training manager."
 
         Args:
             start_step: Step to start from
@@ -300,6 +300,8 @@ class StepOrchestrator:
             FULL_TRAINING_LOOKBACK_DAYS,
         )
         from src.config.training_modes import (
+import copy
+get_step_specific_parameters,
             apply_mode_parameters_to_config,
             get_step_specific_parameters,
             opy,
@@ -342,7 +344,7 @@ class StepOrchestrator:
         config: dict[str, Any],
         force_rerun: bool = False,
     ) -> bool:
-        """Execute all training steps from the beginning using enhanced training manager.
+        """Execute all training steps from the beginning using enhanced training manager."
 
         Args:
             config: Configuration dictionary
@@ -359,7 +361,7 @@ class StepOrchestrator:
         )
 
     def get_execution_status(self) -> dict[str, Any]:
-        """Get the current execution status.
+        """Get the current execution status."
 
         Returns:
             Dictionary with execution status information
@@ -387,7 +389,7 @@ class StepOrchestrator:
         return status
 
     def clear_progress(self, step_name: str | None = None) -> bool:
-        """Clear progress for specific step or all steps.
+        """Clear progress for specific step or all steps."
 
         Args:
             step_name: Step name to clear, or None to clear all
@@ -399,7 +401,7 @@ class StepOrchestrator:
         return self.progress_manager.clear_progress(step_name)
 
     def list_available_steps(self) -> list[str]:
-        """Get list of available steps.
+        """Get list of available steps."
 
         Returns:
             List of available step names

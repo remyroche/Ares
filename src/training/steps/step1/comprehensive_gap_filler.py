@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Comprehensive Gap Filler for Pipeline Integration
+"""Comprehensive Gap Filler for Pipeline Integration"
 Handles aggtrades, futures, and klines files with gap detection and filling.
 """
 
@@ -382,7 +382,7 @@ class ComprehensiveGapFiller:
         gap_start: datetime,
         gap_end: datetime,
     ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from regular Binance API for
+        """Download futures funding rate data from regular Binance API for"
         recent data.
         """
         await self._ensure_session()
@@ -400,7 +400,7 @@ class ComprehensiveGapFiller:
         gap_end: datetime,
         market_segment: str = "um",
     ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from Binance Vision for a
+        """Download futures funding rate data from Binance Vision for a"
         specific gap period.
         """
         await self._ensure_session()
@@ -933,9 +933,9 @@ class ComprehensiveGapFiller:
         from src.utils.logger import system_logger
 import copy
 
-        logger = system_logger.getChild("ComprehensiveGapFiller")
+logger = system_logger.getChild("ComprehensiveGapFiller")
         
-        gap_filling_start = datetime.now()
+gap_filling_start = datetime.now()
         logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
         logger.info(f"⏱️  Max API calls per gap: {self.max_api_calls_per_gap}")

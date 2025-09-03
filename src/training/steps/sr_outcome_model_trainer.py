@@ -1,6 +1,6 @@
 # src/training/steps/sr_outcome_model_trainer.py
 
-"""S/R Outcome Model Trainer.
+"""S/R Outcome Model Trainer."
 
 Trains ML models to predict S/R outcomes (breakout/rebounce/consolidation)
 using LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.
@@ -32,11 +32,12 @@ from src.utils.centralized_decorators import (
     import,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+import copy
+import os
 
 warnings.filterwarnings("ignore")
-
 
 class SROutcomeModelTrainer:
     """Trainer for S/R outcome prediction models using LightGBM + XGBoost ensemble."""
@@ -93,11 +94,7 @@ class SROutcomeModelTrainer:
         self.ensemble_model = None
         self.feature_names = []
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="S/R outcome model initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the S/R outcome model trainer."""
         try:
@@ -118,11 +115,7 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="S/R outcome model training",
-    )
+    @handles_errors(fallback=False)
     async def train_model(self, training_data: dict[str, pd.DataFrame]) -> bool:
         """Train the S/R outcome prediction model ensemble."""
         try:

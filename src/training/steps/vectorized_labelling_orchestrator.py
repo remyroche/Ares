@@ -1,6 +1,6 @@
 # src/training/steps/vectorized_labelling_orchestrator.py
 
-"""Vectorized Labelling Orchestrator for comprehensive feature engineering and labeling pipeline.
+"""Vectorized Labelling Orchestrator for comprehensive feature engineering and labeling pipeline."
 Coordinates optimized_triple_barrier_labeling.py, vectorized_advanced_feature_engineering.py
 and autoencoder_feature_generator.py with advanced preprocessing and feature selection.
 """
@@ -22,11 +22,19 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+from copy import copy
+get_current_datetime, format_datetime, ensure_directory,
+    safe_copy, safe_fillna, safe_read_parquet, safe_to_parquet
+from src.utils.common_operations import (
+)
 from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
+import asyncio
+from src.utils.common_operations import ensure_directory
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
     apply_regime_aware_triple_barrier_labeling_with_barriers,
-)
-from src.utils.common_operations import (
     copy,
     ensure_directory,
     format_datetime,
@@ -37,9 +45,7 @@ from src.utils.common_operations import (
     safe_fillna,
     safe_read_parquet,
     safe_to_parquet,
-)
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
 
 # -----------------------------------------------------------------------------
 # Warnings logging setup
@@ -57,7 +63,6 @@ if not _warning_logger.handlers:
     except Exception:
         pass
 
-
 def _showwarning(
     message: str | Warning,
     category: type[Warning],
@@ -69,15 +74,13 @@ def _showwarning(
     with contextlib.suppress(Exception):
         _warning_logger.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
 
-
 warnings.showwarning = _showwarning
-
 
 # -----------------------------------------------------------------------------
 # Orchestrator
 # -----------------------------------------------------------------------------
 class VectorizedLabellingOrchestrator:
-    """Comprehensive vectorized labeling orchestrator that coordinates all feature generation
+    """Comprehensive vectorized labeling orchestrator that coordinates all feature generation"
     and labeling components with advanced preprocessing and feature selection.
     """
 
@@ -229,11 +232,7 @@ class VectorizedLabellingOrchestrator:
         except Exception:
             pass
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="vectorized labelling orchestrator initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize vectorized labeling orchestrator components."""
         try:
@@ -318,11 +317,7 @@ class VectorizedLabellingOrchestrator:
             )
             return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="vectorized labeling orchestration",
-    )
+    @handles_errors(fallback=None)
     async def orchestrate_labeling_and_feature_engineering(
         self,
         price_data: pd.DataFrame,
@@ -330,7 +325,7 @@ class VectorizedLabellingOrchestrator:
         order_flow_data: pd.DataFrame | None = None,
         sr_levels: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Orchestrate the complete labeling and feature engineering pipeline.
+        """Orchestrate the complete labeling and feature engineering pipeline."
 
         Args:
             price_data: OHLCV price data
@@ -1472,7 +1467,7 @@ class VectorizedLabellingOrchestrator:
     def _format_and_align_features(
         self, features: dict[str, Any], target_index: pd.Index
     ) -> tuple[dict[str, pd.Series], dict[str, Any]]:
-        """Ensure each feature is a well-formed pd.Series aligned to target_index.
+        """Ensure each feature is a well-formed pd.Series aligned to target_index."
         Returns formatted_features and a report dict with diagnostics.
         """
         formatted: dict[str, pd.Series] = {}
@@ -1750,7 +1745,6 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
             self.logger.warning(f"MI analysis internal error: {e}")
 
-
 # -----------------------------------------------------------------------------
 # Stationarity Checker
 # -----------------------------------------------------------------------------
@@ -1950,7 +1944,6 @@ class VectorizedStationarityChecker:
         except Exception as e:
             self.logger.exception(f"Error transforming order flow stationarity: {e}")
             return order_flow_data
-
 
 # -----------------------------------------------------------------------------
 # Feature Selector
@@ -2318,7 +2311,6 @@ class VectorizedFeatureSelector:
         except Exception as e:
             self.logger.exception(f"Error removing low importance features: {e}")
             return []
-
 
 # -----------------------------------------------------------------------------
 # Data Normalizer

@@ -10,7 +10,10 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
+import os
+import json
+from pathlib import Path
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import validate_data_quality
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
@@ -259,7 +262,7 @@ class SRBreakoutPredictor:
             "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.25, "4h": 0.25, "1d": 0.2
         })
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid SR breakout predictor configuration"),
             AttributeError: (False, "Missing required SR parameters"),
@@ -841,6 +844,8 @@ class SRBreakoutPredictor:
         """Save HTML report."""
         try:
             html_content = f"""
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 <!DOCTYPE html>
 <html>
 <head>
@@ -912,7 +917,7 @@ class SRBreakoutPredictor:
 </body>
 </html>
 """
-            with open(file_path, 'w') as f:
+with open(file_path, 'w') as f:
                 f.write(html_content)
         except Exception as e:
             self.logger.error(f"Error saving HTML report: {e}")
@@ -997,7 +1002,7 @@ class SRBreakoutPredictor:
         check_timestamps=True,
         context="SR breakout prediction input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for SR breakout prediction"),
             AttributeError: (None, "Predictor not properly initialized"),
@@ -1082,7 +1087,7 @@ class SRBreakoutPredictor:
         check_timestamps=True,
         context="SR context calculation input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for SR context calculation"),
             AttributeError: (None, "Predictor not properly initialized"),
@@ -1105,7 +1110,7 @@ class SRBreakoutPredictor:
         Returns:
             dict[str, Any]: S/R context information
 """
-        if not self.is_initialized:
+if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
@@ -1164,6 +1169,8 @@ class SRBreakoutPredictor:
 
             # Create context
             context = {
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 "current_price": current_price,
 "nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
 "nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,
@@ -1195,7 +1202,7 @@ class SRBreakoutPredictor:
 }
 
 # Generate detailed report after context is fully defined
-            try:
+try:
                 context["report_id"] = await self._generate_detailed_report(market_data, context)
             except Exception as e:
                 self.logger.warning(f"Error generating detailed report: {e}")
@@ -1342,6 +1349,8 @@ async def extract_ml_features(self, market_data: pd.DataFrame, current_price: fl
                 "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
                 "sr_nearest_support": sr_context.get("nearest_support", current_price),
                 "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 })
 
 # Strength features
@@ -1363,7 +1372,7 @@ features.update({
 
 # Distance features
 if support_levels:
-                support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
+    support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
                 features["sr_nearest_support_distance"] = min(support_distances) if support_distances else 1.0
             else:
                 features["sr_nearest_support_distance"] = 1.0
@@ -2876,7 +2885,7 @@ if support_levels:
                 
                 # Calculate bounce rate - handle untested levels properly
                 if touches == 0:
-                    # Level hasn't been tested yet - give neutral score
+                    # Level hasn't been tested yet - give neutral score'
                     bounce_rate = 0.5  # Neutral score for untested levels
                     bounce_strength = 1.0  # Neutral strength
                     is_untested = True
@@ -3633,7 +3642,7 @@ if support_levels:
         except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid input data for S/R proximity check"),
             KeyError: (False, "Missing required S/R context data"),
@@ -3724,7 +3733,7 @@ if support_levels:
         check_timestamps=True,
         context="S/R outcome prediction input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ({}, "Invalid input data for S/R outcome prediction"),
             KeyError: ({}, "Missing required S/R context data"),
@@ -3787,7 +3796,7 @@ if support_levels:
         check_timestamps=True,
         context="S/R features calculation input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ({}, "Invalid input data for S/R features calculation"),
             AttributeError: ({}, "Predictor not properly initialized"),
@@ -3845,7 +3854,7 @@ if support_levels:
         check_timestamps=True,
         context="Comprehensive S/R features calculation input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: ({}, "Invalid input data for comprehensive S/R features calculation"),
             AttributeError: ({}, "Predictor not properly initialized"),
@@ -4215,7 +4224,7 @@ if support_levels:
         check_timestamps=True,
         context="Breakout prediction input validation"
     )
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for breakout prediction"),
             AttributeError: (None, "Predictor not properly initialized"),
@@ -4275,11 +4284,7 @@ if support_levels:
         except Exception as e:
             self.logger.error(f"❌ Failed to stop SR breakout predictor: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR breakout predictor cleanup",
-    )
+    @handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup SR breakout predictor resources."""
         try:
@@ -4564,7 +4569,6 @@ if support_levels:
             self.logger.error(f"Error generating detection summary: {e}")
             return f"Error generating {method_name} {level_type} summary"
 
-
 async def setup_sr_breakout_predictor(
     config: dict[str, Any] | None = None,
 ) -> SRBreakoutPredictor | None:
@@ -4590,7 +4594,6 @@ async def setup_sr_breakout_predictor(
     except Exception as e:
         system_logger.exception(f"Failed to setup SR Breakout Predictor: {e}")
         return None
-
 
 def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
     """

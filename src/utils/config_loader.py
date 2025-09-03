@@ -4,11 +4,10 @@ import os
 import os.path
 from typing import Any
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, missing, yaml
-
 
 class ConfigLoader:
     """Utility class for loading YAML configuration files."""
@@ -16,11 +15,7 @@ class ConfigLoader:
     def __init__(self):
         self.logger = system_logger.getChild("ConfigLoader")
 
-    @handle_errors(
-        exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-        default_return={},
-        context="YAML config loading",
-    )
+    @handles_errors
     def load_yaml_config(self, config_path: str) -> dict[str, Any]:
         """Load configuration from a YAML file.
 
@@ -45,11 +40,7 @@ class ConfigLoader:
             self.print(error(f"Error loading config from {config_path}: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-        default_return={},
-        context="position sizing config loading",
-    )
+    @handles_errors
     def load_position_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """Load position sizing configuration.
 
@@ -62,11 +53,7 @@ class ConfigLoader:
         config_path = os.path.join(config_dir, "position_sizing.yaml")
         return self.load_yaml_config(config_path)
 
-    @handle_errors(
-        exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-        default_return={},
-        context="leverage sizing config loading",
-    )
+    @handles_errors
     def load_leverage_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """Load leverage sizing configuration.
 
@@ -79,11 +66,7 @@ class ConfigLoader:
         config_path = os.path.join(config_dir, "leverage_sizing.yaml")
         return self.load_yaml_config(config_path)
 
-    @handle_errors(
-        exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-        default_return={},
-        context="combined sizing config loading",
-    )
+    @handles_errors
     def load_combined_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """Load combined position and leverage sizing configuration.
 
@@ -96,11 +79,7 @@ class ConfigLoader:
         config_path = os.path.join(config_dir, "combined_sizing.yaml")
         return self.load_yaml_config(config_path)
 
-    @handle_errors(
-        exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-        default_return={},
-        context="config validation",
-    )
+    @handles_errors
     def validate_config(self, config: dict[str, Any], config_type: str) -> bool:
         """Validate configuration structure.
 
@@ -153,11 +132,7 @@ class ConfigLoader:
         self.logger.info(f"✅ {config_type} configuration validation passed")
         return True
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="config merging",
-    )
+    @handles_errors
     def merge_configs(self, *configs: dict[str, Any]) -> dict[str, Any]:
         """Merge multiple configuration dictionaries.
 
@@ -192,11 +167,7 @@ class ConfigLoader:
             else:
                 target[key] = value
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="config loading with fallback",
-    )
+    @handles_errors
     def load_config_with_fallback(
         self,
         primary_config: str,

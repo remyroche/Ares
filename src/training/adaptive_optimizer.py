@@ -8,9 +8,8 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class MarketRegime:
     """Represents a market regime with specific characteristics."""
@@ -29,7 +28,6 @@ class MarketRegime:
         self.regime_type = regime_type
         self.optimal_params = optimal_params
         self.confidence = 0.0
-
 
 class AdaptiveOptimizer:
     """Adaptive hyperparameter optimizer that adjusts parameters based on market regime
@@ -98,11 +96,7 @@ class AdaptiveOptimizer:
             ),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="market regime detection",
-    )
+    @handles_errors(fallback=None)
     def detect_market_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Detect current market regime using multiple indicators."""
         # Calculate regime features
@@ -223,11 +217,7 @@ class AdaptiveOptimizer:
 
         return min(1.0, confidence)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="adaptive optimization",
-    )
+    @handles_errors(fallback=None)
     def optimize_for_regime(
         self,
         regime: MarketRegime,
@@ -283,7 +273,6 @@ class AdaptiveOptimizer:
             insights["optimal_regime_params"][regime_name] = regime.optimal_params
 
         return insights
-
 
 class RegimeSpecificOptimizer:
     """Optimizer specialized for a specific market regime."""

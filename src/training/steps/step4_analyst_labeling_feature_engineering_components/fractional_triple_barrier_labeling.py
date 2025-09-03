@@ -19,7 +19,8 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import get_logger
 
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-
+import copy
+from src.core.decorators import handles_errors
 
 class FractionalTripleBarrierLabeling:
     """Enhanced triple barrier labeling with fractional (continuous) labels.

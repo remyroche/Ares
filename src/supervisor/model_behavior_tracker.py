@@ -15,10 +15,9 @@ from typing import Any
 import numpy as np
 
 from src.supervisor.performance_monitor import PerformanceMonitor
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error
-
 
 class BehaviorMetricType(Enum):
     """Model behavior metric types."""
@@ -31,7 +30,6 @@ class BehaviorMetricType(Enum):
     DECISION_PATH_STABILITY = "decision_path_stability"
     CONFIDENCE_CALIBRATION = "confidence_calibration"
     THEORY_VS_REALITY = "theory_vs_reality"
-
 
 @dataclass
 class ModelBehaviorSnapshot:
@@ -50,7 +48,6 @@ class ModelBehaviorSnapshot:
     theory_vs_reality_score: float | None = None
     metadata: dict[str, Any] = None
 
-
 @dataclass
 class FeatureImportanceTracking:
     """Feature importance tracking data."""
@@ -63,7 +60,6 @@ class FeatureImportanceTracking:
     stability_score: float
     drift_score: float
 
-
 @dataclass
 class DecisionPathAnalysis:
     """Decision path analysis data."""
@@ -75,7 +71,6 @@ class DecisionPathAnalysis:
     path_stability: float
     path_complexity: float
     confidence_distribution: list[float]
-
 
 class ModelBehaviorTracker:
     """Enhanced model behavior tracker that integrates with existing performance
@@ -114,7 +109,7 @@ class ModelBehaviorTracker:
 
         self.logger.info("🚀 Model Behavior Tracker initialized")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tracker configuration"),
             AttributeError: (False, "Missing required tracker parameters"),
@@ -144,11 +139,7 @@ class ModelBehaviorTracker:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="reference behavior loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_reference_behavior(self) -> None:
         """Load reference behavior data for stability calculations."""
         try:
@@ -167,11 +158,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(error("Error loading reference behavior: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="behavior tracking initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_behavior_tracking(self) -> None:
         """Initialize behavior tracking components."""
         try:
@@ -192,11 +179,7 @@ class ModelBehaviorTracker:
                 initialization_error("Error initializing behavior tracking: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature tracking initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_feature_tracking(self) -> None:
         """Initialize feature importance tracking."""
         try:
@@ -210,11 +193,7 @@ class ModelBehaviorTracker:
                 initialization_error("Error initializing feature tracking: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="decision path tracking initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_decision_path_tracking(self) -> None:
         """Initialize decision path tracking."""
         try:
@@ -228,7 +207,7 @@ class ModelBehaviorTracker:
                 initialization_error("Error initializing decision path tracking: {e}"),
             )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Behavior tracking failed"),
         },
@@ -253,11 +232,7 @@ class ModelBehaviorTracker:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="behavior tracking loop",
-    )
+    @handles_errors(fallback=None)
     async def _behavior_tracking_loop(self) -> None:
         """Continuous behavior tracking loop."""
         while self.is_tracking:
@@ -268,11 +243,7 @@ class ModelBehaviorTracker:
                 self.logger.exception(error("Error in behavior tracking loop: {e}"))
                 await asyncio.sleep(60)  # Wait before retrying
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="behavior snapshot capture",
-    )
+    @handles_errors(fallback=None)
     async def _capture_behavior_snapshots(self) -> None:
         """Capture behavior snapshots for all models."""
         try:
@@ -516,11 +487,7 @@ class ModelBehaviorTracker:
             )
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="behavior tracker stop",
-    )
+    @handles_errors(fallback=None)
     async def stop_tracking(self) -> None:
         """Stop the model behavior tracking."""
         try:
@@ -717,13 +684,8 @@ class ModelBehaviorTracker:
             self.logger.exception(error("Error exporting behavior data: {e}"))
             return ""
 
-
 # Factory function for creating model behavior tracker
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="model behavior tracker setup",
-)
+@handles_errors(fallback=None)
 async def setup_model_behavior_tracker(
     config: dict[str, Any],
     performance_monitor: PerformanceMonitor,

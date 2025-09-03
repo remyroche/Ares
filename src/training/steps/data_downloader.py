@@ -10,15 +10,10 @@ import asyncio
 from typing import Any
 
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="download_all_data_with_consolidation",
-)
+@handles_errors(fallback=False)
 async def download_all_data_with_consolidation(
     symbol: str,
     exchange_name: str,

@@ -35,7 +35,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("EnhancedDataQualityManager")
 
-
 class EnhancedDataQualityManager:
     """Comprehensive data quality manager with gap detection, filling, and
     validation."""
@@ -553,7 +552,7 @@ class EnhancedDataQualityManager:
             # Try to run step1_5 data conversion if needed
             try:
                 from ..step1_5_data_converter import run_step as run_step1_5
-
+from src.core.decorators import handles_errors
                 step1_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,
@@ -586,7 +585,6 @@ class EnhancedDataQualityManager:
             logger.exception(f"❌ Error fixing missing data: {e}")
             return {"success": False, "error": str(e)}
 
-
 # Convenience function for easy integration
 @with_tracing_span("ensure_data_quality")
 async def ensure_data_quality(
@@ -599,7 +597,6 @@ async def ensure_data_quality(
     symbol/exchange/timeframe."""
     manager = EnhancedDataQualityManager(data_cache_path)
     return await manager.comprehensive_quality_check(symbol, exchange, timeframe)
-
 
 # Convenience function for step03/step04 integration
 @with_tracing_span("prepare_data_for_steps")

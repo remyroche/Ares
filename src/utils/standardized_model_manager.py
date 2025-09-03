@@ -18,10 +18,9 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class ModelMetadata:
     """Model metadata container."""
@@ -61,7 +60,6 @@ class ModelMetadata:
     def from_dict(cls, data: Dict[str, Any]) -> "ModelMetadata":
         """Create metadata from dictionary."""
         return cls(**data)
-
 
 class StandardizedModelManager:
     """Centralized model management system."""
@@ -394,7 +392,6 @@ class StandardizedModelManager:
             stats["total_size"] += file_size
 
         return stats
-
 
 # Global instance
 standardized_model_manager = StandardizedModelManager()

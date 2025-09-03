@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, f1_score
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
 
@@ -20,7 +20,6 @@ try:
     import joblib  # Optional; used when loading joblib artifacts
 except Exception:  # pragma: no cover
     joblib = None
-
 
 class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
@@ -58,25 +57,20 @@ class RegimeAwareConfidenceCalibrationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="confidence calibration step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the confidence calibration step."""
         self.logger.info("🚀 Initializing Confidence Calibration Step...")
         self.logger.info("✅ Confidence Calibration Step initialized successfully")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="confidence calibration step execution",
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """Execute regime-aware confidence calibration.
+        """Execute regime-aware confidence calibration."
 
         Args:
             training_input: Training input parameters
@@ -742,7 +736,7 @@ class RegimeAwareConfidenceCalibrationStep:
     def _calculate_base_metrics(
         self, model: Any, X_val: pd.DataFrame, y_val: pd.Series,
     ) -> dict[str, float]:
-        """Helper to calculate baseline accuracy and F1 score for a model/ensemble.
+        """Helper to calculate baseline accuracy and F1 score for a model/ensemble."
         Returns {} if metrics cannot be computed.
         """
         try:
@@ -758,7 +752,6 @@ class RegimeAwareConfidenceCalibrationStep:
                     f"Could not calculate base metrics for {type(model).__name__}: {e}",
                 )
             return {}
-
 
 class _PrefitWrapper:
     """Wrapper to adapt prefit estimators/ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
@@ -798,7 +791,6 @@ class _PrefitWrapper:
             )
         return proba
 
-
 from src.utils.enhanced_mlflow_integration import (
     copy,
     create_detailed_step_report,
@@ -810,7 +802,6 @@ from src.utils.enhanced_mlflow_integration import (
     os.path,
     with_enhanced_mlflow_logging,
 )
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -829,7 +820,16 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-
+from src.utils.enhanced_mlflow_integration import (
+import copy
+import os
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1064,7 +1064,7 @@ async def _apply_regime_calibration(
         
         # Prepare features and labels for calibration
         feature_columns = [col for col in validation_data.columns 
-                         if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
+        if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
         
         X_val = validation_data[feature_columns].fillna(0)
         y_val = validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
@@ -1108,7 +1108,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the confidence calibration step.
+    """Run the confidence calibration step."
 
     Args:
         symbol: Trading symbol
@@ -1141,7 +1141,6 @@ async def run_step(
 
     except Exception:
         return False
-
 
 if __name__ == "__main__":
     # Test the step

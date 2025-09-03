@@ -19,16 +19,15 @@ import pandas as pd
 
 from src.utils.centralized_decorators import (
     ensure_data_integrity,
-    handle_errors,
     monitor_step_execution,
     quality_gate,
     secure_step_execution,
     validate_pipeline_step,
-    with_tracing_span,
 )
+from src.utils.compat import handle_errors
+from src.core.decorators import traced as with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
@@ -477,6 +476,7 @@ class ModelPerformanceMonitor:
         """
         try:
             from scipy import stats
+from src.core.decorators import handles_errors
 
             # Calculate prediction errors
             errors = predictions - actual_values

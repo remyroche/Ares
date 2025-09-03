@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 4: Triple Barrier Method.
+"""Step 4: Triple Barrier Method."
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
@@ -66,7 +66,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step4TripleBarrierMethod")
 
-
 class TripleBarrierMethodStep:
     """Step 4: Triple Barrier Method with enhanced data quality management."""
 
@@ -117,7 +116,7 @@ class TripleBarrierMethodStep:
     @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
     @with_enhanced_mlflow_logging("step4_triple_barrier_method")
     @comprehensive_data_validation
-    @handle_errors
+    @handles_errors
     @memory_efficient
     @resource_monitor
     @secure_data_processing
@@ -130,7 +129,7 @@ class TripleBarrierMethodStep:
         data_dir: str = "data_cache",
         force_rerun: bool = False,
     ) -> bool:
-        """Execute the triple barrier method step.
+        """Execute the triple barrier method step."
 
         Args:
             symbol: Trading symbol
@@ -353,7 +352,7 @@ class TripleBarrierMethodStep:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 4 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     async def _apply_optimized_triple_barrier(
         self, data: pd.DataFrame
@@ -376,6 +375,11 @@ class TripleBarrierMethodStep:
 
             # Create triple barrier labeler with configuration
             from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
+import copy
+from src.core.decorators import handles_errors
+OptimizedTripleBarrierLabeling
                 OptimizedTripleBarrierLabeling,
             )
 
@@ -600,7 +604,6 @@ class TripleBarrierMethodStep:
             self.logger.warning(f"⚠️ Could not create enhanced labels: {e}")
             return data
 
-
 async def run_step(
     symbol: str,
     exchange: str,
@@ -609,7 +612,7 @@ async def run_step(
     force_rerun: bool = False,
     config: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Run the triple barrier method step.
+    """Run the triple barrier method step."
 
     Args:
         symbol: Trading symbol
@@ -650,7 +653,6 @@ async def run_step(
         data_dir=data_dir,
         force_rerun=force_rerun,
     )
-
 
 if __name__ == "__main__":
     # Test the step

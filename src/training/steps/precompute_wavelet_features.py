@@ -1,6 +1,6 @@
 # src/training/steps/precompute_wavelet_features.py
 
-"""Pre-computation script for wavelet features.
+"""Pre-computation script for wavelet features."
 Generates and caches expensive wavelet calculations once for the entire dataset,
 enabling fast loading during backtesting without recalculation.
 """
@@ -25,7 +25,7 @@ from src.utils.warning_symbols import error, failed, initialization_error
 
 
 class WaveletFeaturePrecomputer:
-    """Pre-computation system for wavelet features.
+    """Pre-computation system for wavelet features."
     Processes entire datasets and caches results for fast backtesting.
     """
 
@@ -84,7 +84,7 @@ class WaveletFeaturePrecomputer:
     async def precompute_dataset(
         self, data_path: str, output_path: str | None = None, symbol: str | None = None, start_date: str | None = None, end_date: str | None = None
     ) -> bool:
-        """Pre-compute wavelet features for an entire dataset.
+        """Pre-compute wavelet features for an entire dataset."
 
         Args:
             data_path: Path to the dataset file
@@ -160,7 +160,7 @@ class WaveletFeaturePrecomputer:
 
 import copy
 
-                with log_io_operation(self.logger, "read_csv", data_path):
+with log_io_operation(self.logger, "read_csv", data_path):
                     dataset, pd.read_csv(data_path, parse_dates=True)
             elif file_path.suffix.lower() == ".h5":
                 dataset = pd.read_hdf(data_path)
@@ -353,7 +353,7 @@ import copy
 
     async def precompute_multiple_datasets(
         self, dataset_configs: list[dict[str, Any]], ) -> bool:
-        """Pre-compute wavelet features for multiple datasets.
+        """Pre-compute wavelet features for multiple datasets."
 
         Args:
             dataset_configs: List of dataset configurations

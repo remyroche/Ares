@@ -40,7 +40,7 @@ class MonteCarloValidationStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Execute Monte Carlo validation.
+        """Execute Monte Carlo validation."
 
         Args:
             training_input: Training input parameters
@@ -219,6 +219,15 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 
+from src.utils.enhanced_mlflow_integration import (
+import os
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -290,7 +299,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the Monte Carlo validation step.
+    """Run the Monte Carlo validation step."
 
     Args:
         symbol: Trading symbol

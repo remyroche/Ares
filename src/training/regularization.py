@@ -23,7 +23,7 @@ from src.utils.logger import system_logger
 
 
 class RegularizationManager:
-    """Manages the L1-L2 regularization configuration for the Ares Trading Bot's
+    """Manages the L1-L2 regularization configuration for the Ares Trading Bot's'
     machine learning models. It extracts, applies, and validates regularization
     parameters from the global configuration.
     """
@@ -70,7 +70,7 @@ class RegularizationManager:
         self,
         ensemble_orchestrator: RegimePredictiveEnsembles,
     ) -> None:
-        """Applies the loaded L1-L2 regularization configuration to all ensemble instances.
+        """Applies the loaded L1-L2 regularization configuration to all ensemble instances."
         This method is called by TrainingManager.
         """
         try:
@@ -103,7 +103,7 @@ class RegularizationManager:
             if hasattr(ensemble_instance, "regularization_config"):
                 ensemble_instance.regularization_config = self.regularization_config
             else:
-                # If not present, add it. This ensures it's available for model creation.
+                # If not present, add it. This ensures it's available for model creation.'
                 ensemble_instance.regularization_config = self.regularization_config
 
             # If the ensemble has specific deep learning config, update it directly
@@ -126,7 +126,7 @@ class RegularizationManager:
             )
 
     def validate_and_report_regularization(self) -> bool:
-        """Validates regularization configuration and reports on the setup.
+        """Validates regularization configuration and reports on the setup."
 
         Returns:
             bool: True if regularization is properly configured, False otherwise
@@ -147,7 +147,7 @@ class RegularizationManager:
                 )
                 return False
 
-            # Report on each model type's regularization setup
+            # Report on each model type's regularization setup'
             self.logger.info("📊 Base Regularization Parameters:")
             self.logger.info(f"   - L1 Alpha: {self.regularization_config['l1_alpha']}")
             self.logger.info(f"   - L2 Alpha: {self.regularization_config['l2_alpha']}")
@@ -222,7 +222,7 @@ class RegularizationManager:
         model_type: str,
         architecture: str,
     ) -> dict[str, Any]:
-        """Optimize regularization parameters for a specific model type and architecture.
+        """Optimize regularization parameters for a specific model type and architecture."
 
         Args:
             features_df: Input features DataFrame
@@ -329,7 +329,7 @@ class RegularizationManager:
 
 import numpy as np
 
-                    X_tensor = torch.FloatTensor(X_scaled)
+X_tensor = torch.FloatTensor(X_scaled)
 
                     if model_type == "classification":
                         y_tensor = torch.LongTensor(y)

@@ -41,7 +41,7 @@ class WalkForwardValidationStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Execute walk-forward validation.
+        """Execute walk-forward validation."
 
         Args:
             training_input: Training input parameters
@@ -59,7 +59,7 @@ class WalkForwardValidationStep:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Execute walk-forward validation logic (self-contained)
-            # In a full implementation, this would call the prior step's core routine.
+            # In a full implementation, this would call the prior step's core routine.'
 
             # Load walk-forward validation results
             wfv_results_file = (
@@ -70,7 +70,7 @@ class WalkForwardValidationStep:
                 with open(wfv_results_file) as f:
                     wfv_results: Dict[str, Any] = json.load(f)
             else:
-                # Create results if file doesn't exist
+                # Create results if file doesn't exist'
                 wfv_results = {
                     "symbol": symbol,
                     "exchange": exchange,
@@ -169,6 +169,15 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
+from src.utils.enhanced_mlflow_integration import (
+import os
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 
 # For backward compatibility with existing step structure
@@ -241,7 +250,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the walk-forward validation step.
+    """Run the walk-forward validation step."
 
     Args:
         symbol: Trading symbol

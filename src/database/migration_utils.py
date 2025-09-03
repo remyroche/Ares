@@ -57,7 +57,7 @@ class DatabaseMigrationUtils:
             temp_db = SQLiteManager(export_path)
             await temp_db.initialize()
 
-            # Remove backtest-specific data that shouldn't be on trading computer
+            # Remove backtest-specific data that shouldn't be on trading computer'
             await self._clean_for_trading(temp_db)
 
             # Calculate checksum
@@ -411,7 +411,7 @@ if __name__ == "__main__":
 
 import os.path
 
-    if len(sys.argv) < 2:
+if len(sys.argv) < 2:
         print("Usage:")
         print("  python migration_utils.py export [db_path]")
         print("  python migration_utils.py import <import_path> [db_path]")

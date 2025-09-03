@@ -19,10 +19,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class ConfigurationSecurityManager:
     """Manages secure configuration operations."""
@@ -99,9 +98,9 @@ class ConfigurationSecurityManager:
         self.backup_dir = Path("data_cache/config_backups")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration loading")
+    @handles_errors(fallback=None)
     def load_secure_configuration(self, file_path: str, config_format: str = "auto") -> Optional[Dict[str, Any]]:
-        """Load configuration from file with security validation.
+        """Load configuration from file with security validation."
 
         Args:
             file_path: Path to configuration file
@@ -310,7 +309,7 @@ class ConfigurationSecurityManager:
                     encrypt_dict(value)
                 elif isinstance(value, str) and self._is_sensitive_key(key):
                     # In a real implementation, you would encrypt this value
-                    # For now, we'll just mark it as encrypted
+                    # For now, we'll just mark it as encrypted'
                     d[key] = f"[ENCRYPTED]{value[:4]}..."
 
         encrypt_dict(encrypted_config)
@@ -356,21 +355,23 @@ class ConfigurationSecurityManager:
             else:
                 # For other formats, just copy the file
                 import shutil
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-                shutil.copy2(file_path, backup_file)
+shutil.copy2(file_path, backup_file)
 
             # Set secure permissions on backup
-            backup_file.chmod(self.security_policies["config_file_permissions"])
+backup_file.chmod(self.security_policies["config_file_permissions"])
 
             self.logger.info(f"Configuration backup created: {backup_file}")
 
         except Exception as e:
             self.logger.error(f"Failed to create configuration backup: {e}")
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration value access")
+    @handles_errors(fallback=None)
     def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
-        """Get configuration value by dot-notation path.
+        """Get configuration value by dot-notation path."
 
         Args:
             config: Configuration dictionary
@@ -401,9 +402,9 @@ import copy
             self.logger.error(f"Failed to get config value for {key_path}: {e}")
             return default
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="configuration value setting")
+    @handles_errors(fallback=None)
     def set_config_value(self, config: Dict[str, Any], key_path: str, value: Any) -> Optional[Dict[str, Any]]:
-        """Set configuration value by dot-notation path.
+        """Set configuration value by dot-notation path."
 
         Args:
             config: Configuration dictionary
@@ -441,7 +442,7 @@ import copy
             return None
 
     def save_secure_configuration(self, config: Dict[str, Any], file_path: str, config_format: str = "auto") -> bool:
-        """Save configuration to file with security measures.
+        """Save configuration to file with security measures."
 
         Args:
             config: Configuration dictionary
@@ -497,7 +498,7 @@ import copy
             return False
 
     def get_configuration_security_report(self) -> Dict[str, Any]:
-        """Get configuration security report.
+        """Get configuration security report."
 
         Returns:
             Configuration security report
@@ -540,7 +541,6 @@ import copy
         except Exception as e:
             self.logger.error(f"Failed to generate configuration security report: {e}")
             return {"error": str(e)}
-
 
 # Global configuration security manager instance
 configuration_security_manager = ConfigurationSecurityManager()

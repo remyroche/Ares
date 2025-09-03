@@ -32,8 +32,9 @@ try:
         SHORT_BLANK_LOOKBACK_DAYS,
         TRAINING_MODES,
     )
-    from src.utils.error_handler import handle_errors, handle_specific_errors
     from src.utils.logger import system_logger
+    from src.core.decorators import handles_errors
+    from src.utils.error_handler import handle_errors, handle_specific_errors
 except ImportError as e:
     print(f"Warning: Could not import config modules: {e}")
     # Fallback imports
@@ -58,7 +59,6 @@ except ImportError as e:
     print(f"Warning: Data downloader not available: {e}")
     DATA_DOWNLOADER_AVAILABLE = False
     download_all_data_with_consolidation = None
-
 
 class SRDataIntegration:
     """Integrates S/R backtesting validation with proper data access patterns.
@@ -659,7 +659,6 @@ class SRDataIntegration:
         except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Cache cleanup failed: {e}")
-
 
 # Convenience function for easy integration
 async def create_sr_data_integration(

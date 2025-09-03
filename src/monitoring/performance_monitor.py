@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Deque, Dict, List, Optional
 
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     PerformanceLevel,
     asyncio,
@@ -22,7 +23,6 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class PerformanceMetrics:
@@ -46,7 +46,6 @@ class PerformanceMetrics:
     confidence_analyst: float = 0.0
     confidence_tactician: float = 0.0
     confidence_final: float = 0.0
-
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
@@ -73,7 +72,7 @@ class PerformanceMonitor:
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @resource_monitor()
     @memory_efficient()
-    @handle_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         self.logger.info("📈 Initializing Performance Monitor ...")
         self.metrics_history.clear()

@@ -1,4 +1,4 @@
-"""Unified Data Loader for Step1_5 Data.
+"""Unified Data Loader for Step1_5 Data."
 
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
@@ -26,6 +26,8 @@ from src.utils.common_operations import (
 )
 
 try:
+    from src.core.decorators import handles_errors
+    from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
         sanitize_string,
@@ -76,12 +78,11 @@ except ImportError:
     import logging
     system_logger = logging.getLogger(__name__)
 
-
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
 
     def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
-        """Initialize the unified data loader.
+        """Initialize the unified data loader."
 
         Args:
             config: Configuration dictionary
@@ -128,7 +129,7 @@ class UnifiedDataLoader:
     async def load_unified_data(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
     ) -> Optional[pd.DataFrame]:
-        """Load unified data created by step1_5 with comprehensive validation.
+        """Load unified data created by step1_5 with comprehensive validation."
 
         Args:
             symbol: Trading symbol (e.g. = "ETHUSDT")
@@ -163,7 +164,7 @@ class UnifiedDataLoader:
 
 import os.path
 
-                pdm = ParquetDatasetManager(logger=self.logger)
+pdm = ParquetDatasetManager(logger=self.logger)
 
                 # Build filters for date range if specified
                 filters = None
@@ -212,7 +213,7 @@ import os.path
     async def _validate_unified_data(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str
     ) -> dict[str, Any]:
-        """Validate unified data against expected schema and constraints.
+        """Validate unified data against expected schema and constraints."
 
         Args:
             df: DataFrame to validate
@@ -299,7 +300,7 @@ import os.path
     async def _load_unified_data_fallback(
         self, unified_path: str, start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
     ) -> Optional[pd.DataFrame]:
-        """Fallback method to load unified data without ParquetDatasetManager.
+        """Fallback method to load unified data without ParquetDatasetManager."
 
         Args:
             unified_path: Path to unified data directory
@@ -370,7 +371,7 @@ import os.path
     def _get_unified_data_path(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str
     ) -> str:
-        """Get the path to unified data with input sanitization.
+        """Get the path to unified data with input sanitization."
 
         Args:
             symbol: Trading symbol
@@ -383,15 +384,11 @@ import os.path
         """
         return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="unified_data_loader.get_data_info",
-    )
+    @handles_errors(fallback=None)
     async def get_data_info(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
     ) -> Optional[dict[str, Any]]:
-        """Get information about available unified data.
+        """Get information about available unified data."
 
         Args:
             symbol: Trading symbol
@@ -452,12 +449,11 @@ import os.path
             self.logger.exception(f"❌ Failed to get data info: {e}")
             return None
 
-
 # Global instance for easy access
 _unified_data_loader = None
 
 def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedDataLoader:
-    """Get or create a global unified data loader instance.
+    """Get or create a global unified data loader instance."
 
     Args:
         config: Configuration dictionary
@@ -470,16 +466,11 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
         _unified_data_loader = UnifiedDataLoader(config)
     return _unified_data_loader
 
-
 # Convenience functions for backward compatibility
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="load_unified_data",
-)
+@handles_errors(fallback=None)
 async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
 ) -> Optional[pd.DataFrame]:
-    """Load unified data with global loader instance.
+    """Load unified data with global loader instance."
 
     Args:
         symbol: Trading symbol
@@ -504,15 +495,10 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
         columns=columns
     )
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="get_unified_data_info",
-)
+@handles_errors(fallback=None)
 async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
 ) -> Optional[dict[str, Any]]:
-    """Get information about unified data with global loader instance.
+    """Get information about unified data with global loader instance."
 
     Args:
         symbol: Trading symbol

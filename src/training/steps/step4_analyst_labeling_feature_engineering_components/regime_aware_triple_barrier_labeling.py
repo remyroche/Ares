@@ -46,7 +46,7 @@ if "numba" in globals() and numba is not None:
         sl_multipliers: np.ndarray, 
         end_idx_arr: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Numba-accelerated regime-aware triple barrier labeling with profit tracking.
+        """Numba-accelerated regime-aware triple barrier labeling with profit tracking."
         
         Args:
             close: Close prices
@@ -101,7 +101,6 @@ if "numba" in globals() and numba is not None:
             
         return labels, profit_pcts
 
-
 @dataclass
 class RegimeTripleBarrierConfig:
     """Configuration for regime-specific triple barrier parameters."""
@@ -148,7 +147,6 @@ class RegimeTripleBarrierConfig:
         if self.regime_name_to_id is None:
             self.regime_name_to_id = {}
 
-
 class RegimeAwareTripleBarrierLabeling:
     """
     Regime-aware Triple Barrier Method for labeling using regime-specific parameters.
@@ -163,12 +161,12 @@ class RegimeAwareTripleBarrierLabeling:
         config: Optional[RegimeTripleBarrierConfig] = None,
         binary_classification: bool = True,
     ) -> None:
-        """Initialize the regime-aware triple barrier labeling.
+        """Initialize the regime-aware triple barrier labeling."
 
         Args:
             config: Configuration with regime-specific parameters
             binary_classification: If True, only generate buy (1) and sell (-1) labels
-                                  no hold (0) labels. If False, include hold labels (default: True)
+            no hold (0) labels. If False, include hold labels (default: True)
         """
         self.config = config or RegimeTripleBarrierConfig()
         self.binary_classification = binary_classification
@@ -195,7 +193,7 @@ class RegimeAwareTripleBarrierLabeling:
         sl_multiplier: Optional[float] = None,
         position_size: Optional[float] = None
     ) -> None:
-        """Set regime-specific parameters.
+        """Set regime-specific parameters."
 
         Args:
             regime_name: Name of the regime
@@ -222,7 +220,7 @@ class RegimeAwareTripleBarrierLabeling:
             self.config.regime_position_sizes[regime_name] = position_size
 
     def set_regime_mapping(self, regime_id_to_name: Dict[int, str]) -> None:
-        """Set regime ID to name mapping.
+        """Set regime ID to name mapping."
 
         Args:
             regime_id_to_name: Dictionary mapping regime IDs to regime names
@@ -234,7 +232,7 @@ class RegimeAwareTripleBarrierLabeling:
         self, 
         regime_name: str
     ) -> Dict[str, float]:
-        """Get parameters for a specific regime.
+        """Get parameters for a specific regime."
 
         Args:
             regime_name: Name of the regime
@@ -260,11 +258,7 @@ class RegimeAwareTripleBarrierLabeling:
             "position_size": self.config.regime_position_sizes.get(regime_name, 0.1),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="regime_aware_triple_barrier_labeling.vectorized"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("RegimeAwareTripleBarrier.apply_vectorized", log_args=False)
     def apply_regime_aware_triple_barrier_labeling(
@@ -272,7 +266,7 @@ class RegimeAwareTripleBarrierLabeling:
         data: pd.DataFrame,
         regime_column: str = "composite_cluster_id"
     ) -> pd.DataFrame:
-        """Apply regime-aware triple barrier labeling.
+        """Apply regime-aware triple barrier labeling."
 
         Args:
             data: DataFrame with OHLCV data and regime information
@@ -359,7 +353,7 @@ class RegimeAwareTripleBarrierLabeling:
         return labeled_data
 
     def _create_regime_mapping(self, unique_regimes: np.ndarray) -> None:
-        """Create regime ID to name mapping.
+        """Create regime ID to name mapping."
 
         Args:
             unique_regimes: Array of unique regime values
@@ -380,7 +374,7 @@ class RegimeAwareTripleBarrierLabeling:
         data: pd.DataFrame, 
         regime_column: str
     ) -> pd.DataFrame:
-        """Apply regime-specific triple barrier labeling.
+        """Apply regime-specific triple barrier labeling."
 
         Args:
             data: DataFrame with OHLCV and regime data
@@ -516,7 +510,7 @@ class RegimeAwareTripleBarrierLabeling:
         data: pd.DataFrame, 
         regime_column: str
     ) -> pd.DataFrame:
-        """Add regime-specific TPSL information to the data.
+        """Add regime-specific TPSL information to the data."
 
         Args:
             data: DataFrame with labels and regime information
@@ -555,7 +549,7 @@ class RegimeAwareTripleBarrierLabeling:
         return data
 
     def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
-        """Calculate Average True Range.
+        """Calculate Average True Range."
 
         Args:
             data: DataFrame with OHLC data
@@ -583,7 +577,7 @@ class RegimeAwareTripleBarrierLabeling:
             return data['close'].pct_change().rolling(window=period).std().fillna(0.01)
 
     def _apply_default_labeling(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply default triple barrier labeling when regime information is not available.
+        """Apply default triple barrier labeling when regime information is not available."
 
         Args:
             data: DataFrame with OHLCV data
@@ -607,7 +601,7 @@ class RegimeAwareTripleBarrierLabeling:
         return labeler.apply_triple_barrier_labeling_vectorized(data)
 
     def get_regime_performance_summary(self, data: pd.DataFrame, regime_column: str = "composite_cluster_id") -> Dict[str, Dict[str, float]]:
-        """Get performance summary for each regime.
+        """Get performance summary for each regime."
 
         Args:
             data: DataFrame with labels and regime information
@@ -652,12 +646,11 @@ class RegimeAwareTripleBarrierLabeling:
         
         return performance_summary
 
-
 # Utility functions for integration
 def create_regime_aware_labeler_from_optimization_results(
     optimization_results: Dict[str, Any]
 ) -> RegimeAwareTripleBarrierLabeling:
-    """Create a regime-aware labeler from optimization results.
+    """Create a regime-aware labeler from optimization results."
 
     Args:
         optimization_results: Results from regime-specific optimization
@@ -684,14 +677,13 @@ def create_regime_aware_labeler_from_optimization_results(
     
     return RegimeAwareTripleBarrierLabeling(config)
 
-
 def apply_regime_aware_triple_barrier_labeling(
     data: pd.DataFrame,
     optimization_results: Optional[Dict[str, Any]] = None,
     regime_column: str = "composite_cluster_id",
     binary_classification: bool = True
 ) -> pd.DataFrame:
-    """Apply regime-aware triple barrier labeling to data.
+    """Apply regime-aware triple barrier labeling to data."
 
     Args:
         data: DataFrame with OHLCV and regime data
@@ -708,7 +700,6 @@ def apply_regime_aware_triple_barrier_labeling(
         labeler = RegimeAwareTripleBarrierLabeling(binary_classification=binary_classification)
     
     return labeler.apply_regime_aware_triple_barrier_labeling(data, regime_column)
-
 
 def apply_regime_aware_triple_barrier_labeling_with_barriers(
     data: pd.DataFrame,
@@ -795,9 +786,10 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
         import logging
 
 import copy
+from src.core.decorators import handles_errors
 
-        logger = logging.getLogger(__name__)
-        logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
+logger = logging.getLogger(__name__)
+logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
         
         # Return data with error indicator
         data_copy = data.copy()

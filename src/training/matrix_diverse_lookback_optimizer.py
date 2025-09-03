@@ -25,9 +25,10 @@ from sklearn.feature_selection import mutual_info_regression
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
+from src.core.decorators import handles_errors
+import copy
+from src.utils.error_handler import handle_errors
 
 class MatrixDiverseLookbackOptimizer:
     """Matrix-based optimizer that finds diverse yet meaningful lookback periods for

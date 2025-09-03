@@ -1,6 +1,6 @@
 # src/training/steps/step21_saving.py
 
-"""Step 21: Saving with Standardized Data Quality Management.
+"""Step 21: Saving with Standardized Data Quality Management."
 
 This step handles saving of all training results using standardized
 data quality management patterns.
@@ -79,7 +79,7 @@ class SavingStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """Execute saving of all training results.
+        """Execute saving of all training results."
 
         Args:
             training_input: Training input parameters
@@ -516,7 +516,7 @@ async def run_step(
     symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the saving step.
+    """Run the saving step."
 
     Args:
         symbol: Trading symbol

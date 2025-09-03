@@ -24,7 +24,7 @@ from src.tactician.enhanced_order_manager import (
     OrderSide,
     OrderType,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import copy, failed, import
 
@@ -127,11 +127,7 @@ class AsyncOrderExecutor:
         self.total_volume_executed = 0.0
         self.total_slippage = 0.0
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="order executor initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """
         Initialize the order executor.
@@ -183,11 +179,7 @@ class AsyncOrderExecutor:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order execution"
-    )
+    @handles_errors(fallback=None)
     async def execute_order(self, request: ExecutionRequest) -> Optional[ExecutionResult]:
         """
         Execute an order using the specified strategy.

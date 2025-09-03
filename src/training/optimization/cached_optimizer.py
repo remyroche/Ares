@@ -12,10 +12,15 @@ from typing import Any
 
 import optuna
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+import os
+import asyncio
+    error,
+    warning,
+)
 from src.utils.warning_symbols import asyncio, error, import, os.path, warning
-
 
 @dataclass
 class CacheConfig:
@@ -26,7 +31,6 @@ class CacheConfig:
     max_cache_size_mb: int = 100
     enable_warm_start: bool = True
     warm_start_threshold: float = 0.8  # Similarity threshold for warm start
-
 
 class CachedOptimizer:
     """Implements caching for optimization efficiency with warm start capabilities."""
@@ -47,11 +51,7 @@ class CachedOptimizer:
         )
         self.cache_metadata = self._load_cache_metadata()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="cache metadata loading",
-    )
+    @handles_errors
     def _load_cache_metadata(self) -> dict[str, Any]:
         """Load cache metadata from file."""
         try:
@@ -63,11 +63,7 @@ class CachedOptimizer:
             self.print(warning("Could not load cache metadata: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="cache metadata saving",
-    )
+    @handles_errors(fallback=False)
     def _save_cache_metadata(self) -> bool:
         """Save cache metadata to file."""
         try:
@@ -87,11 +83,7 @@ class CachedOptimizer:
         """Get cache file path for given key."""
         return os.path.join(self.cache_config.cache_dir, f"{cache_key}.pkl")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="cached results retrieval",
-    )
+    @handles_errors(fallback=None)
     def get_cached_optimization_results(
         self,
         optimization_config: dict[str, Any],
@@ -124,11 +116,7 @@ class CachedOptimizer:
             self.print(warning("Error retrieving cached results: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="cache validation",
-    )
+    @handles_errors(fallback=False)
     def is_cache_valid(self, cached_results: dict[str, Any]) -> bool:
         """Check if cached results are valid."""
         try:
@@ -151,11 +139,7 @@ class CachedOptimizer:
             self.print(warning("Error validating cache: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="warm start parameters retrieval",
-    )
+    @handles_errors(fallback=None)
     def get_warm_start_parameters(
         self,
         optimization_config: dict[str, Any],
@@ -219,11 +203,7 @@ class CachedOptimizer:
             self.print(warning("Error calculating config similarity: {e}"))
             return 0.0
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="optimization results caching",
-    )
+    @handles_errors(fallback=False)
     def cache_optimization_results(
         self,
         optimization_config: dict[str, Any],
@@ -263,11 +243,7 @@ class CachedOptimizer:
             self.print(error("Error caching optimization results: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="optimization with warm start",
-    )
+    @handles_errors(fallback=None)
     async def run_optimization_with_warm_start(
         self,
         optimization_config: dict[str, Any],
@@ -337,11 +313,7 @@ class CachedOptimizer:
             self.print(error("Error running optimization with warm start: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="cache cleanup",
-    )
+    @handles_errors(fallback=False)
     async def cleanup_cache(self) -> bool:
         """Clean up expired cache files."""
         try:

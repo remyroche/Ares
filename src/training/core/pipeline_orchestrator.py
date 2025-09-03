@@ -1,4 +1,4 @@
-"""Pipeline orchestrator for the modular training pipeline.
+"""Pipeline orchestrator for the modular training pipeline."
 
 This module provides the main orchestrator that coordinates the execution
 of pipeline stages, handles dependencies, and manages the overall pipeline flow.
@@ -7,6 +7,7 @@ of pipeline stages, handles dependencies, and manages the overall pipeline flow.
 from datetime import datetime
 from typing import Any
 
+from src.core.decorators import handles_errors
 from src.utils.error_handler import (
     asyncio,
     handle_errors,
@@ -25,12 +26,11 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 
-
 class PipelineOrchestrator:
     """Pipeline orchestrator with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize pipeline orchestrator with enhanced type safety.
+        """Initialize pipeline orchestrator with enhanced type safety."
 
         Args:
             config: Configuration dictionary
@@ -66,7 +66,7 @@ class PipelineOrchestrator:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline orchestrator configuration"),
             AttributeError: (
@@ -79,7 +79,7 @@ class PipelineOrchestrator:
         context="pipeline orchestrator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize pipeline orchestrator with enhanced error handling.
+        """Initialize pipeline orchestrator with enhanced error handling."
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -110,11 +110,7 @@ class PipelineOrchestrator:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_pipeline_configuration(self) -> None:
         """Load pipeline configuration."""
         try:
@@ -142,13 +138,9 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error loading pipeline configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate pipeline configuration.
+        """Validate pipeline configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -184,11 +176,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pipeline_modules(self) -> None:
         """Initialize pipeline modules."""
         try:
@@ -213,11 +201,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline modules: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline execution initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pipeline_execution(self) -> None:
         """Initialize pipeline execution module."""
         try:
@@ -234,11 +218,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline execution: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pipeline_monitoring(self) -> None:
         """Initialize pipeline monitoring module."""
         try:
@@ -255,11 +235,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline monitoring: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline optimization initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pipeline_optimization(self) -> None:
         """Initialize pipeline optimization module."""
         try:
@@ -276,11 +252,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline optimization: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline validation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_pipeline_validation(self) -> None:
         """Initialize pipeline validation module."""
         try:
@@ -297,7 +269,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline validation: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline parameters"),
             AttributeError: (False, "Missing pipeline components"),
@@ -307,7 +279,7 @@ class PipelineOrchestrator:
         context="pipeline execution",
     )
     async def execute_pipeline(self, pipeline_input: dict[str, Any]) -> bool:
-        """Execute pipeline operations.
+        """Execute pipeline operations."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -363,13 +335,9 @@ class PipelineOrchestrator:
             self.is_orchestrating = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="pipeline inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_pipeline_inputs(self, pipeline_input: dict[str, Any]) -> bool:
-        """Validate pipeline inputs.
+        """Validate pipeline inputs."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -401,16 +369,12 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error validating pipeline inputs: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline execution",
-    )
+    @handles_errors(fallback=None)
     async def _perform_pipeline_execution(
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline execution.
+        """Perform pipeline execution."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -451,16 +415,12 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline execution: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_pipeline_monitoring(
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline monitoring.
+        """Perform pipeline monitoring."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -503,16 +463,12 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline monitoring: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline optimization",
-    )
+    @handles_errors(fallback=None)
     async def _perform_pipeline_optimization(
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline optimization.
+        """Perform pipeline optimization."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -567,16 +523,12 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline optimization: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline validation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_pipeline_validation(
         self,
         pipeline_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform pipeline validation.
+        """Perform pipeline validation."
 
         Args:
             pipeline_input: Pipeline input dictionary
@@ -892,11 +844,7 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error performing pipeline validation core: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_pipeline_results(self) -> None:
         """Store pipeline results."""
         try:
@@ -915,16 +863,12 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error storing pipeline results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline results getting",
-    )
+    @handles_errors(fallback=None)
     def get_pipeline_results(
         self,
         pipeline_type: str | None,
     ) -> dict[str, Any]:
-        """Get pipeline results.
+        """Get pipeline results."
 
         Args:
             pipeline_type: Optional pipeline type filter
@@ -942,13 +886,9 @@ class PipelineOrchestrator:
             self.logger.exception(f"Error getting pipeline results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="pipeline history getting",
-    )
+    @handles_errors(fallback=None)
     def get_pipeline_history(self, limit: int | None) -> list[dict[str, Any]]:
-        """Get pipeline history.
+        """Get pipeline history."
 
         Args:
             limit: Optional limit on number of records
@@ -970,7 +910,7 @@ class PipelineOrchestrator:
             return []
 
     def get_pipeline_status(self) -> dict[str, Any]:
-        """Get pipeline status information.
+        """Get pipeline status information."
 
         Returns:
             Dict[str, Any]: Pipeline status
@@ -993,11 +933,7 @@ class PipelineOrchestrator:
             "pipeline_history_count": len(self.pipeline_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="pipeline orchestrator cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the pipeline orchestrator."""
         self.logger.info("🛑 Stopping Pipeline Orchestrator...")
@@ -1017,20 +953,14 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f"Error stopping pipeline orchestrator: {e}")
 
-
 # Global pipeline orchestrator instance
 pipeline_orchestrator: PipelineOrchestrator | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="pipeline orchestrator setup",
-)
+@handles_errors(fallback=None)
 async def setup_pipeline_orchestrator(
     config: dict[str, Any] | None,
 ) -> PipelineOrchestrator | None:
-    """Setup global pipeline orchestrator.
+    """Setup global pipeline orchestrator."
 
     Args:
         config: Optional configuration dictionary

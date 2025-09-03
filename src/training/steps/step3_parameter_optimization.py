@@ -40,7 +40,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3ParameterOptimization")
 
-
 class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
@@ -148,8 +147,7 @@ class ParameterOptimizationStep:
             self.logger.error(f"Failed to execute parameter optimization: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_validate_data",
     )
@@ -727,11 +725,10 @@ async def run_step(config: dict[str, Any]) -> bool:
         logger.error(f"Failed to run parameter optimization step: {e}")
         return False
 
-
 if __name__ == "__main__":
     # Test the step
     import asyncio
-
+from src.core.decorators import handles_errors
     # Load test configuration
     test_config = {
         "SYMBOL": "ETHUSDT",

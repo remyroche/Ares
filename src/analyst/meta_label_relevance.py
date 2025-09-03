@@ -10,20 +10,17 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
-
-@handle_errors(
-    exceptions=(Exception,), default_return={}, context="compute_mutual_information"
-)
+@handles_errors(fallback={})
 def compute_mutual_information(
     X: pd.DataFrame,
     y: pd.Series,
     task: str = "classification",
     random_state: int = 42,
 ) -> dict[str, float]:
-    """Compute mutual information scores per feature against target.
+    """Compute mutual information scores per feature against target."
 
     Args:
         X: Feature frame (numeric)
@@ -49,12 +46,7 @@ def compute_mutual_information(
         mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
     return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=0.0,
-    context="compute_mutual_information_pair",
-)
+@handles_errors(fallback=0.0)
 def compute_mutual_information_pair(
     Xi: pd.Series,
     Xj: pd.Series,
@@ -64,10 +56,7 @@ def compute_mutual_information_pair(
 ) -> float:
     raise NotImplementedError("Removed unused function: compute_mutual_information_pair")
 
-
-@handle_errors(
-    exceptions=(Exception,), default_return={}, context="compute_shap_importance"
-)
+@handles_errors(fallback={})
 def compute_shap_importance(
     X: pd.DataFrame,
     y: pd.Series,
@@ -75,7 +64,7 @@ def compute_shap_importance(
     task: str = "classification",
     max_samples: int = 5000,
 ) -> dict[str, float]:
-    """Compute approximate SHAP mean(|value|) per feature.
+    """Compute approximate SHAP mean(|value|) per feature."
 
     If model is None, fits a lightweight LightGBM model for speed.
     """
@@ -110,15 +99,13 @@ def compute_shap_importance(
 import copy
 import os.path
 
-    magnitudes = _np.abs(_np.array(sv))
+magnitudes = _np.abs(_np.array(sv))
     if magnitudes.ndim == 1:
         magnitudes = magnitudes.reshape(-1, 1)
     mean_abs = _np.mean(magnitudes, axis=0)
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
 
-
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return={
         "sharpe_base": 0.0,
         "sharpe_gated": 0.0,
@@ -132,7 +119,7 @@ def evaluate_sharpe_lift(
     gating_series: pd.Series,
     risk_free_rate: float = 0.0,
 ) -> dict[str, float]:
-    """Compute Sharpe of baseline and gated series, and the delta.
+    """Compute Sharpe of baseline and gated series, and the delta."
 
     Args:
         returns_series: realized per-period returns
@@ -159,11 +146,10 @@ def evaluate_sharpe_lift(
         "coverage": float(g.mean()),
     }
 
-
 class MetaLabelRelevanceEvaluator:
-    """Evaluate meta-label relevance with complementarity checks and persist active labels.
+    """Evaluate meta-label relevance with complementarity checks and persist active labels."
 
-    Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.
+    Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.'
     """
 
     def __init__(
@@ -199,8 +185,7 @@ class MetaLabelRelevanceEvaluator:
                 ).astype(int)
         return pd.DataFrame(gating, index=df.index)
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"active_labels": [], "inactive_labels": []},
         context="evaluate_from_frame",
     )

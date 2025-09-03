@@ -1,5 +1,11 @@
 # src/components/modular_tactician.py
 
+from datetime import datetime
+from src.utils.logger import system_logger
+from typing import Any
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import error, initialization_error, invalid, missing
+import copy
 import asyncio
 import copy
 from datetime import datetime
@@ -46,7 +52,7 @@ class ModularTactician:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid modular tactician configuration"),
             AttributeError: (False, "Missing required tactician parameters"),
@@ -79,11 +85,7 @@ class ModularTactician:
         )
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_tactician_configuration(self) -> None:
         """Load tactician configuration."""
         try:
@@ -110,11 +112,7 @@ class ModularTactician:
         except Exception as e:
             self.logger.error(error(f"Error loading tactician configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate tactician configuration.
 
@@ -151,11 +149,7 @@ class ModularTactician:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_tactician_modules(self) -> None:
         """Initialize tactician modules."""
         try:
@@ -182,11 +176,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing tactician modules: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="entry monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_entry_monitoring(self) -> None:
         """Initialize entry monitoring module."""
         try:
@@ -205,11 +195,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing entry monitoring: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="exit monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_exit_monitoring(self) -> None:
         """Initialize exit monitoring module."""
         try:
@@ -228,11 +214,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing exit monitoring: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_position_monitoring(self) -> None:
         """Initialize position monitoring module."""
         try:
@@ -251,11 +233,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing position monitoring: {e}")
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk monitoring initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_risk_monitoring(self) -> None:
         """Initialize risk monitoring module."""
         try:
@@ -274,7 +252,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing risk monitoring: {e}")
             )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tactician parameters"),
             AttributeError: (False, "Missing tactician components"),
@@ -348,11 +326,7 @@ class ModularTactician:
             self.is_tactician_active = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="tactician inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_tactician_inputs(
         self,
         market_data: dict[str, Any],
@@ -401,11 +375,7 @@ class ModularTactician:
             self.logger.error(error(f"Error validating tactician inputs: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="entry monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_entry_monitoring(
         self,
         market_data: dict[str, Any],
@@ -458,11 +428,7 @@ class ModularTactician:
             self.logger.error(error(f"Error performing entry monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="exit monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_exit_monitoring(
         self,
         market_data: dict[str, Any],
@@ -515,11 +481,7 @@ class ModularTactician:
             self.logger.error(error(f"Error performing exit monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_position_monitoring(
         self,
         market_data: dict[str, Any],
@@ -572,11 +534,7 @@ class ModularTactician:
             self.logger.error(error(f"Error performing position monitoring: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk monitoring",
-    )
+    @handles_errors(fallback=None)
     async def _perform_risk_monitoring(
         self,
         market_data: dict[str, Any],
@@ -910,11 +868,7 @@ class ModularTactician:
             self.logger.error(error(f"Error performing stress testing: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_tactician_results(self) -> None:
         """Store tactician results."""
         try:
@@ -933,11 +887,7 @@ class ModularTactician:
         except Exception as e:
             self.logger.error(error(f"Error storing tactician results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician results getting",
-    )
+    @handles_errors(fallback=None)
     def get_tactician_results(
         self,
         tactician_type: str | None = None,
@@ -959,11 +909,7 @@ class ModularTactician:
             self.logger.error(error(f"Error getting tactician results: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician history getting",
-    )
+    @handles_errors(fallback=None)
     def get_tactician_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get tactician history.
 
@@ -1008,11 +954,7 @@ class ModularTactician:
             "tactician_history_count": len(self.tactician_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="modular tactician cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the modular tactician."""
         self.logger.info("🛑 Stopping Modular Tactician...")

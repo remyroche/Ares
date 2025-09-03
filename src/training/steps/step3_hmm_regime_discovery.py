@@ -123,7 +123,6 @@ else:
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
-
 class HMMRegimeDiscoveryStep:
     """Step 3: HMM Regime Discovery with standardized data quality management."""
 
@@ -681,8 +680,7 @@ class HMMRegimeDiscoveryStep:
             return False
 
     @with_tracing_span("fix_missing_data")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Data fix failed"},
         context="fix_missing_data",
     )
@@ -763,8 +761,7 @@ class HMMRegimeDiscoveryStep:
     @with_tracing_span("load_and_prepare_data")
     @memory_efficient
     @comprehensive_data_validation
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_prepare_data",
     )
@@ -1285,8 +1282,7 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "HMM regime discovery failed"},
         context="perform_hmm_regime_discovery",
     )
@@ -1343,8 +1339,7 @@ class HMMRegimeDiscoveryStep:
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("perform_hmmlearn_regime_discovery")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "HMMLearn regime discovery failed"},
         context="perform_hmmlearn_regime_discovery",
     )
@@ -1532,8 +1527,7 @@ class HMMRegimeDiscoveryStep:
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("perform_simple_regime_discovery")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Simple regime discovery failed"},
         context="perform_simple_regime_discovery",
     )
@@ -1646,8 +1640,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in simple regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"state_to_regime_map": {}, "state_analysis": {}},
         context="interpret_hmm_states",
     )
@@ -1880,8 +1873,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in advanced regime change detection: {e}")
             return {"success": False, "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=bool),
         context="apply_persistence_filter",
     )
@@ -1909,8 +1901,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error applying persistence filter: {e}")
             return transitions
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_transition_confidence",
     )
@@ -1938,8 +1929,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error calculating transition confidence: {e}")
             return np.zeros(len(transitions), dtype=float)
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_regime_strength",
     )
@@ -1998,8 +1988,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error creating regime change events: {e}")
             return []
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=int),
         context="calculate_regime_durations",
     )
@@ -2437,13 +2426,8 @@ class HMMRegimeDiscoveryStep:
             self.logger.error(f"Error creating SR regime features: {e}")
             return {}
 
-
 @monitor_feature_engineering()
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step3_hmm_regime_discovery",
-)
+@handles_errors(fallback=False)
 async def run_step(
     symbol: str,
     exchange: str,
@@ -3811,7 +3795,6 @@ async def run_step(
         except Exception as e:
             self.logger.exception(f"❌ Error applying optimized parameters: {e}")
 
-
 if __name__ == "__main__":
     # Parse command line arguments
     import asyncio
@@ -3881,5 +3864,6 @@ import os.path
 
 import numpy as np
 import pandas as pd
+from src.core.decorators import handles_errors
 
 gc.collect()

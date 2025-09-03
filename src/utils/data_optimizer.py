@@ -15,12 +15,12 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.centralized_decorators import guard_dataframe_nulls
+from src.core.decorators import traced as with_tracing_span
 from src.utils.comprehensive_logger import get_component_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, initialization_error, missing
-
 
 class DataOptimizer:
     """Data Optimizer for enhancing data processing efficiency and memory usage."""
@@ -58,26 +58,18 @@ class DataOptimizer:
         # Not used directly, but preserved for API stability
         return
 
-
 # Shared column projection helpers for Parquet reads
-
 
 def ohlcv_columns() -> list[str]:
     return ["timestamp", "open", "high", "low", "close", "volume"]
 
-
 def trade_columns() -> list[str]:
     return ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"]
-
 
 def regime_columns() -> list[str]:
     return ["timestamp", "regime", "confidence"]
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="data optimizer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize Data Optimizer."""
         self.logger.info("Initializing Data Optimizer...")
@@ -391,8 +383,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer.optimize_market_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=lambda self, market_data: market_data,
         context="market data optimization",
     )
@@ -433,8 +424,7 @@ def regime_columns() -> list[str]:
         self.logger.info(f"Market data optimized: {len(market_data)} rows")
         return market_data
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=lambda self, ensemble_data: ensemble_data,
         context="ensemble data optimization",
     )
@@ -499,11 +489,7 @@ def regime_columns() -> list[str]:
             self.logger.error(error(f"Error getting optimization stats: {e}"))
             return {"error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="data optimizer cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop Data Optimizer."""
         self.logger.info("Stopping Data Optimizer...")
@@ -521,10 +507,8 @@ def regime_columns() -> list[str]:
         self.logger.info("✅ Data Optimizer stopped successfully")
         return None
 
-
 # Global data optimizer instance
 data_optimizer: DataOptimizer | None = None
-
 
 async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
     """Setup global data optimizer."""
@@ -536,7 +520,6 @@ async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
         await data_optimizer.initialize()
 
     return data_optimizer
-
 
 def get_data_optimizer() -> DataOptimizer | None:
     """Get global data optimizer instance."""

@@ -20,10 +20,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class DataFormat(Enum):
     """Standard data formats."""
@@ -35,7 +34,6 @@ class DataFormat(Enum):
     METADATA = "metadata"
     CONFIG = "config"
 
-
 class ColumnNamingConvention(Enum):
     """Column naming conventions."""
 
@@ -43,7 +41,6 @@ class ColumnNamingConvention(Enum):
     CAMEL_CASE = "camel_case"
     UPPER_CASE = "upper_case"
     LOWER_CASE = "lower_case"
-
 
 class DataFormattingFramework:
     """Comprehensive data formatting and standardization framework."""
@@ -114,11 +111,11 @@ class DataFormattingFramework:
             },
         }
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="data formatting")
+    @handles_errors(fallback=None)
     def standardize_format(
         self, data: pd.DataFrame, target_format: DataFormat, preserve_original: bool = None
     ) -> pd.DataFrame:
-        """Standardize data to a specific format.
+        """Standardize data to a specific format."
 
         Args:
             data: Data to standardize
@@ -303,7 +300,7 @@ class DataFormattingFramework:
     def normalize_timestamps(
         self, data: pd.DataFrame, timestamp_column: str = "timestamp", target_format: str = "unix_seconds"
     ) -> pd.DataFrame:
-        """Normalize timestamps to a standard format.
+        """Normalize timestamps to a standard format."
 
         Args:
             data: Data containing timestamps
@@ -343,7 +340,7 @@ class DataFormattingFramework:
         return normalized_data
 
     def round_numeric_columns(self, data: pd.DataFrame, precision: int = None) -> pd.DataFrame:
-        """Round numeric columns to specified precision.
+        """Round numeric columns to specified precision."
 
         Args:
             data: Data to round
@@ -375,7 +372,7 @@ class DataFormattingFramework:
         exchange: str = None,
         timeframe: str = "1m",
     ) -> pd.DataFrame:
-        """Handle missing values according to specified strategy.
+        """Handle missing values according to specified strategy."
 
         Args:
             data: Data with missing values
@@ -394,12 +391,12 @@ class DataFormattingFramework:
 import copy
 import os.path
 
-            return enhanced_missing_value_handler.handle_missing_values_intelligently(
+return enhanced_missing_value_handler.handle_missing_values_intelligently(
                 data, "timestamp", symbol, exchange, timeframe
             )
 
         # Fallback to traditional strategies
-        handled_data = data.copy()
+            handled_data = data.copy()
 
         if strategy == "forward_fill":
             handled_data = handled_data.fillna(method="ffill", limit=limit)
@@ -428,7 +425,7 @@ import os.path
         return handled_data
 
     def validate_data_format(self, data: pd.DataFrame, expected_format: DataFormat) -> Dict[str, Any]:
-        """Validate that data conforms to expected format.
+        """Validate that data conforms to expected format."
 
         Args:
             data: Data to validate
@@ -467,7 +464,7 @@ import os.path
         return validation_results
 
     def get_format_specification(self, data_format: DataFormat) -> Dict[str, Any]:
-        """Get format specification for a data format.
+        """Get format specification for a data format."
 
         Args:
             data_format: Data format to get specification for
@@ -481,7 +478,7 @@ import os.path
         return self.standard_formats[data_format].copy()
 
     def list_available_formats(self) -> List[str]:
-        """List all available data formats.
+        """List all available data formats."
 
         Returns:
             List of available formats
@@ -489,7 +486,7 @@ import os.path
         return [format.value for format in self.standard_formats.keys()]
 
     def add_custom_format(self, format_name: str, format_spec: Dict[str, Any]) -> None:
-        """Add a custom data format.
+        """Add a custom data format."
 
         Args:
             format_name: Name of the custom format
@@ -507,7 +504,7 @@ import os.path
         self.logger.info(f"Added custom format: {format_name}")
 
     def get_formatting_report(self, data: pd.DataFrame, target_format: DataFormat) -> Dict[str, Any]:
-        """Generate formatting report for data.
+        """Generate formatting report for data."
 
         Args:
             data: Data to analyze
@@ -535,7 +532,6 @@ import os.path
             }
 
         return report
-
 
 # Global data formatting framework instance
 data_formatting_framework = DataFormattingFramework()

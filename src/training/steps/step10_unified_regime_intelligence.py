@@ -1,6 +1,6 @@
 # src/training/steps/step10_unified_regime_intelligence.py
 
-"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management.
+"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management."
 
 This unified step consolidates:
 1. Multi-timeframe HMM state analysis with intensity scores for regime detection
@@ -109,7 +109,6 @@ warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step10_UnifiedRegimeIntelligence")
 
-
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi-timeframe HMM state encoder using attention mechanisms."""
 
@@ -169,7 +168,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
     def forward(
         self, hmm_states: dict[str, torch.Tensor], features: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        """Forward pass through the unified regime intelligence model.
+        """Forward pass through the unified regime intelligence model."
 
         Args:
             hmm_states: Dict of HMM state sequences per timeframe
@@ -239,7 +238,6 @@ class MultiTimeframeHMMEncoder(nn.Module):
             "confidence_logits": confidence_logits,
             "hidden_states": transformed,
         }
-
 
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
@@ -343,11 +341,7 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
             return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="unified regime intelligence initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
@@ -379,11 +373,7 @@ class UnifiedRegimeIntelligenceStep:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="unified regime intelligence training",
-    )
+    @handles_errors(fallback=False)
     async def train(self, data: dict[str, pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
@@ -638,7 +628,7 @@ class UnifiedRegimeIntelligenceStep:
             # Regime persistence features
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
-                # Calculate how long we've been in this regime
+                # Calculate how long we've been in this regime'
                 persistence = cluster_mask.groupby((cluster_mask != cluster_mask.shift()).cumsum()).cumsum()
                 intensity_df[f"persistence_cluster_{cluster_id}"] = persistence
 
@@ -1493,7 +1483,7 @@ class UnifiedRegimeIntelligenceStep:
     def predict(
         self, hmm_states: dict[str, np.ndarray], features: np.ndarray,
     ) -> dict[str, Any] | None:
-        """Make predictions using the trained unified model.
+        """Make predictions using the trained unified model."
 
         Args:
             hmm_states: HMM state sequences for each timeframe
@@ -1564,7 +1554,7 @@ class UnifiedRegimeIntelligenceStep:
     def predict_with_position_logic(
         self, hmm_states: dict[str, np.ndarray], features: np.ndarray, current_position: str = "none", confidence_threshold: float = 0.7
     ) -> dict[str, Any] | None:
-        """Make predictions with position logic integration.
+        """Make predictions with position logic integration."
 
         Args:
             hmm_states: HMM state sequences for each timeframe
@@ -1614,7 +1604,7 @@ class UnifiedRegimeIntelligenceStep:
     def _determine_position_action(
         self, tpsl_prediction: int, confidence_score: float, current_position: str = "none", confidence_threshold: float = 0.7
     ) -> dict[str, Any]:
-        """Determine position action based on TPSL prediction, confidence, and current position.
+        """Determine position action based on TPSL prediction, confidence, and current position."
 
         Args:
             tpsl_prediction: 0 for short/no position, 1 for long
@@ -1723,14 +1713,10 @@ class UnifiedRegimeIntelligenceStep:
                 "confidence": confidence_score,
             }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="unified prediction with S/R integration",
-    )
+    @handles_errors
     async def predict_with_sr_integration(
         self, hmm_states: dict[str, np.ndarray], market_features: np.ndarray, market_data: pd.DataFrame, current_price: float, ) -> dict[str, Any]:
-        """Make unified predictions with S/R level integration.
+        """Make unified predictions with S/R level integration."
 
         Args:
             hmm_states: HMM states for each timeframe
@@ -1796,7 +1782,7 @@ class UnifiedRegimeIntelligenceStep:
             }
 
     async def _run_hyperparameter_optimization(self) -> dict[str, Any] | None:
-        """Optional short hyperparameter optimization using Optuna.
+        """Optional short hyperparameter optimization using Optuna."
 
         Returns a dict with best_params/best_value or None if Optuna unavailable.
         """
@@ -1951,7 +1937,6 @@ class UnifiedRegimeIntelligenceStep:
                 "risk_level": "MEDIUM",
             }
 
-
 from src.utils.enhanced_mlflow_integration import (
     copy,
     create_detailed_step_report,
@@ -1983,6 +1968,19 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 
+from src.utils.enhanced_mlflow_integration import (
+import copy
+import numpy as np
+import os
+import pandas as pd
+from src.core.decorators import handles_errors
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step5_5_unified_regime_intelligence")
@@ -2047,7 +2045,7 @@ async def run_step(
     training_config: dict[str, Any] | None = None,
     force_rerun: bool = False,
 ) -> bool:
-    """Run the unified regime intelligence step.
+    """Run the unified regime intelligence step."
 
     This step consolidates:
     - Multi-timeframe HMM state analysis

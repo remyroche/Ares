@@ -1,6 +1,6 @@
 # src/training/steps/step14_tactician_labeling.py
 
-"""Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers.
+"""Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."
 
 This step applies regime-aware triple barrier labeling for Tactician multi-outcome predictions
 with regime-specific barrier calculation, precision thresholds, and quality filters.
@@ -24,6 +24,8 @@ import pandas as pd
 
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger, dependency_status
 from src.utils.error_handler import handle_errors
 from src.utils.logger import dependency_status, system_logger
 
@@ -567,9 +569,8 @@ class RegimeAwareTacticianLabeler:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-
 class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""
+    """Step 8: Tactician Model Labeling using Analyst's model."""'
 
     
 
@@ -584,17 +585,12 @@ class TacticianLabelingStep:
         self.config = config
         self.logger = system_logger
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tactician labeling step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the tactician labeling step."""
         self.logger.info("🚀 Initializing Tactician Labeling Step...")
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician labeling step execution",
     )
@@ -782,7 +778,7 @@ class TacticianLabelingStep:
             if not regime_mask.any():
                 continue
 
-            # Ensure the model's expected features are present
+            # Ensure the model's expected features are present'
             if hasattr(ensemble, "feature_names_in_"):
                 features_for_model = [
                     f
@@ -806,12 +802,12 @@ class TacticianLabelingStep:
         return data_with_features, all_signals
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
-        """Placeholder for your market regime detection logic.
+        """Placeholder for your market regime detection logic."
         This should be consistent with the logic from step4_regime_specific_training.
         """
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
-        # It is NOT used by the Tactician's labeler.
+        # It is NOT used by the Tactician's labeler.'
         vol_percentile = data["volatility"].rank(pct=True)
         bins = [0, 0.33, 0.66, 1.0]
         labels = ["SIDEWAYS", "BULL", "BEAR"]
@@ -822,7 +818,7 @@ class TacticianLabelingStep:
         """Calculate all necessary features for both Analyst and Tactician."""
         data = data.copy()
         data["returns"] = data["close"].pct_change()
-        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.
+        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.'
         data["volatility"] = (
             data["returns"].rolling(window=60).std().bfill()
         )  # 1-hour volatility
@@ -919,7 +915,6 @@ class TacticianLabelingStep:
 
         return labeled_file_parquet, signals_file_parquet
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.centralized_decorators import (
     artifact_versioning,
@@ -948,7 +943,6 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_report,
     with_enhanced_mlflow_logging,
 )
-
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1018,7 +1012,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the tactician labeling step.
+    """Run the tactician labeling step."
 
     Args:
         symbol: Trading symbol
@@ -1051,7 +1045,6 @@ async def run_step(
 
     except Exception:  # pragma: no cover - defensive
         return False
-
 
 if __name__ == "__main__":
     # Test the step

@@ -1,6 +1,6 @@
 # src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
 
-"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
+"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic."
 
 This step trains a multi-timeframe HMM cluster ensemble system that combines
 predictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)
@@ -21,40 +21,45 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from copy import copy
+MultiTimeframeHMMEnsemble,
+    EnsembleConfig,
+    TimeframeConfig,
+from src.training.steps.multi_timeframe_hmm_ensemble import (
+)
 from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
 )
-from src.training.steps.multi_timeframe_hmm_ensemble import (
-    EnsembleConfig,
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    quality_gate,
+    circuit_breaker_protection,
+    debug_training_step,
+    monitor_feature_engineering,
+)
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
+import copy
+import os.path
     MultiTimeframeHMMEnsemble,
-    TimeframeConfig,
     copy,
     from,
     import,
-)
-from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
-from src.utils.enhanced_mlflow_integration import (
-    create_detailed_step_report,
     log_step_artifact_with_standardized_name,
-    log_step_dataframe_with_standardized_name,
-    log_step_metrics,
-    log_step_report,
-    with_enhanced_mlflow_logging,
-)
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    monitor_feature_engineering,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_prerequisites,
-)
-
 
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
@@ -584,8 +589,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
     track_data_quality=True,
     save_artifacts=True,
 )
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi-timeframe HMM ensemble training",
 )
@@ -762,9 +766,7 @@ async def run_step(
             "success": False,
         }
 
-
-@handle_errors(
-    exceptions=(Exception,),
+@handles_errors
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi-timeframe HMM ensemble validation",
 )

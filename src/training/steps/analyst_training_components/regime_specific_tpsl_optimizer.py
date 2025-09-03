@@ -1,6 +1,6 @@
 # src/training/regime_specific_tpsl_optimizer.py
 
-"""Regime-Specific SL/TP Optimizer.
+"""Regime-Specific SL/TP Optimizer."
 
 This module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
 parameters based on the current market context identified by the meta-labeling system.
@@ -26,20 +26,19 @@ sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, warning
 
-
 class RegimeSpecificTPSLOptimizer:
-    """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes.
+    """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes."
 
     This optimizer uses HMM market regimes to identify the current market state
     and then applies regime-specific optimization based on backtest performance.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize the regime-specific TP/SL optimizer.
+        """Initialize the regime-specific TP/SL optimizer."
 
         Args:
             config: Configuration dictionary
@@ -199,7 +198,7 @@ class RegimeSpecificTPSLOptimizer:
         self.optimization_results: dict[str, dict[str, Any]] = {}
         self.last_optimization_time: datetime | None = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (
                 False,
@@ -214,7 +213,7 @@ class RegimeSpecificTPSLOptimizer:
         context="regime-specific TP/SL optimizer initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize the regime-specific TP/SL optimizer.
+        """Initialize the regime-specific TP/SL optimizer."
 
         Returns:
             bool: True if initialization successful = False otherwise
@@ -245,7 +244,7 @@ class RegimeSpecificTPSLOptimizer:
             return False
 
     async def _initialize_meta_label_system(self) -> bool:
-        """Initialize the MetaLabelingSystem.
+        """Initialize the MetaLabelingSystem."
 
         Returns:
             bool: True if initialization successful = False otherwise
@@ -289,20 +288,16 @@ class RegimeSpecificTPSLOptimizer:
 
 import os.path
 
-            with open(results_file, "w") as f:
+with open(results_file, "w") as f:
                 json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info("✅ Saved optimization results")
         except Exception:
             self.print(failed("Failed to save optimization results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="regime identification",
-    )
+    @handles_errors(fallback=None)
     async def identify_current_regime(
         self, current_data: pd.DataFrame, ) -> tuple[str, float, dict[str, Any]]:
-        """Identify the current dominant meta-label driven market regime.
+        """Identify the current dominant meta-label driven market regime."
 
         Args:
             current_data: Current market OHLCV data
@@ -374,14 +369,10 @@ import os.path
             self.print(error(f"Error identifying regime: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="regime-specific TP/SL optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_tpsl_for_regime(
         self, regime: str, historical_data: pd.DataFrame, current_data: pd.DataFrame, ) -> dict[str, Any]:
-        """Optimize TP/SL parameters for a specific label-driven market regime.
+        """Optimize TP/SL parameters for a specific label-driven market regime."
 
         Args:
             regime: Regime/meta-label to optimize for
@@ -448,7 +439,7 @@ import os.path
 
     def _evaluate_tpsl_parameters(
         self, trial: optuna.Trial, regime: str, historical_data: pd.DataFrame, base_params: dict[str, Any], ) -> float:
-        """Evaluate TP/SL parameters using backtesting simulation.
+        """Evaluate TP/SL parameters using backtesting simulation."
 
         Args:
             trial: Optuna trial object
@@ -512,7 +503,7 @@ import os.path
 
     def _simulate_trades(
         self, data: pd.DataFrame, target_pct: float, stop_pct: float, regime: str, ) -> list[dict[str, Any]]:
-        """Simulate trades using given TP/SL parameters.
+        """Simulate trades using given TP/SL parameters."
 
         Args:
             data: Historical price data
@@ -570,15 +561,11 @@ import os.path
 
         return trades
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="regime-specific TP/SL prediction",
-    )
+    @handles_errors(fallback=None)
     async def get_optimized_tpsl(
         self, current_data: pd.DataFrame, historical_data: pd.DataFrame, force_optimization: bool = False
     ) -> dict[str, Any]:
-        """Get optimized TP/SL parameters for the current label-driven market regime.
+        """Get optimized TP/SL parameters for the current label-driven market regime."
 
         Args:
             current_data: Current market data (OHLCV)
@@ -629,7 +616,7 @@ import os.path
             }
 
     def get_regime_statistics(self) -> dict[str, Any]:
-        """Get statistics about regime-specific TP/SL optimization.
+        """Get statistics about regime-specific TP/SL optimization."
 
         Returns:
             Dictionary with optimization statistics

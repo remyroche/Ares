@@ -10,10 +10,11 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.error_handler import handle_data_processing_errors, handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
+import copy
+from src.core.decorators import handles_errors
 
 class LookaheadBiasDetector:
     """Comprehensive lookahead bias detection and prevention system.
@@ -872,9 +873,7 @@ class LookaheadBiasDetector:
         feature_lower = feature_name.lower()
         return any(base in feature_lower for base in base_features)
 
-
 # Utility functions for easy integration
-
 
 def detect_lookahead_bias(
     features_df: pd.DataFrame,
@@ -897,7 +896,6 @@ def detect_lookahead_bias(
         target_series,
         timestamp_col,
     )
-
 
 def validate_temporal_split(
     X_train: pd.DataFrame,
@@ -926,7 +924,6 @@ def validate_temporal_split(
         y_test,
         timestamp_col,
     )
-
 
 def apply_feature_lagging(
     features_df: pd.DataFrame,

@@ -12,7 +12,7 @@ from src.utils.warning_symbols import error
 
 
 class UnifiedDataManager:
-    """Unified data management system for the training pipeline.
+    """Unified data management system for the training pipeline."
 
     This class creates and manages a single, efficient database with all labels
     and features needed by subsequent training steps, with proper time-based splitting.
@@ -70,7 +70,7 @@ class UnifiedDataManager:
         validation_ratio: float = 0.1,
         test_ratio: float = 0.1,
     ) -> dict[str, Any]:
-        """Create a unified database with proper time-based data splitting.
+        """Create a unified database with proper time-based data splitting."
 
         Args:
             labeled_data: Complete dataset with features and labels
@@ -143,7 +143,7 @@ class UnifiedDataManager:
             raise
 
     def _apply_lookback_filter(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply lookback period filtering to the data.
+        """Apply lookback period filtering to the data."
 
         Args:
             data: Input DataFrame with datetime index
@@ -178,7 +178,7 @@ class UnifiedDataManager:
         validation_ratio: float,
         test_ratio: float,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Create time-based data splits ensuring proper temporal ordering.
+        """Create time-based data splits ensuring proper temporal ordering."
 
         Args:
             data: Complete dataset
@@ -554,7 +554,7 @@ class UnifiedDataManager:
             self.logger.info(f"💾 Strategic signals saved (Pickle) to {signals_file}")
 
     def load_data_split(self, split_type: str) -> pd.DataFrame:
-        """Load a specific data split.
+        """Load a specific data split."
 
         Args:
             split_type: One of 'train', 'validation', 'test', or 'full'
@@ -621,11 +621,11 @@ class UnifiedDataManager:
 import copy
 import os.path
 
-        with open(self.metadata_file) as f:
+with open(self.metadata_file) as f:
             return json.load(f)
 
     def update_data_split(self, split_type: str, updated_data: pd.DataFrame) -> None:
-        """Update a specific data split (useful for steps like step 8 that modify data).
+        """Update a specific data split (useful for steps like step 8 that modify data)."
 
         Args:
             split_type: One of 'train', 'validation', 'test'
@@ -665,7 +665,7 @@ import os.path
         split_type: str,
         label_column: str = "tactician_label",
     ) -> tuple[pd.DataFrame, pd.Series]:
-        """Get features and labels for a specific split.
+        """Get features and labels for a specific split."
 
         Args:
             split_type: Data split to load
@@ -690,7 +690,7 @@ import os.path
         return X, y
 
     def validate_database_integrity(self) -> dict[str, Any]:
-        """Validate the integrity of the unified database and splits.
+        """Validate the integrity of the unified database and splits."
 
         Returns:
             Dict containing validation results
@@ -727,7 +727,7 @@ import os.path
             total_splits = len(train_data) + len(validation_data) + len(test_data)
             if total_splits != len(full_data):
                 validation_results["issues"].append(
-                    f"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}",
+                    f"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}",'
                 )
 
             # Check temporal ordering

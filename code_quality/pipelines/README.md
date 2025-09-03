@@ -16,7 +16,8 @@ python pipeline_unified_enhanced.py --project-root /workspace/src
 ```
 
 **Features:**
-- Runs all code quality tools
+- Runs all code quality tools including enhanced validation
+- Enhanced validation for function arguments and data access patterns
 - Generates unified reports with per-file and per-directory analysis
 - Creates both JSON and Markdown reports
 - Provides detailed console output
@@ -110,6 +111,7 @@ python pipeline_analysis.py --project-root /workspace/src
 
 **Runs:**
 - Function validation
+- Enhanced validation (function arguments and data access)
 - Code interaction mapping
 - Comprehensive code review
 

@@ -29,7 +29,7 @@ if "numba" in globals() and numba is not None:
         sl_mult: float, 
         end_idx_arr: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Numba-accelerated triple barrier labeling with profit tracking.
+        """Numba-accelerated triple barrier labeling with profit tracking."
         
         Returns:
             labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
@@ -71,9 +71,8 @@ if "numba" in globals() and numba is not None:
             
         return labels, profit_pcts
 
-
 class OptimizedTripleBarrierLabeling:
-    """Optimized Triple Barrier Method for labeling using vectorized operations.
+    """Optimized Triple Barrier Method for labeling using vectorized operations."
 
     This implementation provides significant performance improvements over the
     original O(n²) implementation by using NumPy vectorized operations.
@@ -89,7 +88,7 @@ class OptimizedTripleBarrierLabeling:
         max_lookahead: int = 100, 
         binary_classification: bool = True,  # Default to True to fix label imbalance
     ) -> None:
-        """Initialize the optimized triple barrier labeling.
+        """Initialize the optimized triple barrier labeling."
 
         Args:
             profit_take_multiplier: Multiplier for profit take barrier (default: 0.2%)
@@ -97,7 +96,7 @@ class OptimizedTripleBarrierLabeling:
             time_barrier_minutes: Time barrier in minutes (default: 30)
             max_lookahead: Maximum number of points to look ahead (default: 100)
             binary_classification: If True, only generate buy (1) and sell (-1) labels
-                                  no hold (0) labels. If False, include hold labels (default: True)
+            no hold (0) labels. If False, include hold labels (default: True)
 
         Note:
             binary_classification=True is now the default to address label imbalance issues.
@@ -125,18 +124,14 @@ class OptimizedTripleBarrierLabeling:
                 "   → Consider using binary_classification=True for better results"
             )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.vectorized"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("TripleBarrier.apply_vectorized", log_args=False)
     def apply_triple_barrier_labeling_vectorized(
         self, 
         data: pd.DataFrame,
     ) -> pd.DataFrame:
-        """Apply a correct forward-looking Triple Barrier Method with profit tracking.
+        """Apply a correct forward-looking Triple Barrier Method with profit tracking."
 
         Scans forward up to the earlier of the time barrier and max_lookahead
         to find the first barrier hit (profit-take or stop-loss). If neither is
@@ -365,17 +360,13 @@ class OptimizedTripleBarrierLabeling:
         )
         return labeled_data
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.parallel"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def apply_triple_barrier_labeling_parallel(
         self, 
         data: pd.DataFrame, 
         n_jobs: int = -1
     ) -> pd.DataFrame:
-        """Apply parallel Triple Barrier Method for labeling.
+        """Apply parallel Triple Barrier Method for labeling."
 
         Args:
             data: Market data
@@ -387,13 +378,9 @@ class OptimizedTripleBarrierLabeling:
         # Disabled due to boundary lookahead correctness issues.
         return self.apply_triple_barrier_labeling_vectorized(data)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.process_chunk"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
-        """Process a single chunk of data.
+        """Process a single chunk of data."
 
         Args:
             chunk: Data chunk to process
@@ -404,7 +391,7 @@ class OptimizedTripleBarrierLabeling:
         return self.apply_triple_barrier_labeling_vectorized(chunk)
 
     def apply_triple_barrier_labels(self, data: pd.DataFrame) -> pd.Series:
-        """Apply triple barrier labels and return only the labels series.
+        """Apply triple barrier labels and return only the labels series."
         
         This is a convenience method for backward compatibility.
         
@@ -417,11 +404,10 @@ class OptimizedTripleBarrierLabeling:
         labeled_data = self.apply_triple_barrier_labeling_vectorized(data)
         return labeled_data['label']
 
-
 @with_tracing_span("benchmark_triple_barrier_methods", log_args=False)
-@handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_triple_barrier")
+@handles_errors(fallback={})
 def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
-    """Benchmark different triple barrier labeling methods.
+    """Benchmark different triple barrier labeling methods."
 
     Args:
         data: Market data to test
@@ -456,15 +442,15 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
         "parallel_speedup": original_time / parallel_time,
     }
 
-
 if __name__ == "__main__":
     # Example usage
     import numpy as np
 import asyncio
 import copy
+from src.core.decorators import handles_errors
 
     # Create sample data
-    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame(
         {
             "open": np.random.uniform(100, 110, 1000),

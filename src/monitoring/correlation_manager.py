@@ -13,9 +13,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
@@ -23,7 +22,6 @@ class CorrelationStatus(Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class CorrelationRequest:
@@ -39,7 +37,6 @@ class CorrelationRequest:
     error_info: Optional[Dict[str, Any]] = None
     performance_metrics: Dict[str, float] = None
     metadata: Dict[str, Any] = None
-
 
 class CorrelationManager:
     """Centralized correlation ID management and request/response correlation
@@ -67,7 +64,7 @@ class CorrelationManager:
 
         self.logger.info("🔗 Correlation Manager initialized")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid correlation configuration"),
             AttributeError: (False, "Missing required correlation parameters"),
@@ -83,7 +80,7 @@ class CorrelationManager:
         self.logger.info("✅ Correlation Manager initialization completed")
         return True
 
-    @handle_errors(default_return=None, context="correlation_manager.track")
+    @handles_errors(fallback=None)
     async def track_correlation_request(
         self,
         correlation_id: str,
@@ -107,7 +104,7 @@ class CorrelationManager:
             oldest_key = next(iter(self.correlation_requests))
             self.correlation_requests.pop(oldest_key, None)
 
-    @handle_errors(default_return=None, context="correlation_manager.complete")
+    @handles_errors(fallback=None)
     async def complete_correlation_request(
         self,
         correlation_id: str,

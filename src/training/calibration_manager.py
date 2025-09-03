@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from src.core.decorators import handles_errors
 from src.utils.error_handler import (
     asyncio,
     handle_errors,
@@ -12,14 +13,13 @@ from src.utils.error_handler import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid
 
-
 class CalibrationManager:
-    """Calibration manager responsible for model calibration and confidence estimation.
+    """Calibration manager responsible for model calibration and confidence estimation."
     This module handles model calibration to improve prediction reliability.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize calibration manager.
+        """Initialize calibration manager."
 
         Args:
             config: Configuration dictionary
@@ -50,7 +50,7 @@ class CalibrationManager:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid calibration manager configuration"),
             AttributeError: (False, "Missing required calibration parameters"),
@@ -60,7 +60,7 @@ class CalibrationManager:
         context="calibration manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize calibration manager.
+        """Initialize calibration manager."
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -84,13 +84,9 @@ class CalibrationManager:
             self.print(failed("❌ Calibration Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate calibration manager configuration.
+        """Validate calibration manager configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -114,11 +110,7 @@ class CalibrationManager:
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="calibration components initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_calibration_components(self) -> None:
         """Initialize calibration components."""
         try:
@@ -127,7 +119,7 @@ class CalibrationManager:
 
 import copy
 
-            self.ml_confidence_predictor = MLConfidencePredictor(self.config)
+self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             await self.ml_confidence_predictor.initialize()
 
             # Initialize calibration methods
@@ -145,7 +137,7 @@ import copy
             )
             raise
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid calibration parameters"),
             AttributeError: (False, "Missing calibration components"),
@@ -159,7 +151,7 @@ import copy
         ensemble_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Calibrate models to improve prediction reliability.
+        """Calibrate models to improve prediction reliability."
 
         Args:
             ensemble_results: Results from ensemble creation
@@ -213,17 +205,13 @@ import copy
             self.is_calibrating = False
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="calibration inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_calibration_inputs(
         self,
         ensemble_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> bool:
-        """Validate calibration input parameters.
+        """Validate calibration input parameters."
 
         Args:
             ensemble_results: Results from ensemble creation
@@ -257,17 +245,13 @@ import copy
             self.print(failed("Calibration inputs validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analyst model calibration",
-    )
+    @handles_errors(fallback=None)
     async def _calibrate_analyst_models(
         self,
         analyst_ensembles: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Calibrate analyst model ensembles.
+        """Calibrate analyst model ensembles."
 
         Args:
             analyst_ensembles: Analyst ensemble results
@@ -301,17 +285,13 @@ import copy
             self.print(failed("❌ Analyst model calibration failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician model calibration",
-    )
+    @handles_errors(fallback=None)
     async def _calibrate_tactician_models(
         self,
         tactician_ensembles: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Calibrate tactician model ensembles.
+        """Calibrate tactician model ensembles."
 
         Args:
             tactician_ensembles: Tactician ensemble results
@@ -345,18 +325,14 @@ import copy
             self.print(failed("❌ Tactician model calibration failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="single ensemble calibration",
-    )
+    @handles_errors(fallback=None)
     async def _calibrate_single_ensemble(
         self,
         ensemble: dict[str, Any],
         ensemble_name: str,
         ensemble_type: str,
     ) -> dict[str, Any] | None:
-        """Calibrate a single ensemble.
+        """Calibrate a single ensemble."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -416,16 +392,12 @@ import copy
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="temperature scaling calibration",
-    )
+    @handles_errors(fallback=None)
     async def _apply_temperature_scaling(
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Apply temperature scaling calibration.
+        """Apply temperature scaling calibration."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -447,16 +419,12 @@ import copy
             self.print(failed("❌ Temperature scaling calibration failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="isotonic regression calibration",
-    )
+    @handles_errors(fallback=None)
     async def _apply_isotonic_regression(
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Apply isotonic regression calibration.
+        """Apply isotonic regression calibration."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -478,16 +446,12 @@ import copy
             self.print(failed("❌ Isotonic regression calibration failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="confidence calibration",
-    )
+    @handles_errors(fallback=None)
     async def _apply_confidence_calibration(
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Apply confidence calibration.
+        """Apply confidence calibration."
 
         Args:
             ensemble: Ensemble to calibrate
@@ -509,16 +473,12 @@ import copy
             self.print(failed("❌ Confidence calibration failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="calibration results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_calibration_results(
         self,
         calibration_results: dict[str, Any],
     ) -> None:
-        """Store calibration results.
+        """Store calibration results."
 
         Args:
             calibration_results: Calibration results to store
@@ -537,7 +497,7 @@ import copy
             self.print(failed("❌ Failed to store calibration results: {e}"))
 
     def get_calibration_status(self) -> dict[str, Any]:
-        """Get current calibration status.
+        """Get current calibration status."
 
         Returns:
             dict: Calibration status information
@@ -552,7 +512,7 @@ import copy
         }
 
     def get_calibration_results(self) -> dict[str, Any]:
-        """Get the latest calibration results.
+        """Get the latest calibration results."
 
         Returns:
             dict: Calibration results
@@ -560,11 +520,7 @@ import copy
         """
         return self.calibration_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="calibration manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the calibration manager and cleanup resources."""
         try:
@@ -574,16 +530,11 @@ import copy
         except Exception:
             self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="calibration manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_calibration_manager(
     config: dict[str, Any] | None = None,
 ) -> CalibrationManager | None:
-    """Setup and return a configured CalibrationManager instance.
+    """Setup and return a configured CalibrationManager instance."
 
     Args:
         config: Configuration dictionary

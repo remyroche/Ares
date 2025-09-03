@@ -16,9 +16,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFE, SelectKBest, f_classif, mutual_info_classif
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class EnhancedDynamicFeatureSelection:
     """Enhanced Dynamic Feature Selection Manager for Step 7.
@@ -65,11 +64,7 @@ class EnhancedDynamicFeatureSelection:
             "interaction_methods", ["multiplication", "ratio", "difference"]
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="enhanced dynamic feature selection",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def select_features_dynamically(
         self,
         features_df: pd.DataFrame,

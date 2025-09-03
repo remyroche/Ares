@@ -61,6 +61,8 @@ from src.utils.logger import system_logger
 
 # Import model performance monitor
 from src.utils.model_performance_monitor import ModelPerformanceMonitor
+# Import the auto-fix decorator for data quality issues
+from src.core.decorators import handles_errors
 from src.utils.step_dependency_validator import step_dependency_validator
 
 # Import new QA decorators
@@ -77,7 +79,6 @@ from src.utils.training_pipeline_decorators import (
 )
 from src.utils.validator_orchestrator import validator_orchestrator
 
-
 # ==== Helpers for robust data path and JSON formatting ====
 def _is_relative_to(path: Path, base: Path) -> bool:
     """Return True if path is within base when resolved; False otherwise."""
@@ -87,9 +88,8 @@ def _is_relative_to(path: Path, base: Path) -> bool:
     except Exception:
         return False
 
-
 def _safe_json_write(target: Path, obj: Any) -> None:
-    """Atomically and deterministically write JSON to target.
+    """Atomically and deterministically write JSON to target."
 
     - Ensures parent directory exists
     - Writes UTF-8 with Unix newlines
@@ -108,9 +108,7 @@ def _safe_json_write(target: Path, obj: Any) -> None:
             pass
     os.replace(tmp, target)
 
-
 _ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
-
 
 def _sanitize_identifier(value: str) -> str:
     """Validate identifier for use in file/dir names. Raises ValueError on invalid."""
@@ -122,9 +120,8 @@ def _sanitize_identifier(value: str) -> str:
         raise ValueError(msg)
     return value
 
-
 class EnhancedTrainingManager:
-    """Enhanced training manager with comprehensive 16-step pipeline.
+    """Enhanced training manager with comprehensive 16-step pipeline."
 
     This is the MAIN PIPELINE that orchestrates the complete training pipeline including
     analyst and tactician steps. It uses optimized tools and utilities from
@@ -152,7 +149,7 @@ class EnhancedTrainingManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize enhanced training manager.
+        """Initialize enhanced training manager."
 
         Args:
             config: Configuration dictionary
@@ -520,7 +517,7 @@ class EnhancedTrainingManager:
             raise
 
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
-        """Save training progress checkpoint.
+        """Save training progress checkpoint."
 
         Args:
             step_name: Current step name
@@ -559,7 +556,7 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Failed to save checkpoint: {e}")
 
     def _load_checkpoint(self) -> dict[str, Any] | None:
-        """Load training progress checkpoint.
+        """Load training progress checkpoint."
 
         Returns:
             dict: Checkpoint data or None if no checkpoint exists
@@ -626,7 +623,7 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _heartbeat(self, message: str) -> None:
-        """Log a heartbeat message for monitoring training progress.
+        """Log a heartbeat message for monitoring training progress."
 
         Args:
             message: Heartbeat message to log
@@ -635,7 +632,7 @@ class EnhancedTrainingManager:
         self.logger.info(f"💓 {message}")
 
     def _get_system_resources(self) -> dict[str, float]:
-        """Get current system resource usage.
+        """Get current system resource usage."
 
         Returns:
             dict: System resource information
@@ -671,7 +668,7 @@ class EnhancedTrainingManager:
         pipeline_state: dict[str, Any],
         force_rerun: bool,
     ) -> bool:
-        """Validate that all dependencies for a step are met.
+        """Validate that all dependencies for a step are met."
 
         Args:
             step_name: Name of the step to validate
@@ -685,7 +682,7 @@ class EnhancedTrainingManager:
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
-            # If force_rerun is True, we're starting from this step, so skip dependency validation
+            # If force_rerun is True, we're starting from this step, so skip dependency validation'
             if force_rerun:
                 self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
                 return True
@@ -721,7 +718,7 @@ class EnhancedTrainingManager:
             return False
 
     def _analyze_resource_requirements(self) -> dict[str, Any]:
-        """Analyze resource requirements for the training process.
+        """Analyze resource requirements for the training process."
 
         Returns:
             dict: Resource analysis information
@@ -774,7 +771,7 @@ class EnhancedTrainingManager:
     def _get_resource_recommendations(
         self, memory_gb: float, cpu_count: int,
     ) -> list[str]:
-        """Get resource recommendations based on system specs.
+        """Get resource recommendations based on system specs."
 
         Args:
             memory_gb: Available memory in GB
@@ -814,7 +811,7 @@ class EnhancedTrainingManager:
         return recommendations
 
     def _get_step_time_breakdown(self, is_blank_mode: bool) -> dict[str, int]:
-        """Get realistic time breakdown for each step.
+        """Get realistic time breakdown for each step."
 
         Args:
             is_blank_mode: Whether this is blank training mode
@@ -896,7 +893,7 @@ class EnhancedTrainingManager:
     def _get_progress_percentage(
         self, completed_steps: int, total_steps: int,
     ) -> float:
-        """Calculate progress percentage.
+        """Calculate progress percentage."
 
         Args:
             completed_steps: Number of completed steps
@@ -911,7 +908,7 @@ class EnhancedTrainingManager:
     def _log_progress(
         self, current_step: int, total_steps: int, elapsed_time: float,
     ) -> None:
-        """Log progress with estimated completion time.
+        """Log progress with estimated completion time."
 
         Args:
             current_step: Current step number
@@ -941,7 +938,7 @@ class EnhancedTrainingManager:
     def _log_step_completion(
         self, step_name: str, step_start: float, step_times: dict[str, float], success: bool,
     ) -> None:
-        """Log step completion with timing and memory usage.
+        """Log step completion with timing and memory usage."
 
         Args:
             step_name: Name of the completed step
@@ -983,7 +980,7 @@ class EnhancedTrainingManager:
         elapsed_time = sum(step_times.values())
         self._log_progress(completed_steps, 16, elapsed_time)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
             AttributeError: (False, "Missing required enhanced training parameters"),
@@ -993,7 +990,7 @@ class EnhancedTrainingManager:
         context="enhanced training manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize enhanced training manager.
+        """Initialize enhanced training manager."
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -1086,13 +1083,9 @@ class EnhancedTrainingManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate enhanced training manager configuration.
+        """Validate enhanced training manager configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -1128,7 +1121,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training parameters"),
             AttributeError: (False, "Missing enhanced training components"),
@@ -1141,7 +1134,7 @@ class EnhancedTrainingManager:
         self,
         enhanced_training_input: dict[str, Any],
     ) -> bool:
-        """Execute the comprehensive 16-step enhanced training pipeline.
+        """Execute the comprehensive 16-step enhanced training pipeline."
 
         Args:
             enhanced_training_input: Enhanced training input parameters
@@ -1235,16 +1228,12 @@ class EnhancedTrainingManager:
             self.is_training = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="enhanced training inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_enhanced_training_inputs(
         self,
         enhanced_training_input: dict[str, Any],
     ) -> bool:
-        """Validate enhanced training input parameters.
+        """Validate enhanced training input parameters."
 
         Args:
             enhanced_training_input: Enhanced training input parameters
@@ -1274,11 +1263,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Enhanced training inputs validation failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="computational optimization initialization",
-    )
+    @handles_errors(fallback=False)
     async def _initialize_computational_optimization(self) -> bool:
         """Initialize computational optimization components."""
         try:
@@ -1312,11 +1297,7 @@ class EnhancedTrainingManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="comprehensive pipeline execution",
-    )
+    @handles_errors(fallback=False)
     @validate_pipeline_step(
         step_name="comprehensive_pipeline",
         validation_level="WARNING",
@@ -1343,7 +1324,7 @@ class EnhancedTrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the comprehensive 16-step training pipeline.
+        """Execute the comprehensive 16-step training pipeline."
 
         Args:
             training_input: Training input parameters
@@ -3012,11 +2993,7 @@ class EnhancedTrainingManager:
             self.logger.info("💾 Checkpoint saved - you can resume training later")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="optimized tools initialization",
-    )
+    @handles_errors(fallback=False)
     async def _initialize_optimized_tools(self) -> bool:
         """Initialize optimized tools and the optimized training manager."""
         try:
@@ -3063,11 +3040,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Failed to initialize optimized tools: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="optimized parameters optimization",
-    )
+    @handles_errors(fallback=False)
     async def _run_optimized_parameters_optimization(
         self,
         symbol: str,
@@ -3266,11 +3239,7 @@ class EnhancedTrainingManager:
             "param3": np.random.randint(1, 100),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="market data loading for optimization",
-    )
+    @handles_errors(fallback=None)
     async def _load_market_data_for_optimization(
         self,
         symbol: str,
@@ -3495,7 +3464,7 @@ class EnhancedTrainingManager:
         pipeline_state: dict[str, Any],
         validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
-        """Run validator for a specific step.
+        """Run validator for a specific step."
 
         Args:
             step_name: Name of the step to validate
@@ -3556,11 +3525,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Error running validator for {step_name}: {e}")
             return {"step_name": step_name, "validation_passed": False, "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_5_data_converter"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -3625,11 +3590,7 @@ class EnhancedTrainingManager:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step2_feature_engineering"
-    )
+    @handles_errors(fallback=False)
     @monitor_pipeline_step(
         stage=PipelineStage.FEATURE_ENGINEERING,
         validation_level=PipelineValidationLevel.WARNING,
@@ -3697,15 +3658,11 @@ class EnhancedTrainingManager:
             )
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="enhanced training history storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_enhanced_training_history(
         self, enhanced_training_input: dict[str, Any],
     ) -> None:
-        """Store enhanced training history.
+        """Store enhanced training history."
 
         Args:
             enhanced_training_input: Enhanced training input parameters
@@ -3734,11 +3691,7 @@ class EnhancedTrainingManager:
         except Exception as e:
             self.logger.exception(f"❌ Failed to store training history: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="enhanced training results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_enhanced_training_results(self) -> None:
         """Store enhanced training results."""
         try:
@@ -3757,16 +3710,12 @@ class EnhancedTrainingManager:
         except Exception as e:
             self.logger.exception(f"❌ Failed to store enhanced training results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="enhanced training results getting",
-    )
+    @handles_errors(fallback=None)
     def get_enhanced_training_results(
         self,
         enhanced_training_type: str | None,
     ) -> dict[str, Any]:
-        """Get enhanced training results.
+        """Get enhanced training results."
 
         Args:
             enhanced_training_type: Type of training results to get
@@ -3784,16 +3733,12 @@ class EnhancedTrainingManager:
             self.logger.exception(f"Failed to get enhanced training results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="enhanced training history getting",
-    )
+    @handles_errors(fallback=None)
     def get_enhanced_training_history(
         self,
         limit: int | None,
     ) -> list[dict[str, Any]]:
-        """Get enhanced training history.
+        """Get enhanced training history."
 
         Args:
             limit: Maximum number of history entries to return
@@ -3813,7 +3758,7 @@ class EnhancedTrainingManager:
             return []
 
     def get_enhanced_training_status(self) -> dict[str, Any]:
-        """Get enhanced training status.
+        """Get enhanced training status."
 
         Returns:
             dict: Enhanced training status information
@@ -3833,7 +3778,7 @@ class EnhancedTrainingManager:
         }
 
     def get_validation_results(self) -> dict[str, Any]:
-        """Get validation results for all steps.
+        """Get validation results for all steps."
 
         Returns:
             dict: Validation results summary
@@ -3846,7 +3791,7 @@ class EnhancedTrainingManager:
         }
 
     def get_computational_optimization_results(self) -> dict[str, Any]:
-        """Get computational optimization results and statistics.
+        """Get computational optimization results and statistics."
 
         Returns:
             dict: Computational optimization results
@@ -3864,11 +3809,7 @@ class EnhancedTrainingManager:
             "manager_available": False,
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="enhanced training manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the enhanced training manager and cleanup resources."""
         try:
@@ -4003,11 +3944,7 @@ class EnhancedTrainingManager:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature selection execution",
-    )
+    @handles_errors(fallback=False)
     async def _execute_feature_selection(
         self,
         symbol: str,
@@ -4015,7 +3952,7 @@ class EnhancedTrainingManager:
         timeframe: str,
         exchange: str,
     ) -> bool:
-        """Execute comprehensive feature selection and pruning.
+        """Execute comprehensive feature selection and pruning."
 
         Implements tiered feature selection strategy for 240+ features:
         - Tier 1: Core features (80)
@@ -4126,11 +4063,7 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Feature selection failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="tiered feature selection",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def _execute_tiered_feature_selection(
         self,
         features_df: pd.DataFrame,
@@ -4141,7 +4074,7 @@ class EnhancedTrainingManager:
         tier_5_count: int,
         total_max_features: int,
     ) -> pd.DataFrame:
-        """Execute tiered feature selection strategy.
+        """Execute tiered feature selection strategy."
 
         Args:
             features_df: DataFrame with all engineered features
@@ -4497,7 +4430,7 @@ class EnhancedTrainingManager:
         exchange: str,
         timeframe: str,
     ) -> None:
-        """Clear artifacts from the specified step and all subsequent steps.
+        """Clear artifacts from the specified step and all subsequent steps."
         Preserves artifacts from previous steps.
 
         Args:
@@ -4535,7 +4468,7 @@ class EnhancedTrainingManager:
         exchange: str,
         timeframe: str,
     ) -> bool:
-        """Verify that artifacts from the previous step exist before starting a step.
+        """Verify that artifacts from the previous step exist before starting a step."
 
         Args:
             step_name: Name of the current step
@@ -4613,7 +4546,7 @@ class EnhancedTrainingManager:
         exchange: str,
         timeframe: str,
     ) -> None:
-        """Clear artifacts for a specific step.
+        """Clear artifacts for a specific step."
 
         Args:
             step_name: Name of the step
@@ -4628,8 +4561,8 @@ class EnhancedTrainingManager:
 
 import copy
 
-            # Get patterns for this step using class constant
-            patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
+# Get patterns for this step using class constant
+patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
 
             cleared_count = 0
             for pattern in patterns:
@@ -4641,7 +4574,7 @@ import copy
                         cleared_count += 1
                         self.logger.debug(f"   🗑️ Cleared: {file_path}")
                     except FileNotFoundError:
-                        pass  # File doesn't exist, which is fine
+                        pass  # File doesn't exist, which is fine'
                     except Exception as e:
                         self.logger.warning(f"   ⚠️ Could not delete {file_path}: {e}")
 
@@ -4654,13 +4587,9 @@ import copy
             self.logger.exception(f"❌ Error clearing artifacts for {step_name}: {e}")
 
     # Performance tracking methods
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="track_step_performance"
-    )
+    @handles_errors(fallback=False)
     async def _track_step_performance(self, step_type: str, step_name: str, data: Any, expected: Any) -> bool:
-        """Track performance for a specific step.
+        """Track performance for a specific step."
         
         Args:
             step_type: Type of step (e.g., "data_collection")
@@ -4702,13 +4631,9 @@ import copy
             self.logger.warning(f"⚠️ Failed to track performance for {step_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="track_model_performance"
-    )
+    @handles_errors(fallback=False)
     async def _track_model_performance(self, model_type: str, step_name: str, model: Any, training_input: dict) -> bool:
-        """Track performance for a trained model.
+        """Track performance for a trained model."
         
         Args:
             model_type: Type of model (e.g., "hmm_based_training")
@@ -4722,7 +4647,7 @@ import copy
         try:
             if model is not None and hasattr(model, 'predict'):
                 # Generate sample predictions for tracking
-                # This is a simplified approach - in practice, you'd use actual test data
+                # This is a simplified approach - in practice, you'd use actual test data'
                 sample_data = np.random.randn(100, 10)  # Sample features
                 predictions = model.predict(sample_data)
                 
@@ -4745,13 +4670,9 @@ import copy
             self.logger.warning(f"⚠️ Failed to track model performance for {model_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="track_optimization_performance"
-    )
+    @handles_errors(fallback=False)
     async def _track_optimization_performance(self, opt_type: str, step_name: str, optimization_results: dict) -> bool:
-        """Track performance for optimization results.
+        """Track performance for optimization results."
         
         Args:
             opt_type: Type of optimization (e.g., "final_parameters_optimization")
@@ -4792,13 +4713,9 @@ import copy
             self.logger.warning(f"⚠️ Failed to track optimization performance for {opt_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="track_validation_performance"
-    )
+    @handles_errors(fallback=False)
     async def _track_validation_performance(self, val_type: str, step_name: str, validation_results: dict) -> bool:
-        """Track performance for validation results.
+        """Track performance for validation results."
         
         Args:
             val_type: Type of validation (e.g., "walk_forward_validation")
@@ -4841,13 +4758,9 @@ import copy
             self.logger.warning(f"⚠️ Failed to track validation performance for {val_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="track_ab_testing_performance"
-    )
+    @handles_errors(fallback=False)
     async def _track_ab_testing_performance(self, ab_type: str, step_name: str, ab_test_results: dict) -> bool:
-        """Track performance for A/B testing results.
+        """Track performance for A/B testing results."
         
         Args:
             ab_type: Type of A/B testing (e.g., "ab_testing")
@@ -5019,16 +4932,11 @@ import copy
                 "error": "Could not retrieve system resources"
             }
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="enhanced training manager setup",
-)
+@handles_errors(fallback=None)
 async def setup_enhanced_training_manager(
     config: dict[str, Any] | None,
 ) -> EnhancedTrainingManager | None:
-    """Setup and return a configured EnhancedTrainingManager instance.
+    """Setup and return a configured EnhancedTrainingManager instance."
 
     Args:
         config: Configuration dictionary

@@ -18,10 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class GapType(Enum):
     """Types of data gaps."""
@@ -30,7 +29,6 @@ class GapType(Enum):
     MEDIUM = "medium"  # 5-60 seconds, download data
     LARGE = "large"  # > 60 seconds, download data with warning
     CRITICAL = "critical"  # > 300 seconds, require manual intervention
-
 
 class GapInfo:
     """Information about a data gap."""
@@ -47,12 +45,11 @@ class GapInfo:
     def __str__(self):
         return f"Gap({self.start_time} -> {self.end_time}, size={self.gap_size}s, type={self.gap_type.value})"
 
-
 class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
 
     def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5):
-        """Initialize enhanced missing value handler.
+        """Initialize enhanced missing value handler."
 
         Args:
             max_forward_fill_gap: Maximum gap size for forward fill (seconds)
@@ -79,7 +76,7 @@ class EnhancedMissingValueHandler:
             GapType.CRITICAL: "manual_intervention",
         }
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="missing value handling")
+    @handles_errors(fallback=None)
     def handle_missing_values_intelligently(
         self,
         data: pd.DataFrame,
@@ -88,7 +85,7 @@ class EnhancedMissingValueHandler:
         exchange: str = None,
         timeframe: str = "1m",
     ) -> pd.DataFrame:
-        """Handle missing values intelligently based on gap size.
+        """Handle missing values intelligently based on gap size."
 
         Args:
             data: Data with missing values
@@ -146,7 +143,7 @@ class EnhancedMissingValueHandler:
         return filled_data
 
     def _analyze_gaps(self, data: pd.DataFrame, timestamp_column: str) -> List[GapInfo]:
-        """Analyze gaps in the data.
+        """Analyze gaps in the data."
 
         Args:
             data: Data to analyze
@@ -176,7 +173,7 @@ class EnhancedMissingValueHandler:
         return gaps
 
     def _classify_gap(self, gap_size: int) -> GapType:
-        """Classify gap based on size.
+        """Classify gap based on size."
 
         Args:
             gap_size: Gap size in seconds
@@ -207,7 +204,7 @@ class EnhancedMissingValueHandler:
             self.logger.info(f"  {gap_type}: {count} gaps")
 
     def _handle_small_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle small gap with forward fill.
+        """Handle small gap with forward fill."
 
         Args:
             data: Data to fill
@@ -253,7 +250,7 @@ class EnhancedMissingValueHandler:
     def _handle_large_gap_with_download(
         self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str, symbol: str, exchange: str, timeframe: str
     ) -> pd.DataFrame:
-        """Handle large gap by downloading missing data.
+        """Handle large gap by downloading missing data."
 
         Args:
             data: Data to fill
@@ -293,7 +290,7 @@ class EnhancedMissingValueHandler:
     def _download_missing_data(
         self, symbol: str, exchange: str, timeframe: str, start_time: int, end_time: int
     ) -> Optional[pd.DataFrame]:
-        """Download missing data from exchange.
+        """Download missing data from exchange."
 
         Args:
             symbol: Trading symbol
@@ -315,12 +312,14 @@ class EnhancedMissingValueHandler:
             # Import exchange-specific downloader
             if exchange.lower() == "binance":
                 from src.training.steps.data_downloader import DataDownloader
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-                downloader = DataDownloader()
+downloader = DataDownloader()
 
                 # Download klines data
-                downloaded_data = downloader.download_klines(
+downloaded_data = downloader.download_klines(
                     symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
                 )
 
@@ -345,7 +344,7 @@ import copy
     def _insert_downloaded_data(
         self, data: pd.DataFrame, downloaded_data: pd.DataFrame, timestamp_column: str
     ) -> pd.DataFrame:
-        """Insert downloaded data into the main dataset.
+        """Insert downloaded data into the main dataset."
 
         Args:
             data: Main dataset
@@ -365,7 +364,7 @@ import copy
         return combined_data
 
     def _handle_large_gap_with_fallback(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle large gap with fallback strategy (interpolation).
+        """Handle large gap with fallback strategy (interpolation)."
 
         Args:
             data: Data to fill
@@ -423,7 +422,7 @@ import copy
         return filled_data
 
     def _handle_critical_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle critical gap (requires manual intervention).
+        """Handle critical gap (requires manual intervention)."
 
         Args:
             data: Data to fill
@@ -441,7 +440,7 @@ import copy
         return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
 
     def get_gap_report(self, data: pd.DataFrame, timestamp_column: str = "timestamp") -> Dict[str, Any]:
-        """Generate gap analysis report.
+        """Generate gap analysis report."
 
         Args:
             data: Data to analyze
@@ -486,7 +485,7 @@ import copy
     def validate_data_continuity(
         self, data: pd.DataFrame, timestamp_column: str = "timestamp", expected_interval: int = 60
     ) -> Dict[str, Any]:
-        """Validate data continuity and identify issues.
+        """Validate data continuity and identify issues."
 
         Args:
             data: Data to validate
@@ -533,7 +532,6 @@ import copy
         }
 
         return report
-
 
 # Global enhanced missing value handler instance
 enhanced_missing_value_handler = EnhancedMissingValueHandler()

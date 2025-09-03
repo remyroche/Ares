@@ -25,7 +25,6 @@ from src.utils.centralized_decorators import (
 
 logger = system_logger.getChild("DataGapDetector")
 
-
 class DataGapDetector:
     """Detects missing data gaps in trading data files."""
 
@@ -36,6 +35,7 @@ class DataGapDetector:
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
+from src.core.decorators import handles_errors
                 MissingDataDownloaderAndGapFiller,
             )
 

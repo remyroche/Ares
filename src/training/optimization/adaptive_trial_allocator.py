@@ -9,12 +9,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import asyncio, copy
 from src.utils.warning_symbols import datetime as datetime
 from src.utils.warning_symbols import error, import, warning
-
 
 @dataclass
 class TrialAllocationConfig:
@@ -27,7 +26,6 @@ class TrialAllocationConfig:
     performance_weight: float = 0.4
     dynamic_allocation: bool = True
     reallocation_threshold: float = 0.1
-
 
 class AdaptiveTrialAllocator:
     """Allocates trials based on parameter importance and performance."""
@@ -45,11 +43,7 @@ class AdaptiveTrialAllocator:
         self.parameter_performance = defaultdict(list)
         self.parameter_importance = {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="parameter importance calculation",
-    )
+    @handles_errors
     def calculate_parameter_importance(
         self,
         parameters: dict[str, Any],
@@ -167,11 +161,7 @@ class AdaptiveTrialAllocator:
             )
             return 0.3
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="trial allocation",
-    )
+    @handles_errors
     async def allocate_trials_adaptively(
         self,
         parameters: dict[str, Any],
@@ -238,11 +228,7 @@ class AdaptiveTrialAllocator:
             self.print(error("Error allocating trials adaptively: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="performance tracking",
-    )
+    @handles_errors(fallback=False)
     def track_parameter_performance(self, param_path: str, performance: float) -> bool:
         """Track performance for a specific parameter."""
         try:
@@ -260,11 +246,7 @@ class AdaptiveTrialAllocator:
             self.print(warning("Error tracking performance for {param_path}: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="dynamic reallocation",
-    )
+    @handles_errors(fallback=False)
     async def check_dynamic_reallocation(
         self,
         current_allocation: dict[str, int],
@@ -303,11 +285,7 @@ class AdaptiveTrialAllocator:
             self.print(warning("Error checking dynamic reallocation: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="optimal allocation calculation",
-    )
+    @handles_errors
     def calculate_optimal_allocation(
         self,
         parameters: dict[str, Any],
@@ -403,11 +381,7 @@ class AdaptiveTrialAllocator:
             self.print(error("Error getting performance summary: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="allocation validation",
-    )
+    @handles_errors(fallback=False)
     def validate_allocation(self, allocation: dict[str, int]) -> bool:
         """Validate trial allocation."""
         try:

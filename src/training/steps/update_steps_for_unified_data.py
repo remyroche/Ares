@@ -41,7 +41,7 @@ def get_unified_data_loading_code(
     lookback_days: int = 180,
     data_dir_var: str = "data_dir",
 ) -> str:
-    """Get the code template for loading unified data.
+    """Get the code template for loading unified data."
 
     Args:
         symbol_var: Variable name for symbol

@@ -148,7 +148,7 @@ class OptimizedTrainingFactory:
 
 
 def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
-    """Convenience function to create a complete optimized training system.
+    """Convenience function to create a complete optimized training system."
 
     Args:
         config: Training configuration
@@ -162,7 +162,7 @@ def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
-    """Get optimization recommendations based on system resources and configuration.
+    """Get optimization recommendations based on system resources and configuration."
 
     Args:
         config: Current configuration
@@ -183,7 +183,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     import psutil
 import copy
 
-    memory_gb = psutil.virtual_memory().total / (1024**3)
+memory_gb = psutil.virtual_memory().total / (1024**3)
 
     # Memory recommendations
     if memory_gb < 8:

@@ -12,9 +12,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from src.utils.logger import system_logger
+from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+from src.core.decorators import handles_errors
 from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     copy,
     error,
@@ -25,7 +27,6 @@ from src.utils.warning_symbols import (
     validation_error,
     warning,
 )
-
 
 class EventType(Enum):
     """Event types for the trading system"""
@@ -45,7 +46,6 @@ class EventType(Enum):
     CONFIGURATION_CHANGED = "configuration_changed"
     SNAPSHOT_CREATED = "snapshot_created"
 
-
 class EventStatus(Enum):
     """Event processing status"""
 
@@ -54,7 +54,6 @@ class EventStatus(Enum):
     PROCESSED = "processed"
     FAILED = "failed"
     RETRYING = "retrying"
-
 
 @dataclass
 class EventMetadata:
@@ -72,7 +71,6 @@ class EventMetadata:
     retry_count: int = 0
     status: EventStatus = EventStatus.PENDING
     tags: dict[str, str] = field(default_factory=dict)
-
 
 @dataclass
 class Event:
@@ -136,7 +134,6 @@ class Event:
 
         return cls(event_type=event_type, data=data.get("data"), metadata=metadata)
 
-
 @dataclass
 class EventSnapshot:
     """Snapshot of system state at a point in time"""
@@ -147,7 +144,6 @@ class EventSnapshot:
     sequence_number: int = 0
     state_data: dict[str, Any] = field(default_factory=dict)
     version: str = "1.0.0"
-
 
 class IEventStore(ABC):
     """Interface for event storage implementations"""
@@ -173,7 +169,6 @@ class IEventStore(ABC):
     @abstractmethod
     async def get_latest_snapshot(self, aggregate_id: str) -> EventSnapshot | None:
         """Get the latest snapshot for an aggregate"""
-
 
 class FileEventStore(IEventStore):
     """File-based event store implementation"""
@@ -299,7 +294,6 @@ class FileEventStore(IEventStore):
             self.logger.error(failed(f"Failed to retrieve latest snapshot: {e}"))
             return None
 
-
 class EventVersionManager:
     """Manages event schema versioning and migration"""
 
@@ -413,7 +407,6 @@ class EventVersionManager:
             self.logger.error(error(f"Event migration error: {e}"))
             return event
 
-
 class EnhancedEventBus:
     """
     Enhanced Event Bus with event sourcing, versioning, and persistence capabilities
@@ -456,7 +449,7 @@ class EnhancedEventBus:
             "replays_performed": 0,
         }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid event bus configuration"),
             AttributeError: (False, "Missing required event bus parameters"),
@@ -914,10 +907,8 @@ class EnhancedEventBus:
         """Get event bus metrics"""
         return self.metrics.copy()
 
-
 # Global instance
 enhanced_event_bus: EnhancedEventBus | None = None
-
 
 async def setup_enhanced_event_bus(
     config: dict[str, Any] | None = None,

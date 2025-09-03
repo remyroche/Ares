@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 import aiohttp
 
+from src.core.decorators import handles_errors
 from src.utils.error_handler import (
     asyncio,
     handle_errors,
@@ -15,7 +16,6 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import connection_error, error, failed, invalid, missing
-
 
 class BinanceExchange:
     """
@@ -49,7 +49,7 @@ class BinanceExchange:
         self.timeout: int = self.exchange_config.get("timeout", 30)
         self.max_retries: int = self.exchange_config.get("max_retries", 3)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid Binance exchange configuration"),
             AttributeError: (False, "Missing required exchange parameters"),
@@ -83,11 +83,7 @@ class BinanceExchange:
         )
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="exchange configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_exchange_configuration(self) -> None:
         """Load exchange configuration."""
         # Set default exchange parameters
@@ -107,11 +103,7 @@ class BinanceExchange:
 
         self.logger.info("Exchange configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate exchange configuration.
@@ -332,7 +324,7 @@ class BinanceExchange:
             self.print(error("Error getting position risk: {e}"))
             return None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid order parameters"),
             AttributeError: (False, "Missing order components"),
@@ -483,7 +475,7 @@ class BinanceExchange:
             self.print(connection_error("Network error calling {path}: {e}"))
             return None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid cancel parameters"),
             AttributeError: (False, "Missing cancel components"),
@@ -519,7 +511,7 @@ class BinanceExchange:
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
         """Set margin mode (isolated/cross). Note: For futures endpoints; stubbed for spot."""
         try:
-            # Spot API doesn't support margin mode here; return True for compatibility
+            # Spot API doesn't support margin mode here; return True for compatibility'
             return True
         except Exception:
             return False
@@ -527,7 +519,7 @@ class BinanceExchange:
     async def set_leverage(self, symbol: str, leverage: float) -> bool:
         """Set leverage for symbol. Note: For futures endpoints; stubbed for spot."""
         try:
-            # Spot API doesn't support leverage; return True for compatibility
+            # Spot API doesn't support leverage; return True for compatibility'
             return True
         except Exception:
             return False
@@ -550,7 +542,7 @@ class BinanceExchange:
         except Exception:
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid status parameters"),
             AttributeError: (None, "Missing status components"),
@@ -850,11 +842,7 @@ class BinanceExchange:
             "api_secret_configured": bool(self.api_secret),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="Binance exchange cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the Binance exchange."""
         self.logger.info("🛑 Stopping Binance Exchange...")
@@ -870,16 +858,10 @@ class BinanceExchange:
         except Exception:
             self.print(error("Error stopping Binance exchange: {e}"))
 
-
 # Global Binance exchange instance
 binance_exchange: BinanceExchange | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="Binance exchange setup",
-)
+@handles_errors(fallback=None)
 async def setup_binance_exchange(
     config: dict[str, Any] | None = None,
 ) -> BinanceExchange | None:

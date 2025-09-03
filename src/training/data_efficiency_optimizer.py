@@ -15,13 +15,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.sqlite_manager import SQLiteManager
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, validation_error, warning
 
-
 class DataEfficiencyOptimizer:
-    """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data).
+    """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."
 
     Implements multiple strategies:
     1. Intelligent caching with SQLite storage
@@ -65,11 +64,7 @@ class DataEfficiencyOptimizer:
             f"DataEfficiencyOptimizer initialized for {exchange} {symbol} {timeframe}",
         )
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="database initialization",
-    )
+    @handles_errors(fallback=None)
     def _init_database(self) -> None:
         """Initialize SQLite database with optimized tables for large datasets."""
         with self.engine.connect() as conn:
@@ -87,7 +82,7 @@ class DataEfficiencyOptimizer:
                     data_type TEXT NOT NULL,  -- 'klines', 'agg_trades', 'futures'
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),
+            """),"
             )
 
             # Create indexes for efficient querying
@@ -95,13 +90,13 @@ class DataEfficiencyOptimizer:
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_raw_data_timestamp
                 ON raw_data(timestamp)
-            """),
+            """),"
             )
             conn.execute(
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_raw_data_type
                 ON raw_data(data_type)
-            """),
+            """),"
             )
 
             # Feature cache table (legacy format)
@@ -115,7 +110,7 @@ class DataEfficiencyOptimizer:
                     feature_type TEXT,  -- 'technical', 'price', 'volume', 'regime'
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),
+            """),"
             )
 
             # Feature cache table (wide format)
@@ -129,7 +124,7 @@ class DataEfficiencyOptimizer:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(timestamp, feature_type)
                 )
-            """),
+            """),"
             )
 
             # Create indexes for feature cache
@@ -137,13 +132,13 @@ class DataEfficiencyOptimizer:
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_timestamp
                 ON feature_cache(timestamp)
-            """),
+            """),"
             )
             conn.execute(
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_name
                 ON feature_cache(feature_name)
-            """),
+            """),"
             )
 
             # Create indexes for wide format feature cache
@@ -151,13 +146,13 @@ class DataEfficiencyOptimizer:
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_timestamp
                 ON feature_cache_wide(timestamp)
-            """),
+            """),"
             )
             conn.execute(
                 text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_type
                 ON feature_cache_wide(feature_type)
-            """),
+            """),"
             )
 
             # Processing checkpoints
@@ -171,16 +166,12 @@ class DataEfficiencyOptimizer:
                     metadata TEXT,  -- JSON string with additional info
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),
+            """),"
             )
 
             conn.commit()
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=0.0,
-        context="memory usage calculation",
-    )
+    @handles_errors(fallback=0.0)
     def get_memory_usage(self) -> Number:
         """Get current memory usage as a percentage."""
         process = psutil.Process()
@@ -188,20 +179,12 @@ class DataEfficiencyOptimizer:
         self.logger.debug(f"Current memory usage: {memory_percent:.2f}%")
         return memory_percent
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=False,
-        context="memory cleanup check",
-    )
+    @handles_errors(fallback=False)
     def should_cleanup_memory(self) -> bool:
         """Check if memory cleanup is needed."""
         return self.get_memory_usage() > (self.memory_threshold * 100)
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None,
-        context="memory cleanup",
-    )
+    @handles_errors(fallback=None)
     def cleanup_memory(self) -> None:
         """Force garbage collection and memory cleanup."""
         self.logger.info("Performing memory cleanup...")
@@ -209,17 +192,13 @@ class DataEfficiencyOptimizer:
         time.sleep(0.1)  # Allow time for cleanup
         self.logger.info(f"Memory usage after cleanup: {self.get_memory_usage():.2f}%")
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError, KeyError),
-        default_return={},
-        context="data loading with caching",
-    )
+    @handles_errors
     async def load_data_with_caching(
         self,
         lookback_days: int,
         force_reload: bool = False,
     ) -> dict[str, pd.DataFrame]:
-        """Load data with intelligent caching and memory management.
+        """Load data with intelligent caching and memory management."
 
         Args:
             lookback_days: Number of days to look back
@@ -237,7 +216,7 @@ class DataEfficiencyOptimizer:
             # Check if any Parquet files exist in cache directory
             parquet_files = list(cache_dir.glob("*.parquet"))
             if parquet_files:
-                # Use the oldest file's modification time as cache age
+                # Use the oldest file's modification time as cache age'
                 cache_age = time.time() - min(f.stat().st_mtime for f in parquet_files)
                 max_cache_age = 24 * 60 * 60  # 24 hours
 
@@ -386,7 +365,7 @@ class DataEfficiencyOptimizer:
                     except Exception:
                         self.print(failed("Failed to load futures from Parquet: {e}"))
 
-            # If Parquet files don't exist or are empty, try database query
+            # If Parquet files don't exist or are empty, try database query'
             if all(df.empty for df in data.values()) and self.db_manager:
                 self.logger.info("Attempting to load from database...")
                 try:
@@ -485,7 +464,7 @@ class DataEfficiencyOptimizer:
         try:
             self.logger.info(f"Caching data to {cache_file}")
 
-            # Create cache directory if it doesn't exist
+            # Create cache directory if it doesn't exist'
             cache_file.parent.mkdir(parents=True, exist_ok=True)
 
             # Store each DataFrame as a separate Parquet file for better performance
@@ -522,7 +501,7 @@ class DataEfficiencyOptimizer:
         data: pd.DataFrame,
         segment_days: int = 30,
     ) -> list[tuple[datetime, datetime, pd.DataFrame]]:
-        """Segment large datasets by time periods for efficient processing.
+        """Segment large datasets by time periods for efficient processing."
 
         Args:
             data: Input DataFrame with timestamp index
@@ -567,7 +546,7 @@ class DataEfficiencyOptimizer:
         data: pd.DataFrame,
         chunk_size: int | None = None,
     ) -> pd.DataFrame:
-        """Process large datasets in memory-efficient chunks.
+        """Process large datasets in memory-efficient chunks."
 
         Args:
             data: Input DataFrame
@@ -617,7 +596,7 @@ class DataEfficiencyOptimizer:
         # Create a copy to avoid modifying the original
         processed_chunk = chunk.copy()
 
-        # Fix timestamp columns if they're missing
+        # Fix timestamp columns if they're missing'
         if (
             "open_time" in processed_chunk.columns
             and processed_chunk["open_time"].isna().all()
@@ -632,7 +611,7 @@ class DataEfficiencyOptimizer:
                 except:
                     self.print(warning("Could not reconstruct open_time column"))
 
-        # Fix close_time if it's missing
+        # Fix close_time if it's missing'
         if (
             "close_time" in processed_chunk.columns
             and processed_chunk["close_time"].isna().all()
@@ -671,7 +650,7 @@ class DataEfficiencyOptimizer:
         features: pd.DataFrame,
         feature_type: str = "technical",
     ) -> None:
-        """Store computed features in SQLite database in wide format for efficient retrieval.
+        """Store computed features in SQLite database in wide format for efficient retrieval."
 
         Args:
             features: DataFrame with features (timestamp index + feature columns)
@@ -715,7 +694,7 @@ class DataEfficiencyOptimizer:
                     VALUES (:timestamp, :feature_type, :feature_data)
                     ON CONFLICT(timestamp, feature_type)
                     DO UPDATE SET feature_data = :feature_data
-                """),
+                """),"
                     {
                         "timestamp": timestamp_str,
                         "feature_type": feature_type,
@@ -735,7 +714,7 @@ class DataEfficiencyOptimizer:
         end_date: datetime,
         feature_names: list[str] | None = None,
     ) -> pd.DataFrame:
-        """Load features from database for a specific time period.
+        """Load features from database for a specific time period."
 
         Args:
             start_date: Start of time period
@@ -752,7 +731,7 @@ class DataEfficiencyOptimizer:
                 SELECT timestamp, feature_type, feature_data
                 FROM feature_cache_wide
                 WHERE timestamp BETWEEN :start_date AND :end_date
-            """)
+            """)"
 
             # SQLAlchemy can handle datetime objects directly
             params = {"start_date": start_date, "end_date": end_date}
@@ -818,7 +797,7 @@ class DataEfficiencyOptimizer:
                 SELECT timestamp, feature_name, feature_value
                 FROM feature_cache
                 WHERE timestamp BETWEEN :start_date AND :end_date
-            """)
+            """)"
 
             if feature_names:
                 query = text("""
@@ -826,7 +805,7 @@ class DataEfficiencyOptimizer:
                     FROM feature_cache
                     WHERE timestamp BETWEEN :start_date AND :end_date
                     AND feature_name IN :feature_names
-                """)
+                """)"
                 params["feature_names"] = tuple(feature_names)
 
             result = session.execute(query, params)
@@ -862,7 +841,7 @@ class DataEfficiencyOptimizer:
                 text("""
                 INSERT INTO processing_checkpoints (checkpoint_name, timestamp, status, metadata)
                 VALUES (:checkpoint_name, :timestamp, 'completed', :metadata)
-            """),
+            """),"
                 {
                     "checkpoint_name": checkpoint_name,
                     "timestamp": datetime.now(),
@@ -883,7 +862,7 @@ class DataEfficiencyOptimizer:
                 WHERE checkpoint_name = :checkpoint_name
                 ORDER BY timestamp DESC
                 LIMIT 1
-            """),
+            """),"
                 {"checkpoint_name": checkpoint_name},
             )
 
@@ -894,7 +873,7 @@ class DataEfficiencyOptimizer:
         return None
 
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame memory usage by downcasting numeric types.
+        """Optimize DataFrame memory usage by downcasting numeric types."
 
         Args:
             df: Input DataFrame
@@ -960,7 +939,7 @@ class DataEfficiencyOptimizer:
                 SELECT feature_type, COUNT(*) as count
                 FROM feature_cache
                 GROUP BY feature_type
-            """),
+            """),"
             ).fetchall()
 
             # Feature cache stats (wide format)
@@ -972,7 +951,7 @@ class DataEfficiencyOptimizer:
                 SELECT feature_type, COUNT(*) as count
                 FROM feature_cache_wide
                 GROUP BY feature_type
-            """),
+            """),"
             ).fetchall()
 
             # Checkpoint stats
@@ -996,7 +975,7 @@ class DataEfficiencyOptimizer:
         }
 
     def migrate_pickle_to_parquet(self, pickle_file_path: str) -> bool:
-        """Migrate existing pickle data to Parquet format.
+        """Migrate existing pickle data to Parquet format."
 
         Args:
             pickle_file_path: Path to the pickle file to migrate
@@ -1014,7 +993,7 @@ class DataEfficiencyOptimizer:
 import asyncio
 import copy
 
-            with open(pickle_file_path, "rb") as f:
+with open(pickle_file_path, "rb") as f:
                 data = pickle.load(f)
 
             if not isinstance(data, dict):
@@ -1065,7 +1044,7 @@ import copy
                 text("""
                 DELETE FROM raw_data
                 WHERE timestamp < :cutoff_date
-            """),
+            """),"
                 {"cutoff_date": cutoff_date},
             ).rowcount
 
@@ -1074,7 +1053,7 @@ import copy
                 text("""
                 DELETE FROM feature_cache
                 WHERE timestamp < :cutoff_date
-            """),
+            """),"
                 {"cutoff_date": cutoff_date},
             ).rowcount
 
@@ -1083,7 +1062,7 @@ import copy
                 text("""
                 DELETE FROM feature_cache_wide
                 WHERE timestamp < :cutoff_date
-            """),
+            """),"
                 {"cutoff_date": cutoff_date},
             ).rowcount
 

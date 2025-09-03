@@ -537,11 +537,11 @@ class RawDataQualityChecker:
 
         # For each original timestamp, find the corresponding resampled interval
         for orig_time, orig_row in data.iterrows():
-        # Find the resampled interval that contains this timestamp
+            # Find the resampled interval that contains this timestamp
             resampled_time = orig_time.floor(freq)
-        if resampled_time in combined_data.index:
-        # Original data takes precedence
-        combined_data.loc[resampled_time] = orig_row
+            if resampled_time in combined_data.index:
+                # Original data takes precedence
+                combined_data.loc[resampled_time] = orig_row
 
         # Step 4: Analyze gaps and handle them intelligently
         self.logger.info("🔧 Step 3: Analyzing gaps and applying intelligent handling")
@@ -610,13 +610,12 @@ class RawDataQualityChecker:
 
         try:
             # Import the unified data downloader
-import glob
-import os
-import copy
-import numpy as np
-import os.path
-from src.training.steps.data_downloader import (
-from src.training.steps.data_downloader import (
+            import glob
+            import os
+            import copy
+            import numpy as np
+            import os.path
+            from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
             )
 
@@ -895,64 +894,64 @@ from src.training.steps.data_downloader import (
             ]
             irregular_ratio = len(irregular_intervals) / len(time_diffs)
 
-        # Calculate coefficient of variation
+            # Calculate coefficient of variation
             time_diffs_seconds = time_diffs.dt.total_seconds()
             mean_interval = time_diffs_seconds.mean()
             std_interval = time_diffs_seconds.std()
             cv = std_interval / mean_interval if mean_interval > 0 else 0
 
-        self.logger.info("🔍 Interval analysis:")
-        self.logger.info(f"   Irregular ratio: {irregular_ratio:.3f}")
-        self.logger.info(f"   Coefficient of variation: {cv:.3f}")
-        self.logger.info(f"   Expected interval: {expected_interval}")
+            self.logger.info("🔍 Interval analysis:")
+            self.logger.info(f"   Irregular ratio: {irregular_ratio:.3f}")
+            self.logger.info(f"   Coefficient of variation: {cv:.3f}")
+            self.logger.info(f"   Expected interval: {expected_interval}")
 
-        # Step 3: Auto-fix if issues are detected
-        if irregular_ratio > 0.01 or cv > 0.2:  # Thresholds that trigger warnings
-            self.logger.info("🔧 Auto-fixing irregular interval issues...")
+            # Step 3: Auto-fix if issues are detected
+            if irregular_ratio > 0.01 or cv > 0.2:  # Thresholds that trigger warnings
+                self.logger.info("🔧 Auto-fixing irregular interval issues...")
 
-            fixed_data = self.fix_irregular_intervals_automatically(data, symbol, exchange)
+                fixed_data = self.fix_irregular_intervals_automatically(data, symbol, exchange)
 
-        # Step 4: Re-validate the fixed data
-            fixed_results, _ = self.validate_raw_data(fixed_data, symbol, exchange, auto_download_missing=False)
+                # Step 4: Re-validate the fixed data
+                fixed_results, _ = self.validate_raw_data(fixed_data, symbol, exchange, auto_download_missing=False)
 
-        # Step 5: Compare results
-            quality_improvement = fixed_results.get("data_quality_score", 0) - initial_results.get("data_quality_score", 0)
+                # Step 5: Compare results
+                quality_improvement = fixed_results.get("data_quality_score", 0) - initial_results.get("data_quality_score", 0)
 
-            self.logger.info(f"✅ Quality improvement: {quality_improvement:.3f}")
+                self.logger.info(f"✅ Quality improvement: {quality_improvement:.3f}")
 
-            # Add preprocessing summary to results
-            fixed_results["preprocessing_summary"] = {
-                "irregular_ratio_before": irregular_ratio,
-                "cv_before": cv,
-                "quality_improvement": quality_improvement,
-                "fixes_applied": ["irregular_intervals"],
+                # Add preprocessing summary to results
+                fixed_results["preprocessing_summary"] = {
+                    "irregular_ratio_before": irregular_ratio,
+                    "cv_before": cv,
+                    "quality_improvement": quality_improvement,
+                    "fixes_applied": ["irregular_intervals"],
+                    "original_shape": data.shape,
+                    "fixed_shape": fixed_data.shape,
+                }
+
+                return fixed_data, fixed_results
+            else:
+                self.logger.info("✅ No irregular interval issues detected")
+                initial_results["preprocessing_summary"] = {
+                    "irregular_ratio": irregular_ratio,
+                    "cv": cv,
+                    "quality_improvement": 0.0,
+                    "fixes_applied": [],
+                    "original_shape": data.shape,
+                    "fixed_shape": data.shape,
+                }
+                return data, initial_results
+        else:
+            self.logger.info("✅ No time differences found")
+            initial_results["preprocessing_summary"] = {
+                "irregular_ratio": 0.0,
+                "cv": 0.0,
+                "quality_improvement": 0.0,
+                "fixes_applied": [],
                 "original_shape": data.shape,
-                "fixed_shape": fixed_data.shape,
+                "fixed_shape": data.shape,
             }
-
-            return fixed_data, fixed_results
-
-        self.logger.info("✅ No irregular interval issues detected")
-        initial_results["preprocessing_summary"] = {
-            "irregular_ratio": irregular_ratio,
-            "cv": cv,
-            "quality_improvement": 0.0,
-            "fixes_applied": [],
-            "original_shape": data.shape,
-            "fixed_shape": data.shape,
-        }
-        return data, initial_results
-
-        self.logger.info("✅ No time differences found")
-        initial_results["preprocessing_summary"] = {
-            "irregular_ratio": 0.0,
-            "cv": 0.0,
-            "quality_improvement": 0.0,
-            "fixes_applied": [],
-            "original_shape": data.shape,
-            "fixed_shape": data.shape,
-        }
-        return data, initial_results
+            return data, initial_results
 
     def _validate_data_structure(
         self, data: pd.DataFrame, results: dict[str, Any],
@@ -1736,6 +1735,7 @@ from src.training.steps.data_downloader import (
 
         try:
             # Use the unified downloader
+            from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
             )
 
@@ -1786,11 +1786,8 @@ from src.training.steps.data_downloader import (
 
         """
         try:
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-# Look for the most recent data file
-patterns = [
+            # Look for the most recent data file
+            patterns = [
                 f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
                 f"data/{symbol}_{timeframe}.csv",
                 f"backtesting/data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",

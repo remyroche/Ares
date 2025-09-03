@@ -1,11 +1,11 @@
 # src/training/steps/fractional_feature_selector.py
 
-from src.core.decorators import handles_errors
-
-"""Fractional Feature Selector: Intelligent feature selection for Step 7."
+"""Fractional Feature Selector: Intelligent feature selection for Step 7.
 Implements feature selection based on fractional label alignment, multicollinearity reduction,
 and feature importance ranking.
 """
+
+from src.core.decorators import handles_errors
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -75,7 +75,6 @@ class FractionalFeatureSelector:
     
     @handles_errors("Fractional feature selection")
     @validate_data_quality
-    @validates()
     def select_features(
         self, 
         features: pd.DataFrame, 
@@ -682,12 +681,9 @@ class FractionalFeatureSelector:
             # Export to JSON
             report_file = output_path / "feature_selection_performance.json"
             import json
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import datetime as datetime
-
-with open(report_file, 'w') as f:
-    json.dump(summary, f, indent=2, default=str)
+            
+            with open(report_file, 'w') as f:
+                json.dump(summary, f, indent=2, default=str)
             
             # Export detailed history
             history_file = output_path / "selection_history.json"

@@ -49,8 +49,7 @@ class IntegratedDataQualityPipeline:
             logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
 
     @traced(span_name="run_comprehensive_quality_pipeline")
-    # @quality_gate - removed, handled by validatesvalidation_level="comprehensive")
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "Pipeline failed"},
         context="integrated_data_quality_pipeline.run_comprehensive_quality_pipeline"
     )
@@ -473,7 +472,7 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-        asyncio.run( main())
+        asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
     except Exception as e:
@@ -481,7 +480,4 @@ if __name__ == "__main__":
     finally:
         # Final cleanup
         import gc
-import os.path
-from src.core.decorators import handles_errors, traced
-
-gc.collect()
+        gc.collect()

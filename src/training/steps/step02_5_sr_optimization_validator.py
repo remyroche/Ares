@@ -90,7 +90,7 @@ class SROptimizationValidator:
             self.logger.error(f"Failed to validate S/R optimization: {e}")
             return False
 
-    @handles_errors
+    @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="optimization_results_validation"
     )
@@ -152,7 +152,7 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Validation error: {e}"]}
 
-    @handles_errors
+    @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="optimized_parameters_validation"
     )
@@ -218,7 +218,7 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Parameter validation error: {e}"]}
 
-    @handles_errors
+    @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="configuration_validation"
     )
@@ -269,7 +269,7 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Configuration validation error: {e}"]}
 
-    @handles_errors
+    @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="artifact_quality_validation"
     )
@@ -362,7 +362,7 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-from src.core.decorators import handles_errors
+    from src.core.decorators import handles_errors
     
     # Test configuration
     test_config = {
@@ -380,5 +380,5 @@ from src.core.decorators import handles_errors
     }
     
     # Run validation
-    success = asyncio.run( run_validation(test_config, "ETHUSDT", "BINANCE", "1m"))
+    success = asyncio.run(run_validation(test_config, "ETHUSDT", "BINANCE", "1m"))
     print(f"Validation {'successful' if success else 'failed'}")

@@ -2,8 +2,8 @@
 
 
 from src.core.decorators import validates
-from src.core.domain import (
 import joblib
+from src.core.domain import (
     validate_dataframe_operation,
     validate_file_operation,
     validate_step2_operation

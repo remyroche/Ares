@@ -79,7 +79,7 @@ class EnhancedTradingLauncher:
             True,
         )
 
-    @handle_specific_errors()
+    @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid launcher configuration"),
             AttributeError: (False, "Missing required launcher parameters"),

@@ -1,23 +1,11 @@
 from datetime import datetime
 from typing import Any
-import asyncio
 
 from src.utils.error_handler import (
-
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-import copy
-from src.utils.warning_symbols import (
-
-    error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    validation_error,
-)
 
 
 class StageContext:
@@ -1025,5 +1013,5 @@ async def setup_stage_context(
             return stage_context
         return None
 
-    except Exception as e:
+    except Exception:
         return None

@@ -6,8 +6,8 @@ This module provides a unified interface to all decorators with enhanced functio
 import asyncio
 import functools
 import logging
-import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
 # Handle optional dependencies
 try:
@@ -76,8 +76,6 @@ from .enhanced_data_quality_decorators import (
     validate_multi_timeframe_processing,
 )
 from .enhanced_decorators import (
-    ValidatableData,
-    ValidationResult,
     cached_validation,
     enhanced_validation,
     performance_monitor_v2,
@@ -112,7 +110,7 @@ from .training_pipeline_decorators import (
     tags=["validation", "data-quality", "auto-fix"],
 )
 def validate_data_quality_v2(
-    validation_level: Union[str, ValidationLevel] = "WARNING",
+    validation_level: str | ValidationLevel = "WARNING",
     context: str = "data validation",
     auto_fix: bool = False,
     **validation_kwargs,
@@ -156,7 +154,7 @@ def validate_data_quality_v2(
             try:
                 result = await func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"❌ Function execution failed in {context}: {e}")
+                logger.exception(f"❌ Function execution failed in {context}: {e}")
                 raise
 
             # Post-validation
@@ -196,7 +194,7 @@ def validate_data_quality_v2(
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"❌ Function execution failed in {context}: {e}")
+                logger.exception(f"❌ Function execution failed in {context}: {e}")
                 raise
 
             # Post-validation
@@ -259,8 +257,9 @@ def quality_gate_v2(
                 msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
 
                 if action_on_failure == "raise":
-                    raise ValueError(f"Quality gate failed in {context}: {msg}")
-                elif action_on_failure == "warn":
+                    msg = f"Quality gate failed in {context}: {msg}"
+                    raise ValueError(msg)
+                if action_on_failure == "warn":
                     logger.warning(f"Quality gate warning in {context}: {msg}")
                 elif action_on_failure == "degrade":
                     logger.warning(f"Quality gate degradation in {context}: {msg}")
@@ -284,8 +283,9 @@ def quality_gate_v2(
                 msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
 
                 if action_on_failure == "raise":
-                    raise ValueError(f"Quality gate failed in {context}: {msg}")
-                elif action_on_failure == "warn":
+                    msg = f"Quality gate failed in {context}: {msg}"
+                    raise ValueError(msg)
+                if action_on_failure == "warn":
                     logger.warning(f"Quality gate warning in {context}: {msg}")
                 elif action_on_failure == "degrade":
                     logger.warning(f"Quality gate degradation in {context}: {msg}")
@@ -313,7 +313,7 @@ def quality_gate_v2(
 )
 def step_specific_ml_validation_v2(
     step_name: str,
-    validation_config: Dict[str, Any] = None,
+    validation_config: dict[str, Any] = None,
     adaptive_thresholds: bool = True,
     context: str = "ml validation",
 ):
@@ -381,7 +381,7 @@ def step_specific_ml_validation_v2(
     tags=["auto-fix", "data-quality", "intelligent"],
 )
 def auto_fix_data_quality_issues_v2(
-    context: str = "auto-fix", fix_strategies: List[str] = None, max_fix_attempts: int = 3
+    context: str = "auto-fix", fix_strategies: list[str] = None, max_fix_attempts: int = 3,
 ):
     """
     Enhanced auto-fix decorator with intelligent issue resolution.
@@ -400,14 +400,13 @@ def auto_fix_data_quality_issues_v2(
             # Execute with auto-fixing
             for attempt in range(max_fix_attempts):
                 try:
-                    result = await func(*args, **kwargs)
-                    return result
+                    return await func(*args, **kwargs)
                 except Exception as e:
                     if attempt < max_fix_attempts - 1:
                         logger.warning(f"Attempt {attempt + 1} failed, applying auto-fix: {e}")
                         args, kwargs = await _apply_intelligent_fixes(args, kwargs, context, fix_strategies)
                     else:
-                        logger.error(f"All auto-fix attempts failed in {context}: {e}")
+                        logger.exception(f"All auto-fix attempts failed in {context}: {e}")
                         raise
 
             return None  # Should never reach here
@@ -419,14 +418,13 @@ def auto_fix_data_quality_issues_v2(
             # Execute with auto-fixing
             for attempt in range(max_fix_attempts):
                 try:
-                    result = func(*args, **kwargs)
-                    return result
+                    return func(*args, **kwargs)
                 except Exception as e:
                     if attempt < max_fix_attempts - 1:
                         logger.warning(f"Attempt {attempt + 1} failed, applying auto-fix: {e}")
                         args, kwargs = _apply_intelligent_fixes_sync(args, kwargs, context, fix_strategies)
                     else:
-                        logger.error(f"All auto-fix attempts failed in {context}: {e}")
+                        logger.exception(f"All auto-fix attempts failed in {context}: {e}")
                         raise
 
             return None  # Should never reach here
@@ -455,7 +453,7 @@ def monitor_feature_engineering_v2(
 ):
     """Enhanced feature engineering monitoring decorator."""
     return performance_monitor_v2(
-        level="detailed", track_memory=track_memory_usage, track_cpu=True, track_io=track_feature_stats
+        level="detailed", track_memory=track_memory_usage, track_cpu=True, track_io=track_feature_stats,
     )
 
 
@@ -483,34 +481,28 @@ def monitor_data_collection_v2(
 async def _validate_data_quality_strict(args, kwargs, context, logger):
     """Strict data quality validation."""
     # Implementation for strict validation
-    pass
 
 
 async def _validate_data_quality_warning(args, kwargs, context, logger):
     """Warning-based data quality validation."""
     # Implementation for warning-based validation
-    pass
 
 
 async def _validate_data_quality_info(args, kwargs, context, logger):
     """Info-based data quality validation."""
     # Implementation for info-based validation
-    pass
 
 
 def _validate_data_quality_strict_sync(args, kwargs, context, logger):
     """Synchronous strict data quality validation."""
-    pass
 
 
 def _validate_data_quality_warning_sync(args, kwargs, context, logger):
     """Synchronous warning-based data quality validation."""
-    pass
 
 
 def _validate_data_quality_info_sync(args, kwargs, context, logger):
     """Synchronous info-based data quality validation."""
-    pass
 
 
 async def _apply_data_quality_fixes(args, kwargs, context):
@@ -525,12 +517,10 @@ def _apply_data_quality_fixes_sync(args, kwargs, context):
 
 async def _validate_output_quality(result, context, logger):
     """Validate output quality."""
-    pass
 
 
 def _validate_output_quality_sync(result, context, logger):
     """Synchronous output quality validation."""
-    pass
 
 
 async def _apply_output_quality_fixes(result, context):
@@ -568,22 +558,18 @@ def _get_validation_thresholds(step_name, validation_config, adaptive_thresholds
 
 async def _validate_ml_step_prerequisites(args, kwargs, step_name, thresholds, logger):
     """Validate ML step prerequisites."""
-    pass
 
 
 def _validate_ml_step_prerequisites_sync(args, kwargs, step_name, thresholds, logger):
     """Synchronous ML step prerequisites validation."""
-    pass
 
 
 async def _validate_ml_step_output(result, step_name, thresholds, logger):
     """Validate ML step output."""
-    pass
 
 
 def _validate_ml_step_output_sync(result, step_name, thresholds, logger):
     """Synchronous ML step output validation."""
-    pass
 
 
 async def _apply_intelligent_fixes(args, kwargs, context, fix_strategies):

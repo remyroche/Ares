@@ -7,13 +7,11 @@ the pipeline steps, ensuring continuous data quality monitoring.
 
 import functools
 import inspect
-import logging
 import os
 import sys
-from datetime import datetime
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
-import asyncio
+from typing import Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -22,17 +20,13 @@ if str(project_root) not in sys.path:
 
 from src.utils.comprehensive_file_validation import (
     ComprehensiveFileValidator,
-    FileValidationResult,
-    ValidationIssue,
-    ValidationSeverity,
 )
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 def validate_file_operation(
     step_name: str,
-    expected_schema: Optional[str] = None,
+    expected_schema: str | None = None,
     validate_input: bool = True,
     validate_output: bool = True,
     log_level: str = "INFO",
@@ -59,7 +53,7 @@ def validate_file_operation(
                 for file_path in input_files:
                     if file_path and os.path.exists(file_path):
                         await _validate_file_operation(
-                            file_path, step_name, expected_schema, "input", logger, log_level
+                            file_path, step_name, expected_schema, "input", logger, log_level,
                         )
 
             # Execute the function
@@ -71,7 +65,7 @@ def validate_file_operation(
                 for file_path in output_files:
                     if file_path and os.path.exists(file_path):
                         await _validate_file_operation(
-                            file_path, step_name, expected_schema, "output", logger, log_level
+                            file_path, step_name, expected_schema, "output", logger, log_level,
                         )
 
             return result
@@ -96,7 +90,7 @@ def validate_file_operation(
                 for file_path in output_files:
                     if file_path and os.path.exists(file_path):
                         _validate_file_operation_sync(
-                            file_path, step_name, expected_schema, "output", logger, log_level
+                            file_path, step_name, expected_schema, "output", logger, log_level,
                         )
 
             return result
@@ -104,14 +98,13 @@ def validate_file_operation(
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
 def validate_dataframe_operation(
-    step_name: str, validate_before: bool = True, validate_after: bool = True, log_level: str = "INFO"
+    step_name: str, validate_before: bool = True, validate_after: bool = True, log_level: str = "INFO",
 ):
     """
     Decorator to validate DataFrames at every operation.
@@ -177,14 +170,13 @@ def validate_dataframe_operation(
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
 def validate_step_operation(
-    step_name: str, validate_files: bool = True, validate_dataframes: bool = True, log_level: str = "INFO"
+    step_name: str, validate_files: bool = True, validate_dataframes: bool = True, log_level: str = "INFO",
 ):
     """
     Comprehensive decorator for step operations that validates both files and DataFrames.
@@ -232,8 +224,7 @@ def validate_step_operation(
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
@@ -241,7 +232,7 @@ def validate_step_operation(
 # Helper functions for validation decorators
 
 
-def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str) -> List[str]:
+def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str) -> list[str]:
     """Extract file paths from function arguments."""
     file_paths = []
 
@@ -249,7 +240,7 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
     for arg in args:
         if isinstance(arg, str) and _looks_like_file_path(arg):
             file_paths.append(arg)
-        elif isinstance(arg, (list, tuple)):
+        elif isinstance(arg, list | tuple):
             for item in arg:
                 if isinstance(item, str) and _looks_like_file_path(item):
                     file_paths.append(item)
@@ -260,7 +251,7 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
         if any(file_key in key.lower() for file_key in file_keywords):
             if isinstance(value, str) and _looks_like_file_path(value):
                 file_paths.append(value)
-            elif isinstance(value, (list, tuple)):
+            elif isinstance(value, list | tuple):
                 for item in value:
                     if isinstance(item, str) and _looks_like_file_path(item):
                         file_paths.append(item)
@@ -268,21 +259,21 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
     return file_paths
 
 
-def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[str]:
+def _extract_file_paths_from_result(result: Any, operation_type: str) -> list[str]:
     """Extract file paths from function result."""
     file_paths = []
 
     if isinstance(result, str) and _looks_like_file_path(result):
         file_paths.append(result)
-    elif isinstance(result, (list, tuple)):
+    elif isinstance(result, list | tuple):
         for item in result:
             if isinstance(item, str) and _looks_like_file_path(item):
                 file_paths.append(item)
     elif isinstance(result, dict):
-        for key, value in result.items():
+        for value in result.values():
             if isinstance(value, str) and _looks_like_file_path(value):
                 file_paths.append(value)
-            elif isinstance(value, (list, tuple)):
+            elif isinstance(value, list | tuple):
                 for item in value:
                     if isinstance(item, str) and _looks_like_file_path(item):
                         file_paths.append(item)
@@ -290,7 +281,7 @@ def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[st
     return file_paths
 
 
-def _extract_dataframes_from_args(args: tuple, kwargs: dict) -> List[Any]:
+def _extract_dataframes_from_args(args: tuple, kwargs: dict) -> list[Any]:
     """Extract DataFrames from function arguments."""
     dataframes = []
 
@@ -320,7 +311,7 @@ def _looks_like_file_path(path: str) -> bool:
 
 
 async def _validate_file_operation(
-    file_path: str, step_name: str, expected_schema: Optional[str], operation_type: str, logger: Any, log_level: str
+    file_path: str, step_name: str, expected_schema: str | None, operation_type: str, logger: Any, log_level: str,
 ) -> None:
     """Validate a file operation."""
     try:
@@ -330,18 +321,17 @@ async def _validate_file_operation(
         if result.is_valid:
             if log_level.upper() == "DEBUG":
                 logger.debug(f"✅ {operation_type.capitalize()} file validation passed: {file_path}")
-        else:
-            if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
-                logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
-                for issue in result.issues:
-                    logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+        elif log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
+            logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
+            for issue in result.issues:
+                logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
 
     except Exception as e:
-        logger.error(f"❌ Error validating {operation_type} file {file_path}: {e}")
+        logger.exception(f"❌ Error validating {operation_type} file {file_path}: {e}")
 
 
 def _validate_file_operation_sync(
-    file_path: str, step_name: str, expected_schema: Optional[str], operation_type: str, logger: Any, log_level: str
+    file_path: str, step_name: str, expected_schema: str | None, operation_type: str, logger: Any, log_level: str,
 ) -> None:
     """Validate a file operation (synchronous version)."""
     try:
@@ -351,18 +341,17 @@ def _validate_file_operation_sync(
         if result.is_valid:
             if log_level.upper() == "DEBUG":
                 logger.debug(f"✅ {operation_type.capitalize()} file validation passed: {file_path}")
-        else:
-            if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
-                logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
-                for issue in result.issues:
-                    logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+        elif log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
+            logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
+            for issue in result.issues:
+                logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
 
     except Exception as e:
-        logger.error(f"❌ Error validating {operation_type} file {file_path}: {e}")
+        logger.exception(f"❌ Error validating {operation_type} file {file_path}: {e}")
 
 
 async def _validate_dataframe_operation(
-    df: Any, step_name: str, operation_type: str, logger: Any, log_level: str
+    df: Any, step_name: str, operation_type: str, logger: Any, log_level: str,
 ) -> None:
     """Validate a DataFrame operation."""
     try:
@@ -399,16 +388,15 @@ async def _validate_dataframe_operation(
                 logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame validation issues:")
                 for issue in issues:
                     logger.warning(f"   - {issue}")
-        else:
-            if log_level.upper() == "DEBUG":
-                logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
+        elif log_level.upper() == "DEBUG":
+            logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
 
     except Exception as e:
-        logger.error(f"❌ Error validating {operation_type} DataFrame: {e}")
+        logger.exception(f"❌ Error validating {operation_type} DataFrame: {e}")
 
 
 def _validate_dataframe_operation_sync(
-    df: Any, step_name: str, operation_type: str, logger: Any, log_level: str
+    df: Any, step_name: str, operation_type: str, logger: Any, log_level: str,
 ) -> None:
     """Validate a DataFrame operation (synchronous version)."""
     try:
@@ -445,36 +433,31 @@ def _validate_dataframe_operation_sync(
                 logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame validation issues:")
                 for issue in issues:
                     logger.warning(f"   - {issue}")
-        else:
-            if log_level.upper() == "DEBUG":
-                logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
+        elif log_level.upper() == "DEBUG":
+            logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
 
     except Exception as e:
-        logger.error(f"❌ Error validating {operation_type} DataFrame: {e}")
+        logger.exception(f"❌ Error validating {operation_type} DataFrame: {e}")
 
 
 async def _validate_step_files(step_name: str, result: Any, logger: Any, log_level: str) -> None:
     """Validate files after step execution."""
     # This would implement step-specific file validation logic
-    pass
 
 
 def _validate_step_files_sync(step_name: str, result: Any, logger: Any, log_level: str) -> None:
     """Validate files after step execution (synchronous version)."""
     # This would implement step-specific file validation logic
-    pass
 
 
 async def _validate_step_dataframes(step_name: str, result: Any, logger: Any, log_level: str) -> None:
     """Validate DataFrames after step execution."""
     # This would implement step-specific DataFrame validation logic
-    pass
 
 
 def _validate_step_dataframes_sync(step_name: str, result: Any, logger: Any, log_level: str) -> None:
     """Validate DataFrames after step execution (synchronous version)."""
     # This would implement step-specific DataFrame validation logic
-    pass
 
 
 # Convenience decorators for specific steps

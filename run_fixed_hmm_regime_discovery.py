@@ -6,13 +6,13 @@ This script runs the HMM regime discovery step with proper 6-month data range
 and comprehensive error handling to fix the issues encountered.
 """
 
-from pathlib import Path
-from src.training.steps.step3_hmm_regime_discovery import run_step
-from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
+from pathlib import Path
 
 from src.config.constants import DEFAULT_LOOKBACK_DAYS
+from src.training.steps.step3_hmm_regime_discovery import run_step
+from src.utils.logger import setup_logging, system_logger
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent

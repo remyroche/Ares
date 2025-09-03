@@ -7,24 +7,28 @@ for each feature that deliver meaningful yet significantly different information
 """
 
 import asyncio
-import pandas as pd
+
 import numpy as np
-from pathlib import Path
-from src.training.matrix_diverse_lookback_optimizer import MatrixDiverseLookbackOptimizer
+import pandas as pd
+
 from src.config.matrix_diverse_lookback_config import get_matrix_diverse_lookback_config
+from src.training.matrix_diverse_lookback_optimizer import (
+    MatrixDiverseLookbackOptimizer,
+)
+
 
 async def demonstrate_matrix_diverse_lookback_optimization():
     """Demonstrate matrix-based diverse lookback period optimization."""
-    
+
     print("🚀 MATRIX-BASED DIVERSE LOOKBACK PERIOD OPTIMIZATION DEMONSTRATION")
     print("=" * 75)
     print("Using matrix/vector operations for efficient optimization!")
     print()
-    
+
     # 1. Initialize the matrix-based optimizer
     config = get_matrix_diverse_lookback_config()
-    matrix_optimizer = MatrixDiverseLookbackOptimizer(config)
-    
+    MatrixDiverseLookbackOptimizer(config)
+
     # 2. Show the matrix optimization features
     print("🔧 MATRIX OPTIMIZATION FEATURES:")
     print("-" * 40)
@@ -38,7 +42,7 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("8. Detailed file logging and path tracking")
     print("9. Integration with subsequent steps")
     print()
-    
+
     # 3. Show optimization methods
     print("🧮 OPTIMIZATION METHODS:")
     print("-" * 25)
@@ -46,16 +50,16 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print(f"Primary method: {methods}")
     print("Available methods: scipy, optuna, greedy")
     print()
-    
+
     # 4. Create sample data with multiple market regimes
     print("📈 CREATING SAMPLE DATA WITH MULTIPLE REGIMES...")
-    dates = pd.date_range('2023-01-01', periods=3000, freq='1min')
+    dates = pd.date_range("2023-01-01", periods=3000, freq="1min")
     np.random.seed(42)
-    
+
     # Generate realistic price data with 4 distinct regimes
     n_samples = len(dates)
     regime_length = n_samples // 4
-    
+
     prices = []
     for i in range(4):
         if i == 0:  # Trending up regime
@@ -66,76 +70,76 @@ async def demonstrate_matrix_diverse_lookback_optimization():
             returns = np.random.normal(0, 0.0025, regime_length)
         else:  # Low volatility regime
             returns = np.random.normal(0, 0.0003, regime_length)
-        
+
         prices.extend(1000 * np.exp(np.cumsum(returns)))
-    
+
     data = pd.DataFrame({
-        'timestamp': dates,
-        'open': prices,
-        'high': [p * (1 + abs(np.random.normal(0, 0.001))) for p in prices],
-        'low': [p * (1 - abs(np.random.normal(0, 0.001))) for p in prices],
-        'close': prices,
-        'volume': np.random.uniform(1000, 10000, n_samples)
+        "timestamp": dates,
+        "open": prices,
+        "high": [p * (1 + abs(np.random.normal(0, 0.001))) for p in prices],
+        "low": [p * (1 - abs(np.random.normal(0, 0.001))) for p in prices],
+        "close": prices,
+        "volume": np.random.uniform(1000, 10000, n_samples),
     })
-    data.set_index('timestamp', inplace=True)
-    
+    data.set_index("timestamp", inplace=True)
+
     # Create target variable (next period returns)
-    data['returns'] = data['close'].pct_change().shift(-1)
-    
+    data["returns"] = data["close"].pct_change().shift(-1)
+
     # Create regime labels
-    data['regime'] = np.repeat([0, 1, 2, 3], regime_length)
-    
+    data["regime"] = np.repeat([0, 1, 2, 3], regime_length)
+
     print(f"✅ Created sample data with {len(data)} rows")
     print(f"   Columns: {list(data.columns)}")
     print(f"   Regimes: {data['regime'].unique()}")
     print()
-    
+
     # 5. Demonstrate matrix optimization process
     print("🧠 MATRIX OPTIMIZATION PROCESS:")
     print("-" * 40)
-    
+
     print("Step 1: Vectorized Feature Calculation")
     print("   - Calculate feature matrix for all periods simultaneously")
     print("   - Use numpy arrays for efficient computation")
     print("   - Handle NaN values efficiently")
     print()
-    
+
     print("Step 2: Matrix Correlation Analysis")
     print("   - Calculate correlation matrix using numpy.corrcoef")
     print("   - Vectorized correlation computation")
     print("   - Efficient memory usage")
     print()
-    
+
     print("Step 3: Vectorized Information Scoring")
     print("   - Calculate SHAP importance for all periods")
     print("   - Batch processing for efficiency")
     print("   - Parallel computation where possible")
     print()
-    
+
     print("Step 4: Matrix Optimization")
     print("   - SciPy optimization for period selection")
     print("   - Multi-objective optimization (information + diversity)")
     print("   - Quality-based fallback (2 periods if 3 don't meet thresholds)")
     print("   - Constraint satisfaction with quality validation")
     print()
-    
+
     print("Step 5: File Logging and Integration")
     print("   - Save detailed results with file paths")
     print("   - Generate optimized parameters for subsequent steps")
     print("   - Log all file locations for review")
     print()
-    
+
     # 6. Show matrix operations example
     print("📊 MATRIX OPERATIONS EXAMPLE:")
     print("-" * 35)
-    
+
     # Example feature matrix calculation
     print("Feature Matrix Calculation:")
     print("   Shape: (n_samples, n_periods)")
     print("   Example for RSI with periods [5, 7, 9, 11, 13, 15, 17, 19, 21]:")
     print("   Matrix shape: (3000, 9)")
     print()
-    
+
     # Example correlation matrix
     print("Correlation Matrix:")
     print("   Shape: (n_periods, n_periods)")
@@ -143,11 +147,11 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     correlation_example = np.array([
         [1.00, 0.85, 0.72],
         [0.85, 1.00, 0.88],
-        [0.72, 0.88, 1.00]
+        [0.72, 0.88, 1.00],
     ])
     print(f"   {correlation_example}")
     print()
-    
+
     # Example optimization objective
     print("Optimization Objective:")
     print("   Maximize: Information Score + Diversity Score")
@@ -155,17 +159,17 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("   Constraint: 3 periods if quality thresholds met, else 2 periods")
     print("   Quality thresholds: min_diversity=0.2, min_info=0.05, max_corr=0.8")
     print()
-    
+
     # 7. Show file output structure
     print("📁 FILE OUTPUT STRUCTURE:")
     print("-" * 30)
-    
+
     output_dirs = config["matrix_diverse_lookback_optimization"]["file_output"]
     print("Output directories:")
     print(f"   Main output: {output_dirs['output_directory']}")
     print(f"   Step parameters: {output_dirs['step_parameters_directory']}")
     print()
-    
+
     print("Generated files:")
     print("   1. {exchange}_{symbol}_{timeframe}_matrix_diverse_lookback_periods.json")
     print("      - Complete optimization results")
@@ -187,33 +191,33 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("      - Ready-to-use feature parameters")
     print("      - Integration with step07, step08, step09")
     print()
-    
+
     # 8. Show integration with subsequent steps
     print("🔗 INTEGRATION WITH SUBSEQUENT STEPS:")
     print("-" * 40)
-    
+
     print("Step 7 Integration:")
     print("   - Load optimized parameters from file")
     print("   - Use optimized lookback periods for feature engineering")
     print("   - Validate parameter integrity")
     print()
-    
+
     print("Step 8 Integration:")
     print("   - Generate features using optimized periods")
     print("   - Ensure diverse yet meaningful feature set")
     print("   - Maintain feature quality and diversity")
     print()
-    
+
     print("Step 9 Integration:")
     print("   - Use optimized periods for model training")
     print("   - Leverage diverse information content")
     print("   - Improve model performance and robustness")
     print()
-    
+
     # 9. Show example optimization results
     print("🎯 EXAMPLE OPTIMIZATION RESULTS:")
     print("-" * 40)
-    
+
     # Simulate optimization results with quality-based fallback
     example_results = {
         "RSI": {
@@ -221,38 +225,38 @@ async def demonstrate_matrix_diverse_lookback_optimization():
             "diversity_score": 0.55,
             "optimization_method": "scipy",
             "matrix_operations": ["vectorized_calculation", "correlation_matrix", "shap_scoring"],
-            "quality_check": "passed_3_periods"
+            "quality_check": "passed_3_periods",
         },
         "MACD_fast": {
             "selected_periods": [8, 12],  # Fallback to 2 periods due to quality
             "diversity_score": 0.68,
             "optimization_method": "scipy",
             "matrix_operations": ["vectorized_calculation", "correlation_matrix", "shap_scoring"],
-            "quality_check": "fallback_2_periods"
+            "quality_check": "fallback_2_periods",
         },
         "Bollinger_Bands": {
             "selected_periods": [14, 28, 42],
             "diversity_score": 0.58,
             "optimization_method": "scipy",
             "matrix_operations": ["vectorized_calculation", "correlation_matrix", "shap_scoring"],
-            "quality_check": "passed_3_periods"
+            "quality_check": "passed_3_periods",
         },
         "Williams_R": {
             "selected_periods": [9, 18],
             "diversity_score": 0.72,
             "optimization_method": "scipy",
             "matrix_operations": ["vectorized_calculation", "correlation_matrix", "shap_scoring"],
-            "quality_check": "fallback_2_periods"
+            "quality_check": "fallback_2_periods",
         },
         "MFI": {
             "selected_periods": [7, 14, 21],
             "diversity_score": 0.61,
             "optimization_method": "scipy",
             "matrix_operations": ["vectorized_calculation", "correlation_matrix", "shap_scoring"],
-            "quality_check": "passed_3_periods"
-        }
+            "quality_check": "passed_3_periods",
+        },
     }
-    
+
     for feature, result in example_results.items():
         print(f"{feature}:")
         print(f"   Selected periods: {result['selected_periods']}")
@@ -261,18 +265,18 @@ async def demonstrate_matrix_diverse_lookback_optimization():
         print(f"   Matrix operations: {', '.join(result['matrix_operations'])}")
         print(f"   Quality check: {result['quality_check']}")
         print()
-    
+
     # 10. Show file logging example
     print("📋 FILE LOGGING EXAMPLE:")
     print("-" * 30)
-    
+
     print("During optimization, the system logs:")
     print("   💾 Saved main results to: /workspace/data/matrix_diverse_lookback_optimization/binance_BTCUSDT_1m_matrix_diverse_lookback_periods.json")
     print("   💾 Saved summary to: /workspace/data/matrix_diverse_lookback_optimization/binance_BTCUSDT_1m_diverse_periods_summary.json")
     print("   💾 Saved matrix details to: /workspace/data/matrix_diverse_lookback_optimization/binance_BTCUSDT_1m_matrix_optimization_details.json")
     print("   💾 Saved optimized parameters to: /workspace/data/optimized_feature_parameters/binance_BTCUSDT_1m_optimized_feature_parameters.json")
     print()
-    
+
     print("📁 OPTIMIZATION FILES SAVED:")
     print("=" * 50)
     print("MAIN_RESULTS: /workspace/data/matrix_diverse_lookback_optimization/binance_BTCUSDT_1m_matrix_diverse_lookback_periods.json")
@@ -282,7 +286,7 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("=" * 50)
     print("📋 All files are ready for review and subsequent steps!")
     print()
-    
+
     # 11. Show benefits of matrix optimization
     print("✅ BENEFITS OF MATRIX OPTIMIZATION:")
     print("-" * 40)
@@ -291,29 +295,29 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("   - Matrix operations leverage optimized libraries")
     print("   - Parallel processing for large datasets")
     print()
-    
+
     print("2. Memory Efficiency:")
     print("   - Efficient memory usage with numpy arrays")
     print("   - Batch processing reduces memory footprint")
     print("   - Optimized data structures")
     print()
-    
+
     print("3. Optimization Quality:")
     print("   - Multi-objective optimization with constraints")
     print("   - Global optimization using SciPy/Optuna")
     print("   - Better convergence to optimal solutions")
     print()
-    
+
     print("4. Integration Benefits:")
     print("   - Seamless integration with subsequent steps")
     print("   - Detailed file logging for review")
     print("   - Optimized parameters ready for use")
     print()
-    
+
     # 12. Show performance metrics
     print("📊 PERFORMANCE METRICS:")
     print("-" * 25)
-    
+
     print("Matrix optimization performance:")
     print("   - Total features optimized: 50+ technical indicators")
     print("   - Total periods tested: 1,250+")
@@ -324,7 +328,7 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("   - Optimization time: ~120 seconds")
     print("   - Memory usage: ~3.2 GB")
     print()
-    
+
     print("🎉 MATRIX-BASED DIVERSE LOOKBACK OPTIMIZATION DEMONSTRATION COMPLETE!")
     print()
     print("💡 KEY INSIGHTS:")

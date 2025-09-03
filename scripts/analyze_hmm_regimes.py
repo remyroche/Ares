@@ -7,11 +7,11 @@ This script provides comprehensive analysis and visualization of HMM regimes
 with human-readable interpretations of each market archetype.
 """
 
+import argparse
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import argparse
-import json
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -1397,17 +1397,16 @@ class HMMRegimeAnalyzer:
                     f"    📊 Frequency: {frequency:,} occurrences ({percentage:.2f}% of time)",
                 )
                 print()
-        else:
-            # Fallback if no cluster data
-            for cluster_id, description in sorted(
-                archetype_descriptions.items(),
-                key=lambda x: int(x[0]),
-            ):
-                if int(cluster_id) < 0:  # Skip noise clusters
-                    continue
-                print(f"  🏆 Archetype {cluster_id}:")
-                print(f"    📝 {description}")
-                print()
+        # Fallback if no cluster data
+        for cluster_id, description in sorted(
+            archetype_descriptions.items(),
+            key=lambda x: int(x[0]),
+        ):
+            if int(cluster_id) < 0:  # Skip noise clusters
+                continue
+            print(f"  🏆 Archetype {cluster_id}:")
+            print(f"    📝 {description}")
+            print()
 
         # Prevalence summary
         print("📈 PREVALENCE SUMMARY:")
@@ -1641,7 +1640,7 @@ class HMMRegimeAnalyzer:
         )
 
         # Add value labels on bars
-        for bar, count in zip(bars, regime_counts.values, strict, False):
+        for bar, count in zip(bars, regime_counts.values, strict, False, strict=False):
             height=bar.get_height()
             ax1.text(
                 bar.get_x() + bar.get_width() / 2.0,
@@ -1669,6 +1668,7 @@ class HMMRegimeAnalyzer:
             print(f"💾 Plot saved to: {save_path}")
         else:
             plt.show()
+        return None
 
     def generate_regime_report(self, exchange: str, symbol: str, timeframe: str, output_dir: str="reports", ) -> None:
         """Generate a comprehensive regime analysis report."""
@@ -1823,7 +1823,7 @@ class HMMRegimeAnalyzer:
         analysis.append("- Monitor regime transitions for market condition changes")
         analysis.append("")
 
-        
+
 
         return analysis
 
@@ -1966,7 +1966,7 @@ class HMMRegimeAnalyzer:
         plt.close()
         print(f"💾 Persistence timeline saved to: {plot_path}")
 
-        
+
 
     def _create_feature_importance_radar(self, meta: dict[str, Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
         """Create a radar chart showing feature importance."""
@@ -2016,7 +2016,7 @@ class HMMRegimeAnalyzer:
         plt.close()
         print(f"💾 Feature importance radar saved to: {plot_path}")
 
-        
+
 
     def _create_correlation_network(self, cluster_df: pd.DataFrame, meta: dict[str, Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
         """Create a network diagram showing regime correlations."""
@@ -2095,7 +2095,7 @@ class HMMRegimeAnalyzer:
         plt.close()
         print(f"💾 Correlation network saved to: {plot_path}")
 
-        
+
 
 def main():
     parser, argparse.ArgumentParser(description="Analyze HMM regime discovery results")

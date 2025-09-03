@@ -21,6 +21,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
 )
 
+
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
 
@@ -57,7 +58,7 @@ class GPUAccelerationM1:
     )
     @handles_errors(fallback=None)
     def gpu_matrix_multiplication(
-        self, A: np.ndarray, B: np.ndarray
+        self, A: np.ndarray, B: np.ndarray,
     ) -> tuple[np.ndarray, dict[str, Any]]:
         """
         GPU-accelerated matrix multiplication using MPS.
@@ -123,7 +124,7 @@ class GPUAccelerationM1:
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handles_errors(fallback=None)
     def gpu_svd_decomposition(
-        self, matrix: np.ndarray, k: int | None = None
+        self, matrix: np.ndarray, k: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
         """
         GPU-accelerated SVD decomposition using MPS.
@@ -213,17 +214,14 @@ class GPUAccelerationM1:
                 return False
 
             # Check memory usage
-            if self._get_gpu_memory_usage() > self.memory_threshold:
-                return False
-
-            return True
+            return not self._get_gpu_memory_usage() > self.memory_threshold
 
         except Exception as e:
             self.logger.warning(f"Error checking GPU usage: {e}")
             return False
 
     def _cpu_matrix_multiplication(
-        self, A: np.ndarray, B: np.ndarray
+        self, A: np.ndarray, B: np.ndarray,
     ) -> tuple[np.ndarray, dict[str, Any]]:
         """CPU fallback for matrix multiplication.
 
@@ -249,7 +247,7 @@ class GPUAccelerationM1:
         return result, metadata
 
     def _cpu_svd_decomposition(
-        self, matrix: np.ndarray, k: int | None = None
+        self, matrix: np.ndarray, k: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
         """CPU fallback for SVD decomposition.
 

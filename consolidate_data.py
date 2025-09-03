@@ -6,10 +6,10 @@ This script consolidates the individual monthly klines files into a single file
 that the training pipeline expects.
 """
 
-from datetime import datetime
 import glob
 import os
 import sys
+from datetime import datetime
 
 import pandas as pd
 

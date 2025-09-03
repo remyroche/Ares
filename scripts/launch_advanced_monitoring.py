@@ -6,16 +6,14 @@ This script demonstrates how to set up and use the advanced monitoring and track
 for the Ares trading bot.
 """
 
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
 import signal
 import sys
-import time
+from typing import Any
 
 from src.monitoring import MonitoringIntegrationManager
-from src.utils.warning_symbols import error, failed, initialization_error, warning
+from src.utils.logger import system_logger
+
 
 class AdvancedMonitoringLauncher:
     """
@@ -89,7 +87,7 @@ class AdvancedMonitoringLauncher:
         # Integration Manager Configuration
                 "monitoring_integration": {
                     "enable_unified_monitoring": True, "enable_cross_component_tracking": True,
-                    "enable_performance_correlation": True
+                    "enable_performance_correlation": True,
                 },
             },
         }
@@ -163,28 +161,28 @@ class AdvancedMonitoringLauncher:
 
         # System metrics
         system_metrics=dashboard_data.get("system_metrics", {})
-        print(f"🖥️  System Metrics:")
+        print("🖥️  System Metrics:")
         print(f"   CPU Usage: {system_metrics.get('cpu_usage', 'N/A')}%")
         print(f"   Memory Usage: {system_metrics.get('memory_usage', 'N/A')}%")
         print(f"   Active Processes: {system_metrics.get('active_processes', 'N/A')}")
 
         # Performance metrics
         performance_metrics=dashboard_data.get("performance_metrics", {})
-        print(f"⚡ Performance Metrics:")
+        print("⚡ Performance Metrics:")
         print(f"   Response Time: {performance_metrics.get('avg_response_time', 'N/A')}ms")
         print(f"   Throughput: {performance_metrics.get('requests_per_second', 'N/A')} req/s")
         print(f"   Error Rate: {performance_metrics.get('error_rate', 'N/A')}%")
 
         # ML metrics
         ml_metrics=dashboard_data.get("ml_metrics", {})
-        print(f"🤖 ML Metrics:")
+        print("🤖 ML Metrics:")
         print(f"   Model Accuracy: {ml_metrics.get('model_accuracy', 'N/A')}%")
         print(f"   Prediction Latency: {ml_metrics.get('prediction_latency', 'N/A')}ms")
         print(f"   Drift Score: {ml_metrics.get('drift_score', 'N/A')}")
 
         # Trading metrics
         trading_metrics=dashboard_data.get("trading_metrics", {})
-        print(f"💰 Trading Metrics:")
+        print("💰 Trading Metrics:")
         print(f"   Portfolio Value: ${trading_metrics.get('portfolio_value', 'N/A'):,.2f}")
         print(f"   Daily P&L: ${trading_metrics.get('daily_pnl', 'N/A'):,.2f}")
         print(f"   Win Rate: {trading_metrics.get('win_rate', 'N/A')}%")
@@ -244,7 +242,7 @@ async def main():
     import argparse
 
     parser=argparse.ArgumentParser(
-        description="Advanced Monitoring System Launcher"
+        description="Advanced Monitoring System Launcher",
     )
     parser.add_argument(
         "--demo",
@@ -293,7 +291,7 @@ async def main():
         else:
             print("🚀 Advanced monitoring system is running...")
             print("Press Ctrl+C to stop")
-            
+
             # Keep running until interrupted
             while launcher.is_running:
                 await asyncio.sleep(1)

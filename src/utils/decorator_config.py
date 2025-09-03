@@ -2,9 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
-
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from typing import Any
 
 
 class ValidationMode(Enum):
@@ -47,11 +45,11 @@ class DecoratorConfig:
     min_unique_values: int = 2
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> "DecoratorConfig":
+    def from_dict(cls, config_dict: dict[str, Any]) -> "DecoratorConfig":
         """Create config from dictionary."""
         return cls(**config_dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
             "validation_mode": self.validation_mode.value,

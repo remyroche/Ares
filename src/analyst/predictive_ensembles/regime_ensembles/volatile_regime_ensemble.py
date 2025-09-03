@@ -1,19 +1,6 @@
-import numpy as np
 import logging
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+
+import numpy as np
 import pandas as pd
 from arch import arch_model
 from keras.layers import (
@@ -28,6 +15,10 @@ from keras.layers import (
 from keras.models import Model
 from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
+
+from src.utils.warning_symbols import (
+    failed,
+)
 
 from .base_ensemble import BaseEnsemble
 
@@ -115,8 +106,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         try:
             self.logger.info("Training GARCH model for volatility modeling...")
             self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
-        except Exception as e:
-            self.logger.error(failed("GARCH training failed: {e}"))
+        except Exception:
+            self.logger.exception(failed("GARCH training failed: {e}"))
 
 
         self.logger.info("✅ VolatileRegime base models training completed")
@@ -143,8 +134,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
                 return np.array(X_seq), np.array(y_seq)
             return np.array([]), np.array([])
 
-        except Exception as e:
-            self.logger.error("Error preparing sequence data: {e}")
+        except Exception:
+            self.logger.exception("Error preparing sequence data: {e}")
 
             return np.array([]), np.array([])
 
@@ -158,14 +149,14 @@ class VolatileRegimeEnsemble(BaseEnsemble):
 
             if is_transformer:
                 return self._build_transformer_model(
-                    input_shape, num_classes, X_seq, y_seq_encoded
+                    input_shape, num_classes, X_seq, y_seq_encoded,
                 )
             return self._build_lstm_model(
-                input_shape, num_classes, X_seq, y_seq_encoded
+                input_shape, num_classes, X_seq, y_seq_encoded,
             )
 
-        except Exception as e:
-            self.logger.error("Error training DL model: {e}")
+        except Exception:
+            self.logger.exception("Error training DL model: {e}")
 
             return None
 
@@ -207,8 +198,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
 
             return model
 
-        except Exception as e:
-            self.logger.error("Error building LSTM model: {e}")
+        except Exception:
+            self.logger.exception("Error building LSTM model: {e}")
 
             return None
 
@@ -259,8 +250,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
 
             return model
 
-        except Exception as e:
-            self.logger.error("Error building Transformer model: {e}")
+        except Exception:
+            self.logger.exception("Error building Transformer model: {e}")
 
             return None
 
@@ -276,8 +267,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
                 batch_size=1024,
             )
             return tabnet
-        except Exception as e:
-            self.logger.error(failed("TabNet training failed: {e}"))
+        except Exception:
+            self.logger.exception(failed("TabNet training failed: {e}"))
 
             return None
 
@@ -291,8 +282,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             garch_model = arch_model(returns, vol="GARCH", p=1, q=1)
             return garch_model.fit(disp="off")
 
-        except Exception as e:
-            self.logger.error(failed("GARCH model training failed: {e}"))
+        except Exception:
+            self.logger.exception(failed("GARCH model training failed: {e}"))
 
             return None
 
@@ -367,5 +358,5 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return weighted_pred, ensemble_confidence
 
         except Exception as e:
-            self.logger.error(f"Error in VolatileRegime prediction: {e}")
+            self.logger.exception(f"Error in VolatileRegime prediction: {e}")
             return 0.5, 0.5

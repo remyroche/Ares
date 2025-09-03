@@ -45,4 +45,5 @@ class ExchangeFactory:
                 trade_symbol=str(symbol),
             )
 
-        raise ValueError(f"Unsupported exchange: {exchange_name}")
+        msg = f"Unsupported exchange: {exchange_name}"
+        raise ValueError(msg)

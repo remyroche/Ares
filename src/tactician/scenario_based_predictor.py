@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
-import pandas as pd
 import lightgbm as lgb
+import numpy as np
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
-import asyncio
 
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +37,14 @@ class ScenarioBasedPredictor:
     - 5: Neutral: No scenario triggered within time limit
     """
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config: Dict[str, Any] = config
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config: dict[str, Any] = config
         self.logger = logger
 
         step17_config = config.get("step17_optimization", {})
         scenario_config = step17_config.get("scenario_analysis", {})
 
-        self.scenarios: Dict[int, Dict[str, Any]] = {
+        self.scenarios: dict[int, dict[str, Any]] = {
             0: {
                 "name": "Profit Zone 1 (Small Profit)",
                 "profit_target": float(scenario_config.get("profit_zone_1_target", 0.005)),
@@ -79,7 +79,7 @@ class ScenarioBasedPredictor:
 
         self.time_limit_minutes: int = int(scenario_config.get("time_limit_minutes", 30))
 
-        self.model_config: Dict[str, Any] = {
+        self.model_config: dict[str, Any] = {
             "n_estimators": int(scenario_config.get("n_estimators", 100)),
             "learning_rate": float(scenario_config.get("learning_rate", 0.1)),
             "max_depth": int(scenario_config.get("max_depth", 6)),
@@ -90,7 +90,7 @@ class ScenarioBasedPredictor:
             "verbose": -1,
         }
 
-        self.decision_thresholds: Dict[str, float] = {
+        self.decision_thresholds: dict[str, float] = {
             "profit_zone_combined": float(scenario_config.get("profit_zone_combined_threshold", 0.6)),
             "risk_zone_combined": float(scenario_config.get("risk_zone_combined_threshold", 0.2)),
             "exit_risk_threshold": float(scenario_config.get("exit_risk_threshold", 0.5)),
@@ -98,7 +98,7 @@ class ScenarioBasedPredictor:
             "confidence_threshold": float(scenario_config.get("confidence_threshold", 0.7)),
         }
 
-        self.feature_config: Dict[str, int] = {
+        self.feature_config: dict[str, int] = {
             "lookback_periods": int(scenario_config.get("lookback_periods", 20)),
             "volatility_window": int(scenario_config.get("volatility_window", 20)),
             "rsi_period": int(scenario_config.get("rsi_period", 14)),
@@ -107,11 +107,11 @@ class ScenarioBasedPredictor:
             "volume_ma_period": int(scenario_config.get("volume_ma_period", 10)),
         }
 
-        self.model: Optional[lgb.LGBMClassifier] = None
+        self.model: lgb.LGBMClassifier | None = None
         self.is_trained: bool = False
-        self.last_training_time: Optional[datetime] = None
-        self.feature_importance: Dict[str, float] = {}
-        self.model_performance: Dict[str, float] = {}
+        self.last_training_time: datetime | None = None
+        self.feature_importance: dict[str, float] = {}
+        self.model_performance: dict[str, float] = {}
 
     async def initialize(self) -> bool:
         try:
@@ -123,7 +123,7 @@ class ScenarioBasedPredictor:
             self.logger.info("Scenario-Based Predictor initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Scenario-Based Predictor initialization failed: {e}")
+            self.logger.exception(f"Scenario-Based Predictor initialization failed: {e}")
             return False
 
     def _validate_configuration(self) -> bool:
@@ -153,7 +153,7 @@ class ScenarioBasedPredictor:
 
             return True
         except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+            self.logger.exception(f"Configuration validation failed: {e}")
             return False
 
     def prepare_scenario_targets(
@@ -164,7 +164,8 @@ class ScenarioBasedPredictor:
     ) -> np.ndarray:
         try:
             if len(X) != len(market_data):
-                raise ValueError("Feature array and market data must have same length")
+                msg = "Feature array and market data must have same length"
+                raise ValueError(msg)
             prices = market_data[base_price_column].values
             labels = [
                 self._determine_first_scenario(prices[i:], i, self.time_limit_minutes)
@@ -172,7 +173,7 @@ class ScenarioBasedPredictor:
             ]
             return np.array(labels)
         except Exception as e:
-            self.logger.error(f"Scenario labeling failed: {e}")
+            self.logger.exception(f"Scenario labeling failed: {e}")
             return np.full(len(X), 5)
 
     def _determine_first_scenario(
@@ -191,14 +192,14 @@ class ScenarioBasedPredictor:
                     return scenario_id
             return 5
         except Exception as e:
-            self.logger.error(f"Scenario determination failed: {e}")
+            self.logger.exception(f"Scenario determination failed: {e}")
             return 5
 
     def _scenario_triggered(
         self,
         prices: np.ndarray,
         current_price: float,
-        scenario: Dict[str, Any],
+        scenario: dict[str, Any],
     ) -> bool:
         try:
             profit_target = float(scenario["profit_target"])
@@ -217,16 +218,16 @@ class ScenarioBasedPredictor:
                         return False
             return False
         except Exception as e:
-            self.logger.error(f"Scenario trigger check failed: {e}")
+            self.logger.exception(f"Scenario trigger check failed: {e}")
             return False
 
     async def train_model(
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        X_val: Optional[np.ndarray] = None,
-        y_val: Optional[np.ndarray] = None,
-        market_data: Optional[pd.DataFrame] = None,
+        X_val: np.ndarray | None = None,
+        y_val: np.ndarray | None = None,
+        market_data: pd.DataFrame | None = None,
     ) -> bool:
         try:
             self.logger.info("Training scenario prediction model...")
@@ -235,13 +236,14 @@ class ScenarioBasedPredictor:
 
             if X_val is None or y_val is None:
                 X_train_split, X_val, y_train_split, y_val = train_test_split(
-                    X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
+                    X_train, y_train, test_size=0.2, random_state=42, stratify=y_train,
                 )
             else:
                 X_train_split, y_train_split = X_train, y_train
 
             if self.model is None:
-                raise RuntimeError("Model not initialized")
+                msg = "Model not initialized"
+                raise RuntimeError(msg)
 
             self.model.fit(
                 X_train_split,
@@ -252,7 +254,7 @@ class ScenarioBasedPredictor:
             )
 
             self.feature_importance = dict(
-                zip([f"feature_{i}" for i in range(X_train.shape[1])], self.model.feature_importances_)
+                zip([f"feature_{i}" for i in range(X_train.shape[1])], self.model.feature_importances_, strict=False),
             )
 
             y_pred = self.model.predict(X_val)
@@ -267,18 +269,18 @@ class ScenarioBasedPredictor:
             self.is_trained = True
             self.last_training_time = datetime.now()
             self.logger.info(
-                f"Model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}"
+                f"Model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}",
             )
             return True
         except Exception as e:
-            self.logger.error(f"Model training failed: {e}")
+            self.logger.exception(f"Model training failed: {e}")
             return False
 
     async def predict_scenarios(
         self,
         X: np.ndarray,
-        market_data: Optional[pd.DataFrame] = None,
-    ) -> Dict[str, Any]:
+        market_data: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
         try:
             if not self.is_trained or self.model is None:
                 self.logger.warning("Model not trained, using fallback predictions")
@@ -290,7 +292,7 @@ class ScenarioBasedPredictor:
             confidence = self._calculate_confidence(probabilities[0])
 
             return {
-                "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0])),
+                "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0], strict=False)),
                 "predicted_scenario": predicted_scenario,
                 "scenario_name": self.scenarios[predicted_scenario]["name"],
                 "confidence": float(confidence),
@@ -303,10 +305,10 @@ class ScenarioBasedPredictor:
                 },
             }
         except Exception as e:
-            self.logger.error(f"Scenario prediction failed: {e}")
+            self.logger.exception(f"Scenario prediction failed: {e}")
             return self._generate_fallback_predictions(X)
 
-    def _analyze_scenario_probabilities(self, probabilities: np.ndarray) -> Dict[str, Any]:
+    def _analyze_scenario_probabilities(self, probabilities: np.ndarray) -> dict[str, Any]:
         try:
             profit_zone_prob = float(sum(probabilities[i] for i in [0, 1, 2]))
             risk_zone_prob = float(sum(probabilities[i] for i in [3, 4]))
@@ -330,7 +332,7 @@ class ScenarioBasedPredictor:
                 "profit_risk_difference": float(profit_zone_prob - risk_zone_prob),
             }
         except Exception as e:
-            self.logger.error(f"Scenario analysis failed: {e}")
+            self.logger.exception(f"Scenario analysis failed: {e}")
             return {
                 "profit_zone_probability": 0.0,
                 "risk_zone_probability": 0.0,
@@ -347,16 +349,16 @@ class ScenarioBasedPredictor:
             confidence = 1.0 - (entropy / max_entropy)
             return float(np.clip(confidence, 0.0, 1.0))
         except Exception as e:
-            self.logger.error(f"Confidence calculation failed: {e}")
+            self.logger.exception(f"Confidence calculation failed: {e}")
             return 0.5
 
-    def _generate_fallback_predictions(self, X: np.ndarray) -> Dict[str, Any]:
+    def _generate_fallback_predictions(self, X: np.ndarray) -> dict[str, Any]:
         try:
             n_scenarios = len(self.scenarios)
             base_prob = 1.0 / n_scenarios
             probabilities = [base_prob * 0.8] * (n_scenarios - 1) + [base_prob * 1.4]
             return {
-                "probabilities": dict(zip(range(n_scenarios), probabilities)),
+                "probabilities": dict(zip(range(n_scenarios), probabilities, strict=False)),
                 "predicted_scenario": 5,
                 "scenario_name": self.scenarios[5]["name"],
                 "confidence": 0.3,
@@ -376,9 +378,9 @@ class ScenarioBasedPredictor:
                 },
             }
         except Exception as e:
-            self.logger.error(f"Fallback prediction generation failed: {e}")
+            self.logger.exception(f"Fallback prediction generation failed: {e}")
             return {
-                "probabilities": {i: 1.0 / 6 for i in range(6)},
+                "probabilities": dict.fromkeys(range(6), 1.0 / 6),
                 "predicted_scenario": 5,
                 "scenario_name": "Neutral",
                 "confidence": 0.0,
@@ -453,10 +455,10 @@ class ScenarioBasedPredictor:
             ]
             return np.array(features)
         except Exception as e:
-            self.logger.error(f"Feature extraction failed: {e}")
+            self.logger.exception(f"Feature extraction failed: {e}")
             return np.array([0.5] * 15)
 
-    def get_configuration_summary(self) -> Dict[str, Any]:
+    def get_configuration_summary(self) -> dict[str, Any]:
         return {
             "scenarios": self.scenarios,
             "time_limit_minutes": self.time_limit_minutes,

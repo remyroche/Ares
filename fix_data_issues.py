@@ -73,11 +73,11 @@ def analyze_data_availability() -> None:
     target_years=[2023, 2024, 2025]
 
     for year in target_years:
-        pass  # TODO: Add proper implementation
+        # TODO: Add proper implementation
         # Aggtrades analysis for this year
         year_aggtrades=[d for d in aggtrades_dates if d.year == year]
         if year_aggtrades:
-            pass  # TODO: Add proper implementation
+            # TODO: Add proper implementation
             # Find gaps
             expected_dates = []
             current_date = datetime(year, 1, 1).date()
@@ -125,7 +125,7 @@ def analyze_data_availability() -> None:
     # Detailed gap analysis
 
     for year in target_years:
-        pass  # TODO: Add proper implementation
+        # TODO: Add proper implementation
         # Aggtrades gaps
         year_aggtrades=[d for d in aggtrades_dates if d.year == year]
         if year_aggtrades:

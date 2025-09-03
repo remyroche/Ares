@@ -23,9 +23,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import sys
+from pathlib import Path
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -40,7 +39,7 @@ from src.utils.warning_symbols import failed, warning  # noqa: E402
 async def export_database(db_path: str="data/ares_local_db.sqlite") -> None:
     """Export database for trading computer."""
     logger=system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
+    db_manager: SQLiteManager | None = None
 
     try:
         # Initialize database manager
@@ -65,7 +64,7 @@ async def export_database(db_path: str="data/ares_local_db.sqlite") -> None:
             print("\n📋 Next steps:")
             print("   1. Copy the export file to your trading computer")
             print(
-                f"   2. Run: python scripts/database_migration.py import {export_path}"
+                f"   2. Run: python scripts/database_migration.py import {export_path}",
             )
         else:
             print(failed("Database export failed!"))
@@ -84,7 +83,7 @@ async def export_database(db_path: str="data/ares_local_db.sqlite") -> None:
 async def import_database(import_path: str, db_path: str="data/ares_local_db.sqlite") -> None:
     """Import database on trading computer."""
     logger=system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
+    db_manager: SQLiteManager | None = None
 
     try:
         # Validate the import file first
@@ -128,7 +127,7 @@ async def import_database(import_path: str, db_path: str="data/ares_local_db.sql
 async def validate_file(file_path: str) -> None:
     """Validate a migration file."""
     logger=system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
+    db_manager: SQLiteManager | None = None
 
     try:
         db_manager=SQLiteManager("data/ares_local_db.sqlite")
@@ -175,7 +174,7 @@ async def validate_file(file_path: str) -> None:
 async def create_backup(db_path: str="data/ares_local_db.sqlite") -> None:
     """Create a manual backup of the database."""
     logger=system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
+    db_manager: SQLiteManager | None = None
 
     try:
         db_manager=SQLiteManager(db_path)
@@ -204,7 +203,7 @@ async def create_backup(db_path: str="data/ares_local_db.sqlite") -> None:
 async def list_migrations(db_path: str="data/ares_local_db.sqlite") -> None:
     """List all available migrations."""
     logger=system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
+    db_manager: SQLiteManager | None = None
 
     try:
         db_manager=SQLiteManager(db_path)
@@ -248,7 +247,7 @@ async def list_migrations(db_path: str="data/ares_local_db.sqlite") -> None:
 async def cleanup_migrations(db_path: str="data/ares_local_db.sqlite") -> None:
     """Clean up old migrations."""
     logger=system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
+    db_manager: SQLiteManager | None = None
 
     try:
         db_manager=SQLiteManager(db_path)

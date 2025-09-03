@@ -8,22 +8,19 @@ calculations and handling edge cases like NaN, infinite, and zero values.
 import functools
 import logging
 import signal
-import time
+from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class VIFValidationError(Exception):
     """Custom exception for VIF validation errors."""
 
-    pass
 
 
 @contextmanager
@@ -31,7 +28,8 @@ def timeout_context(seconds: int, operation_name: str = "operation"):
     """Context manager for timeout handling."""
 
     def timeout_handler(signum, frame):
-        raise TimeoutError(f"{operation_name} timed out after {seconds} seconds")
+        msg = f"{operation_name} timed out after {seconds} seconds"
+        raise TimeoutError(msg)
 
     # Set up signal handler
     old_handler = signal.signal(signal.SIGALRM, timeout_handler)
@@ -91,7 +89,7 @@ def validate_vif_inputs(
                 validation_results["infinite"] = infinite_results
                 if infinite_results["has_issues"]:
                     logger.warning(
-                        f"⚠️ VIF Validation: Found infinite values in {infinite_results['infinite_count']} cells"
+                        f"⚠️ VIF Validation: Found infinite values in {infinite_results['infinite_count']} cells",
                     )
 
             # Check for zero variance features
@@ -100,7 +98,7 @@ def validate_vif_inputs(
                 validation_results["zero_variance"] = zero_var_results
                 if zero_var_results["has_issues"]:
                     logger.warning(
-                        f"⚠️ VIF Validation: Found {len(zero_var_results['zero_var_features'])} zero variance features"
+                        f"⚠️ VIF Validation: Found {len(zero_var_results['zero_var_features'])} zero variance features",
                     )
 
             # Check for duplicate features
@@ -109,7 +107,7 @@ def validate_vif_inputs(
                 validation_results["duplicates"] = duplicate_results
                 if duplicate_results["has_issues"]:
                     logger.warning(
-                        f"⚠️ VIF Validation: Found {len(duplicate_results['duplicate_features'])} duplicate features"
+                        f"⚠️ VIF Validation: Found {len(duplicate_results['duplicate_features'])} duplicate features",
                     )
 
             # Log comprehensive validation summary
@@ -163,7 +161,7 @@ def validate_vif_outputs(
                 validation_results["nan_vif"] = nan_vif_results
                 if nan_vif_results["has_issues"]:
                     logger.error(
-                        f"❌ VIF Validation: Found {len(nan_vif_results['nan_vif_features'])} features with NaN VIF values"
+                        f"❌ VIF Validation: Found {len(nan_vif_results['nan_vif_features'])} features with NaN VIF values",
                     )
 
             # Check for infinite VIF values
@@ -172,7 +170,7 @@ def validate_vif_outputs(
                 validation_results["infinite_vif"] = infinite_vif_results
                 if infinite_vif_results["has_issues"]:
                     logger.error(
-                        f"❌ VIF Validation: Found {len(infinite_vif_results['infinite_vif_features'])} features with infinite VIF values"
+                        f"❌ VIF Validation: Found {len(infinite_vif_results['infinite_vif_features'])} features with infinite VIF values",
                     )
 
             # Check for zero VIF values
@@ -181,7 +179,7 @@ def validate_vif_outputs(
                 validation_results["zero_vif"] = zero_vif_results
                 if zero_vif_results["has_issues"]:
                     logger.warning(
-                        f"⚠️ VIF Validation: Found {len(zero_vif_results['zero_vif_features'])} features with zero VIF values"
+                        f"⚠️ VIF Validation: Found {len(zero_vif_results['zero_vif_features'])} features with zero VIF values",
                     )
 
             # Check for extremely high VIF values
@@ -189,7 +187,7 @@ def validate_vif_outputs(
             validation_results["high_vif"] = high_vif_results
             if high_vif_results["has_issues"]:
                 logger.warning(
-                    f"⚠️ VIF Validation: Found {len(high_vif_results['high_vif_features'])} features with VIF > {max_vif_threshold}"
+                    f"⚠️ VIF Validation: Found {len(high_vif_results['high_vif_features'])} features with VIF > {max_vif_threshold}",
                 )
 
             # Log comprehensive VIF validation summary
@@ -224,33 +222,35 @@ def safe_vif_calculation(timeout_seconds: int = 30, fallback_strategy: str = "on
                     return result
 
             except TimeoutError:
-                logger.error(f"❌ VIF Validation: VIF calculation timed out after {timeout_seconds} seconds")
+                logger.exception(f"❌ VIF Validation: VIF calculation timed out after {timeout_seconds} seconds")
                 if fallback_strategy == "ones":
                     logger.info("🔄 VIF Validation: Using fallback strategy - setting all VIF values to 1.0")
                     return _create_fallback_vif_result(args, kwargs, 1.0)
-                elif fallback_strategy == "skip":
+                if fallback_strategy == "skip":
                     logger.info("🔄 VIF Validation: Using fallback strategy - skipping VIF calculation")
                     return _create_fallback_vif_result(args, kwargs, None)
-                else:  # error
-                    raise VIFValidationError("VIF calculation failed and no fallback strategy specified")
+                # error
+                msg = "VIF calculation failed and no fallback strategy specified"
+                raise VIFValidationError(msg)
 
             except Exception as e:
-                logger.error(f"❌ VIF Validation: VIF calculation failed with error: {e}")
+                logger.exception(f"❌ VIF Validation: VIF calculation failed with error: {e}")
                 if fallback_strategy == "ones":
                     logger.info("🔄 VIF Validation: Using fallback strategy - setting all VIF values to 1.0")
                     return _create_fallback_vif_result(args, kwargs, 1.0)
-                elif fallback_strategy == "skip":
+                if fallback_strategy == "skip":
                     logger.info("🔄 VIF Validation: Using fallback strategy - skipping VIF calculation")
                     return _create_fallback_vif_result(args, kwargs, None)
-                else:  # error
-                    raise VIFValidationError(f"VIF calculation failed: {e}")
+                # error
+                msg = f"VIF calculation failed: {e}"
+                raise VIFValidationError(msg)
 
         return wrapper
 
     return decorator
 
 
-def _extract_data_from_args(args: tuple, kwargs: dict) -> Optional[pd.DataFrame]:
+def _extract_data_from_args(args: tuple, kwargs: dict) -> pd.DataFrame | None:
     """Extract DataFrame from function arguments."""
     # Look for DataFrame in positional arguments
     for arg in args:
@@ -258,30 +258,30 @@ def _extract_data_from_args(args: tuple, kwargs: dict) -> Optional[pd.DataFrame]
             return arg
 
     # Look for DataFrame in keyword arguments
-    for key, value in kwargs.items():
+    for value in kwargs.values():
         if isinstance(value, pd.DataFrame):
             return value
 
     return None
 
 
-def _extract_vif_from_result(result: Any) -> Optional[pd.Series]:
+def _extract_vif_from_result(result: Any) -> pd.Series | None:
     """Extract VIF values from function result."""
     if isinstance(result, pd.Series):
         return result
-    elif isinstance(result, dict) and "vif_values" in result:
+    if isinstance(result, dict) and "vif_values" in result:
         return result["vif_values"]
-    elif isinstance(result, dict) and "vif" in result:
+    if isinstance(result, dict) and "vif" in result:
         return result["vif"]
-    elif hasattr(result, "vif_values"):
+    if hasattr(result, "vif_values"):
         return result.vif_values
-    elif hasattr(result, "vif"):
+    if hasattr(result, "vif"):
         return result.vif
 
     return None
 
 
-def _validate_nan_values(data: pd.DataFrame, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_nan_values(data: pd.DataFrame, logger: logging.Logger) -> dict[str, Any]:
     """Validate for NaN values in the data."""
     nan_count = data.isna().sum().sum()
     nan_features = data.columns[data.isna().any()].tolist()
@@ -294,7 +294,7 @@ def _validate_nan_values(data: pd.DataFrame, logger: logging.Logger) -> Dict[str
     }
 
 
-def _validate_infinite_values(data: pd.DataFrame, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_infinite_values(data: pd.DataFrame, logger: logging.Logger) -> dict[str, Any]:
     """Validate for infinite values in the data."""
     numeric_data = data.select_dtypes(include=[np.number])
     infinite_count = np.isinf(numeric_data).sum().sum()
@@ -308,7 +308,7 @@ def _validate_infinite_values(data: pd.DataFrame, logger: logging.Logger) -> Dic
     }
 
 
-def _validate_zero_variance_features(data: pd.DataFrame, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_zero_variance_features(data: pd.DataFrame, logger: logging.Logger) -> dict[str, Any]:
     """Validate for zero variance features."""
     numeric_data = data.select_dtypes(include=[np.number])
     variances = numeric_data.var()
@@ -321,12 +321,12 @@ def _validate_zero_variance_features(data: pd.DataFrame, logger: logging.Logger)
     }
 
 
-def _validate_duplicate_features(data: pd.DataFrame, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_duplicate_features(data: pd.DataFrame, logger: logging.Logger) -> dict[str, Any]:
     """Validate for duplicate features."""
     # Check for exact duplicates
     duplicate_features = []
     for i, col1 in enumerate(data.columns):
-        for j, col2 in enumerate(data.columns[i + 1:], i + 1):
+        for _j, col2 in enumerate(data.columns[i + 1:], i + 1):
             if data[col1].equals(data[col2]):
                 duplicate_features.append((col1, col2))
 
@@ -337,7 +337,7 @@ def _validate_duplicate_features(data: pd.DataFrame, logger: logging.Logger) -> 
     }
 
 
-def _validate_nan_vif_values(vif_values: pd.Series, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_nan_vif_values(vif_values: pd.Series, logger: logging.Logger) -> dict[str, Any]:
     """Validate for NaN VIF values."""
     nan_vif_features = vif_values[vif_values.isna()].index.tolist()
 
@@ -348,7 +348,7 @@ def _validate_nan_vif_values(vif_values: pd.Series, logger: logging.Logger) -> D
     }
 
 
-def _validate_infinite_vif_values(vif_values: pd.Series, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_infinite_vif_values(vif_values: pd.Series, logger: logging.Logger) -> dict[str, Any]:
     """Validate for infinite VIF values."""
     infinite_vif_features = vif_values[np.isinf(vif_values)].index.tolist()
 
@@ -359,7 +359,7 @@ def _validate_infinite_vif_values(vif_values: pd.Series, logger: logging.Logger)
     }
 
 
-def _validate_zero_vif_values(vif_values: pd.Series, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_zero_vif_values(vif_values: pd.Series, logger: logging.Logger) -> dict[str, Any]:
     """Validate for zero VIF values."""
     zero_vif_features = vif_values[vif_values == 0].index.tolist()
 
@@ -370,7 +370,7 @@ def _validate_zero_vif_values(vif_values: pd.Series, logger: logging.Logger) -> 
     }
 
 
-def _validate_high_vif_values(vif_values: pd.Series, max_threshold: float, logger: logging.Logger) -> Dict[str, Any]:
+def _validate_high_vif_values(vif_values: pd.Series, max_threshold: float, logger: logging.Logger) -> dict[str, Any]:
     """Validate for high VIF values."""
     high_vif_features = vif_values[vif_values > max_threshold].index.tolist()
 
@@ -382,7 +382,7 @@ def _validate_high_vif_values(vif_values: pd.Series, max_threshold: float, logge
     }
 
 
-def _log_validation_summary(validation_results: Dict[str, Any], logger: logging.Logger, log_level: str):
+def _log_validation_summary(validation_results: dict[str, Any], logger: logging.Logger, log_level: str):
     """Log comprehensive validation summary."""
     if not validation_results:
         return
@@ -395,7 +395,7 @@ def _log_validation_summary(validation_results: Dict[str, Any], logger: logging.
                 logger.warning(f"   ⚠️ NaN Values: {results['nan_count']} cells ({results['nan_percentage']:.2f}%)")
             elif validation_type == "infinite":
                 logger.warning(
-                    f"   ⚠️ Infinite Values: {results['infinite_count']} cells ({results['infinite_percentage']:.2f}%)"
+                    f"   ⚠️ Infinite Values: {results['infinite_count']} cells ({results['infinite_percentage']:.2f}%)",
                 )
             elif validation_type == "zero_variance":
                 logger.warning(f"   ⚠️ Zero Variance Features: {results['zero_var_count']} features")
@@ -403,7 +403,7 @@ def _log_validation_summary(validation_results: Dict[str, Any], logger: logging.
                 logger.warning(f"   ⚠️ Duplicate Features: {results['duplicate_count']} pairs")
 
 
-def _log_vif_validation_summary(validation_results: Dict[str, Any], logger: logging.Logger, log_level: str):
+def _log_vif_validation_summary(validation_results: dict[str, Any], logger: logging.Logger, log_level: str):
     """Log comprehensive VIF validation summary."""
     if not validation_results:
         return
@@ -420,11 +420,11 @@ def _log_vif_validation_summary(validation_results: Dict[str, Any], logger: logg
                 logger.warning(f"   ⚠️ Zero VIF Values: {results['zero_vif_count']} features")
             elif validation_type == "high_vif":
                 logger.warning(
-                    f"   ⚠️ High VIF Values: {results['high_vif_count']} features (max: {results['max_vif_value']:.2f})"
+                    f"   ⚠️ High VIF Values: {results['high_vif_count']} features (max: {results['max_vif_value']:.2f})",
                 )
 
 
-def _create_fallback_vif_result(args: tuple, kwargs: dict, fallback_value: Optional[float]) -> pd.Series:
+def _create_fallback_vif_result(args: tuple, kwargs: dict, fallback_value: float | None) -> pd.Series:
     """Create fallback VIF result when calculation fails."""
     data = _extract_data_from_args(args, kwargs)
     if data is None:
@@ -436,8 +436,7 @@ def _create_fallback_vif_result(args: tuple, kwargs: dict, fallback_value: Optio
     if fallback_value is None:
         # Fallback implementation for fallback_value
         return pd.Series(dtype=float)
-    else:
-        return pd.Series([fallback_value] * len(numeric_cols), index=numeric_cols)
+    return pd.Series([fallback_value] * len(numeric_cols), index=numeric_cols)
 
 
 # Convenience decorator that combines all VIF validations

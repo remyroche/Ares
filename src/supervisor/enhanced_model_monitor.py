@@ -7,17 +7,19 @@ decision path analysis, and ensemble performance monitoring that integrates with
 existing performance monitoring infrastructure.
 """
 
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dataclasses_json import dataclass_json
 
-from src.supervisor.performance_monitor import PerformanceMonitor
 from src.core.decorators import handles_errors
+from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.logger import system_logger
+
+if TYPE_CHECKING:
+    import asyncio
 
 class ModelDriftType(Enum):
     """Model drift types."""
@@ -199,7 +201,7 @@ class EnhancedModelMonitor:
             # - Baseline drift thresholds
 
         except Exception as e:
-            self.logger.error(f"Error loading reference data: {e}")
+            self.logger.exception(f"Error loading reference data: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_drift_detection(self) -> None:
@@ -208,7 +210,7 @@ class EnhancedModelMonitor:
             self.logger.info("Initializing drift detection components...")
             # Initialize drift detection algorithms and thresholds
         except Exception as e:
-            self.logger.error(f"Error initializing drift detection: {e}")
+            self.logger.exception(f"Error initializing drift detection: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_feature_tracking(self) -> None:
@@ -217,7 +219,7 @@ class EnhancedModelMonitor:
             self.logger.info("Initializing feature importance tracking...")
             # Initialize feature tracking components
         except Exception as e:
-            self.logger.error(f"Error initializing feature tracking: {e}")
+            self.logger.exception(f"Error initializing feature tracking: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_ensemble_monitoring(self) -> None:
@@ -226,4 +228,4 @@ class EnhancedModelMonitor:
             self.logger.info("Initializing ensemble monitoring...")
             # Initialize ensemble monitoring components
         except Exception as e:
-            self.logger.error(f"Error initializing ensemble monitoring: {e}")
+            self.logger.exception(f"Error initializing ensemble monitoring: {e}")

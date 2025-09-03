@@ -6,6 +6,7 @@ pipeline implementations (live trading, backtesting, training).
 """
 
 from .base_pipeline import BasePipeline, PipelineConfig
+
 # Optional imports if modules exist; keep namespace clean
 try:
     from .live_trading_pipeline import LiveTradingPipeline

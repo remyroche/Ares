@@ -4,14 +4,14 @@ Validation Issues Analyzer
 Extracts detailed information about feature validation issues from logs
 """
 
+import argparse
 import json
 import re
 from collections import defaultdict
-from typing import Dict, Any
-import argparse
+from typing import Any
 
 
-def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
+def extract_validation_details_from_logs(log_file_path: str) -> dict[str, Any]:
     """Extract validation details from log files"""
 
     validation_data={
@@ -21,7 +21,7 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
         "summary": {},
     }
 
-    with open(log_file_path, "r") as f:
+    with open(log_file_path) as f:
         for line in f:
             try:
                 # Parse JSON log entries
@@ -35,7 +35,7 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
                         and "issues found" in message
                     ):
                         match=re.search(
-                            r"Feature validation for (\w+): (\d+) issues found", message
+                            r"Feature validation for (\w+): (\d+) issues found", message,
                         )
                         if match:
                             timeframe=match.group(1)
@@ -53,10 +53,10 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
     return validation_data
 
 
-def analyze_feature_validation_config() -> Dict[str, Any]:
+def analyze_feature_validation_config() -> dict[str, Any]:
     """Analyze the validation configuration to understand thresholds"""
 
-    config_analysis={
+    return {
         "correlation_threshold": 0.95,  # Default from code
         "nan_threshold": 0.1,  # 10% missing values
         "infinite_threshold": 0.01,  # 1% infinite values
@@ -72,7 +72,6 @@ def analyze_feature_validation_config() -> Dict[str, Any]:
         },
     }
 
-    return config_analysis
 
 
 def generate_detailed_validation_report(log_file_path: str) -> str:
@@ -101,7 +100,7 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
     report.append(f"  Infinite threshold: {config['infinite_threshold']*100}%")
     report.append(f"  Zero variance threshold: {config['zero_variance_threshold']}")
     report.append(
-        f"  Wavelet variance threshold: {config['wavelet_variance_threshold']}"
+        f"  Wavelet variance threshold: {config['wavelet_variance_threshold']}",
     )
     report.append(f"  Constant threshold: {config['constant_threshold']*100}%")
     report.append(f"  Extreme value threshold: {config['extreme_value_threshold']}")
@@ -156,7 +155,7 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
 
     report.append("\n3. EXTREME VALUE MONITORING:")
     report.append(
-        "   - Check features with 'ratio', 'momentum', 'acceleration' in names"
+        "   - Check features with 'ratio', 'momentum', 'acceleration' in names",
     )
     report.append("   - Common culprits: Price ratios, volatility calculations")
     report.append("   - Look for: Division by small numbers, exponential calculations")
@@ -178,7 +177,7 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
 def create_feature_analysis_script() -> str:
     """Create a script to analyze specific features"""
 
-    script='''
+    return '''
 #!/usr/bin/env python3
 """
 Feature-Specific Validation Analysis
@@ -191,14 +190,14 @@ from pathlib import Path
 
 def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str]) -> Dict[str, Any]:
     """Analyze specific features in detail"""
-    
+
     results={}
-    
+
     for feature in feature_names:
         if feature not in features_df.columns:
             results[feature] = {"error": "Feature not found"}
             continue
-            
+
         series = features_df[feature]
         analysis = {
             "dtype": str(series.dtype),
@@ -215,56 +214,56 @@ def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str
             "max_value": series.max() if np.issubdtype(series.dtype, np.number) else None,
             "extreme_values": (series.abs() > 1e6).sum() if np.issubdtype(series.dtype, np.number) else 0
         }
-        
+
         results[feature] = analysis
-    
+
     return results
 
 def print_feature_analysis(results: Dict[str, Any]):
     """Print detailed feature analysis"""
-    
+
     print("=" * 80)
     print("DETAILED FEATURE ANALYSIS")
     print("=" * 80)
-    
+
     for feature, analysis in results.items():
         if "error" in analysis:
             print(f"\\n❌ {feature}: {analysis['error']}")
             continue
-            
+
         print(f"\\n📊 {feature}:")
         print(f"  Data Type: {analysis['dtype']}")
         print(f"  Total Values: {analysis['total_values']:,}")
         print(f"  Missing Values: {analysis['missing_values']:,} ({analysis['missing_percentage']:.2f}%)")
         print(f"  Infinite Values: {analysis['infinite_values']:,} ({analysis['infinite_percentage']:.2f}%)")
-        
+
         if analysis['variance'] is not None:
             print(f"  Variance: {analysis['variance']:.2e}")
             print(f"  Unique Values: {analysis['unique_values']:,}")
             print(f"  Most Common: {analysis['most_common_value']} ({analysis['most_common_count']:,} times)")
             print(f"  Value Range: [{analysis['min_value']:.6f}, {analysis['max_value']:.6f}]")
             print(f"  Extreme Values (>1M): {analysis['extreme_values']:,}")
-        
+
         # Issue classification
         issues=[]
         if analysis['missing_percentage'] > 50:
             issues.append("CRITICAL: >50% missing values")
         elif analysis['missing_percentage'] > 10:
             issues.append("WARNING: >10% missing values")
-            
+
         if analysis['infinite_percentage'] > 5:
             issues.append("ERROR: >5% infinite values")
         elif analysis['infinite_percentage'] > 1:
             issues.append("WARNING: >1% infinite values")
-            
+
         if analysis['variance'] is not None and analysis['variance'] == 0:
             issues.append("ERROR: Zero variance")
         elif analysis['variance'] is not None and analysis['variance'] < 1e-10:
             issues.append("WARNING: Very low variance")
-            
+
         if analysis['extreme_values'] > 0:
             issues.append(f"WARNING: {analysis['extreme_values']} extreme values")
-            
+
         if issues:
             print(f"  Issues: {', '.join(issues)}")
         else:
@@ -277,7 +276,6 @@ def print_feature_analysis(results: Dict[str, Any]):
 # print_feature_analysis(results)
 '''
 
-    return script
 
 
 if __name__== "__main__":

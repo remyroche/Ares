@@ -1,13 +1,16 @@
 # src/transition/baseline_rf.py
 
 from __future__ import annotations
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
-from src.utils.logger import system_logger
-from typing import Any
+
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+
+from src.utils.logger import system_logger
 
 try:
     import shap  # type: ignore
@@ -25,7 +28,7 @@ class RFConfig:
     enable_shap: bool
 
 class TransitionRandomForest:
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = system_logger.getChild("TransitionRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})

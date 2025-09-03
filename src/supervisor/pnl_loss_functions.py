@@ -5,8 +5,7 @@ from keras import backend as K
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
-import asyncio
+
 
 def create_pnl_aware_loss(
     pnl_multiplier=0.1,
@@ -144,7 +143,7 @@ class PnLLossFunctions:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ PnL Loss Functions initialization failed: {e}")
+            self.logger.exception(f"❌ PnL Loss Functions initialization failed: {e}")
             return False
 
     @handles_errors(fallback=None)
@@ -172,7 +171,7 @@ class PnLLossFunctions:
             self.logger.info("PnL loss functions configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error loading PnL configuration: {e}")
+            self.logger.exception(f"Error loading PnL configuration: {e}")
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
@@ -210,7 +209,7 @@ class PnLLossFunctions:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handles_errors(fallback=None)
@@ -240,7 +239,7 @@ class PnLLossFunctions:
             self.logger.info("PnL loss functions modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing PnL modules: {e}")
+            self.logger.exception(f"Error initializing PnL modules: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_pnl_calculation(self) -> None:
@@ -256,7 +255,7 @@ class PnLLossFunctions:
             self.logger.info("PnL calculation components initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing PnL calculation: {e}")
+            self.logger.exception(f"Error initializing PnL calculation: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_loss_calculation(self) -> None:
@@ -272,7 +271,7 @@ class PnLLossFunctions:
             self.logger.info("Loss calculation components initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing loss calculation: {e}")
+            self.logger.exception(f"Error initializing loss calculation: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_risk_metrics(self) -> None:
@@ -290,7 +289,7 @@ class PnLLossFunctions:
             self.logger.info("Risk metrics components initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing risk metrics: {e}")
+            self.logger.exception(f"Error initializing risk metrics: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_performance_metrics(self) -> None:
@@ -308,7 +307,7 @@ class PnLLossFunctions:
             self.logger.info("Performance metrics components initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing performance metrics: {e}")
+            self.logger.exception(f"Error initializing performance metrics: {e}")
 
     @handles_errors(fallback=None)
     async def _initialize_optimization_metrics(self) -> None:
@@ -324,7 +323,7 @@ class PnLLossFunctions:
             self.logger.info("Optimization metrics components initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing optimization metrics: {e}")
+            self.logger.exception(f"Error initializing optimization metrics: {e}")
 
     @handles_errors(
         error_handlers={
@@ -385,7 +384,7 @@ class PnLLossFunctions:
 
         except Exception as e:
             self.is_calculating = False
-            self.logger.error(f"❌ PnL Loss Functions Calculation failed: {e}")
+            self.logger.exception(f"❌ PnL Loss Functions Calculation failed: {e}")
             return False
 
     @handles_errors(fallback=False)
@@ -414,7 +413,7 @@ class PnLLossFunctions:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating calculation inputs: {e}")
+            self.logger.exception(f"Error validating calculation inputs: {e}")
             return False
 
     @handles_errors(fallback=None)
@@ -442,7 +441,7 @@ class PnLLossFunctions:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing PnL calculation: {e}")
+            self.logger.exception(f"Error performing PnL calculation: {e}")
             return {}
 
     @handles_errors(fallback=None)
@@ -470,7 +469,7 @@ class PnLLossFunctions:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing loss calculation: {e}")
+            self.logger.exception(f"Error performing loss calculation: {e}")
             return {}
 
     @handles_errors(fallback=None)
@@ -506,7 +505,7 @@ class PnLLossFunctions:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing risk metrics: {e}")
+            self.logger.exception(f"Error performing risk metrics: {e}")
             return {}
 
     @handles_errors(fallback=None)
@@ -542,7 +541,7 @@ class PnLLossFunctions:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing performance metrics: {e}")
+            self.logger.exception(f"Error performing performance metrics: {e}")
             return {}
 
     @handles_errors(fallback=None)
@@ -570,7 +569,7 @@ class PnLLossFunctions:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing optimization metrics: {e}")
+            self.logger.exception(f"Error performing optimization metrics: {e}")
             return {}
 
     # PnL calculation methods
@@ -587,7 +586,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing realized PnL: {e}")
+            self.logger.exception(f"Error performing realized PnL: {e}")
             return {}
 
     def _perform_unrealized_pnl(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -602,7 +601,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing unrealized PnL: {e}")
+            self.logger.exception(f"Error performing unrealized PnL: {e}")
             return {}
 
     def _perform_total_pnl(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -617,7 +616,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing total PnL: {e}")
+            self.logger.exception(f"Error performing total PnL: {e}")
             return {}
 
     def _perform_pnl_attribution(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -632,7 +631,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing PnL attribution: {e}")
+            self.logger.exception(f"Error performing PnL attribution: {e}")
             return {}
 
     # Loss calculation methods
@@ -649,7 +648,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing maximum drawdown: {e}")
+            self.logger.exception(f"Error performing maximum drawdown: {e}")
             return {}
 
     def _perform_var_calculation(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -664,7 +663,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing VaR calculation: {e}")
+            self.logger.exception(f"Error performing VaR calculation: {e}")
             return {}
 
     def _perform_cvar_calculation(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -679,7 +678,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing CVaR calculation: {e}")
+            self.logger.exception(f"Error performing CVaR calculation: {e}")
             return {}
 
     def _perform_loss_distribution(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -694,7 +693,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing loss distribution: {e}")
+            self.logger.exception(f"Error performing loss distribution: {e}")
             return {}
 
     # Risk metrics methods
@@ -711,7 +710,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing Sharpe ratio: {e}")
+            self.logger.exception(f"Error performing Sharpe ratio: {e}")
             return {}
 
     def _perform_sortino_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -726,7 +725,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing Sortino ratio: {e}")
+            self.logger.exception(f"Error performing Sortino ratio: {e}")
             return {}
 
     def _perform_calmar_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -741,7 +740,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing Calmar ratio: {e}")
+            self.logger.exception(f"Error performing Calmar ratio: {e}")
             return {}
 
     def _perform_information_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -756,7 +755,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing information ratio: {e}")
+            self.logger.exception(f"Error performing information ratio: {e}")
             return {}
 
     # Performance metrics methods
@@ -773,7 +772,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing return metrics: {e}")
+            self.logger.exception(f"Error performing return metrics: {e}")
             return {}
 
     def _perform_volatility_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -788,7 +787,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing volatility metrics: {e}")
+            self.logger.exception(f"Error performing volatility metrics: {e}")
             return {}
 
     def _perform_correlation_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -803,7 +802,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing correlation metrics: {e}")
+            self.logger.exception(f"Error performing correlation metrics: {e}")
             return {}
 
     def _perform_beta_metrics(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -818,7 +817,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing beta metrics: {e}")
+            self.logger.exception(f"Error performing beta metrics: {e}")
             return {}
 
     # Optimization metrics methods
@@ -835,7 +834,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing objective functions: {e}")
+            self.logger.exception(f"Error performing objective functions: {e}")
             return {}
 
     def _perform_constraint_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -850,7 +849,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing constraint functions: {e}")
+            self.logger.exception(f"Error performing constraint functions: {e}")
             return {}
 
     def _perform_penalty_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -865,7 +864,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing penalty functions: {e}")
+            self.logger.exception(f"Error performing penalty functions: {e}")
             return {}
 
     def _perform_reward_functions(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -880,7 +879,7 @@ class PnLLossFunctions:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing reward functions: {e}")
+            self.logger.exception(f"Error performing reward functions: {e}")
             return {}
 
     @handles_errors(fallback=None)
@@ -900,7 +899,7 @@ class PnLLossFunctions:
             self.logger.info("Calculation results stored successfully")
 
         except Exception as e:
-            self.logger.error(f"Error storing calculation results: {e}")
+            self.logger.exception(f"Error storing calculation results: {e}")
 
     @handles_errors(fallback=None)
     def get_calculation_results(self, calculation_type: str | None = None) -> dict[str, Any]:
@@ -919,7 +918,7 @@ class PnLLossFunctions:
             return self.calculation_results.copy()
 
         except Exception as e:
-            self.logger.error(f"Error getting calculation results: {e}")
+            self.logger.exception(f"Error getting calculation results: {e}")
             return {}
 
     @handles_errors(fallback=None)
@@ -942,7 +941,7 @@ class PnLLossFunctions:
             return history
 
         except Exception as e:
-            self.logger.error(f"Error getting calculation history: {e}")
+            self.logger.exception(f"Error getting calculation history: {e}")
             return []
 
     def get_calculation_status(self) -> dict[str, Any]:
@@ -982,7 +981,7 @@ class PnLLossFunctions:
             self.logger.info("✅ PnL Loss Functions stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping PnL loss functions: {e}")
+            self.logger.exception(f"Error stopping PnL loss functions: {e}")
 
 # Global PnL loss functions instance
 pnl_loss_functions: PnLLossFunctions | None = None
@@ -1041,7 +1040,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing Treynor ratio: {e}")
+                self.logger.exception(f"Error performing Treynor ratio: {e}")
                 return {}
 
     def _perform_jensen_alpha(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1056,7 +1055,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing Jensen alpha: {e}")
+                self.logger.exception(f"Error performing Jensen alpha: {e}")
                 return {}
 
     def _perform_var_95(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1071,7 +1070,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing VaR 95%: {e}")
+                self.logger.exception(f"Error performing VaR 95%: {e}")
                 return {}
 
     def _perform_var_99(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1086,7 +1085,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing VaR 99%: {e}")
+                self.logger.exception(f"Error performing VaR 99%: {e}")
                 return {}
 
     def _perform_cvar_95(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1101,7 +1100,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing CVaR 95%: {e}")
+                self.logger.exception(f"Error performing CVaR 95%: {e}")
                 return {}
 
     def _perform_cvar_99(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1116,7 +1115,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing CVaR 99%: {e}")
+                self.logger.exception(f"Error performing CVaR 99%: {e}")
                 return {}
 
     def _perform_expected_shortfall(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1131,7 +1130,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing expected shortfall: {e}")
+                self.logger.exception(f"Error performing expected shortfall: {e}")
                 return {}
 
     def _perform_tail_risk(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1146,7 +1145,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing tail risk: {e}")
+                self.logger.exception(f"Error performing tail risk: {e}")
                 return {}
 
     def _perform_kelly_criterion(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1161,7 +1160,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing Kelly criterion: {e}")
+                self.logger.exception(f"Error performing Kelly criterion: {e}")
                 return {}
 
     def _perform_optimal_leverage(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1176,7 +1175,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing optimal leverage: {e}")
+                self.logger.exception(f"Error performing optimal leverage: {e}")
                 return {}
 
     def _perform_position_sizing(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1191,7 +1190,7 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing position sizing: {e}")
+                self.logger.exception(f"Error performing position sizing: {e}")
                 return {}
 
     def _perform_risk_budget(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
@@ -1206,5 +1205,6 @@ async def setup_pnl_loss_functions(
                     "training_time": datetime.now().isoformat(),
                 }
             except Exception as e:
-                self.logger.error(f"Error performing risk budget: {e}")
+                self.logger.exception(f"Error performing risk budget: {e}")
                 return {}
+    return None

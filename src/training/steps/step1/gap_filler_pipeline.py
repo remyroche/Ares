@@ -9,7 +9,7 @@ import io
 import ssl
 import sys
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import aiohttp
@@ -46,7 +46,7 @@ class GapFillerPipeline:
             await self.session.close()
 
     def detect_gaps_in_file(
-        self, file_path: Path, min_gap_seconds: int = 5
+        self, file_path: Path, min_gap_seconds: int = 5,
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
@@ -96,7 +96,7 @@ class GapFillerPipeline:
             return []
 
     async def _fetch_aggtrades_from_binance_vision(
-        self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int, market_segment: str = "um"
+        self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int, market_segment: str = "um",
     ) -> list[dict]:
         """Download aggregated trades from Binance Vision for a specific gap period."""
         await self._ensure_session()
@@ -124,7 +124,7 @@ class GapFillerPipeline:
                         f,
                         header=None,
                         names=["a", "p", "q", "f", "l", "T", "m", "M"],
-                        low_memory=False
+                        low_memory=False,
                     )
 
             if df.empty:
@@ -197,7 +197,7 @@ class GapFillerPipeline:
             end_time_ms = int(gap_end.timestamp() * 1000)
 
             missing_data = await self._fetch_aggtrades_from_binance_vision(
-                symbol=symbol, gap_start=gap_start, gap_end=gap_end, start_time_ms=start_time_ms, end_time_ms=end_time_ms
+                symbol=symbol, gap_start=gap_start, gap_end=gap_end, start_time_ms=start_time_ms, end_time_ms=end_time_ms,
             )
 
             if missing_data and len(missing_data) > 0:
@@ -254,16 +254,16 @@ class GapFillerPipeline:
 
                 # Combine data
                 df_combined = pd.concat(
-                    [df_existing, df_missing], ignore_index=True
+                    [df_existing, df_missing], ignore_index=True,
                 )
                 df_combined = df_combined.sort_values("timestamp").drop_duplicates(
-                    subset=["timestamp"]
+                    subset=["timestamp"],
                 )
 
                 # Save back in the same format
                 if file_path.suffix.lower() == ".parquet":
                     df_combined.to_parquet(
-                        file_path, compression="zstd", index=False
+                        file_path, compression="zstd", index=False,
                     )
                 elif file_path.suffix.lower() == ".csv":
                     df_combined.to_csv(file_path, index=False)

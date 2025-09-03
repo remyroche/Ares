@@ -10,6 +10,7 @@ import time
 
 from src.utils.warning_symbols import warning
 
+
 def launch_bot_with_monitoring():
     """Launch the bot and start monitoring"""
     print("🚀 Launching ARES Bot with monitoring...")

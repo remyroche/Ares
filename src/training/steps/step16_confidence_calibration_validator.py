@@ -1,14 +1,11 @@
 """Validator for Step 11: Confidence Calibration."""
 
-import asyncio
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from src.utils.warning_symbols import (
-    error,
-    failed,
     missing,
 )
 
@@ -16,7 +13,6 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
 

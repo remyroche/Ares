@@ -1,20 +1,21 @@
 # src/core/config_service.py
 
-from datetime import datetime
-from pathlib import Path
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
+import importlib
 import json
 import os
-import time
-import importlib
-from dataclasses import asdict, dataclass
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import error, failed, warning
-import yaml
-import copy
 import os.path
+import time
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, failed, warning
 
 # Try to import watchdog for file watching using dynamic import to avoid linter warnings
 try:
@@ -81,7 +82,7 @@ class RiskConfig:
     risk_free_rate: float = 0.02
 
 if WATCHDOG_AVAILABLE:
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     class ConfigurationWatcher(FileSystemEventHandler):
         """Watchdog-based configuration file watcher."""
 
@@ -295,7 +296,7 @@ class ConfigurationService:
                 self.logger.warning(f"Configuration file not found: {config_file}")
                 return
 
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 if config_file.endswith((".yaml", ".yml")):
                     file_config = yaml.safe_load(f)
                 elif config_file.endswith(".json"):

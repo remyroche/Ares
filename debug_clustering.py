@@ -3,12 +3,12 @@
 Debug script to test HMM clustering functionality.
 """
 
-from sklearn.metrics.pairwise import cosine_distances
 import json
 import os
 
-from sklearn.cluster import AgglomerativeClustering
 import numpy as np
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics.pairwise import cosine_distances
 
 
 def test_clustering():

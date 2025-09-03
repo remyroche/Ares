@@ -5,22 +5,21 @@ Enhanced Order Manager for Tactician
 Handles sophisticated order management including stop-limit orders and leveraged limit orders
 with partial fill management.
 """
-import uuid
-from datetime import datetime
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
 
-from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
-import copy
-import asyncio
-from src.utils.warning_symbols import (
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any
 
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
     failed,
     missing,
 )
+
 
 class OrderType(Enum):
     """Order types supported by the enhanced order manager."""
@@ -98,7 +97,7 @@ class OrderState:
     remaining_quantity: float = 0.0
     average_price: float = 0.0
     status: OrderStatus = OrderStatus.PENDING
-    fills: List[OrderFill] = field(default_factory=list)
+    fills: list[OrderFill] = field(default_factory=list)
     created_time: datetime = field(default_factory=datetime.now)
     updated_time: datetime = field(default_factory=datetime.now)
     strategy_id: str | None = None
@@ -115,7 +114,7 @@ class EnhancedOrderManager:
     - Order state management
     - Strategy-specific order handling
     """
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize the enhanced order manager.
 
@@ -126,8 +125,8 @@ class EnhancedOrderManager:
         self.logger = system_logger.getChild("EnhancedOrderManager")
 
         # Order tracking
-        self.active_orders: Dict[str, OrderState] = {}
-        self.order_history: List[OrderState] = []
+        self.active_orders: dict[str, OrderState] = {}
+        self.order_history: list[OrderState] = []
 
         # Configuration
         self.max_active_orders = config.get("max_active_orders", 100)
@@ -140,7 +139,7 @@ class EnhancedOrderManager:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="order manager initialization"
+        context="order manager initialization",
     )
     async def initialize(self) -> bool:
         """
@@ -160,15 +159,15 @@ class EnhancedOrderManager:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Order Manager initialization failed: {e}"))
+            self.logger.exception(failed(f"❌ Enhanced Order Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="order creation"
+        context="order creation",
     )
-    async def create_order(self, order_request: OrderRequest) -> Optional[OrderState]:
+    async def create_order(self, order_request: OrderRequest) -> OrderState | None:
         """
         Create a new order.
 
@@ -194,7 +193,7 @@ class EnhancedOrderManager:
                 original_quantity=order_request.quantity,
                 remaining_quantity=order_request.quantity,
                 strategy_id=order_request.strategy_id,
-                strategy_type=order_request.strategy_type
+                strategy_type=order_request.strategy_type,
             )
 
             # Add to active orders
@@ -207,7 +206,7 @@ class EnhancedOrderManager:
             return order_state
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Order creation failed: {e}"))
+            self.logger.exception(failed(f"❌ Order creation failed: {e}"))
             return None
 
     def _validate_order_request(self, order_request: OrderRequest) -> bool:
@@ -242,15 +241,15 @@ class EnhancedOrderManager:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Order validation failed: {e}"))
+            self.logger.exception(failed(f"❌ Order validation failed: {e}"))
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="order update"
+        context="order update",
     )
-    async def update_order(self, order_id: str, updates: Dict[str, Any]) -> Optional[OrderState]:
+    async def update_order(self, order_id: str, updates: dict[str, Any]) -> OrderState | None:
         """
         Update an existing order.
 
@@ -279,13 +278,13 @@ class EnhancedOrderManager:
             return order_state
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Order update failed: {e}"))
+            self.logger.exception(failed(f"❌ Order update failed: {e}"))
             return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="order cancellation"
+        context="order cancellation",
     )
     async def cancel_order(self, order_id: str) -> bool:
         """
@@ -317,15 +316,15 @@ class EnhancedOrderManager:
             return True
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Order cancellation failed: {e}"))
+            self.logger.exception(failed(f"❌ Order cancellation failed: {e}"))
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="order fill processing"
+        context="order fill processing",
     )
-    async def process_fill(self, order_id: str, fill: OrderFill) -> Optional[OrderState]:
+    async def process_fill(self, order_id: str, fill: OrderFill) -> OrderState | None:
         """
         Process an order fill.
 
@@ -372,10 +371,10 @@ class EnhancedOrderManager:
             return order_state
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Fill processing failed: {e}"))
+            self.logger.exception(failed(f"❌ Fill processing failed: {e}"))
             return None
 
-    def get_active_orders(self) -> Dict[str, OrderState]:
+    def get_active_orders(self) -> dict[str, OrderState]:
         """
         Get all active orders.
 
@@ -384,7 +383,7 @@ class EnhancedOrderManager:
         """
         return self.active_orders.copy()
 
-    def get_order_history(self) -> List[OrderState]:
+    def get_order_history(self) -> list[OrderState]:
         """
         Get order history.
 
@@ -393,7 +392,7 @@ class EnhancedOrderManager:
         """
         return self.order_history.copy()
 
-    def get_order(self, order_id: str) -> Optional[OrderState]:
+    def get_order(self, order_id: str) -> OrderState | None:
         """
         Get a specific order.
 
@@ -419,4 +418,4 @@ class EnhancedOrderManager:
             self.logger.info("✅ Enhanced Order Manager cleanup completed")
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Order Manager cleanup failed: {e}"))
+            self.logger.exception(failed(f"❌ Enhanced Order Manager cleanup failed: {e}"))

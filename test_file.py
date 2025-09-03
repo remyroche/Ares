@@ -3,9 +3,6 @@
 Test file for code quality tools.
 """
 
-import os
-import sys
-from pathlib import Path
 
 
 def badly_formatted_function(x, y, z):

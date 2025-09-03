@@ -2,12 +2,14 @@
 
 import asyncio
 import os
+
+from celery import Celery
+from celery.schedules import crontab
+
 from src.ares_pipeline import AresPipeline
 from src.config import get_environment_settings
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
-from celery import Celery
-from celery.schedules import crontab
 
 # Configure Celery
 app=Celery("ares_tasks", broker="redis://localhost:6379/0")

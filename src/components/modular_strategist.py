@@ -1,13 +1,14 @@
 # src/components/modular_strategist.py
 
 from datetime import datetime, timedelta
-from src.utils.logger import system_logger
 from typing import Any
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import error, initialization_error, invalid, missing
+
 import numpy as np
-import copy
-import asyncio
+
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, initialization_error, invalid, missing
+
 
 class ModularStrategist:
     """
@@ -160,7 +161,7 @@ class ModularStrategist:
             self.logger.info("Strategy modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing strategy modules: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing strategy modules: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_position_sizing(self) -> None:
@@ -177,7 +178,7 @@ class ModularStrategist:
             self.logger.info("Position sizing module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing position sizing: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing position sizing: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_risk_management(self) -> None:
@@ -194,7 +195,7 @@ class ModularStrategist:
             self.logger.info("Risk management module initialized")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk management: {e}"))
+            self.logger.exception(initialization_error(f"Error initializing risk management: {e}"))
 
     @handles_errors(fallback=None)
     async def _initialize_portfolio_optimization(self) -> None:
@@ -211,7 +212,7 @@ class ModularStrategist:
             self.logger.info("Portfolio optimization module initialized")
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 initialization_error(f"Error initializing portfolio optimization: {e}"),
             )
 
@@ -230,7 +231,7 @@ class ModularStrategist:
             self.logger.info("Dynamic rebalancing module initialized")
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 initialization_error(f"Error initializing dynamic rebalancing: {e}"),
             )
 
@@ -305,7 +306,7 @@ class ModularStrategist:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error executing strategy: {e}"))
+            self.logger.exception(error(f"Error executing strategy: {e}"))
             self.is_strategizing = False
             return False
 
@@ -341,18 +342,18 @@ class ModularStrategist:
                     return False
 
             # Validate data types
-            if not isinstance(market_data["price"], (int, float)):
+            if not isinstance(market_data["price"], int | float):
                 self.logger.error(invalid("Invalid price data type"))
                 return False
 
-            if not isinstance(analysis_data["confidence"], (int, float)):
+            if not isinstance(analysis_data["confidence"], int | float):
                 self.logger.error(invalid("Invalid confidence data type"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating strategy inputs: {e}"))
+            self.logger.exception(error(f"Error validating strategy inputs: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -406,7 +407,7 @@ class ModularStrategist:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing position sizing: {e}"))
+            self.logger.exception(error(f"Error performing position sizing: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -460,7 +461,7 @@ class ModularStrategist:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing risk management: {e}"))
+            self.logger.exception(error(f"Error performing risk management: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -514,7 +515,7 @@ class ModularStrategist:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing portfolio optimization: {e}"))
+            self.logger.exception(error(f"Error performing portfolio optimization: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -566,7 +567,7 @@ class ModularStrategist:
             return results
 
         except Exception as e:
-            self.logger.error(error(f"Error performing dynamic rebalancing: {e}"))
+            self.logger.exception(error(f"Error performing dynamic rebalancing: {e}"))
             return {}
 
     # Position sizing calculation methods
@@ -586,7 +587,7 @@ class ModularStrategist:
             kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win
             return max(0, min(kelly_fraction, 0.25))  # Cap at 25%
         except Exception as e:
-            self.logger.error(error(f"Error calculating Kelly Criterion: {e}"))
+            self.logger.exception(error(f"Error calculating Kelly Criterion: {e}"))
             return 0.0
 
     def _calculate_fixed_fraction(
@@ -602,7 +603,7 @@ class ModularStrategist:
 
             return base_fraction * confidence
         except Exception as e:
-            self.logger.error(error(f"Error calculating Fixed Fraction: {e}"))
+            self.logger.exception(error(f"Error calculating Fixed Fraction: {e}"))
             return 0.0
 
     def _calculate_volatility_targeting(
@@ -618,7 +619,7 @@ class ModularStrategist:
 
             return target_volatility / volatility
         except Exception as e:
-            self.logger.error(error(f"Error calculating Volatility Targeting: {e}"))
+            self.logger.exception(error(f"Error calculating Volatility Targeting: {e}"))
             return 0.0
 
     def _calculate_risk_parity(
@@ -632,7 +633,7 @@ class ModularStrategist:
             return 0.5  # Equal risk contribution
 
         except Exception as e:
-            self.logger.error(error(f"Error calculating Risk Parity: {e}"))
+            self.logger.exception(error(f"Error calculating Risk Parity: {e}"))
             return 0.0
 
     # Risk management calculation methods
@@ -650,7 +651,7 @@ class ModularStrategist:
 
             return current_price * (1 - stop_loss_pct)
         except Exception as e:
-            self.logger.error(error(f"Error calculating Stop Loss: {e}"))
+            self.logger.exception(error(f"Error calculating Stop Loss: {e}"))
             return 0.0
 
     def _calculate_take_profit(
@@ -666,7 +667,7 @@ class ModularStrategist:
 
             return current_price * (1 + take_profit_pct)
         except Exception as e:
-            self.logger.error(error(f"Error calculating Take Profit: {e}"))
+            self.logger.exception(error(f"Error calculating Take Profit: {e}"))
             return 0.0
 
     def _calculate_trailing_stop(
@@ -682,7 +683,7 @@ class ModularStrategist:
 
             return current_price * (1 - trailing_pct)
         except Exception as e:
-            self.logger.error(error(f"Error calculating Trailing Stop: {e}"))
+            self.logger.exception(error(f"Error calculating Trailing Stop: {e}"))
             return 0.0
 
     def _calculate_position_limits(
@@ -699,7 +700,7 @@ class ModularStrategist:
                 "max_drawdown": 0.1,  # 10% max drawdown
             }
         except Exception as e:
-            self.logger.error(error(f"Error calculating Position Limits: {e}"))
+            self.logger.exception(error(f"Error calculating Position Limits: {e}"))
             return {"max_position_size": 0.0, "max_leverage": 0.0, "max_drawdown": 0.0}
 
     # Portfolio optimization calculation methods
@@ -719,7 +720,7 @@ class ModularStrategist:
                 "sharpe_ratio": 0.53,
             }
         except Exception as e:
-            self.logger.error(error(f"Error calculating Mean Variance: {e}"))
+            self.logger.exception(error(f"Error calculating Mean Variance: {e}"))
             return {
                 "optimal_weight": 0.0,
                 "expected_return": 0.0,
@@ -742,7 +743,7 @@ class ModularStrategist:
                 "confidence": 0.8,
             }
         except Exception as e:
-            self.logger.error(error(f"Error calculating Black Litterman: {e}"))
+            self.logger.exception(error(f"Error calculating Black Litterman: {e}"))
             return {
                 "optimal_weight": 0.0,
                 "expected_return": 0.0,
@@ -764,7 +765,7 @@ class ModularStrategist:
                 "diversification_ratio": 1.2,
             }
         except Exception as e:
-            self.logger.error(error(f"Error calculating Portfolio Risk Parity: {e}"))
+            self.logger.exception(error(f"Error calculating Portfolio Risk Parity: {e}"))
             return {
                 "risk_contribution": 0.0,
                 "volatility": 0.0,
@@ -786,7 +787,7 @@ class ModularStrategist:
                 "sharpe_ratio": 0.56,
             }
         except Exception as e:
-            self.logger.error(error(f"Error calculating Maximum Sharpe: {e}"))
+            self.logger.exception(error(f"Error calculating Maximum Sharpe: {e}"))
             return {
                 "optimal_weight": 0.0,
                 "expected_return": 0.0,
@@ -809,7 +810,7 @@ class ModularStrategist:
 
             return drift > threshold
         except Exception as e:
-            self.logger.error(error(f"Error calculating Threshold Rebalancing: {e}"))
+            self.logger.exception(error(f"Error calculating Threshold Rebalancing: {e}"))
             return False
 
     def _calculate_calendar_rebalancing(
@@ -826,7 +827,7 @@ class ModularStrategist:
 
             return (current_time - last_rebalance) > rebalance_interval
         except Exception as e:
-            self.logger.error(error(f"Error calculating Calendar Rebalancing: {e}"))
+            self.logger.exception(error(f"Error calculating Calendar Rebalancing: {e}"))
             return False
 
     def _calculate_drift_rebalancing(
@@ -842,7 +843,7 @@ class ModularStrategist:
 
             return drift > max_drift
         except Exception as e:
-            self.logger.error(error(f"Error calculating Drift Rebalancing: {e}"))
+            self.logger.exception(error(f"Error calculating Drift Rebalancing: {e}"))
             return False
 
     def _calculate_volatility_rebalancing(
@@ -859,7 +860,7 @@ class ModularStrategist:
 
             return abs(current_volatility - target_volatility) > threshold
         except Exception as e:
-            self.logger.error(error(f"Error calculating Volatility Rebalancing: {e}"))
+            self.logger.exception(error(f"Error calculating Volatility Rebalancing: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -879,7 +880,7 @@ class ModularStrategist:
             self.logger.info("Strategy results stored successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error storing strategy results: {e}"))
+            self.logger.exception(error(f"Error storing strategy results: {e}"))
 
     @handles_errors(fallback=None)
     def get_strategy_results(
@@ -901,7 +902,7 @@ class ModularStrategist:
             return self.strategy_results.copy()
 
         except Exception as e:
-            self.logger.error(error(f"Error getting strategy results: {e}"))
+            self.logger.exception(error(f"Error getting strategy results: {e}"))
             return {}
 
     @handles_errors(fallback=None)
@@ -924,7 +925,7 @@ class ModularStrategist:
             return history
 
         except Exception as e:
-            self.logger.error(error(f"Error getting strategy history: {e}"))
+            self.logger.exception(error(f"Error getting strategy history: {e}"))
             return []
 
     def get_strategist_status(self) -> dict[str, Any]:
@@ -969,7 +970,7 @@ class ModularStrategist:
             self.logger.info("✅ Modular Strategist stopped successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error stopping modular strategist: {e}"))
+            self.logger.exception(error(f"Error stopping modular strategist: {e}"))
 
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None

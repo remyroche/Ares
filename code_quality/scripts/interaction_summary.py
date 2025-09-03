@@ -4,11 +4,11 @@ Summarize code interactions from the analysis.
 """
 
 import json
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 # Load the JSON report
-with open('/workspace/code_quality/interaction_analysis.json', 'r') as f:
+with open("/workspace/code_quality/interaction_analysis.json") as f:
     data = json.load(f)
 
 print("CODE INTERACTION MAPPING SUMMARY")
@@ -30,24 +30,24 @@ async_issues = defaultdict(int)
 files_with_issues = defaultdict(int)
 module_issues = defaultdict(int)
 
-for issue in data.get('issues', []):
-    file_path = issue['file_path']
+for issue in data.get("issues", []):
+    file_path = issue["file_path"]
     files_with_issues[file_path] += 1
-    
+
     # Extract module from file path
     parts = Path(file_path).parts
     if len(parts) > 2:
         module = parts[2]  # e.g., /workspace/src/MODULE/...
         module_issues[module] += 1
-    
-    if issue['issue_type'] == 'undefined_function':
-        msg = issue['message']
+
+    if issue["issue_type"] == "undefined_function":
+        msg = issue["message"]
         if "Function '" in msg:
             func_name = msg.split("'")[1]
             undefined_funcs[func_name] += 1
-    
-    elif issue['issue_type'] == 'missing_await':
-        msg = issue['message']
+
+    elif issue["issue_type"] == "missing_await":
+        msg = issue["message"]
         if "Async function '" in msg:
             func_name = msg.split("'")[1]
             async_issues[func_name] += 1
@@ -88,18 +88,18 @@ print("-" * 30)
 # Common patterns in undefined functions
 patterns = defaultdict(int)
 for func in undefined_funcs:
-    if func.startswith('get_'):
-        patterns['Getter functions'] += undefined_funcs[func]
-    elif func.startswith('set_'):
-        patterns['Setter functions'] += undefined_funcs[func]
-    elif func.startswith('_'):
-        patterns['Private functions'] += undefined_funcs[func]
-    elif func in ['append', 'extend', 'insert', 'remove', 'pop']:
-        patterns['List operations'] += undefined_funcs[func]
-    elif func in ['keys', 'values', 'items', 'get']:
-        patterns['Dict operations'] += undefined_funcs[func]
-    elif func in ['now', 'today', 'strftime', 'isoformat']:
-        patterns['DateTime operations'] += undefined_funcs[func]
+    if func.startswith("get_"):
+        patterns["Getter functions"] += undefined_funcs[func]
+    elif func.startswith("set_"):
+        patterns["Setter functions"] += undefined_funcs[func]
+    elif func.startswith("_"):
+        patterns["Private functions"] += undefined_funcs[func]
+    elif func in ["append", "extend", "insert", "remove", "pop"]:
+        patterns["List operations"] += undefined_funcs[func]
+    elif func in ["keys", "values", "items", "get"]:
+        patterns["Dict operations"] += undefined_funcs[func]
+    elif func in ["now", "today", "strftime", "isoformat"]:
+        patterns["DateTime operations"] += undefined_funcs[func]
 
 for pattern, count in sorted(patterns.items(), key=lambda x: x[1], reverse=True):
     print(f"  {pattern}: {count} occurrences")

@@ -68,10 +68,10 @@ from .trading_types import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PerformanceMetrics,
     PositionSide,
     RiskLevel,
     TradeAction,
-    PerformanceMetrics,
 )
 from .validation import (
     RuntimeTypeError,

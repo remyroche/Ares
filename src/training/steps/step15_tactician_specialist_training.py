@@ -1,7 +1,8 @@
 # src/training/steps/step15_tactician_specialist_training.py
 
-from src.core.decorators import (
 import logging
+
+from src.core.decorators import (
     cached,
     circuit_breaker,
     log_call,
@@ -21,7 +22,7 @@ from src.core.domain import (
     time_budget_watchdog
 )
 
-"""Step 15: Tactician Specialist Training with Standardized Data Quality Management."
+"""Step 15: Tactician Specialist Training with Standardized Data Quality Management.
 
 This step performs tactician specialist model training with S/R level integration
 using standardized data quality management patterns.
@@ -1151,8 +1152,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 
-)
-
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1161,13 +1160,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 @validates()
 # @artifact_versioning("1.0") - removed, handled by pipeline
 @timeout(timeout=5400)
-# @performance_monitor - removed, use log_execution_time(
-    enable_profiling=True,
-    enable_memory_tracking=True,
-    enable_cpu_tracking=True,
-    save_profile_data=True,
-    level=PerformanceLevel.PROFILING,
-)
+# @performance_monitor - removed, use log_execution_time
 @model_validation(
     check_overfitting=True,
     check_underfitting=True,
@@ -1209,15 +1202,8 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     },
     context="Tactician Specialist Training",
 )
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
+# @secure_data_processing - removed, handled by validates
 # @prevent_data_leakage - removed, handled by validates
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    cross_validation_isolation=True,
-    lookahead_bias_prevention=True,
-)
 @log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
@@ -1250,12 +1236,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     format_validation=True,
 )
 # @quality_gate - removed, handled by validates
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks=True,
-    overfitting_detection=True,
-    validation_score_requirements={"cross_validation_score": 0.6},
-)
 async def run_step(
     symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
     **kwargs: Any,

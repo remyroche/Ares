@@ -1,4 +1,4 @@
-"""Unified Data Loader for Step1_5 Data."
+"""Unified Data Loader for Step1_5 Data.
 
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
@@ -24,21 +24,21 @@ from src.utils.common_operations import (
 )
 
 try:
-    
     from src.utils.logger import system_logger
 except Exception as e:
-    pass  # TODO: Handle exception
-import logging
-from src.training.steps.step01_5_data_converter import ParquetDatasetManager
-import os.path
+    import logging
+    system_logger = logging.getLogger(__name__)
+
+try:
+    from src.training.steps.step01_5_data_converter import ParquetDatasetManager
     from src.core.domain import (
-    guard_dataframe_nulls,
-    secure_file_path,
-    validate_dataframe_schema,
-    validate_file_size,
-    with_tracing_span,
-    sanitize_string
-)
+        guard_dataframe_nulls,
+        secure_file_path,
+        validate_dataframe_schema,
+        validate_file_size,
+        with_tracing_span,
+        sanitize_string
+    )
 except ImportError:
     # Fallback imports
     def handles_errors(*args, **kwargs):
@@ -161,12 +161,9 @@ class UnifiedDataLoader:
 
             # Load data using ParquetDatasetManager if available
             try:
-            except Exception as e:
-                pass  # TODO: Handle exception properly
+                pdm = ParquetDatasetManager(logger=self.logger)
 
-pdm = ParquetDatasetManager(logger=self.logger)
-
-# Build filters for date range if specified
+                # Build filters for date range if specified
                 filters = None
                 if start_date or end_date:
                     filters = []
@@ -186,7 +183,6 @@ pdm = ParquetDatasetManager(logger=self.logger)
                     columns=columns,
                     batch_size=100000,  # Process in chunks
                 )
-
             except ImportError:
                 self.logger.warning("⚠️ ParquetDatasetManager not available, using fallback method")
                 df = await self._load_unified_data_fallback(unified_path, start_date, end_date, columns)

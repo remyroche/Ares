@@ -1,15 +1,15 @@
 # src/training/steps/step12_analyst_enhancement.py
 
-from src.core.decorators import (, traced
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates
+)
 from src.core.domain import BLANK_TRAINING_LOOKBACK_DAYS
 import contextlib
 import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 import queue
 import threading
-    handles_errors,
-    traced,
-    validates
-)
 
 
 import asyncio
@@ -42,6 +42,33 @@ try:
 except ImportError:
     shap = None
 
+# Import additional required modules
+try:
+    from sklearn.svm import SVC
+    from sklearn.neural_network import MLPClassifier
+    import signal
+    import warnings
+    import sys
+    from io import StringIO
+    from sklearn.metrics import log_loss
+    import platform
+    from shap.explainers import TreeExplainer
+    from sklearn.inspection import permutation_importance
+    from shap.explainers import KernelExplainer
+    from sklearn.feature_selection import SelectKBest, f_classif
+    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+    from src.utils.vif_calculator import calculate_vif_robust
+    from src.analyst.meta_label_relevance import compute_shap_importance
+    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+    from catboost import CatBoostClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.kernel_approximation import RBFSampler
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.svm import LinearSVC
+except ImportError as e:
+    pass  # Ignore import errors, will handle when module is needed
+
 # Import new model architectures
 try:
     import torch
@@ -64,7 +91,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-# Suppress Optuna's verbose logging to keep the output clean'
+# Suppress Optuna's verbose logging to keep the output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Required modules for this step
@@ -157,7 +184,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
             )
 
 class RegimeAwareAnalystEnhancementStep:
-    """Step 12: Regime-Aware Analyst Models Enhancement."
+    """Step 12: Regime-Aware Analyst Models Enhancement.
 
     This step refines the trained analyst models through a regime-specific sequential process:
     1.  **Regime-Specific Model Loading:** Loads models organized by HMM regime clusters
@@ -167,9 +194,9 @@ class RegimeAwareAnalystEnhancementStep:
     5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning, and distillation
     """
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the RegimeAwareAnalystEnhancementStep."
+        """Initializes the RegimeAwareAnalystEnhancementStep.
 
-        Args: config (Dict[str = Any]): Configuration dictionary for the step.
+        Args: config (Dict[str, Any]): Configuration dictionary for the step.
 
         """
         self.config = config
@@ -181,7 +208,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.regime_config = self._initialize_regime_config()
         
         # --- Mac M1 / M2 / M3 (Apple Silicon) Specific Setup ---
-        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.'
+        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
         self.device = self._safe_get_device()
         self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
@@ -291,7 +318,7 @@ class RegimeAwareAnalystEnhancementStep:
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Executes the full regime-aware analyst model enhancement pipeline."
+        """Executes the full regime-aware analyst model enhancement pipeline.
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
@@ -525,8 +552,11 @@ class RegimeAwareAnalystEnhancementStep:
 
             pipeline_state["enhanced_hmm_models"] = enhanced_models_summary
             
-            # Deliver step12 results for tactician confidence optimization
-            await self._deliver_step12_results(enhanced_models_summary, duration)
+            # Store step12 results for tactician confidence optimization
+            pipeline_state["step12_results"] = {
+                "enhanced_models_summary": enhanced_models_summary,
+                "duration": duration
+            }
             
             return {
                 "status": "SUCCESS",
@@ -621,37 +651,6 @@ class RegimeAwareAnalystEnhancementStep:
 
             # Try to load from unified data loader first (more efficient)
             try:
-from sklearn.svm import SVC
-from sklearn.neural_network import MLPClassifier
-import signal
-import warnings
-import sys
-from io import StringIO
-from sklearn.metrics import log_loss
-import platform
-from shap.explainers import TreeExplainer
-from sklearn.inspection import permutation_importance
-from shap.explainers import KernelExplainer
-from sklearn.inspection import permutation_importance
-from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.feature_selection import mutual_info_classif
-from src.utils.vif_calculator import calculate_vif_robust
-from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-from src.analyst.meta_label_relevance import compute_shap_importance
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-import optuna
-from catboost import CatBoostClassifier
-from sklearn.feature_selection import mutual_info_classif
-import optuna
-from sklearn.ensemble import RandomForestClassifier
-import optuna
-from sklearn.linear_model import LogisticRegression
-import optuna
-from sklearn.kernel_approximation import RBFSampler
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import LinearSVC
-from src.config.constants import (
 
                 # Use lookback_days from config (should be passed from enhanced training manager)
                 config_lookback: int = int(self.config.get(
@@ -750,7 +749,7 @@ from src.config.constants import (
                     f"Loaded HMM data shape: {data.shape}, columns: {list(data.columns)}",
                 )
 
-                # Remove non-numeric columns that XGBoost doesn't accept'
+                # Remove non-numeric columns that XGBoost doesn't accept
                 numeric_columns = data.select_dtypes(include=[np.number]).columns
                 data = data[numeric_columns]
 
@@ -900,14 +899,14 @@ from src.config.constants import (
     @traced(span_name="Step6._create_target_from_data")
     @validates(mode="warn", arg_index=1)
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
-        """Attempts to create a meaningful target column from available data."
+        """Attempts to create a meaningful target column from available data.
 
         Args:
             data: The regime data DataFrame
             regime_name: Name of the regime
 
         Returns:
-            bool: True if target was successfully created = False otherwise
+            bool: True if target was successfully created, False otherwise
 
         """
         try:
@@ -1393,27 +1392,27 @@ from src.config.constants import (
             if "device" in xgb_params:
                 del xgb_params["device"]
 
-        return xgb.XGBClassifier(
-            **xgb_params,
-            random_state=42,
-            n_estimators=params.get("n_estimators", 200),
-            learning_rate=params.get("learning_rate", 0.05),
-            max_depth=params.get("max_depth", 6),
-            subsample=params.get("subsample", 0.8),
-            colsample_bytree=params.get("colsample_bytree", 0.8),
-        )
+            return xgb.XGBClassifier(
+                **xgb_params,
+                random_state=42,
+                n_estimators=params.get("n_estimators", 200),
+                learning_rate=params.get("learning_rate", 0.05),
+                max_depth=params.get("max_depth", 6),
+                subsample=params.get("subsample", 0.8),
+                colsample_bytree=params.get("colsample_bytree", 0.8),
+            )
         if model_name == "svm":
-
-        return SVC(**params, random_state=42, probability=True)
+            from sklearn.svm import SVC
+            return SVC(**params, random_state=42, probability=True)
         if model_name == "neural_network":
-
-        return MLPClassifier(
-        **params,
-        random_state=42,
+            from sklearn.neural_network import MLPClassifier
+            return MLPClassifier(
+                **params,
+                random_state=42,
                 early_stopping=True,
                 validation_fraction=0.1,
             )
-        msg = f"Model {model_name} not supported.",
+        msg = f"Model {model_name} not supported."
         raise ValueError(msg)
 
     async def _apply_hyperparameter_optimization(
@@ -1422,23 +1421,25 @@ from src.config.constants import (
         self.logger.info(f"🚀 Running Optuna HPO with pruning for {model_name}...")
 
         # Track progress
-        trial_count = 0,
+        trial_count = 0
         # Determine blank mode (support both ENV and CONFIG flag)
-        try: is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        try:
+            is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         except Exception:
-            is_blank_env = False,
-        try: is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
+            is_blank_env = False
+        try:
+            is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
         except Exception:
-            is_blank_cfg = False,
-        blank_mode = is_blank_env or is_blank_cfg,
+            is_blank_cfg = False
+        blank_mode = is_blank_env or is_blank_cfg
 
-        # Get model-specific trials from training input or use defaults
+        # Get model-specific trials from config or use defaults
         model_trial_mapping = {
-            "lightgbm": self.training_input.get("lightgbm_trials", 50),
-            "xgboost": self.training_input.get("xgboost_trials", 50),
-            "svm": self.training_input.get("svm_trials", 30),
-            "random_forest": self.training_input.get("random_forest_trials", 40),
-            "neural_network": self.training_input.get("neural_network_trials", 25),
+            "lightgbm": self.config.get("lightgbm_trials", 50),
+            "xgboost": self.config.get("xgboost_trials", 50),
+            "svm": self.config.get("svm_trials", 30),
+            "random_forest": self.config.get("random_forest_trials", 40),
+            "neural_network": self.config.get("neural_network_trials", 25),
         }
         
         # Use model-specific trials or fall back to general n_trials
@@ -1554,7 +1555,7 @@ from src.config.constants import (
                     "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20),
                 }
 
-            model, self._get_model_instance(model_name, params)
+            model = self._get_model_instance(model_name, params)
 
             # Train the model with appropriate parameters based on model type
             if model_name == "lightgbm":
@@ -1601,7 +1602,7 @@ from src.config.constants import (
             elif model_name == "xgboost":
                 # XGBoost doesn't support callbacks parameter, use eval_set only'
                 model.fit(X_train, y_train, eval_set=[(X_val, y_val)])
-            else: # SVM = Neural Network, and Random Forest don't support eval_set'
+            else:  # SVM, Neural Network, and Random Forest don't support eval_set
                 if model_name == "svm":
                     self.logger.info(
                         {
@@ -1642,99 +1643,98 @@ from src.config.constants import (
                 try: loss = log_loss(y_val, y_proba, labels=labels_sorted)
                 except Exception:
                     # Fallback: if labels parameter causes issues, omit it
-                    loss, log_loss(y_val, y_proba)
+                    loss = log_loss(y_val, y_proba)
                 return float(loss)
             return float(accuracy)
 
-            # Align study direction with the objective metric
-            study_direction = "maximize"
-            study = optuna.create_study(
-                direction=study_direction,
-                pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),
-            )
+        # Align study direction with the objective metric
+        study_direction = "maximize"
+        study = optuna.create_study(
+            direction=study_direction,
+            pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),
+        )
 
-            # Add progress callback
-            def progress_callback(study, trial) -> None:
-                completed_trials = len(study.trials)
-                if completed_trials % 1 == 0:  # Log every trial for better visibility
-                    self.logger.info(
-                        {
-                            "msg": "HPO progress",
-                            "model": model_name,
-                            "completed": completed_trials,
+        # Add progress callback
+        def progress_callback(study, trial) -> None:
+            completed_trials = len(study.trials)
+            if completed_trials % 1 == 0:  # Log every trial for better visibility
+                self.logger.info(
+                    {
+                        "msg": "HPO progress",
+                        "model": model_name,
+                        "completed": completed_trials,
                             "total": total_trials,
                         },
                     )
                 with contextlib.suppress(Exception):
                     pass
 
-            # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
-            try:
-            except Exception:
-                platform = None
-            try: is_macos = platform.system() == "Darwin" if platform else False
-            except Exception:
-                is_macos = False
-            # Prefer conservative parallelism for SVM and on macOS to avoid thread contention
-            parallel_jobs = (1 if (model_name == "svm" or is_macos) else min(4, os.cpu_count() or 4))
+        # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
+        try:
+            import platform
+            is_macos = platform.system() == "Darwin"
+        except Exception:
+            is_macos = False
+        # Prefer conservative parallelism for SVM and on macOS to avoid thread contention
+        parallel_jobs = (1 if (model_name == "svm" or is_macos) else min(4, os.cpu_count() or 4))
 
-            # Visibility around optimize lifecycle
+        # Visibility around optimize lifecycle
+        self.logger.info(
+            {
+                "msg": "HPO optimize start",
+                "model": model_name,
+                "total_trials": total_trials,
+                "n_jobs": parallel_jobs,
+            },
+        )
+        with contextlib.suppress(Exception):
+            pass
+
+        # Run optimization synchronously in current thread
+        study.optimize(
+            objective,
+            n_trials=total_trials,
+            n_jobs=parallel_jobs,
+            callbacks=[progress_callback] if model_name == "svm" else None,
+        )
+
+        self.logger.info(
+            {
+                "msg": "HPO optimize finished",
+                "model": model_name,
+                "completed_trials": len(study.trials),
+            },
+        )
+        with contextlib.suppress(Exception):
+            pass
+
+        if not study.best_trial:
+            self.logger.warning(
+                "Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params.",
+            )
+            return {}, 0.0
+
+        self.logger.info(
+            {
+                "msg": "HPO complete",
+                "model": model_name,
+                "best_score": float(study.best_value),
+            },
+        )
+        # Extra visibility for terminal users
+        with contextlib.suppress(Exception):
+            pass
+        if model_name == "svm":
             self.logger.info(
                 {
-                    "msg": "HPO optimize start",
-                    "model": model_name,
-                    "total_trials": total_trials,
-                    "n_jobs": parallel_jobs,
+                    "msg": "Best SVM parameters",
+                    "params": study.best_params,
                 },
             )
-            with contextlib.suppress(Exception):
-                pass
-
-            # Run optimization synchronously in current thread
-            study.optimize(
-                objective,
-                n_trials=total_trials,
-                n_jobs=parallel_jobs,
-                callbacks=[progress_callback] if model_name == "svm" else None,
-            )
-
-            self.logger.info(
-                {
-                    "msg": "HPO optimize finished",
-                    "model": model_name,
-                    "completed_trials": len(study.trials),
-                },
-            )
-            with contextlib.suppress(Exception):
-                pass
-
-            if not study.best_trial:
-                self.logger.warning(
-                    "Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params.",
-                )
-                return {}, 0.0
-
-            self.logger.info(
-                {
-                    "msg": "HPO complete",
-                    "model": model_name,
-                    "best_score": float(study.best_value),
-                },
-            )
-            # Extra visibility for terminal users
-            with contextlib.suppress(Exception):
-                pass
-            if model_name == "svm":
-                self.logger.info(
-                    {
-                        "msg": "Best SVM parameters",
-                        "params": study.best_params,
-                    },
-                )
-            # Provide a concise summary with parameters in the console as well
-            with contextlib.suppress(Exception):
-                pass
-            return study.best_params, study.best_value
+        # Provide a concise summary with parameters in the console as well
+        with contextlib.suppress(Exception):
+            pass
+        return study.best_params, study.best_value
 
     async def _select_optimal_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[list[str], dict]:
@@ -1759,7 +1759,8 @@ from src.config.constants import (
         total_features = len(feature_names)
 
         # Check 4: Mutual Information warnings (uni-variate predictive power)
-        try: self._log_mutual_information_warnings(X_train = y_train)
+        try:
+            self._log_mutual_information_warnings(X_train, y_train)
         except Exception as e:
             self.logger.warning(f"Mutual Information check failed: {e}")
 
@@ -1810,10 +1811,10 @@ from src.config.constants import (
             is_blank_cfg = False
         blank_mode = is_blank_env or is_blank_cfg
         # Compute MI
-        mi, mutual_info_classif(
+        mi = mutual_info_classif(
             X.values, y.values, discrete_features=False, random_state=42
         )
-        mi_series, pd.Series(mi, index=X.columns)
+        mi_series = pd.Series(mi, index=X.columns)
         if blank_mode:
             low = mi_series[mi_series <= 1e-5]
         else:
@@ -1831,7 +1832,7 @@ from src.config.constants import (
         """
         if X.empty:
             return
-        kf, KFold(n_splits=4, shuffle=True, random_state=42)
+        kf = KFold(n_splits=4, shuffle=True, random_state=42)
         unstable: list[str] = []
         for col in X.columns:
             try:
@@ -1865,22 +1866,22 @@ from src.config.constants import (
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, ) -> tuple[list[str], dict]:
         """Execute stable tiered feature selection with bootstrapping to prevent selection instability."""
         # Load tiered selection configuration
-        feature_config, self.config.get("feature_interactions", {})
-        selection_tiers, feature_config.get("feature_selection_tiers", {})
-        stability_config, feature_config.get("stability_selection", {})
+        feature_config = self.config.get("feature_interactions", {})
+        selection_tiers = feature_config.get("feature_selection_tiers", {})
+        stability_config = feature_config.get("stability_selection", {})
 
         # Get stability selection parameters
-        n_bootstrap_samples, stability_config.get("n_bootstrap_samples", 50)
-        stability_threshold, stability_config.get("stability_threshold", 0.7)
-        min_features_per_tier, stability_config.get("min_features_per_tier", 5)
+        n_bootstrap_samples = stability_config.get("n_bootstrap_samples", 50)
+        stability_threshold = stability_config.get("stability_threshold", 0.7)
+        min_features_per_tier = stability_config.get("min_features_per_tier", 5)
 
         # Get tiered selection parameters
-        tier_1_count, selection_tiers.get("tier_1_base_features", 80)
-        tier_2_count, selection_tiers.get("tier_2_normalized_features", 40)
-        tier_3_count, selection_tiers.get("tier_3_interaction_features", 60)
-        tier_4_count, selection_tiers.get("tier_4_lagged_features", 40)
-        tier_5_count, selection_tiers.get("tier_5_causality_features", 20)
-        total_max_features, selection_tiers.get("total_max_features", 240)
+        tier_1_count = selection_tiers.get("tier_1_base_features", 80)
+        tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
+        tier_3_count = selection_tiers.get("tier_3_interaction_features", 60)
+        tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
+        tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
+        total_max_features = selection_tiers.get("total_max_features", 240)
 
         self.logger.info("🎯 Stable tiered feature selection targets (180 features):")
         self.logger.info(f"   Tier 1 (Core): {tier_1_count} features")
@@ -2033,16 +2034,16 @@ from src.config.constants import (
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, ) -> tuple[list[str], dict]:
         """Execute stable traditional feature selection with bootstrapping."""
         # Load stability configuration
-        feature_config, self.config.get("feature_interactions", {})
-        stability_config, feature_config.get("stability_selection", {})
+        feature_config = self.config.get("feature_interactions", {})
+        stability_config = feature_config.get("stability_selection", {})
 
         # Get stability selection parameters
-        n_bootstrap_samples, stability_config.get("n_bootstrap_samples", 50)
-        stability_threshold, stability_config.get("stability_threshold", 0.7)
+        n_bootstrap_samples = stability_config.get("n_bootstrap_samples", 50)
+        stability_threshold = stability_config.get("stability_threshold", 0.7)
 
         # Ensure we keep at least 10 features or 50% of original features, whichever is larger
-        min_features, max(10, len(feature_names) // 2)
-        max_features, min(20, len(feature_names))  # Don't select more than 20 features'
+        min_features = max(10, len(feature_names) // 2)
+        max_features = min(20, len(feature_names))  # Don't select more than 20 features
 
         try:
             # Try SHAP first with stability selection
@@ -2223,13 +2224,13 @@ from src.config.constants import (
         )
 
         # Initialize feature selection frequency counter
-        feature_selection_freq, dict.fromkeys(available_features, 0)
+        feature_selection_freq = dict.fromkeys(available_features, 0)
 
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
             try:
                 # Create bootstrap sample (with replacement) from training data only
-                bootstrap_indices, np.random.choice(
+                bootstrap_indices = np.random.choice(
                     len(X_train), size=len(X_train), replace=True
                 )
 
@@ -2368,12 +2369,12 @@ from src.config.constants import (
         )
 
         # Load SHAP analysis configuration
-        feature_config, self.config.get("feature_interactions", {})
-        stability_config, feature_config.get("stability_selection", {})
-        shap_config, stability_config.get("shap_analysis", {})
+        feature_config = self.config.get("feature_interactions", {})
+        stability_config = feature_config.get("stability_selection", {})
+        shap_config = stability_config.get("shap_analysis", {})
 
         # Get adaptive sample size based on dataset size
-        validation_sample_size, self._get_adaptive_shap_sample_size(
+        validation_sample_size = self._get_adaptive_shap_sample_size(
             len(X_val), shap_config,
         )
 
@@ -2382,14 +2383,14 @@ from src.config.constants import (
         )
 
         # Initialize feature selection frequency counter
-        feature_selection_freq, dict.fromkeys(feature_names, 0)
+        feature_selection_freq = dict.fromkeys(feature_names, 0)
         shap_values_all = []
 
         # Perform bootstrap sampling and SHAP analysis
         for i in range(n_bootstrap_samples):
             try:
                 # Create bootstrap sample from training data only (prevent look-ahead bias)
-                bootstrap_indices, np.random.choice(
+                bootstrap_indices = np.random.choice(
                     len(X_train), size=len(X_train), replace=True
                 )
 
@@ -2397,7 +2398,7 @@ from src.config.constants import (
                 y_bootstrap = y_train.iloc[bootstrap_indices]
 
                 # Sample validation set for SHAP analysis with adaptive size
-                sample_idx, np.random.RandomState(42 + i).choice(
+                sample_idx = np.random.RandomState(42 + i).choice(
                     len(X_val),
                     size=min(validation_sample_size, len(X_val)),  # Adaptive sample size
                     replace=False,
@@ -2497,10 +2498,10 @@ from src.config.constants import (
         self, total_samples: int, shap_config: dict, ) -> int:
         """Calculate adaptive sample size for SHAP analysis based on dataset size."""
         # Get configuration parameters
-        default_size, shap_config.get("validation_sample_size", 2000)
-        min_size, shap_config.get("min_sample_size", 1000)
-        max_size, shap_config.get("max_sample_size", 5000)
-        enable_adaptive, shap_config.get("enable_adaptive_sampling", True)
+        default_size = shap_config.get("validation_sample_size", 2000)
+        min_size = shap_config.get("min_sample_size", 1000)
+        max_size = shap_config.get("max_sample_size", 5000)
+        enable_adaptive = shap_config.get("enable_adaptive_sampling", True)
 
         if not enable_adaptive:
             return min(default_size, total_samples)
@@ -2515,10 +2516,10 @@ from src.config.constants import (
         elif total_samples <= 200000:
             # Large dataset: use 5% of data
             sample_size = int(total_samples * 0.05)
-        else: # Very large dataset: use 2% of data = but cap at max_size
+        else:  # Very large dataset: use 2% of data, but cap at max_size
             sample_size = min(max_size, int(total_samples * 0.02))
 
-        # Ensure we don't exceed total samples'
+        # Ensure we don't exceed total samples
         sample_size = min(sample_size, total_samples)
 
         # Ensure we meet minimum requirements
@@ -2582,7 +2583,7 @@ from src.config.constants import (
                 except Exception:
                     return None
 
-            else: # For other models = use permutation importance
+            else:  # For other models, use permutation importance
 
                 feature_importance = permutation_importance(
                     model,
@@ -2604,13 +2605,13 @@ from src.config.constants import (
         )
 
         # Initialize feature selection frequency counter
-        feature_selection_freq, dict.fromkeys(feature_names, 0)
+        feature_selection_freq = dict.fromkeys(feature_names, 0)
 
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
             try:
                 # Create bootstrap sample from training data only
-                bootstrap_indices, np.random.choice(
+                bootstrap_indices = np.random.choice(
                     len(X_train), size=len(X_train), replace=True
                 )
 
@@ -2618,7 +2619,7 @@ from src.config.constants import (
                 y_bootstrap = y_train.iloc[bootstrap_indices]
 
                 # Sample validation set
-                sample_idx, np.random.RandomState(42 + i).choice(
+                sample_idx = np.random.RandomState(42 + i).choice(
                     len(X_val),
                     size=min(500, len(X_val)),
                     replace=False,
@@ -2872,7 +2873,7 @@ from src.config.constants import (
             X_clean = X_clean.drop(columns=inf_features)
             
             # Fill remaining NaN values
-            X_clean = X_clean.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            X_clean = X_clean.ffill().bfill().fillna(0)
             
             self.logger.info(f"   Data quality filtering: {len(feature_columns)} -> {len(X_clean.columns)} features")
             
@@ -3034,8 +3035,7 @@ from src.config.constants import (
         def get_activation(name):
             def hook(model, input, output) -> None:
                 activations[name] = torch.sqrt(torch.mean(input[0] ** 2, dim=0))
-
-        return hook
+            return hook
 
         hooks = []
         for name, module in model.named_modules():
@@ -3198,16 +3198,16 @@ from src.config.constants import (
                 )
 
             # Load feature selection configuration
-            feature_config, self.config.get("feature_interactions", {})
-            selection_tiers, feature_config.get("feature_selection_tiers", {})
+            feature_config = self.config.get("feature_interactions", {})
+            selection_tiers = feature_config.get("feature_selection_tiers", {})
 
             # Get tiered selection parameters
-            tier_1_count, selection_tiers.get("tier_1_base_features", 80)
-            tier_2_count, selection_tiers.get("tier_2_normalized_features", 40)
-            tier_3_count, selection_tiers.get("tier_3_interaction_features", 60)
-            tier_4_count, selection_tiers.get("tier_4_lagged_features", 40)
-            tier_5_count, selection_tiers.get("tier_5_causality_features", 20)
-            total_max_features, selection_tiers.get("total_max_features", 240)
+            tier_1_count = selection_tiers.get("tier_1_base_features", 80)
+            tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
+            tier_3_count = selection_tiers.get("tier_3_interaction_features", 60)
+            tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
+            tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
+            total_max_features = selection_tiers.get("total_max_features", 240)
 
             # Categorize features by tier
             feature_categories = self._categorize_features_by_tier(feature_columns)
@@ -3393,8 +3393,8 @@ from src.config.constants import (
                 pred = model.predict(X_val)
                 return float((pred == y_val).mean())
 
-            # Get trials from training input or use default
-            rf_trials = self.training_input.get("random_forest_trials", 25)
+            # Get trials from config or use default
+            rf_trials = self.config.get("random_forest_trials", 25)
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=rf_trials)
             return study.best_params, float(study.best_value)
@@ -3434,8 +3434,8 @@ from src.config.constants import (
                 pred = model.predict(X_val)
                 return float((pred == y_val).mean())
 
-            # Get trials from training input or use default
-            logistic_trials = self.training_input.get("logistic_trials", 25)
+            # Get trials from config or use default
+            logistic_trials = self.config.get("logistic_trials", 25)
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=logistic_trials)
             return study.best_params, float(study.best_value)
@@ -3467,8 +3467,8 @@ from src.config.constants import (
                 pred = pipe.predict(X_val)
                 return float((pred == y_val).mean())
 
-            # Get trials from training input or use default
-            svm_trials = self.training_input.get("svm_trials", 25)
+            # Get trials from config or use default
+            svm_trials = self.config.get("svm_trials", 25)
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=svm_trials)
             return study.best_params, float(study.best_value)
@@ -3583,21 +3583,15 @@ from src.config.constants import (
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
+from src.core.decorators import (
     deterministic_seed,
     idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
+    timeout,
+    validates,
+    log_execution_time,
+    cached,
+    log_call,
+    circuit_breaker
 )
 
 
@@ -3618,10 +3612,12 @@ from src.config.constants import (
     },
     context="Analyst Enhancement",
 )
-# @secure_data_processing - removed, handled by validates(
+# @secure_data_processing - removed, handled by validates
+@validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 # @prevent_data_leakage - removed, handled by validates
+@validates(
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -3659,6 +3655,7 @@ from src.config.constants import (
     format_validation=True,
 )
 # @quality_gate - removed, handled by validates
+@validates(
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     convergence_checks=True,
@@ -3672,25 +3669,26 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs
 ) -> bool:
-    """Run the analyst enhancement step."
+    """Run the analyst enhancement step.
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
+        force_rerun: Force rerun of the step
         **kwargs: Additional arguments
 
     Returns:
         bool: True if successful, False otherwise
     """
     # Import logger for step-level logging
+    import copy
+    import os.path
+    
     from src.utils.logger import system_logger
     from src.utils.enhanced_mlflow_integration import (
-import copy
-import os.path
-
-with_enhanced_mlflow_logging,
-log_step_report,
+        with_enhanced_mlflow_logging,
+        log_step_report,
         create_detailed_step_report,
         log_step_metrics,
         log_step_dataframe_with_standardized_name,
@@ -3738,7 +3736,7 @@ log_step_report,
         # Phase 2: Initialize step
         logger.info("🔧 Phase 2: Initializing Analyst Enhancement Step...")
         try:
-            step = AnalystEnhancementStep(config)
+            step = RegimeAwareAnalystEnhancementStep(config)
             await step.initialize()
             logger.info("✅ Analyst Enhancement Step initialized successfully")
             step_phases["initialization"] = True
@@ -3790,7 +3788,7 @@ log_step_report,
             step_phases["validation"] = True
         except Exception as e:
             logger.exception(f"❌ Enhancement validation failed: {e}")
-        # Don't fail the entire step for validation issues'
+            # Don't fail the entire step for validation issues
             step_phases["validation"] = False
 
         # Final summary

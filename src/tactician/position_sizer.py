@@ -12,13 +12,12 @@ import contextlib
 from datetime import datetime
 from typing import Any
 
-from src.utils.confidence import normalize_dual_confidence
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import error as error_src_utils_warning_symbols, initialization_error, missing
-
 from kelly_criterion_fix import calculate_correct_kelly_position_size
 from src.core.decorators import handles_errors, validates
+from src.utils.confidence import normalize_dual_confidence
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols
+from src.utils.warning_symbols import initialization_error, missing
 
 
 class PositionSizer:

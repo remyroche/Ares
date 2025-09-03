@@ -7,10 +7,7 @@ Prepares data for step1_5_data_converter.py processing. This module focuses on:
 
 Note: Actual resampling is handled by step1_5_data_converter.py
 """
-
 import sys
-
-
 from datetime import datetime
 from pathlib import Path
 
@@ -21,9 +18,9 @@ from src.utils.logger import system_logger
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+import copy
 
 from src.utils.centralized_decorators import (
-import copy
 
     ValidationLevel,
     comprehensive_data_validation,
@@ -791,16 +788,15 @@ class DataPreparation:
 
     def generate_resampling_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive resampling report."""
-        report = f"""
+        report = f""""
 🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
 {'='*60}
 
 📊 AVAILABLE TIMEFRAMES:
     pass
 """
-
 for timeframe in self.SUPPORTED_TIMEFRAMES:
-            # Check if resampled file exists
+    # Check if resampled file exists
             output_dir = self.data_cache_path / "resampled" / exchange / symbol
             filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
             file_path = output_dir / filename
@@ -814,10 +810,9 @@ for timeframe in self.SUPPORTED_TIMEFRAMES:
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
 
-        report += f"""
+        report += f""""
 {'='*60}
 """
-
 return report
 
     @with_tracing_span("create_1m_consolidated_data")

@@ -98,7 +98,7 @@ class PaperTradingIntegration:
             # Initialize detailed reporter
             if self.enable_detailed_reporting:
                 try:
-import os.path
+import os
                     from src.reports.paper_trading_reporter import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly

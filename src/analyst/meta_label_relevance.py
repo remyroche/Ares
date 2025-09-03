@@ -110,7 +110,7 @@ def compute_shap_importance(
 import copy
 import os.path
 
-    magnitudes = _np.abs(_np.array(sv))
+magnitudes = _np.abs(_np.array(sv))
     if magnitudes.ndim == 1:
         magnitudes = magnitudes.reshape(-1, 1)
     mean_abs = _np.mean(magnitudes, axis=0)

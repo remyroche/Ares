@@ -40,7 +40,7 @@ except Exception as e:
 import copy
 
     OPTUNA_AVAILABLE = True
-except ImportError:
+    except ImportError:
     OPTUNA_AVAILABLE = False
 
 

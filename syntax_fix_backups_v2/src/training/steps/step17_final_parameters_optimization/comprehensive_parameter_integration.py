@@ -10,7 +10,6 @@ integrated with the step17 optimizer and using its results. It provides:
 3. Validation that parameters are actually being used
 4. Integration with the enhanced training manager
 """
-
 import asyncio
 import logging
 import numpy as np
@@ -41,7 +40,6 @@ class ComprehensiveParameterIntegration:
     Comprehensive parameter integration ensuring all step17 optimized parameters
     are actually applied and used throughout the system.
     """
-    
     def __init__(self, config: Dict[str, Any], training_manager=None):
         self.config = config
         self.training_manager = training_manager
@@ -65,7 +63,6 @@ class ComprehensiveParameterIntegration:
         regime-specific optimization for the triple barrier method, this would need to be
         implemented separately.
         """
-        
         return {
             "step4_triple_barrier_method": {
                 "barrier_settings": {

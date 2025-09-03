@@ -1058,7 +1058,7 @@ import pandas as pd
         
 # Initialize SR detection optimizer
 optimizer = await setup_sr_detection_optimizer(config)
-        if not optimizer:
+if not optimizer:
             system_logger.warning("⚠️ SR detection optimizer not available, skipping optimization features")
             return features
         

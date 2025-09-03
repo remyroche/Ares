@@ -67,7 +67,7 @@ import copy
 
 model = LinearRegression()
 model.fit(X_clean, y_clean)
-            r_squared = model.score(X_clean, y_clean)
+r_squared = model.score(X_clean, y_clean)
 
             # Calculate VIF
             if r_squared < 1.0:

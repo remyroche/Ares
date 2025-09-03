@@ -4,7 +4,6 @@
 This module provides real-time monitoring of data quality metrics and alerting
 capabilities for the enhanced data quality system.
 """
-
 import asyncio
 import json
 import sys
@@ -221,7 +220,7 @@ import os.path
             
 manager = EnhancedDataQualityManager(str(self.data_cache_path))
             
-            # Run quality check
+# Run quality check
             quality_results = await manager.comprehensive_quality_check(
                 symbol=symbol,
                 exchange=exchange,

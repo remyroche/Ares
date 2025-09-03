@@ -283,7 +283,7 @@ class UnifiedRegimeClassifier:
                     elif isinstance(name_candidate, str) and name_candidate.startswith(
                         "<class "
                     ):
-                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
+                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]
                 except Exception as _name_exc:
                     if logger is not None:
                         logger.debug(

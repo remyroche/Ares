@@ -322,7 +322,7 @@ downloader = DataDownloader()
 
 # Download klines data
                 downloaded_data = downloader.download_klines(
-                    symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
+                symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
                 )
 
                 if downloaded_data is not None and len(downloaded_data) > 0:

@@ -569,7 +569,7 @@ class RegimeAwareTacticianLabeler:
 
 
 class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""'
+    """Step 8: Tactician Model Labeling using Analyst's model."""
 
     
 

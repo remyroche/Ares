@@ -55,10 +55,10 @@ else:
     get_json_formatter = structured_logging.get_json_formatter
 
 if warning_symbols is None:
-    def critical(msg): return print(f"CRITICAL: {msg}"):
-    def error(msg): return print(f"ERROR: {msg}"):
-    def failed(msg): return print(f"FAILED: {msg}"):
-    def warning(msg): return print(f"WARNING: {msg}"):
+    def critical(msg): return print(f"CRITICAL: {msg}")
+    def error(msg): return print(f"ERROR: {msg}")
+    def failed(msg): return print(f"FAILED: {msg}")
+    def warning(msg): return print(f"WARNING: {msg}")
 else:
     critical = warning_symbols.critical
     error = warning_symbols.error
@@ -554,14 +554,14 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, enhanced_logger.await initialize())
+                    future = executor.submit(asyncio.run, enhanced_logger.initialize())
                     success = future.result()
             except RuntimeError:
                 # No event loop running, create a new one
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    success = loop.run_until_complete(enhanced_logger.await initialize())
+                    success = loop.run_until_complete(enhanced_logger.initialize())
                 finally:
                     loop.close()
 
@@ -737,16 +737,15 @@ def ensure_comprehensive_logging_available():
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
-    except Exception as e:
-        pass  # TODO: Handle exception properly
-import os.path
-
-comprehensive_logger = get_comprehensive_logger()
-if comprehensive_logger:
+        comprehensive_logger = get_comprehensive_logger()
+        if comprehensive_logger:
             # Initialize integration if comprehensive logging is available
             initialize_comprehensive_integration()
             return True
     except ImportError:
+        pass
+    except Exception:
+        # Non-fatal: fallback to basic logging
         pass
     return False
 

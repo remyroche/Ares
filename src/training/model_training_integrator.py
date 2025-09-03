@@ -6,7 +6,7 @@ from src.core.decorators import handles_errors
 
 import json
 import os
-import os.path
+import os
 import pickle
 from datetime import datetime
 from typing import Any

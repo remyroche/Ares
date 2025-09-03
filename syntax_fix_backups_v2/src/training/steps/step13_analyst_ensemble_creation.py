@@ -150,15 +150,15 @@ class AnalystEnsembleCreationStep:
         try:
             # Apply optimized feature selection for ensemble creation
             try:
-                from src.training.optimized_feature_selection_manager import (
-            except Exception as e:
-                pass  # TODO: Handle exception properly
 import copy
 import datetime as datetime
 import os.path
+                from src.training.optimized_feature_selection_manager import (
+            except Exception as e:
+                pass  # TODO: Handle exception properly
 
 OptimizedFeatureSelectionManager,
-                )
+)
 
                 optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)
 

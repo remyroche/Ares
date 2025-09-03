@@ -5,7 +5,6 @@ Paper Trading Integration Module
 Integrates the `PaperTrader` with the `PaperTradingReporter` and provides
 helper methods to execute trades and generate reports in real time.
 """
-
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
@@ -14,8 +13,8 @@ import os
 from src.utils.comprehensive_logger import get_comprehensive_logger
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
 import asyncio
+from src.utils.warning_symbols import (
 
     error,
     failed,
@@ -38,7 +37,6 @@ class PaperTradingIntegration:
     """
     Integration module for paper trading with enhanced reporting.
     """
-
     def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize paper trading integration.
@@ -97,13 +95,13 @@ class PaperTradingIntegration:
             # Initialize detailed reporter
             if self.enable_detailed_reporting:
                 try:
+import os.path
                     from src.reports.paper_trading_reporter import (
                 except Exception as e:
                     pass  # TODO: Handle exception properly
-import os.path
 
 setup_paper_trading_reporter as _setup_reporter,
-                    )
+)
 
                     self.reporter = await _setup_reporter(self.config)
                     if not self.reporter:

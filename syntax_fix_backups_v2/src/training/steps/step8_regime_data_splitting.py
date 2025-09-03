@@ -150,14 +150,14 @@ class RegimeDataSplittingStep:
         try:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
+import numpy as np
+import os.path
             from src.config.constants import (
         except Exception as e:
             pass  # TODO: Handle exception properly
-import numpy as np
-import os.path
 
 BLANK_TRAINING_LOOKBACK_DAYS,
-            )
+)
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(

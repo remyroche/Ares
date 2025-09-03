@@ -4,7 +4,6 @@
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
 """
-
 import json
 import os
 from pathlib import Path

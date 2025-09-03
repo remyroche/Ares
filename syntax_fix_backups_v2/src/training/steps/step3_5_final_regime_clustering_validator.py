@@ -4,7 +4,6 @@
 This module validates the final regime clustering step outputs with comprehensive
 quality checks for regime clustering artifacts and analysis reports.
 """
-
 import json
 import os
 from pathlib import Path

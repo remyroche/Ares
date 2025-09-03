@@ -8,7 +8,6 @@ This module provides sophisticated missing value handling including:
 - Intelligent fill strategy selection
 - Data integrity preservation
 """
-
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -321,7 +320,7 @@ import copy
 
 downloader = DataDownloader()
 
-                # Download klines data
+# Download klines data
                 downloaded_data = downloader.download_klines(
                     symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
                 )

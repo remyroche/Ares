@@ -342,7 +342,7 @@ class FeatureEngineeringOrchestrator:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
-import os.path
+import os
 
 # Convert price data to differences for technical indicators
 close_diff = df["close"].diff().fillna(0)

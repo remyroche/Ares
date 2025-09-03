@@ -1,6 +1,6 @@
-"""
+""""
 Base validator class for training step validators.
-"""
+""""
 
 import logging
 import os
@@ -33,7 +33,7 @@ class BaseValidator(ABC):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
+        """"
         Validate a training step.
 
         Args:
@@ -42,14 +42,14 @@ class BaseValidator(ABC):
 
         Returns:
             bool: True if validation passed, False otherwise
-        """
+        """"
         raise NotImplementedError
 
     def validate_error_absence(
         self,
         step_result: dict[str, Any],
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate that the step completed without errors.
 
         Args:
@@ -57,7 +57,7 @@ class BaseValidator(ABC):
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             errors = step_result.get("errors", [])
             warnings = step_result.get("warnings", [])
@@ -90,7 +90,7 @@ class BaseValidator(ABC):
         file_path: str,
         file_type: str = "file",
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate that a file exists.
 
         Args:
@@ -99,7 +99,7 @@ class BaseValidator(ABC):
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             exists = os.path.exists(file_path)
             metrics: dict[str, Any] = {
@@ -129,7 +129,7 @@ class BaseValidator(ABC):
         check_duplicates: bool = True,
         check_temporal_consistency: bool = True,
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate DataFrame quality with comprehensive checks.
 
         Args:
@@ -143,7 +143,7 @@ class BaseValidator(ABC):
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             metrics: dict[str, Any] = {
                 "total_rows": int(len(df)),
@@ -261,7 +261,7 @@ class BaseValidator(ABC):
         required_files: Optional[list[str]] = None,
         check_model_integrity: bool = True,
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate model artifacts and integrity.
 
         Args:
@@ -271,7 +271,7 @@ class BaseValidator(ABC):
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             metrics: dict[str, Any] = {
                 "model_path": model_path,
@@ -298,9 +298,11 @@ class BaseValidator(ABC):
             if check_model_integrity and metrics["is_file"]:
                 try:
                     import pickle
+                except Exception as e:
+                    pass  # TODO: Handle exception properly
 import os.path
 
-                    with open(model_path, "rb") as f:
+with open(model_path, "rb") as f:
                         model = pickle.load(f)
 
                     # Basic model validation
@@ -336,7 +338,7 @@ import os.path
         validate_types: bool = True,
         validate_ranges: bool = True,
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate configuration dictionary.
 
         Args:
@@ -347,7 +349,7 @@ import os.path
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             metrics: dict[str, Any] = {
                 "config_keys": list(config.keys()) if isinstance(config, dict) else [],
@@ -419,7 +421,7 @@ import os.path
         required_steps: Optional[list[str]] = None,
         check_step_completion: bool = True,
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate pipeline state consistency.
 
         Args:
@@ -429,7 +431,7 @@ import os.path
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             metrics: dict[str, Any] = {
                 "state_keys": list(pipeline_state.keys()) if isinstance(pipeline_state, dict) else [],
@@ -480,7 +482,7 @@ import os.path
         required_files: Optional[list[str]] = None,
         required_dirs: Optional[list[str]] = None,
     ) -> Tuple[bool, Dict[str, Any]]:
-        """
+        """"
         Validate directory structure.
 
         Args:
@@ -490,7 +492,7 @@ import os.path
 
         Returns:
             (passed, metrics)
-        """
+        """"
         try:
             exists = os.path.exists(directory)
             is_directory = os.path.isdir(directory) if exists else False
@@ -509,7 +511,7 @@ import os.path
                 )
                 return False, metrics
 
-            # Check if it's actually a directory
+            # Check if it's actually a directory'
             if not is_directory:
                 self.logger.warning(
                     f"⚠️ Path exists but is not a directory: {directory}",
@@ -557,14 +559,14 @@ import os.path
         passed: bool,
         metrics: Optional[dict[str, Any]] = None,
     ) -> None:
-        """
+        """"
         Log validation result.
 
         Args:
             validation_name: Name of the validation
             passed: Whether validation passed
             metrics: Validation metrics
-        """
+        """"
         if passed:
             self.logger.info(f"✅ {validation_name} validation passed")
         else:
@@ -579,14 +581,14 @@ import os.path
         passed: bool,
         metrics: Optional[dict[str, Any]] = None,
     ) -> None:
-        """
+        """"
         Add validation result to the results dictionary.
 
         Args:
             validation_name: Name of the validation
             passed: Whether validation passed
             metrics: Validation metrics
-        """
+        """"
         self.validation_results[validation_name] = {
             "passed": passed,
             "metrics": metrics or {},

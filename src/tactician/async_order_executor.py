@@ -1,9 +1,9 @@
 # src/tactician/async_order_executor.py
 
-"""
+""""
 Async Order Executor with Advanced Analytics and Dynamic Parameter Optimization
 Integrates with Enhanced Order Manager, Performance Reporter, and Optuna for optimization.
-"""
+""""
 
 import asyncio
 import time
@@ -87,7 +87,7 @@ class ExecutionResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class AsyncOrderExecutor:
-    """
+    """"
     Advanced async order executor with dynamic parameter optimization.
 
     Features:
@@ -96,15 +96,15 @@ class AsyncOrderExecutor:
     - Dynamic parameter optimization using Optuna
     - Integration with Enhanced Order Manager
     - Advanced reporting and analytics
-    """
+    """"
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        """
+        """"
         Initialize the async order executor.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config
         self.logger = system_logger.getChild("AsyncOrderExecutor")
 
@@ -136,12 +136,12 @@ class AsyncOrderExecutor:
         context="order executor initialization"
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize the order executor.
 
         Returns:
             bool: True if initialization successful
-        """
+        """"
         try:
             self.logger.info("Initializing Async Order Executor...")
 
@@ -165,12 +165,12 @@ class AsyncOrderExecutor:
             return False
 
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate order executor configuration.
 
         Returns:
             bool: True if configuration is valid
-        """
+        """"
         try:
             if self.max_concurrent_orders <= 0:
                 self.logger.error(invalid("Max concurrent orders must be positive"))
@@ -192,7 +192,7 @@ class AsyncOrderExecutor:
         context="order execution"
     )
     async def execute_order(self, request: ExecutionRequest) -> Optional[ExecutionResult]:
-        """
+        """"
         Execute an order using the specified strategy.
 
         Args:
@@ -200,7 +200,7 @@ class AsyncOrderExecutor:
 
         Returns:
             ExecutionResult: Execution result or None if failed
-        """
+        """"
         try:
             execution_id = str(uuid4())
             self.logger.info(f"Starting order execution {execution_id} for {request.symbol}")
@@ -272,7 +272,7 @@ class AsyncOrderExecutor:
             return None
 
     async def _execute_immediate(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
-        """
+        """"
         Execute order immediately.
 
         Args:
@@ -281,7 +281,7 @@ class AsyncOrderExecutor:
 
         Returns:
             bool: True if successful
-        """
+        """"
         try:
             # Create order request
             order_request = OrderRequest(
@@ -319,7 +319,7 @@ class AsyncOrderExecutor:
             return False
 
     async def _execute_twap(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
-        """
+        """"
         Execute order using Time-Weighted Average Price (TWAP) strategy.
 
         Args:
@@ -328,7 +328,7 @@ class AsyncOrderExecutor:
 
         Returns:
             bool: True if successful
-        """
+        """"
         try:
             # Calculate execution parameters
             num_slices = max(1, int(request.time_limit / 60))  # One slice per minute
@@ -380,7 +380,7 @@ class AsyncOrderExecutor:
             return False
 
     async def _execute_vwap(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
-        """
+        """"
         Execute order using Volume-Weighted Average Price (VWAP) strategy.
 
         Args:
@@ -389,7 +389,7 @@ class AsyncOrderExecutor:
 
         Returns:
             bool: True if successful
-        """
+        """"
         try:
             # For now, implement a simplified VWAP strategy
             # In a real implementation, this would analyze volume patterns
@@ -402,7 +402,7 @@ class AsyncOrderExecutor:
             return False
 
     async def _execute_iceberg(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
-        """
+        """"
         Execute order using Iceberg strategy.
 
         Args:
@@ -411,7 +411,7 @@ class AsyncOrderExecutor:
 
         Returns:
             bool: True if successful
-        """
+        """"
         try:
             # Calculate iceberg parameters
             visible_quantity = request.quantity * 0.1  # 10% visible
@@ -463,7 +463,7 @@ class AsyncOrderExecutor:
             return False
 
     async def _execute_adaptive(self, request: ExecutionRequest, result: ExecutionResult) -> bool:
-        """
+        """"
         Execute order using Adaptive strategy with dynamic parameter optimization.
 
         Args:
@@ -472,7 +472,7 @@ class AsyncOrderExecutor:
 
         Returns:
             bool: True if successful
-        """
+        """"
         try:
             # Use Optuna to optimize execution parameters
             study = optuna.create_study(direction="minimize")
@@ -498,30 +498,30 @@ class AsyncOrderExecutor:
             return False
 
     def get_active_executions(self) -> Dict[str, ExecutionResult]:
-        """
+        """"
         Get all active executions.
 
         Returns:
             Dict[str, ExecutionResult]: Active executions
-        """
+        """"
         return self.active_executions.copy()
 
     def get_execution_history(self) -> List[ExecutionResult]:
-        """
+        """"
         Get execution history.
 
         Returns:
             List[ExecutionResult]: Execution history
-        """
+        """"
         return self.execution_history.copy()
 
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """
+        """"
         Get performance metrics.
 
         Returns:
             Dict[str, Any]: Performance metrics
-        """
+        """"
         try:
             return {
                 "total_executions": self.total_executions,
@@ -539,7 +539,7 @@ class AsyncOrderExecutor:
             return {}
 
     async def cancel_execution(self, execution_id: str) -> bool:
-        """
+        """"
         Cancel an active execution.
 
         Args:
@@ -547,7 +547,7 @@ class AsyncOrderExecutor:
 
         Returns:
             bool: True if cancellation successful
-        """
+        """"
         try:
             if execution_id not in self.active_executions:
                 self.logger.error(missing(f"Execution {execution_id} not found"))
@@ -572,9 +572,9 @@ class AsyncOrderExecutor:
             return False
 
     async def cleanup(self) -> None:
-        """
+        """"
         Cleanup resources.
-        """
+        """"
         try:
             self.logger.info("Cleaning up Async Order Executor...")
 

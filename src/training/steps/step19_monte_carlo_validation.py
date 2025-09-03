@@ -40,7 +40,7 @@ class MonteCarloValidationStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """Execute Monte Carlo validation.
+        """Execute Monte Carlo validation."
 
         Args:
             training_input: Training input parameters
@@ -48,7 +48,7 @@ class MonteCarloValidationStep:
 
         Returns:
             Dict containing validation results
-        """
+        """"
         try:
             self.logger.info("🔄 Executing Monte Carlo Validation...")
 
@@ -290,7 +290,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the Monte Carlo validation step.
+    """Run the Monte Carlo validation step."
 
     Args:
         symbol: Trading symbol
@@ -300,7 +300,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """
+    """"
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

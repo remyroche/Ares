@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Step 1 Runner Script.
+"""Step 1 Runner Script."
 
 This script demonstrates how to use the step01 module to:
 1. Detect missing data gaps
 2. Validate and fix aggtrades format
 3. Resample data to multiple timeframes
 4. Ensure step1_5 compatibility
-"""
+""""
 
 import argparse
 import asyncio
@@ -43,7 +43,7 @@ def main() -> None:
     parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
     parser.add_argument("--no-auto-fix", action="store_true", help="Disable auto-fixing")
     parser.add_argument("--mode", choices=["complete", "gap-detection", "validation", "preparation", "health-check", "status", "download-missing"],
-                       default="complete", help="Operation mode")
+    default="complete", help="Operation mode")
 
     args = parser.parse_args()
     

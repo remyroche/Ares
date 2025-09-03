@@ -1,9 +1,9 @@
-"""
+""""
 Centralized logging configuration with Standardized Import Management.
 
 This module provides a unified logging system with JSON formatting,
 file rotation, and console output capabilities.
-"""
+""""
 
 import logging
 import logging.handlers
@@ -56,10 +56,10 @@ else:
     get_json_formatter = structured_logging.get_json_formatter
 
 if warning_symbols is None:
-    def critical(msg): return print(f"CRITICAL: {msg}")
-    def error(msg): return print(f"ERROR: {msg}")
-    def failed(msg): return print(f"FAILED: {msg}")
-    def warning(msg): return print(f"WARNING: {msg}")
+    def critical(msg): return print(f"CRITICAL: {msg}"):
+    def error(msg): return print(f"ERROR: {msg}"):
+    def failed(msg): return print(f"FAILED: {msg}"):
+    def warning(msg): return print(f"WARNING: {msg}"):
 else:
     critical = warning_symbols.critical
     error = warning_symbols.error
@@ -68,11 +68,11 @@ else:
 
 
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
-    """Filter to suppress noisy TensorFlow TPU client fallback warning.
+    """Filter to suppress noisy TensorFlow TPU client fallback warning."
 
     Suppresses messages like:
     "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
-    """
+    """"
 
     TARGET_SUBSTRING = "Falling back to TensorFlow client; we recommended you install the Cloud TPU client"
 
@@ -91,10 +91,10 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
 def _configure_tensorflow_logging_suppression(
     system_logger: logging.Logger | None,
 ) -> None:
-    """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning.
+    """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning."
 
     This avoids requiring cloud-tpu-client installation when TPU is not needed.
-    """
+    """"
     try:
         # Reduce TF logger chatter globally
         tf_logger = logging.getLogger("tensorflow")
@@ -125,17 +125,17 @@ def _configure_tensorflow_logging_suppression(
 
 
 class EnhancedLogger:
-    """
+    """"
     Enhanced logger utility with comprehensive error handling and type safety.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize enhanced logger with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger: logging.Logger | None = None
 
@@ -162,12 +162,12 @@ class EnhancedLogger:
         )
 
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize enhanced logger with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """
+        """"
         try:
             # Load logger configuration
             await self._load_logger_configuration()
@@ -225,12 +225,12 @@ class EnhancedLogger:
             print(f"Error loading logger configuration: {e}")
 
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate logger configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """
+        """"
         try:
             # Validate log level
             valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -261,12 +261,12 @@ class EnhancedLogger:
             return False
 
     async def _setup_logger(self) -> bool:
-        """
+        """"
         Setup logger with file and console handlers.
 
         Returns:
             bool: True if setup successful, False otherwise
-        """
+        """"
         try:
             # Create logger
             self.logger = logging.getLogger("AresTradingSystem")
@@ -361,7 +361,7 @@ class EnhancedLogger:
             return False
 
     def get_logger(self, name: str) -> logging.Logger:
-        """
+        """"
         Get a logger instance for a specific component.
 
         Args:
@@ -369,7 +369,7 @@ class EnhancedLogger:
 
         Returns:
             logging.Logger: Logger instance
-        """
+        """"
         if self.logger is None:
             # Fallback to basic logger if not initialized
             return logging.getLogger(name)
@@ -382,7 +382,7 @@ class EnhancedLogger:
         return base_logger
 
     def _create_enhanced_logger(self, base_logger: logging.Logger) -> logging.Logger:
-        """
+        """"
         Create an enhanced logger with warning symbols.
 
         Args:
@@ -390,7 +390,7 @@ class EnhancedLogger:
 
         Returns:
             Enhanced logger with warning symbols
-        """
+        """"
 
         class EnhancedLoggerWithWarnings:
             def __init__(self, logger: logging.Logger):
@@ -440,7 +440,7 @@ class EnhancedLogger:
         return EnhancedLoggerWithWarnings(base_logger)
 
     def set_level(self, level: str) -> bool:
-        """
+        """"
         Set log level.
 
         Args:
@@ -448,7 +448,7 @@ class EnhancedLogger:
 
         Returns:
             bool: True if successful, False otherwise
-        """
+        """"
         try:
             if self.logger is None:
                 return False
@@ -465,12 +465,12 @@ class EnhancedLogger:
             return False
 
     def get_log_status(self) -> dict[str, Any]:
-        """
+        """"
         Get logger status information.
 
         Returns:
             Dict[str, Any]: Logger status
-        """
+        """"
         return {
             "is_initialized": self.logger is not None,
             "log_level": self.log_level,
@@ -507,7 +507,7 @@ system_logger: logging.Logger | None = None
 
 
 def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None:
-    """
+    """"
     Setup global logging system with comprehensive file logging.
 
     Args:
@@ -515,7 +515,7 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
 
     Returns:
         Optional[logging.Logger]: Global logger instance
-    """
+    """"
     try:
         global system_logger
 
@@ -551,10 +551,10 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
         import asyncio
 
         try:
-            # Check if there's already an event loop running
+            # Check if there's already an event loop running'
             try:
                 loop = asyncio.get_running_loop()
-                # If we're in an async context, use it
+                # If we're in an async context, use it'
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -631,12 +631,12 @@ for handler in logging.getLogger().handlers:
 
 
 def ensure_logging_setup() -> logging.Logger | None:
-    """
+    """"
     Ensure logging is set up (backward compatibility function).
 
     Returns:
         Optional[logging.Logger]: Global logger instance
-    """
+    """"
     global system_logger
     if system_logger is None:
         system_logger = setup_logging()
@@ -644,7 +644,7 @@ def ensure_logging_setup() -> logging.Logger | None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """
+    """"
     Get a logger with the specified name (backward compatibility function).
 
     Args:
@@ -652,7 +652,7 @@ def get_logger(name: str) -> logging.Logger:
 
     Returns:
         logging.Logger: Logger instance
-    """
+    """"
     global system_logger
     if system_logger is None:
         system_logger = setup_logging()
@@ -690,12 +690,12 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def get_system_logger_with_comprehensive_integration() -> logging.Logger:
-    """
+    """"
     Get system logger with comprehensive logging integration.
 
     Returns:
         logging.Logger: System logger that integrates with comprehensive logging
-    """
+    """"
     global system_logger
     if system_logger is None:
         system_logger = setup_logging()
@@ -715,7 +715,7 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
         def getChild(self, name: str) -> logging.Logger:
             """Get child logger with comprehensive logging integration."""
             if self.comprehensive_logger:
-                # Return the comprehensive logger's component logger directly
+                # Return the comprehensive logger's component logger directly'
                 return self.comprehensive_logger.get_component_logger(name)
             return self.base_logger.getChild(name)
 
@@ -741,9 +741,11 @@ def ensure_comprehensive_logging_available():
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
+    except Exception as e:
+        pass  # TODO: Handle exception properly
 import os.path
 
-        comprehensive_logger = get_comprehensive_logger()
+comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             # Initialize integration if comprehensive logging is available
             initialize_comprehensive_integration()
@@ -780,11 +782,11 @@ def log_io_operation(
     path: str | os.PathLike | None = None,
     **context: Any,
 ):
-    """Context-managed I/O logging with duration and best-effort file size.
+    """Context-managed I/O logging with duration and best-effort file size."
 
     - Logs start and end of an I/O operation with optional context (e.g., columns, filters, compression)
     - On exception, logs with exception() and re-raises (no swallowing)
-    """
+    """"
     start = time.perf_counter()
     try:
         ctx = " ".join(f"{k}={v}" for k, v in context.items() if v is not None)
@@ -831,12 +833,12 @@ def log_dataframe_overview(
     name: str | None = None,
     sample_rows: int = 3,
 ) -> None:
-    """Log essential DataFrame diagnostics without heavy output.
+    """Log essential DataFrame diagnostics without heavy output."
 
     - shape, columns count, memory usage, dtype summary
     - null counts for up to first 10 columns
     - sample of first rows (limited)
-    """
+    """"
     try:
         if df is None:
             logger.info("📭 DataFrame is None")
@@ -898,14 +900,14 @@ def heartbeat(
     details_provider: Callable[[], str] | None = None,
     context: dict[str, str] | None = None,
 ):
-    """
+    """"
     Periodically log a short progress message while a long-running block executes.
 
     - Thread-based, safe for both sync and async code paths
     - Emits start, periodic "still running" with elapsed time, and end (with total duration)
     - Never raises; logging failures are swallowed
     - Enhanced with context information (step, model, regime, asset, timeframe)
-    """
+    """"
     start_time = time.perf_counter()
     stop_event = threading.Event()
     exited_with_error = False

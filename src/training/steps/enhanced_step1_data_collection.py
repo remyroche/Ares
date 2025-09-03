@@ -1,9 +1,9 @@
-"""
+""""
 Enhanced Step1 Data Collection
 
 This module provides an improved implementation of Step1 data collection
 with enhanced error handling, memory optimization, and data quality validation.
-"""
+""""
 
 import asyncio
 import json
@@ -50,12 +50,12 @@ except ImportError:
 
 
 class EnhancedStep1DataCollection:
-    """
+    """"
     Enhanced Step1 Data Collection
     
     This class provides an improved implementation of Step1 data collection
     with enhanced error handling, memory optimization, and data quality validation.
-    """
+    """"
     
     def __init__(self, config: Optional[Step1Config] = None):
         self.config = config or Step1Config()
@@ -88,7 +88,7 @@ class EnhancedStep1DataCollection:
             self.logger.debug(f"Initialized directory: {directory}")
     
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """
+        """"
         Execute the enhanced data collection process.
         
         Args:
@@ -97,7 +97,7 @@ class EnhancedStep1DataCollection:
             
         Returns:
             Updated pipeline state with collection results
-        """
+        """"
         start_time = time.time()
         self.logger.info("🚀 Starting enhanced data collection...")
         
@@ -382,7 +382,7 @@ async def run_enhanced_step1(
     pipeline_state: Dict[str, Any],
     config: Optional[Step1Config] = None
 ) -> Dict[str, Any]:
-    """
+    """"
     Convenience function to run enhanced Step1 data collection.
     
     Args:
@@ -392,7 +392,7 @@ async def run_enhanced_step1(
         
     Returns:
         Updated pipeline state
-    """
+    """"
     step01 = EnhancedStep1DataCollection(config)
     return await step01.execute(training_input, pipeline_state)
 

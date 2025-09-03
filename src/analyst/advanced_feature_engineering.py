@@ -1,10 +1,10 @@
 # src/analyst/advanced_feature_engineering.py
 
-"""
+""""
 Advanced Feature Engineering for enhanced financial performance.
 Implements sophisticated market microstructure features, regime detection,
 and adaptive indicators for improved prediction accuracy.
-"""
+""""
 
 import os
 from datetime import datetime
@@ -33,10 +33,10 @@ from src.utils.centralized_decorators_simple import (
 
 
 class CandlestickPatternAnalyzer:
-    """
+    """"
     Comprehensive candlestick pattern analyzer implementing all major patterns
     for enhanced feature engineering and ML model training.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -78,7 +78,7 @@ class CandlestickPatternAnalyzer:
         context="candlestick pattern analysis",
     )
     async def analyze_patterns(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        """
+        """"
         Analyze candlestick patterns and return features for ML training.
 
         Args:
@@ -86,7 +86,7 @@ class CandlestickPatternAnalyzer:
 
         Returns:
             Dictionary containing candlestick pattern features
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.print(
@@ -690,11 +690,11 @@ class CandlestickPatternAnalyzer:
 
 
 class FeatureInteractionEngine:
-    """
+    """"
     Engine for creating feature interaction terms to capture complex market dynamics.
     Focuses on creating meaningful interactions between normalized features like
     spread and volume metrics, with explicit support for lagged relationships.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -787,7 +787,7 @@ class FeatureInteractionEngine:
         context="feature interaction generation",
     )
     async def generate_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
-        """
+        """"
         Generate feature interaction terms from normalized features.
 
         Args:
@@ -795,7 +795,7 @@ class FeatureInteractionEngine:
 
         Returns:
             Dictionary containing original features plus interaction terms
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.print(
@@ -1159,10 +1159,10 @@ class FeatureInteractionEngine:
 
 
 class AdvancedFeatureEngineering:
-    """
+    """"
     Advanced feature engineering with market microstructure analysis,
     regime detection, and adaptive indicators for improved performance.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -1291,9 +1291,11 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-                self.meta_labeling_system = MetaLabelingSystem(self.config)
+self.meta_labeling_system = MetaLabelingSystem(self.config)
                 await self.meta_labeling_system.initialize()
 
             self.is_initialized = True
@@ -1317,7 +1319,7 @@ import copy
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Engineer advanced features for improved prediction accuracy.
 
         Args:
@@ -1327,7 +1329,7 @@ import copy
 
         Returns:
             Dictionary containing engineered features
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.print(
@@ -1432,7 +1434,7 @@ import copy
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Engineer features across multiple timeframes (1m, 5m, 15m, 30m).
 
         Args:
@@ -1442,7 +1444,7 @@ import copy
 
         Returns:
             Dictionary containing multi-timeframe features
-        """
+        """"
         try:
             features = {}
 
@@ -1730,7 +1732,7 @@ import copy
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Generate path-dependent meta-labels for analyst and tactician models.
 
         Args:
@@ -1740,7 +1742,7 @@ import copy
 
         Returns:
             Dictionary containing meta-labels
-        """
+        """"
         try:
             labels = {}
 
@@ -1971,7 +1973,7 @@ import copy
                 (price_changes * volume_data["volume"]).rolling(20).mean()
             )
 
-            # Calculate Kyle's lambda (price impact parameter)
+            # Calculate Kyle's lambda (price impact parameter)'
             kyle_lambda = (
                 np.abs(price_changes).rolling(50).mean()
                 / volume_data["volume"].rolling(50).mean()

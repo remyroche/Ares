@@ -1,9 +1,9 @@
 # src/training/enhanced_matrix_operations.py
 
-"""Enhanced Matrix Operations Manager for advanced ML training processes.
+"""Enhanced Matrix Operations Manager for advanced ML training processes."
 Implements sophisticated matrix operations with security decorators and
 performance optimizations for improved model training.
-"""
+""""
 
 import json
 import time
@@ -86,7 +86,7 @@ class MatrixOperationsConfig:
 
 
 class EnhancedMatrixOperations:
-    """Enhanced matrix operations manager with security decorators and optimizations.
+    """Enhanced matrix operations manager with security decorators and optimizations."
 
     Implements:
     - Advanced linear algebra optimizations
@@ -100,7 +100,7 @@ class EnhancedMatrixOperations:
     - Real-time updates
     - Quality assurance
     - Feature selection and reduction
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize enhanced matrix operations manager."""
@@ -134,7 +134,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Extract market regime features using eigenvalue decomposition.
+        """Extract market regime features using eigenvalue decomposition."
 
         Args:
             features_df: Input features DataFrame
@@ -142,7 +142,7 @@ class EnhancedMatrixOperations:
         Returns:
             Enhanced features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying eigenvalue-based feature engineering...")
@@ -220,7 +220,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Stable covariance estimation using Cholesky decomposition.
+        """Stable covariance estimation using Cholesky decomposition."
 
         Args:
             features_df: Input features DataFrame
@@ -228,7 +228,7 @@ class EnhancedMatrixOperations:
         Returns:
             Enhanced features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying Cholesky covariance estimation...")
@@ -300,7 +300,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply sparse matrix optimizations for large-scale data.
+        """Apply sparse matrix optimizations for large-scale data."
 
         Args:
             features_df: Input features DataFrame
@@ -308,7 +308,7 @@ class EnhancedMatrixOperations:
         Returns:
             Optimized features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying sparse matrix optimizations...")
@@ -373,7 +373,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply advanced decomposition techniques (ICA = Factor Analysis, Kernel PCA).
+        """Apply advanced decomposition techniques (ICA = Factor Analysis, Kernel PCA)."
 
         Args:
             features_df: Input features DataFrame
@@ -381,7 +381,7 @@ class EnhancedMatrixOperations:
         Returns:
             Enhanced features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying advanced decomposition techniques...")
@@ -475,7 +475,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply matrix completion techniques for missing data.
+        """Apply matrix completion techniques for missing data."
 
         Args:
             features_df: Input features DataFrame
@@ -483,7 +483,7 @@ class EnhancedMatrixOperations:
         Returns:
             Completed features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying matrix completion techniques...")
@@ -543,7 +543,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply advanced clustering techniques for feature creation.
+        """Apply advanced clustering techniques for feature creation."
 
         Args:
             features_df: Input features DataFrame
@@ -551,7 +551,7 @@ class EnhancedMatrixOperations:
         Returns:
             Enhanced features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying advanced clustering features...")
@@ -656,7 +656,7 @@ class EnhancedMatrixOperations:
         features_df: pd.DataFrame,
         target: pd.Series = None,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply optimization algorithms for feature selection and regularization.
+        """Apply optimization algorithms for feature selection and regularization."
 
         Args:
             features_df: Input features DataFrame
@@ -665,7 +665,7 @@ class EnhancedMatrixOperations:
         Returns:
             Optimized features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying optimization algorithms...")
@@ -738,7 +738,7 @@ class EnhancedMatrixOperations:
         self,
         features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply advanced feature engineering techniques.
+        """Apply advanced feature engineering techniques."
 
         Args:
             features_df: Input features DataFrame
@@ -746,7 +746,7 @@ class EnhancedMatrixOperations:
         Returns:
             Enhanced features DataFrame and metadata
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying advanced feature engineering...")
@@ -853,7 +853,7 @@ class EnhancedMatrixOperations:
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
     def quality_assurance_checks(self, features_df: pd.DataFrame) -> dict[str, Any]:
-        """Perform comprehensive quality assurance checks.
+        """Perform comprehensive quality assurance checks."
 
         Args:
             features_df: Input features DataFrame
@@ -861,7 +861,7 @@ class EnhancedMatrixOperations:
         Returns:
             Quality assessment results
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info("🔍 Performing quality assurance checks...")
@@ -1001,7 +1001,7 @@ class EnhancedMatrixOperations:
         use_autoencoder_features: bool = True,
         use_regularization: bool = True,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Multi-stage feature selection to reduce features to target count with autoencoder features and regularization.
+        """Multi-stage feature selection to reduce features to target count with autoencoder features and regularization."
 
         Args:
             features_df: Input features DataFrame
@@ -1015,7 +1015,7 @@ class EnhancedMatrixOperations:
         Returns:
             Tuple of (selected_features_df, selection_metadata)
 
-        """
+        """"
         try:
             self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
             
@@ -1296,7 +1296,7 @@ class EnhancedMatrixOperations:
             category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in feature_categories[category])]
             prioritized_features.extend(category_features)
 
-        # Ensure we don't exceed target features
+        # Ensure we don't exceed target features'
         if len(prioritized_features) > self.target_features:
             prioritized_features = prioritized_features[:self.target_features]
 
@@ -1526,9 +1526,11 @@ class EnhancedMatrixOperations:
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
             
-            for feature in features_df.columns:
+for feature in features_df.columns:
                 try:
                     # Use single feature for prediction
                     X_single = features_df[[feature]]
@@ -1557,7 +1559,7 @@ import copy
         features_df: pd.DataFrame,
         target: pd.Series = None,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply comprehensive matrix enhancement pipeline.
+        """Apply comprehensive matrix enhancement pipeline."
 
         Args:
             features_df: Input features DataFrame
@@ -1566,7 +1568,7 @@ import copy
         Returns:
             Enhanced features DataFrame and comprehensive metadata
 
-        """
+        """"
         try:
             self.logger.info("🚀 Starting comprehensive matrix enhancement...")
             start_time = time.time()

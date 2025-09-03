@@ -23,7 +23,7 @@ def compute_mutual_information(
     task: str = "classification",
     random_state: int = 42,
 ) -> dict[str, float]:
-    """Compute mutual information scores per feature against target.
+    """Compute mutual information scores per feature against target."
 
     Args:
         X: Feature frame (numeric)
@@ -33,7 +33,7 @@ def compute_mutual_information(
 
     Returns:
         Dict feature_name -> MI score
-    """
+    """"
     Xn = X.select_dtypes(include=[np.number]).copy()
     if Xn.empty:
         return {}
@@ -75,10 +75,10 @@ def compute_shap_importance(
     task: str = "classification",
     max_samples: int = 5000,
 ) -> dict[str, float]:
-    """Compute approximate SHAP mean(|value|) per feature.
+    """Compute approximate SHAP mean(|value|) per feature."
 
     If model is None, fits a lightweight LightGBM model for speed.
-    """
+    """"
     import shap  # type: ignore
     from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
 
@@ -131,13 +131,13 @@ def evaluate_sharpe_lift(
     gating_series: pd.Series,
     risk_free_rate: float = 0.0,
 ) -> dict[str, float]:
-    """Compute Sharpe of baseline and gated series, and the delta.
+    """Compute Sharpe of baseline and gated series, and the delta."
 
     Args:
         returns_series: realized per-period returns
         gating_series: boolean/int indicator where 1 means include trade/period
         risk_free_rate: per-period risk free
-    """
+    """"
     r = returns_series.fillna(0.0)
     g = gating_series.fillna(0).astype(int)
     base_excess = r - risk_free_rate
@@ -160,10 +160,10 @@ def evaluate_sharpe_lift(
 
 
 class MetaLabelRelevanceEvaluator:
-    """Evaluate meta-label relevance with complementarity checks and persist active labels.
+    """Evaluate meta-label relevance with complementarity checks and persist active labels."
 
-    Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.
-    """
+    Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.'
+    """"
 
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)

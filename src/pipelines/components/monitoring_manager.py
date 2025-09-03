@@ -32,6 +32,7 @@ class MonitoringManager:
         },
         default_return=False,
         context="monitoring_manager.initialize",
+    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing MonitoringManager ...")
         return True

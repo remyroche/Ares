@@ -1,9 +1,9 @@
 # src/tactician/position_sizer.py
 
 
-from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 
 """
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 Simplified Position Sizer for high leverage trading.
 Uses ML confidence scores and Kelly criterion for position sizing.
 """

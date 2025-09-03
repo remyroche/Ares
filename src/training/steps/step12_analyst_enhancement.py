@@ -1,12 +1,16 @@
 # src/training/steps/step12_analyst_enhancement.py
 
 from src.core.decorators import (, traced
+from src.core.domain import BLANK_TRAINING_LOOKBACK_DAYS
+import contextlib
+import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
+import queue
+import threading
     handles_errors,
     traced,
     validates
 )
 
-from src.core.domain import BLANK_TRAINING_LOOKBACK_DAYS
 
 import asyncio
 import json
@@ -48,7 +52,6 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-import contextlib
 
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
@@ -133,7 +136,6 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     if _NUMPY_RNG_UNPICKLE_PATCHED:
         return
     try:
-        import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
         original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
@@ -240,8 +242,6 @@ class RegimeAwareAnalystEnhancementStep:
         """Safely determine the best device to use with timeout protection."""
         try:
             # Use threading with timeout to prevent hanging
-            import queue
-            import threading
 
             result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 

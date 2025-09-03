@@ -589,11 +589,9 @@ class PositionMonitor:
                         pass  # TODO: Handle exception
                     except Exception as e:
                         pass  # TODO: Handle exception properly
-import copy
-
-updated_config = yaml.safe_load(f)
-                            
-# Check if this is newer than our current config
+                           
+                        # Check if this is newer than our current config
+                        updated_config = yaml.safe_load(f)
                         if "timestamp" in updated_config:
                             config_time = datetime.fromisoformat(updated_config["timestamp"])
                             if hasattr(self, '_last_step12_refresh'):

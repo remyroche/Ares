@@ -1,12 +1,10 @@
 # src/training/steps/hmm_feature_enhancer.py
 
-
 import numpy as np
 import pandas as pd
 
 from src.core.decorators import traced, validates
 from src.utils.logger import system_logger
-
 
 class HMMFeatureEnhancer:
     """Enhances HMM features with additional derived features for Step 5 compatibility."""

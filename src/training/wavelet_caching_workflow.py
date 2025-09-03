@@ -1,8 +1,9 @@
 # examples/wavelet_caching_workflow.py
 
-from src.core.decorators import handles_errors
 
 """Complete workflow example for wavelet feature caching and backtesting."
+from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 Demonstrates the full pipeline from pre-computation to fast backtesting.
 """
 import asyncio
@@ -19,7 +20,6 @@ from src.training.steps.backtesting_with_cached_features import (
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
 
-from src.utils.logger import system_logger
 
 @handles_errors(
     exceptions=(ValueError, RuntimeError, FileNotFoundError),
@@ -192,6 +192,8 @@ async def step3_performance_comparison(config: dict) -> bool | None:
                 "data/price_data/sample_data.parquet",
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
+        except Exception as e:
+            pass  # TODO: Handle exception
         except Exception:
             price_data = pd.read_parquet("data/price_data/sample_data.parquet")
 

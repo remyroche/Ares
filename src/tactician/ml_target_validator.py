@@ -2,9 +2,9 @@
 
 from src.core.decorators import handles_errors
 
-from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
-
 """
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 ML Target Validator for validating machine learning targets and predictions.
 """
 from datetime import datetime

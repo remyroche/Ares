@@ -309,11 +309,15 @@ class ImportAnalyzer:
 
 def main():
     import argparse
+    from datetime import datetime
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_output = f'/workspace/code_quality/reports/circular_imports_report_{timestamp}.json'
     
     parser = argparse.ArgumentParser(description='Detect circular imports')
     parser.add_argument('--project-root', default='/workspace/src',
                        help='Root directory to analyze')
-    parser.add_argument('--output', default='/workspace/code_quality/circular_imports_report.json',
+    parser.add_argument('--output', default=default_output,
                        help='Output report file')
     
     args = parser.parse_args()

@@ -270,7 +270,9 @@ def main():
     result = fixer.fix_project(dry_run=not args.fix)
     
     # Save report
-    report_file = '/workspace/code_quality/safe_import_fixes_report.json'
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_file = f'/workspace/code_quality/reports/safe_import_fixes_report_{timestamp}.json'
     with open(report_file, 'w') as f:
         json.dump(result, f, indent=2)
     

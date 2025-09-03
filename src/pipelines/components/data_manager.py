@@ -1,34 +1,26 @@
 """
 Data manager for pipeline data operations (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
     handles_errors,
-    log_execution_time
+    log_execution_time,
+    error_boundary,
+    validate_dataframe
 )
-
-from src.core.domain import (
-    PerformanceLevel,
-    secure_data_processing,
-    validate_data_quality
-)
-
-from __future__ import annotations
 
 from typing import Any
+from enum import Enum
 
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    handle_errors,
-    handle_specific_errors,
-    memory_efficient,
-    performance_monitor,
-    secure_data_processing,
-    validate_data_quality,
-)
->>>>>>> origin/main
+# Define PerformanceLevel locally
+class PerformanceLevel(Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
 from src.utils.logger import system_logger
 
 class DataManager:

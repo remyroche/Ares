@@ -1,11 +1,6 @@
 # src/interfaces/enhanced_event_bus.py
 
-from src.core.decorators import handles_errors
-from src.core.domain import (
-    PerformanceLevel,
-    handle_specific_errors,
-    performance_monitor
-)
+from src.core.decorators import handles_errors, log_execution_time
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
@@ -21,7 +16,13 @@ from datetime import (
 )
 from collections import defaultdict
 from src.utils.logger import system_logger
-from src.utils.advanced_decorators import PerformanceLevel
+
+# Define PerformanceLevel locally
+class PerformanceLevel(Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -457,7 +458,7 @@ class EnhancedEventBus:
             "replays_performed": 0,
         }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid event bus configuration"),
             AttributeError: (False, "Missing required event bus parameters"),
@@ -466,7 +467,7 @@ class EnhancedEventBus:
         default_return=False,
         context="enhanced event bus initialization",
     )
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time
     async def initialize(self) -> bool:
         """Initialize the enhanced event bus"""
         try:
@@ -578,7 +579,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.exception(error(f"Error loading event history: {e}"))
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time
     async def run(self) -> bool:
         """Run the enhanced event bus"""
         try:
@@ -596,7 +597,7 @@ class EnhancedEventBus:
             self.is_running = False
             return False
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time
     async def _process_events(self) -> None:
         """Process events from the queue"""
         try:
@@ -632,7 +633,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.exception(error(f"Error in enhanced event processing: {e}"))
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time
     async def _dispatch_event(self, event: Event) -> bool:
         """Dispatch event to subscribers"""
         try:
@@ -759,7 +760,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.exception(error(f"Error unsubscribing from event: {e}"))
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @log_execution_time
     async def publish(
         self,
         event_type: EventType | str,

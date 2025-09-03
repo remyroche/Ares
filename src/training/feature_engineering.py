@@ -1,22 +1,12 @@
 from src.core.decorators import (
     traced,
-    validates
+    validates,
+    validate_dataframe
 )
 
 from collections.abc import Callable
 
 import pandas as pd
-
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import (
-    guard_dataframe_nulls,
-    validate_call_or_runtime_types,
-    with_tracing_span,
-)
-
-
->>>>>>> origin/main
 class FeatureGenerator:
     def __init__(
         self, custom_features: list[Callable[[pd.DataFrame], pd.DataFrame]] | None = None,

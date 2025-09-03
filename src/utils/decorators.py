@@ -42,14 +42,14 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-from src.utils.domain_errors import (
-    DataValidationError,
-    DomainError,
-    ExternalServiceError,
+from src.core.errors import (
+    ValidationError as DataValidationError,
+    BusinessRuleError as DomainError,
+    ServiceUnavailableError as ExternalServiceError,
     NotFoundError,
-    OperationTimeoutError,
-    SchemaValidationError,
-    VectorizationError,
+    TimeoutError as OperationTimeoutError,
+    ValidationError as SchemaValidationError,
+    BusinessRuleError as VectorizationError,
 )
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.structured_logging import ensure_correlation_id, get_correlation_id

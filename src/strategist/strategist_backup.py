@@ -8,8 +8,6 @@ This module provides the Strategist class which is responsible for:
 """
 from src.core.decorators import handles_errors
 
-from src.core.domain import handle_specific_errors
-
 # src/strategist/strategist.py
 
 from datetime import datetime
@@ -17,13 +15,6 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-<<<<<<< HEAD
-=======
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,

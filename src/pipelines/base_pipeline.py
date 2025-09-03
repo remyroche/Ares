@@ -1,33 +1,28 @@
 """
 Base pipeline framework for Ares trading bot (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
     handles_errors,
-    log_execution_time
+    log_execution_time,
+    error_boundary
 )
-
-from src.core.domain import PerformanceLevel
-
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from enum import Enum
 
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    handle_errors,
-    handle_specific_errors,
-    memory_efficient,
-    performance_monitor,
-    pipeline_checkpoint,
-    resource_monitor,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
+
+# Define PerformanceLevel locally since src.core.domain doesn't exist
+class PerformanceLevel(Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 
 @dataclass
 class PipelineConfig:

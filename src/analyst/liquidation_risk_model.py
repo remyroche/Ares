@@ -1,26 +1,15 @@
 # src/analyst/liquidation_risk_model.py
-<<<<<<< HEAD
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, validates
 
-from src.core.domain import handle_specific_errors
-
-from src.utils.logger import system_logger
-from typing import Any
-import pandas as pd
-import logging
-=======
->>>>>>> origin/main
 import datetime as datetime
 import logging
 from typing import Any
 
 import pandas as pd
 
-from src.utils.centralized_decorators_simple import (
-    validate_data_quality,
-    with_tracing_span,
+from src.utils.logger import system_logger
+    traced,
 )
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 
 

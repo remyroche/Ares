@@ -442,42 +442,48 @@ class SROptimizationStep:
         try:
             self.logger.info("🔧 Optimizing S/R probability calculation parameters...")
             
-            # Import the parameter optimizer
-            from src.tactician.sr_parameter_optimizer import SRParameterOptimizer
+            # Import the strength optimizer
+            from src.tactician.sr_strength_optimizer import SRStrengthOptimizer
             
-            # Initialize parameter optimizer
-            param_optimizer = SRParameterOptimizer(self.config)
+            # Initialize strength optimizer
+            param_optimizer = SRStrengthOptimizer(self.config)
             
-            # Get market data for optimization
-            market_data = await self._get_market_data_for_sr_calculation()
-            if market_data is None:
+            # Get market data for optimization (multiple timeframes)
+            market_data_1m = await self._get_market_data_for_sr_calculation()
+            if market_data_1m is None:
                 self.logger.error("No market data available for parameter optimization")
                 return None
             
-            # Get S/R levels for optimization
-            sr_levels = []
-            if self.sr_levels_manager:
-                try:
-                    sr_result = await self.sr_levels_manager.calculate_sr_levels_from_backtest(
-                        market_data, timeframe="1m"
-                    )
-                    sr_levels = (
-                        sr_result.get("support_levels", []) + 
-                        sr_result.get("resistance_levels", [])
-                    )
-                except Exception as e:
-                    self.logger.warning(f"Failed to get S/R levels: {e}")
+            # Try to get 5m data as well
+            market_data_5m = None
+            try:
+                # Resample 1m to 5m
+                market_data_5m = market_data_1m.resample('5T').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+            except Exception as e:
+                self.logger.warning(f"Failed to create 5m data: {e}")
+            
+            # Create market data dictionary
+            market_data_dict = {'1m': market_data_1m}
+            if market_data_5m is not None and len(market_data_5m) > 100:
+                market_data_dict['5m'] = market_data_5m
             
             # Split data into training and validation sets
-            split_idx = int(len(market_data) * 0.8)
-            train_data = market_data.iloc[:split_idx]
-            validation_data = market_data.iloc[split_idx:]
+            validation_data_dict = {}
+            for timeframe, data in market_data_dict.items():
+                split_idx = int(len(data) * 0.8)
+                market_data_dict[timeframe] = data.iloc[:split_idx]
+                validation_data_dict[timeframe] = data.iloc[split_idx:]
             
             # Run parameter optimization
             optimization_result = await param_optimizer.optimize_parameters(
-                market_data=train_data,
-                sr_levels=sr_levels,
-                validation_data=validation_data
+                market_data_dict=market_data_dict,
+                validation_data_dict=validation_data_dict
             )
             
             if optimization_result:
@@ -486,7 +492,7 @@ class SROptimizationStep:
                 # Save optimized parameters for later use
                 param_file = os.path.join(
                     self.config.get("model_save_path", "models"),
-                    "optimized_sr_parameters.json"
+                    "optimized_sr_strength_parameters.json"
                 )
                 os.makedirs(os.path.dirname(param_file), exist_ok=True)
                 param_optimizer.save_optimized_parameters(param_file)
@@ -496,7 +502,9 @@ class SROptimizationStep:
                 
                 return {
                     "optimization_score": optimization_result.optimization_score,
-                    "backtest_metrics": optimization_result.backtest_metrics,
+                    "strength_metrics": optimization_result.strength_metrics,
+                    "multi_timeframe_scores": optimization_result.multi_timeframe_scores,
+                    "feature_importance": optimization_result.feature_importance,
                     "n_trials": optimization_result.n_trials,
                     "parameters": optimization_result.best_parameters.__dict__
                 }

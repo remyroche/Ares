@@ -35,7 +35,7 @@ class SRParameterLoader:
                 return config["sr_probability_calculation"]
             
             # Try to load from file
-            param_file = Path(config.get("model_save_path", "models")) / "optimized_sr_parameters.json"
+            param_file = Path(config.get("model_save_path", "models")) / "optimized_sr_strength_parameters.json"
             
             if param_file.exists():
                 with open(param_file, 'r') as f:
@@ -137,7 +137,7 @@ class SRParameterLoader:
             }
         
         # Check if these are optimized or default parameters
-        param_file = Path(config.get("model_save_path", "models")) / "optimized_sr_parameters.json"
+        param_file = Path(config.get("model_save_path", "models")) / "optimized_sr_strength_parameters.json"
         source = "optimized" if param_file.exists() else "default"
         
         # Calculate weight sum for validation

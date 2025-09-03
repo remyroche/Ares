@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/tactician/sr_detection_optimization.py
 
 """
@@ -33,6 +34,7 @@ try:
     import optuna
     from optuna.pruners import MedianPruner
     from optuna.samplers import TPESampler
+
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -42,6 +44,7 @@ try:
     from sklearn.cluster import DBSCAN
     from sklearn.metrics import silhouette_score
     from sklearn.model_selection import TimeSeriesSplit
+
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -53,6 +56,7 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple
+
 
 @dataclass
 class OptimizationResult:
@@ -132,6 +136,7 @@ class OptimizationResult:
             },
         }
 
+
 class SRDetectionOptimizer:
     """
     Enhanced S/R Detection Optimizer for 1-30m timeframes.
@@ -155,48 +160,56 @@ class SRDetectionOptimizer:
         self.n_trials = self.opt_config.get("n_trials", 100)
         self.cv_folds = self.opt_config.get("cv_folds", 5)
         self.test_size = self.opt_config.get("test_size", 0.2)
-        self.optimization_timeout = self.opt_config.get("optimization_timeout", 3600)  # 1 hour
+        self.optimization_timeout = self.opt_config.get(
+            "optimization_timeout", 3600
+        )  # 1 hour
 
         # Timeframe-specific configuration for 1-30m
-        self.timeframe_config = self.opt_config.get("timeframe_config", {
-            "1m": {
-                "touch_threshold": 0.0005,  # 0.05% for 1m
-                "bounce_threshold": 0.002,  # 0.2% for 1m
-                "breakout_threshold": 0.005,  # 0.5% for 1m
-                "min_touches": 3,
-                "volume_spike_threshold": 1.3,
+        self.timeframe_config = self.opt_config.get(
+            "timeframe_config",
+            {
+                "1m": {
+                    "touch_threshold": 0.0005,  # 0.05% for 1m
+                    "bounce_threshold": 0.002,  # 0.2% for 1m
+                    "breakout_threshold": 0.005,  # 0.5% for 1m
+                    "min_touches": 3,
+                    "volume_spike_threshold": 1.3,
+                },
+                "5m": {
+                    "touch_threshold": 0.001,  # 0.1% for 5m
+                    "bounce_threshold": 0.003,  # 0.3% for 5m
+                    "breakout_threshold": 0.008,  # 0.8% for 5m
+                    "min_touches": 3,
+                    "volume_spike_threshold": 1.4,
+                },
+                "15m": {
+                    "touch_threshold": 0.0015,  # 0.15% for 15m
+                    "bounce_threshold": 0.005,  # 0.5% for 15m
+                    "breakout_threshold": 0.01,  # 1% for 15m
+                    "min_touches": 2,
+                    "volume_spike_threshold": 1.5,
+                },
+                "30m": {
+                    "touch_threshold": 0.002,  # 0.2% for 30m
+                    "bounce_threshold": 0.008,  # 0.8% for 30m
+                    "breakout_threshold": 0.015,  # 1.5% for 30m
+                    "min_touches": 2,
+                    "volume_spike_threshold": 1.6,
+                },
             },
-            "5m": {
-                "touch_threshold": 0.001,  # 0.1% for 5m
-                "bounce_threshold": 0.003,  # 0.3% for 5m
-                "breakout_threshold": 0.008,  # 0.8% for 5m
-                "min_touches": 3,
-                "volume_spike_threshold": 1.4,
-            },
-            "15m": {
-                "touch_threshold": 0.0015,  # 0.15% for 15m
-                "bounce_threshold": 0.005,  # 0.5% for 15m
-                "breakout_threshold": 0.01,  # 1% for 15m
-                "min_touches": 2,
-                "volume_spike_threshold": 1.5,
-            },
-            "30m": {
-                "touch_threshold": 0.002,  # 0.2% for 30m
-                "bounce_threshold": 0.008,  # 0.8% for 30m
-                "breakout_threshold": 0.015,  # 1.5% for 30m
-                "min_touches": 2,
-                "volume_spike_threshold": 1.6,
-            },
-        })
+        )
 
         # Performance thresholds for 1-30m timeframes
-        self.performance_thresholds = self.opt_config.get("performance_thresholds", {
-            "min_sr_validation_score": 0.6,  # Lower threshold for shorter timeframes
-            "min_bounce_rate": 0.5,  # 50% minimum bounce rate
-            "max_false_breakout_rate": 0.4,  # 40% max false breakouts
-            "min_volume_confirmation": 0.4,  # 40% volume confirmation
-            "min_level_detection_accuracy": 0.3,  # 30% level detection accuracy
-        })
+        self.performance_thresholds = self.opt_config.get(
+            "performance_thresholds",
+            {
+                "min_sr_validation_score": 0.6,  # Lower threshold for shorter timeframes
+                "min_bounce_rate": 0.5,  # 50% minimum bounce rate
+                "max_false_breakout_rate": 0.4,  # 40% max false breakouts
+                "min_volume_confirmation": 0.4,  # 40% volume confirmation
+                "min_level_detection_accuracy": 0.3,  # 30% level detection accuracy
+            },
+        )
 
         # Optimization state
         self.optimization_results: list[OptimizationResult] = []
@@ -225,7 +238,9 @@ class SRDetectionOptimizer:
     async def initialize(self) -> bool:
         """Initialize the S/R detection optimizer."""
         try:
-            self.logger.info("🚀 Initializing Enhanced S/R Detection Optimizer for 1-30m timeframes...")
+            self.logger.info(
+                "🚀 Initializing Enhanced S/R Detection Optimizer for 1-30m timeframes..."
+            )
 
             # Initialize S/R predictor
             self.sr_predictor = SRBreakoutPredictor(self.config)
@@ -237,7 +252,9 @@ class SRDetectionOptimizer:
             if not self._validate_configuration():
                 return False
 
-            self.logger.info("✅ Enhanced S/R Detection Optimizer initialized successfully")
+            self.logger.info(
+                "✅ Enhanced S/R Detection Optimizer initialized successfully"
+            )
             return True
 
         except Exception as e:
@@ -261,7 +278,12 @@ class SRDetectionOptimizer:
 
             # Validate timeframe configuration
             for timeframe, config in self.timeframe_config.items():
-                required_keys = ["touch_threshold", "bounce_threshold", "breakout_threshold", "min_touches"]
+                required_keys = [
+                    "touch_threshold",
+                    "bounce_threshold",
+                    "breakout_threshold",
+                    "min_touches",
+                ]
                 for key in required_keys:
                     if key not in config:
                         self.logger.error(f"Missing {key} in {timeframe} configuration")
@@ -301,7 +323,9 @@ class SRDetectionOptimizer:
             OptimizationResult: Optimized parameters and performance metrics
         """
         try:
-            self.logger.info(f"🎯 Starting comprehensive S/R detection optimization for {target_timeframe} timeframe...")
+            self.logger.info(
+                f"🎯 Starting comprehensive S/R detection optimization for {target_timeframe} timeframe..."
+            )
 
             # Validate target timeframe
             if target_timeframe not in self.timeframe_config:
@@ -322,9 +346,13 @@ class SRDetectionOptimizer:
 
             # Run optimization
             if OPTUNA_AVAILABLE:
-                result = await self._run_optuna_optimization(training_data, target_data, target_timeframe)
+                result = await self._run_optuna_optimization(
+                    training_data, target_data, target_timeframe
+                )
             else:
-                result = await self._run_basic_optimization(training_data, target_data, target_timeframe)
+                result = await self._run_basic_optimization(
+                    training_data, target_data, target_timeframe
+                )
 
             if result:
                 # Validate on out-of-sample data
@@ -332,10 +360,15 @@ class SRDetectionOptimizer:
 
                 # Store results
                 self.optimization_results.append(result)
-                if not self.best_result or result.optimization_score > self.best_result.optimization_score:
+                if (
+                    not self.best_result
+                    or result.optimization_score > self.best_result.optimization_score
+                ):
                     self.best_result = result
 
-                self.logger.info(f"✅ Optimization completed for {target_timeframe}. Best score: {result.optimization_score:.4f}")
+                self.logger.info(
+                    f"✅ Optimization completed for {target_timeframe}. Best score: {result.optimization_score:.4f}"
+                )
                 return result
 
             return None
@@ -352,17 +385,25 @@ class SRDetectionOptimizer:
             # Update S/R predictor configuration
             if self.sr_predictor:
                 # Update touch and bounce thresholds
-                self.sr_predictor.sr_proximity_threshold = timeframe_config["touch_threshold"]
+                self.sr_predictor.sr_proximity_threshold = timeframe_config[
+                    "touch_threshold"
+                ]
 
                 # Update backtesting configuration
                 if hasattr(self.sr_predictor, "backtest_config"):
-                    self.sr_predictor.backtest_config.update({
-                        "touch_threshold": timeframe_config["touch_threshold"],
-                        "bounce_threshold": timeframe_config["bounce_threshold"],
-                        "breakout_threshold": timeframe_config["breakout_threshold"],
-                        "min_touches": timeframe_config["min_touches"],
-                        "volume_spike_threshold": timeframe_config["volume_spike_threshold"],
-                    })
+                    self.sr_predictor.backtest_config.update(
+                        {
+                            "touch_threshold": timeframe_config["touch_threshold"],
+                            "bounce_threshold": timeframe_config["bounce_threshold"],
+                            "breakout_threshold": timeframe_config[
+                                "breakout_threshold"
+                            ],
+                            "min_touches": timeframe_config["min_touches"],
+                            "volume_spike_threshold": timeframe_config[
+                                "volume_spike_threshold"
+                            ],
+                        }
+                    )
 
             self.logger.info(f"Updated configuration for {target_timeframe} timeframe")
 
@@ -378,8 +419,12 @@ class SRDetectionOptimizer:
         """Run optimization using Optuna with timeframe-specific parameters."""
         try:
             # For now, fall back to basic optimization to avoid asyncio issues
-            self.logger.info("Optuna optimization temporarily disabled due to asyncio compatibility issues. Using basic optimization.")
-            return await self._run_basic_optimization(training_data, target_data, target_timeframe)
+            self.logger.info(
+                "Optuna optimization temporarily disabled due to asyncio compatibility issues. Using basic optimization."
+            )
+            return await self._run_basic_optimization(
+                training_data, target_data, target_timeframe
+            )
 
         except Exception as e:
             self.logger.exception(f"Optuna optimization failed: {e}")
@@ -393,7 +438,9 @@ class SRDetectionOptimizer:
     ) -> OptimizationResult | None:
         """Run basic optimization without Optuna."""
         try:
-            self.logger.info(f"Running basic optimization for {target_timeframe} (Optuna not available)")
+            self.logger.info(
+                f"Running basic optimization for {target_timeframe} (Optuna not available)"
+            )
 
             # Define parameter ranges for specific timeframe
             param_ranges = self._get_timeframe_parameter_ranges(target_timeframe)
@@ -402,11 +449,15 @@ class SRDetectionOptimizer:
             best_score = -np.inf
 
             # Grid search over parameter ranges
-            for i, params in enumerate(self._generate_parameter_combinations(param_ranges)):
+            for i, params in enumerate(
+                self._generate_parameter_combinations(param_ranges)
+            ):
                 if i >= self.n_trials:
                     break
 
-                score = await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
+                score = await self._evaluate_parameters_basic(
+                    params, training_data, target_data, target_timeframe
+                )
 
                 if score > best_score:
                     best_score = score
@@ -424,7 +475,9 @@ class SRDetectionOptimizer:
                     )
 
                 if i % 10 == 0:
-                    self.logger.info(f"Basic optimization progress: {i}/{min(len(param_ranges), self.n_trials)}")
+                    self.logger.info(
+                        f"Basic optimization progress: {i}/{min(len(param_ranges), self.n_trials)}"
+                    )
 
             return best_result
 
@@ -432,7 +485,9 @@ class SRDetectionOptimizer:
             self.logger.exception(f"Basic optimization failed: {e}")
             return None
 
-    def _get_timeframe_parameter_ranges(self, target_timeframe: str) -> dict[str, list[Any]]:
+    def _get_timeframe_parameter_ranges(
+        self, target_timeframe: str
+    ) -> dict[str, list[Any]]:
         """Get parameter ranges optimized for specific timeframe."""
         base_ranges = {
             "fractal_weight": [0.2, 0.3, 0.4, 0.5, 0.6],
@@ -449,26 +504,34 @@ class SRDetectionOptimizer:
         # Adjust ranges based on timeframe
         if target_timeframe == "1m":
             # More sensitive parameters for 1m
-            base_ranges.update({
-                "dbscan_eps": [0.002, 0.005, 0.008, 0.01],
-                "dbscan_min_samples": [2, 3, 4],
-            })
+            base_ranges.update(
+                {
+                    "dbscan_eps": [0.002, 0.005, 0.008, 0.01],
+                    "dbscan_min_samples": [2, 3, 4],
+                }
+            )
         elif target_timeframe == "5m":
-            base_ranges.update({
-                "dbscan_eps": [0.005, 0.008, 0.01, 0.015],
-                "dbscan_min_samples": [2, 3, 4, 5],
-            })
+            base_ranges.update(
+                {
+                    "dbscan_eps": [0.005, 0.008, 0.01, 0.015],
+                    "dbscan_min_samples": [2, 3, 4, 5],
+                }
+            )
         elif target_timeframe == "15m":
-            base_ranges.update({
-                "dbscan_eps": [0.008, 0.01, 0.015, 0.02],
-                "dbscan_min_samples": [3, 4, 5, 6],
-            })
+            base_ranges.update(
+                {
+                    "dbscan_eps": [0.008, 0.01, 0.015, 0.02],
+                    "dbscan_min_samples": [3, 4, 5, 6],
+                }
+            )
         elif target_timeframe == "30m":
             # Less sensitive parameters for 30m
-            base_ranges.update({
-                "dbscan_eps": [0.01, 0.015, 0.02, 0.025],
-                "dbscan_min_samples": [4, 5, 6],
-            })
+            base_ranges.update(
+                {
+                    "dbscan_eps": [0.01, 0.015, 0.02, 0.025],
+                    "dbscan_min_samples": [4, 5, 6],
+                }
+            )
 
         return base_ranges
 
@@ -485,13 +548,17 @@ class SRDetectionOptimizer:
             params = self._suggest_timeframe_parameters(trial, target_timeframe)
 
             # Evaluate parameters
-            return await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
+            return await self._evaluate_parameters_basic(
+                params, training_data, target_data, target_timeframe
+            )
 
         except Exception as e:
             self.logger.exception(f"Parameter evaluation failed: {e}")
             return -np.inf
 
-    def _suggest_timeframe_parameters(self, trial: optuna.Trial, target_timeframe: str) -> dict[str, Any]:
+    def _suggest_timeframe_parameters(
+        self, trial: optuna.Trial, target_timeframe: str
+    ) -> dict[str, Any]:
         """Suggest parameters optimized for specific timeframe."""
         params = {}
 
@@ -502,11 +569,19 @@ class SRDetectionOptimizer:
         params["atr_weight"] = trial.suggest_float("atr_weight", 0.05, 0.3)
 
         # Strength weights (same for all timeframes)
-        params["touch_count_weight"] = trial.suggest_float("touch_count_weight", 0.2, 0.5)
-        params["total_volume_weight"] = trial.suggest_float("total_volume_weight", 0.1, 0.4)
+        params["touch_count_weight"] = trial.suggest_float(
+            "touch_count_weight", 0.2, 0.5
+        )
+        params["total_volume_weight"] = trial.suggest_float(
+            "total_volume_weight", 0.1, 0.4
+        )
         params["level_age_weight"] = trial.suggest_float("level_age_weight", 0.1, 0.4)
-        params["bounce_rate_weight"] = trial.suggest_float("bounce_rate_weight", 0.1, 0.4)
-        params["isolation_score_weight"] = trial.suggest_float("isolation_score_weight", 0.05, 0.3)
+        params["bounce_rate_weight"] = trial.suggest_float(
+            "bounce_rate_weight", 0.1, 0.4
+        )
+        params["isolation_score_weight"] = trial.suggest_float(
+            "isolation_score_weight", 0.05, 0.3
+        )
 
         # DBSCAN parameters (timeframe-specific)
         if target_timeframe == "1m":
@@ -533,14 +608,26 @@ class SRDetectionOptimizer:
         # Advanced parameters (timeframe-specific)
         if target_timeframe in ["1m", "5m"]:
             # More sensitive for shorter timeframes
-            params["fibonacci_sensitivity"] = trial.suggest_float("fibonacci_sensitivity", 0.6, 0.9)
-            params["elliott_confidence_threshold"] = trial.suggest_float("elliott_confidence_threshold", 0.5, 0.8)
-            params["order_flow_hvn_threshold"] = trial.suggest_float("order_flow_hvn_threshold", 1.1, 1.8)
+            params["fibonacci_sensitivity"] = trial.suggest_float(
+                "fibonacci_sensitivity", 0.6, 0.9
+            )
+            params["elliott_confidence_threshold"] = trial.suggest_float(
+                "elliott_confidence_threshold", 0.5, 0.8
+            )
+            params["order_flow_hvn_threshold"] = trial.suggest_float(
+                "order_flow_hvn_threshold", 1.1, 1.8
+            )
         else:
             # Less sensitive for longer timeframes
-            params["fibonacci_sensitivity"] = trial.suggest_float("fibonacci_sensitivity", 0.5, 0.8)
-            params["elliott_confidence_threshold"] = trial.suggest_float("elliott_confidence_threshold", 0.4, 0.7)
-            params["order_flow_hvn_threshold"] = trial.suggest_float("order_flow_hvn_threshold", 1.3, 2.0)
+            params["fibonacci_sensitivity"] = trial.suggest_float(
+                "fibonacci_sensitivity", 0.5, 0.8
+            )
+            params["elliott_confidence_threshold"] = trial.suggest_float(
+                "elliott_confidence_threshold", 0.4, 0.7
+            )
+            params["order_flow_hvn_threshold"] = trial.suggest_float(
+                "order_flow_hvn_threshold", 1.3, 2.0
+            )
 
         return params
 
@@ -568,18 +655,26 @@ class SRDetectionOptimizer:
 
                     # Get S/R context for validation
                     current_price = val_data["close"].iloc[-1]
-                    sr_context = await self.sr_predictor.get_sr_context(val_data, current_price)
+                    sr_context = await self.sr_predictor.get_sr_context(
+                        val_data, current_price
+                    )
 
                     # Calculate performance metrics with enhanced S/R validation
-                    score = await self._calculate_enhanced_performance_score(sr_context, val_data, target_data, target_timeframe)
+                    score = await self._calculate_enhanced_performance_score(
+                        sr_context, val_data, target_data, target_timeframe
+                    )
                     cv_scores.append(score)
 
                 # Return mean CV score
                 return np.mean(cv_scores) if cv_scores else -np.inf
             # Use simple validation if not enough data
             current_price = training_data["close"].iloc[-1]
-            sr_context = await self.sr_predictor.get_sr_context(training_data, current_price)
-            return await self._calculate_enhanced_performance_score(sr_context, training_data, target_data, target_timeframe)
+            sr_context = await self.sr_predictor.get_sr_context(
+                training_data, current_price
+            )
+            return await self._calculate_enhanced_performance_score(
+                sr_context, training_data, target_data, target_timeframe
+            )
 
         except Exception as e:
             self.logger.exception(f"Parameter evaluation failed: {e}")
@@ -602,7 +697,9 @@ class SRDetectionOptimizer:
             # Normalize weights
             total_weight = sum(method_weights.values())
             if total_weight > 0:
-                method_weights = {k: v / total_weight for k, v in method_weights.items()}
+                method_weights = {
+                    k: v / total_weight for k, v in method_weights.items()
+                }
 
             self.sr_predictor.model_weights = method_weights
 
@@ -618,7 +715,9 @@ class SRDetectionOptimizer:
             # Normalize weights
             total_weight = sum(strength_weights.values())
             if total_weight > 0:
-                strength_weights = {k: v / total_weight for k, v in strength_weights.items()}
+                strength_weights = {
+                    k: v / total_weight for k, v in strength_weights.items()
+                }
 
             self.sr_predictor.strength_score_weights = strength_weights
 
@@ -650,8 +749,12 @@ class SRDetectionOptimizer:
             # Initialize backtesting validator
             validator = await setup_sr_backtesting_validator(self.config)
             if not validator:
-                self.logger.warning("Backtesting validator not available, using fallback scoring")
-                return self._calculate_fallback_score(sr_context, market_data, target_data)
+                self.logger.warning(
+                    "Backtesting validator not available, using fallback scoring"
+                )
+                return self._calculate_fallback_score(
+                    sr_context, market_data, target_data
+                )
 
             # Extract S/R levels from context
             support_levels = sr_context.get("support_levels", [])
@@ -675,17 +778,21 @@ class SRDetectionOptimizer:
                 return 0.0
 
             # Calculate enhanced performance score
-            performance_score = self._calculate_timeframe_specific_score(backtest_result, target_timeframe)
+            performance_score = self._calculate_timeframe_specific_score(
+                backtest_result, target_timeframe
+            )
 
             # Store backtesting results for analysis
             if not hasattr(self, "backtest_results"):
                 self.backtest_results = []
-            self.backtest_results.append({
-                "backtest_result": backtest_result,
-                "sr_context": sr_context,
-                "target_timeframe": target_timeframe,
-                "timestamp": pd.Timestamp.now(),
-            })
+            self.backtest_results.append(
+                {
+                    "backtest_result": backtest_result,
+                    "sr_context": sr_context,
+                    "target_timeframe": target_timeframe,
+                    "timestamp": pd.Timestamp.now(),
+                }
+            )
 
             return performance_score
 
@@ -694,7 +801,9 @@ class SRDetectionOptimizer:
             # Fallback to basic scoring
             return self._calculate_fallback_score(sr_context, market_data, target_data)
 
-    def _calculate_timeframe_specific_score(self, backtest_result, target_timeframe: str) -> float:
+    def _calculate_timeframe_specific_score(
+        self, backtest_result, target_timeframe: str
+    ) -> float:
         """Calculate performance score optimized for specific timeframe."""
         try:
             # Base S/R validation score
@@ -728,14 +837,18 @@ class SRDetectionOptimizer:
                 },
             }
 
-            weights = timeframe_adjustments.get(target_timeframe, timeframe_adjustments["15m"])
+            weights = timeframe_adjustments.get(
+                target_timeframe, timeframe_adjustments["15m"]
+            )
 
             # Calculate weighted score
             weighted_score = (
-                backtest_result.overall_bounce_rate * weights["bounce_rate_weight"] +
-                backtest_result.avg_volume_confirmation_rate * weights["volume_weight"] +
-                backtest_result.level_detection_accuracy * weights["accuracy_weight"] +
-                (1 - backtest_result.overall_false_breakout_rate) * weights["false_breakout_weight"]
+                backtest_result.overall_bounce_rate * weights["bounce_rate_weight"]
+                + backtest_result.avg_volume_confirmation_rate
+                * weights["volume_weight"]
+                + backtest_result.level_detection_accuracy * weights["accuracy_weight"]
+                + (1 - backtest_result.overall_false_breakout_rate)
+                * weights["false_breakout_weight"]
             )
 
             # Combine base score with weighted score
@@ -765,14 +878,26 @@ class SRDetectionOptimizer:
                 total_levels = len(support_levels) + len(resistance_levels)
 
                 if total_levels > 0:
-                    score += min(total_levels / 10.0, 1.0) * 0.3  # Max 30% for level count
+                    score += (
+                        min(total_levels / 10.0, 1.0) * 0.3
+                    )  # Max 30% for level count
 
                 # Average strength
                 avg_strength = 0.0
                 if support_levels:
-                    avg_strength += np.mean([level.get("enhanced_strength", level.get("strength", 0.5)) for level in support_levels])
+                    avg_strength += np.mean(
+                        [
+                            level.get("enhanced_strength", level.get("strength", 0.5))
+                            for level in support_levels
+                        ]
+                    )
                 if resistance_levels:
-                    avg_strength += np.mean([level.get("enhanced_strength", level.get("strength", 0.5)) for level in resistance_levels])
+                    avg_strength += np.mean(
+                        [
+                            level.get("enhanced_strength", level.get("strength", 0.5))
+                            for level in resistance_levels
+                        ]
+                    )
 
                 if total_levels > 0:
                     avg_strength /= total_levels
@@ -781,7 +906,9 @@ class SRDetectionOptimizer:
                 # Clustering quality
                 clustering_result = sr_context.get("clustering_result", {})
                 if clustering_result.get("n_clusters", 0) > 0:
-                    score += min(clustering_result["n_clusters"] / 5.0, 1.0) * 0.2  # 20% for clustering
+                    score += (
+                        min(clustering_result["n_clusters"] / 5.0, 1.0) * 0.2
+                    )  # 20% for clustering
 
                 # Advanced analysis quality
                 fibonacci_levels = sr_context.get("fibonacci_levels", {})
@@ -805,7 +932,9 @@ class SRDetectionOptimizer:
                     if features and len(features) == len(target_data):
                         correlation = np.corrcoef(features, target_data)[0, 1]
                         if not np.isnan(correlation):
-                            score += abs(correlation) * 0.5  # 50% bonus for supervised learning
+                            score += (
+                                abs(correlation) * 0.5
+                            )  # 50% bonus for supervised learning
                 except Exception as e:
                     self.logger.debug(f"Supervised scoring failed: {e}")
 
@@ -836,10 +965,10 @@ class SRDetectionOptimizer:
 
                 # Combine features
                 feature_value = (
-                    support_proximity * 0.3 +
-                    resistance_proximity * 0.3 +
-                    support_strength * 0.2 +
-                    resistance_strength * 0.2
+                    support_proximity * 0.3
+                    + resistance_proximity * 0.3
+                    + support_strength * 0.2
+                    + resistance_strength * 0.2
                 )
 
                 features.append(feature_value)
@@ -850,27 +979,35 @@ class SRDetectionOptimizer:
             self.logger.exception(f"Feature extraction failed: {e}")
             return None
 
-    async def _validate_optimization_result(self, result: OptimizationResult, target_timeframe: str) -> None:
+    async def _validate_optimization_result(
+        self, result: OptimizationResult, target_timeframe: str
+    ) -> None:
         """Validate optimization result on out-of-sample data."""
         try:
             if self.validation_data is None:
                 return
 
             # Update S/R predictor with optimized parameters
-            await self._update_sr_predictor_params({
-                **result.method_weights,
-                **result.strength_weights,
-                **result.dbscan_params,
-                **result.timeframe_weights,
-                **result.advanced_params,
-            })
+            await self._update_sr_predictor_params(
+                {
+                    **result.method_weights,
+                    **result.strength_weights,
+                    **result.dbscan_params,
+                    **result.timeframe_weights,
+                    **result.advanced_params,
+                }
+            )
 
             # Test on validation data
             current_price = self.validation_data["close"].iloc[-1]
-            sr_context = await self.sr_predictor.get_sr_context(self.validation_data, current_price)
+            sr_context = await self.sr_predictor.get_sr_context(
+                self.validation_data, current_price
+            )
 
             # Calculate out-of-sample score
-            oos_score = await self._calculate_enhanced_performance_score(sr_context, self.validation_data, None, target_timeframe)
+            oos_score = await self._calculate_enhanced_performance_score(
+                sr_context, self.validation_data, None, target_timeframe
+            )
             result.out_of_sample_score = oos_score
 
             # Calculate statistical significance (simplified)
@@ -879,11 +1016,15 @@ class SRDetectionOptimizer:
                 mean_score = np.mean(scores)
                 std_score = np.std(scores)
                 if std_score > 0:
-                    result.statistical_significance = (result.optimization_score - mean_score) / std_score
+                    result.statistical_significance = (
+                        result.optimization_score - mean_score
+                    ) / std_score
                 else:
                     result.statistical_significance = 0.0
 
-            self.logger.info(f"Validation completed for {target_timeframe}. OOS score: {oos_score:.4f}")
+            self.logger.info(
+                f"Validation completed for {target_timeframe}. OOS score: {oos_score:.4f}"
+            )
 
         except Exception as e:
             self.logger.exception(f"Validation failed: {e}")
@@ -929,7 +1070,9 @@ class SRDetectionOptimizer:
         """Extract advanced parameters from parameters."""
         return {
             "fibonacci_sensitivity": params.get("fibonacci_sensitivity", 0.7),
-            "elliott_confidence_threshold": params.get("elliott_confidence_threshold", 0.6),
+            "elliott_confidence_threshold": params.get(
+                "elliott_confidence_threshold", 0.6
+            ),
             "order_flow_hvn_threshold": params.get("order_flow_hvn_threshold", 1.5),
         }
 
@@ -949,7 +1092,9 @@ class SRDetectionOptimizer:
             "dbscan_min_samples": [2, 3, 4, 5],
         }
 
-    def _generate_parameter_combinations(self, param_ranges: dict[str, list[Any]]) -> list[dict[str, Any]]:
+    def _generate_parameter_combinations(
+        self, param_ranges: dict[str, list[Any]]
+    ) -> list[dict[str, Any]]:
         """Generate parameter combinations for grid search."""
         import itertools
 
@@ -962,8 +1107,12 @@ class SRDetectionOptimizer:
             params = dict(zip(keys, combination, strict=False))
 
             # Normalize weights
-            method_weights = [params["fractal_weight"], params["volume_weight"],
-                            params["pivot_weight"], params["atr_weight"]]
+            method_weights = [
+                params["fractal_weight"],
+                params["volume_weight"],
+                params["pivot_weight"],
+                params["atr_weight"],
+            ]
             total_weight = sum(method_weights)
             if total_weight > 0:
                 params["fractal_weight"] /= total_weight
@@ -971,9 +1120,13 @@ class SRDetectionOptimizer:
                 params["pivot_weight"] /= total_weight
                 params["atr_weight"] /= total_weight
 
-            strength_weights = [params["touch_count_weight"], params["total_volume_weight"],
-                              params["level_age_weight"], params["bounce_rate_weight"],
-                              params["isolation_score_weight"]]
+            strength_weights = [
+                params["touch_count_weight"],
+                params["total_volume_weight"],
+                params["level_age_weight"],
+                params["bounce_rate_weight"],
+                params["isolation_score_weight"],
+            ]
             total_weight = sum(strength_weights)
             if total_weight > 0:
                 params["touch_count_weight"] /= total_weight
@@ -1028,7 +1181,9 @@ class SRDetectionOptimizer:
                 self.best_result = OptimizationResult(**data["best_result"])
 
             if data.get("all_results"):
-                self.optimization_results = [OptimizationResult(**r) for r in data["all_results"]]
+                self.optimization_results = [
+                    OptimizationResult(**r) for r in data["all_results"]
+                ]
 
             if data.get("optimization_history"):
                 self.optimization_history = data["optimization_history"]
@@ -1040,8 +1195,11 @@ class SRDetectionOptimizer:
             self.logger.exception(f"Failed to load optimization results: {e}")
             return False
 
+
 # Setup function for easy integration
-async def setup_sr_detection_optimizer(config: dict[str, Any]) -> SRDetectionOptimizer | None:
+async def setup_sr_detection_optimizer(
+    config: dict[str, Any],
+) -> SRDetectionOptimizer | None:
     """Setup S/R detection optimizer."""
     try:
         optimizer = SRDetectionOptimizer(config)

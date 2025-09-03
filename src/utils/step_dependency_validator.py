@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Step dependency validator for the training pipeline.
 Ensures that steps don't proceed if their prerequisites have failed.
@@ -32,8 +33,12 @@ class StepDependencyValidator:
             "step08_regime_data_splitting": ["step07_enhanced_matrix_operations"],
             "step09_hmm_based_training": ["step08_regime_data_splitting"],
             "step09_5_multi_timeframe_hmm_ensemble": ["step09_hmm_based_training"],
-            "step09_5_hmm_lm_generalist_training": ["step09_5_multi_timeframe_hmm_ensemble"],
-            "step10_unified_regime_intelligence": ["step09_5_hmm_lm_generalist_training"],
+            "step09_5_hmm_lm_generalist_training": [
+                "step09_5_multi_timeframe_hmm_ensemble"
+            ],
+            "step10_unified_regime_intelligence": [
+                "step09_5_hmm_lm_generalist_training"
+            ],
             "step11_analyst_creation": ["step10_unified_regime_intelligence"],
             "step12_analyst_enhancement": ["step11_analyst_creation"],
             "step13_analyst_ensemble_creation": ["step12_analyst_enhancement"],
@@ -159,12 +164,16 @@ class StepDependencyValidator:
                 "min_rows": 0,
             },
             "step17_final_parameters_optimization": {
-                "required_files": ["data/training/*_extended_optimization_results.json"],
+                "required_files": [
+                    "data/training/*_extended_optimization_results.json"
+                ],
                 "required_columns": [],
                 "min_rows": 0,
             },
             "step18_walk_forward_validation": {
-                "required_files": ["data/training/*_extended_walk_forward_results.json"],
+                "required_files": [
+                    "data/training/*_extended_walk_forward_results.json"
+                ],
                 "required_columns": [],
                 "min_rows": 0,
             },
@@ -221,7 +230,9 @@ class StepDependencyValidator:
             }
         return {"valid": True, "reason": "All dependencies satisfied"}
 
-    async def _validate_single_dependency(self, step_name: str, pipeline_state: dict[str, Any]) -> bool:
+    async def _validate_single_dependency(
+        self, step_name: str, pipeline_state: dict[str, Any]
+    ) -> bool:
         """
         Validate a single step dependency.
 
@@ -318,7 +329,9 @@ class StepDependencyValidator:
                 self.logger.warning(f"No files found matching pattern: {file_pattern}")
                 return False
 
-            self.logger.debug(f"Found {len(matching_files)} files matching: {file_pattern}")
+            self.logger.debug(
+                f"Found {len(matching_files)} files matching: {file_pattern}"
+            )
             return True
 
         except Exception as e:
@@ -360,7 +373,9 @@ class StepDependencyValidator:
         try:
             # This is a simplified check - in practice, you'd load the actual data
             # For now, we'll assume sufficient rows exist if the step completed successfully
-            self.logger.debug(f"Row count validation for {step_name}: {min_rows} required")
+            self.logger.debug(
+                f"Row count validation for {step_name}: {min_rows} required"
+            )
             return True
 
         except Exception as e:
@@ -416,7 +431,9 @@ class StepDependencyValidator:
 step_dependency_validator = StepDependencyValidator()
 
 
-async def validate_step_dependencies(step_name: str, pipeline_state: dict[str, Any]) -> bool:
+async def validate_step_dependencies(
+    step_name: str, pipeline_state: dict[str, Any]
+) -> bool:
     """
     Convenience function to validate step dependencies.
 

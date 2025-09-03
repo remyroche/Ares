@@ -1,7 +1,4 @@
 from __future__ import annotations
-# src/training/enhanced_optimization_orchestrator.py
-
-from src.core.decorators import handles_errors
 
 from datetime import datetime
 from typing import Any
@@ -9,15 +6,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.core.decorators import handles_errors
 from src.training.adaptive_optimizer import AdaptiveOptimizer
 from src.training.bayesian_optimizer import AdvancedBayesianOptimizer
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer
-
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
 )
+
+# src/training/enhanced_optimization_orchestrator.py
+
 
 class EnhancedOptimizationOrchestrator:
     """Orchestrates multiple advanced hyperparameter optimization techniques."
@@ -28,6 +28,7 @@ class EnhancedOptimizationOrchestrator:
     - Adaptive optimization based on market regimes
     - Performance tracking and analysis
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedOptimizationOrchestrator")

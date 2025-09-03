@@ -15,7 +15,8 @@ from src.utils.logger import system_logger
 class EnsembleConfig:
     weights: dict[str, float]
     macro_thresholds: dict[
-        str, dict[str, dict[str, float]],
+        str,
+        dict[str, dict[str, float]],
     ]  # regime -> timeframe -> {class: thr}
     timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr}
     reliability_path: str | None

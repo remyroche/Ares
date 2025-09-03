@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """Model Training Integrator for Ares Trading System."
 Enables full functionality with trained models.
 """
-from src.core.decorators import handles_errors
-
 import json
-import os
 import os
 import pickle
 from datetime import datetime
@@ -22,14 +20,15 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import cross_val_score
 
+from src.core.decorators import handles_errors
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
-
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
+
 
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""
@@ -351,7 +350,8 @@ class ModelTrainingIntegrator:
 
             # Find best model
             best_model_name = max(
-                model_scores.keys(), key=lambda x: model_scores[x]["f1_score"],
+                model_scores.keys(),
+                key=lambda x: model_scores[x]["f1_score"],
             )
             trained_models[best_model_name]
             best_score = model_scores[best_model_name]["f1_score"]
@@ -621,9 +621,11 @@ class ModelTrainingIntegrator:
         try:
             return {
                 "training_stats": self.training_stats,
-                "models_available": list(self.trained_models.keys())
-                if hasattr(self, "trained_models")
-                else [],
+                "models_available": (
+                    list(self.trained_models.keys())
+                    if hasattr(self, "trained_models")
+                    else []
+                ),
                 "best_model": self.training_stats.get("best_model"),
                 "best_score": self.training_stats.get("best_score"),
                 "total_training_time": self.training_stats.get("total_training_time"),
@@ -659,8 +661,10 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
+
 # Global model training integrator instance
 model_training_integrator: ModelTrainingIntegrator | None = None
+
 
 async def setup_model_training_integrator(
     config: dict[str, Any],
@@ -673,6 +677,7 @@ async def setup_model_training_integrator(
         await model_training_integrator.initialize()
 
     return model_training_integrator
+
 
 def get_model_training_integrator() -> ModelTrainingIntegrator | None:
     """Get global model training integrator instance."""

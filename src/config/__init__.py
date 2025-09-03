@@ -1,7 +1,9 @@
 from __future__ import annotations
-# src/config/__init__.py
 
 from typing import Any
+
+# src/config/__init__.py
+
 
 # Version information
 ARES_VERSION = "0.1.0"

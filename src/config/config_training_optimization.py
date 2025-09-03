@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_training_optimization.py
 
 """
@@ -65,7 +66,6 @@ def get_training_optimization_search_space() -> dict[str, dict[str, Any]]:
         "min_quality_score": {"min": 0.6, "max": 0.9, "type": "float"},
         "max_correlation": {"min": 0.9, "max": 0.98, "type": "float"},
         "progress_interval": {"min": 5, "max": 20, "type": "int"},
-
         # Step 4: Processing & Labeling
         "completeness_threshold": {"min": 0.9, "max": 0.99, "type": "float"},
         "min_data_points": {"min": 50, "max": 200, "type": "int"},
@@ -74,24 +74,19 @@ def get_training_optimization_search_space() -> dict[str, dict[str, Any]]:
         "max_label_balance": {"min": 0.9, "max": 0.98, "type": "float"},
         "splitting_time_minutes": {"min": 20.0, "max": 60.0, "type": "float"},
         "labeling_time_minutes": {"min": 30.0, "max": 90.0, "type": "float"},
-
         # Step 5: HMM-Based Training
         "architecture_optimization_enabled": {"type": "bool"},
-
         # Step 6: Analyst Enhancement
         "stability_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "mi_threshold": {"min": 0.005, "max": 0.02, "type": "float"},
         "feature_selection_threshold": {"min": 0.1, "max": 0.4, "type": "float"},
-
         # Step 11: Confidence Calibration
         "calibration_accuracy": {"min": 0.6, "max": 0.85, "type": "float"},
         "calibration_time_minutes": {"min": 30.0, "max": 120.0, "type": "float"},
-
         # Performance thresholds
         "model_performance_threshold": {"min": 0.6, "max": 0.85, "type": "float"},
         "data_quality_threshold": {"min": 0.9, "max": 0.99, "type": "float"},
         "artifact_completeness_threshold": {"min": 0.8, "max": 0.95, "type": "float"},
-
         # Memory and performance
         "memory_threshold_gb": {"min": 6.0, "max": 16.0, "type": "float"},
         "cpu_threshold_percent": {"min": 70.0, "max": 95.0, "type": "float"},

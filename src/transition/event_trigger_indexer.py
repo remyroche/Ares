@@ -26,6 +26,7 @@ class EventConfig:
     use_rising_edge_only: bool
     preserve_secondary_labels: bool
 
+
 class EventTriggerIndexer:
     """
     Build event triggers (t, 0) from meta-label intensities with safeguards:
@@ -126,7 +127,8 @@ class EventTriggerIndexer:
         return out
 
     def _compute_intensities_if_missing(
-        self, combined_df: pd.DataFrame,
+        self,
+        combined_df: pd.DataFrame,
         price_data: pd.DataFrame | None = None,
         volume_data: pd.DataFrame | None = None,
         candidate_labels: Iterable[str] | None = None,
@@ -197,8 +199,8 @@ class EventTriggerIndexer:
                         try:
                             vals.append(
                                 meta._compute_label_intensity(
-                                    lab = p_slice,
-                                    v_slice = feats,
+                                    lab=p_slice,
+                                    v_slice=feats,
                                 ),
                             )
                         except Exception as e:
@@ -207,7 +209,7 @@ class EventTriggerIndexer:
                             )
                             vals.append(0.0)
                     out[f"intensity_{lab}"] = (
-                        pd.Series(vals, index = price_data.index)
+                        pd.Series(vals, index=price_data.index)
                         .reindex(out.index)
                         .fillna(0.0)
                     )
@@ -217,7 +219,8 @@ class EventTriggerIndexer:
         return combined_df
 
     def build_event_index(
-        self, combined_df: pd.DataFrame,
+        self,
+        combined_df: pd.DataFrame,
         price_data: pd.DataFrame | None = None,
         volume_data: pd.DataFrame | None = None,
         candidate_labels: Iterable[str] | None = None,
@@ -239,8 +242,8 @@ class EventTriggerIndexer:
 
         # Ensure intensities are available
         combined_df = self._compute_intensities_if_missing(
-            combined_df = price_data,
-            volume_data = candidate_labels,
+            combined_df=price_data,
+            volume_data=candidate_labels,
         )
 
         # Determine candidate labels from columns
@@ -265,7 +268,7 @@ class EventTriggerIndexer:
                 continue
             series = pd.to_numeric(combined_df[inten_col], errors="coerce").fillna(0.0)
             if self.event_cfg.use_rising_edge_only:
-                edges = self._rising_edge(series = series, threshold = thr)
+                edges = self._rising_edge(series=series, threshold=thr)
             else:
                 edges = series >= thr
             trigger_idx = np.where(edges.values)[0]
@@ -278,7 +281,7 @@ class EventTriggerIndexer:
             for ridx in trigger_idx:
                 ts = base_index[ridx]
                 intensity = float(series.iat[ridx])
-                weighted = self._weighted_intensity(label = lab, intensity = intensity)
+                weighted = self._weighted_intensity(label=lab, intensity=intensity)
                 # Collect secondary co-occurring labels above threshold at the same row
                 secondary: list[str] = []
                 if self.event_cfg.preserve_secondary_labels:
@@ -289,9 +292,12 @@ class EventTriggerIndexer:
                             secondary.append(other_lab)
                 events.append(
                     {
-                        "timestamp": ts, "row_index": int(ridx),
-                        "event_label": lab, "intensity": intensity,
-                        "weighted_intensity": weighted, "secondary_labels": secondary,
+                        "timestamp": ts,
+                        "row_index": int(ridx),
+                        "event_label": lab,
+                        "intensity": intensity,
+                        "weighted_intensity": weighted,
+                        "secondary_labels": secondary,
                         "timeframe": timeframe
                         or combined_df.get(
                             "timeframe",
@@ -305,7 +311,7 @@ class EventTriggerIndexer:
             return pd.DataFrame()
 
         # Sort by time for cooldown
-        events_sorted = sorted(events, key = lambda r: r["row_index"])
+        events_sorted = sorted(events, key=lambda r: r["row_index"])
         events_cd = self._apply_cooldown(events_sorted)
         # Apply global NMS on windows
         events_nms = self._nms(events_cd)

@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/analyst/regime_runtime.py
 
 import os
 import os.path
@@ -12,6 +11,8 @@ import pandas as pd
 from src.utils.hmm_composite_manager import get_hmm_composite_manager
 from src.utils.logger import system_logger
 
+# src/analyst/regime_runtime.py
+
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
     try:
@@ -21,6 +22,7 @@ def _load_parquet(path: str) -> pd.DataFrame | None:
     except Exception as e:
         system_logger.warning(f"Failed to read parquet {path}: {e}")
         return None
+
 
 def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
     if df is None or df.empty:
@@ -36,12 +38,15 @@ def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
         return df.tail(1)
     return df.loc[df.index <= ts].tail(1)
 
+
 def _ewm_prob(ind: pd.Series, span: int = 3) -> pd.Series:
     return ind.astype(float).ewm(span=span, adjust=False).mean().clip(0.0, 1.0)
+
 
 def _entropy(arr_df: pd.DataFrame) -> pd.Series:
     p = arr_df.clip(1e-9, 1.0)
     return -np.sum(p * np.log(p), axis=1)
+
 
 def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
     vals = cluster_ids.astype(int)
@@ -54,6 +59,7 @@ def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
     rowsum = T.sum(axis=1, keepdims=True) + 1e-9
     return T / rowsum
 
+
 def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
     labels = sorted([int(x) for x in np.unique(cluster_ids.values) if int(x) >= 0])
     p_cols: dict[str, pd.Series] = {}
@@ -65,6 +71,7 @@ def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
         return p_df
     s = p_df.sum(axis=1).replace(0, 1.0)
     return p_df.div(s, axis=0)
+
 
 def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
     cluster_ids = comp_df["composite_cluster_id"].astype(int)
@@ -93,6 +100,7 @@ def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
         features["most_likely_next"] = np.argmax(Pnext, axis=1)
     return features
 
+
 def _build_keep_cols(X_all: pd.DataFrame, k: int) -> list[str]:
     return [
         c
@@ -110,9 +118,12 @@ def _build_keep_cols(X_all: pd.DataFrame, k: int) -> list[str]:
         )
     ]
 
+
 def get_current_regime_info(
-    exchange: str, symbol: str,
-    timeframe: str, data_dir: str = "data/training",
+    exchange: str,
+    symbol: str,
+    timeframe: str,
+    data_dir: str = "data/training",
     checkpoints_dir: str = "checkpoints",
 ) -> dict[str, Any]:
     logger = system_logger.getChild("RegimeRuntime")
@@ -124,10 +135,12 @@ def get_current_regime_info(
 
     # Load other HMM files directly
     int_path = os.path.join(
-        data_dir, f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
+        data_dir,
+        f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
     )
     block_path = os.path.join(
-        data_dir, f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
+        data_dir,
+        f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
     )
     int_df = _load_parquet(int_path)
     blk_df = _load_parquet(block_path)
@@ -136,14 +149,14 @@ def get_current_regime_info(
             "cluster_id": -1,
             "intensities": {},
             "p_emerge": {},
-            "exit_hazard": None}
+            "exit_hazard": None,
+        }
     # Align to latest timestamp present in comp_df
     ts = None
     if "timestamp" in comp_df.columns:
         comp_df["timestamp"] = pd.to_datetime(
-            comp_df["timestamp"],
-            errors="coerce",
-            utc=True)
+            comp_df["timestamp"], errors="coerce", utc=True
+        )
         comp_df = (
             comp_df.dropna(subset=["timestamp"])
             .sort_values("timestamp")
@@ -180,10 +193,8 @@ def get_current_regime_info(
                 X_last = X_all.loc[X_all.index <= ts].tail(1)
                 # Per-cluster calibrated emergence
                 models_dir = os.path.join(
-                    checkpoints_dir,
-                    "regime_forecasting",
-                    exchange, symbol,
-                    timeframe)
+                    checkpoints_dir, "regime_forecasting", exchange, symbol, timeframe
+                )
                 if os.path.isdir(models_dir):
                     for fname in os.listdir(models_dir):
                         if fname.startswith("emergence_cluster_") and fname.endswith(
@@ -206,7 +217,8 @@ def get_current_regime_info(
                                 )
                     # Exit hazard for current cluster
                     hcal_path = os.path.join(
-                        models_dir, f"hazard_cluster_{cid}_calibrator.joblib",
+                        models_dir,
+                        f"hazard_cluster_{cid}_calibrator.joblib",
                     )
                     if cid >= 0 and os.path.exists(hcal_path):
                         try:
@@ -225,7 +237,9 @@ def get_current_regime_info(
     except Exception as e:
         logger.warning(f"Forecasting inference failed: {e}")
     return {
-        "cluster_id": cid , "intensities": intensities,
-        "p_emerge": p_emerge , "exit_hazard": exit_hazard,
+        "cluster_id": cid,
+        "intensities": intensities,
+        "p_emerge": p_emerge,
+        "exit_hazard": exit_hazard,
         "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else None,
     }

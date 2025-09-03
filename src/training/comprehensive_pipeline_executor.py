@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Comprehensive Pipeline Executor with Integrated Data Quality Management.
 
@@ -29,6 +30,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_report,
 )
 from src.utils.logger import system_logger
+
 
 class ComprehensivePipelineExecutor:
     """
@@ -80,7 +82,9 @@ class ComprehensivePipelineExecutor:
             Comprehensive execution results with quality metrics
         """
         self.execution_state["start_time"] = time.time()
-        self.logger.info("🚀 Starting comprehensive pipeline execution with quality monitoring...")
+        self.logger.info(
+            "🚀 Starting comprehensive pipeline execution with quality monitoring..."
+        )
 
         # Initialize quality monitoring
         await self._initialize_quality_monitoring()
@@ -89,7 +93,9 @@ class ComprehensivePipelineExecutor:
         pipeline_result = await self._execute_pipeline_with_monitoring(training_input)
 
         # Generate comprehensive report
-        comprehensive_report = await self._generate_comprehensive_report(training_input, pipeline_result)
+        comprehensive_report = await self._generate_comprehensive_report(
+            training_input, pipeline_result
+        )
 
         # Log final results
         await self._log_comprehensive_results(training_input, comprehensive_report)
@@ -101,18 +107,20 @@ class ComprehensivePipelineExecutor:
         self.logger.info("🔧 Initializing quality monitoring components...")
 
         # Reset execution state
-        self.execution_state.update({
-            "start_time": time.time(),
-            "current_step": None,
-            "completed_steps": [],
-            "failed_steps": [],
-            "overall_success": False,
-            "total_execution_time": 0.0,
-            "quality_scores": {},
-            "compatibility_scores": {},
-            "format_scores": {},
-            "index_scores": {},
-        })
+        self.execution_state.update(
+            {
+                "start_time": time.time(),
+                "current_step": None,
+                "completed_steps": [],
+                "failed_steps": [],
+                "overall_success": False,
+                "total_execution_time": 0.0,
+                "quality_scores": {},
+                "compatibility_scores": {},
+                "format_scores": {},
+                "index_scores": {},
+            }
+        )
 
         self.logger.info("✅ Quality monitoring components initialized")
 
@@ -138,7 +146,9 @@ class ComprehensivePipelineExecutor:
 
         # Update execution state
         self.execution_state["overall_success"] = pipeline_result.get("success", False)
-        self.execution_state["total_execution_time"] = pipeline_result.get("total_execution_time", 0.0)
+        self.execution_state["total_execution_time"] = pipeline_result.get(
+            "total_execution_time", 0.0
+        )
 
         return pipeline_result
 
@@ -155,35 +165,58 @@ class ComprehensivePipelineExecutor:
             # Get step data for monitoring
             step_data = step_result.get("data")
             if step_data is None:
-                self.logger.warning(f"⚠️ No data available for quality monitoring in {step_name}")
+                self.logger.warning(
+                    f"⚠️ No data available for quality monitoring in {step_name}"
+                )
                 return
 
             # Monitor data quality
             quality_metrics = await self.data_quality_monitor.monitor_data_quality(
-                step_data, step_name, {"training_input": training_input},
+                step_data,
+                step_name,
+                {"training_input": training_input},
             )
-            self.execution_state["quality_scores"][step_name] = quality_metrics.overall_score
+            self.execution_state["quality_scores"][
+                step_name
+            ] = quality_metrics.overall_score
 
             # Monitor compatibility
-            compatibility_metrics = await self.data_quality_monitor.monitor_compatibility(
-                step_data, step_name,
+            compatibility_metrics = (
+                await self.data_quality_monitor.monitor_compatibility(
+                    step_data,
+                    step_name,
+                )
             )
-            self.execution_state["compatibility_scores"][step_name] = compatibility_metrics.overall_compatible
+            self.execution_state["compatibility_scores"][
+                step_name
+            ] = compatibility_metrics.overall_compatible
 
             # Monitor format
             format_metrics = await self.data_quality_monitor.monitor_format(
-                step_data, step_name,
+                step_data,
+                step_name,
             )
-            self.execution_state["format_scores"][step_name] = format_metrics.format_match
+            self.execution_state["format_scores"][
+                step_name
+            ] = format_metrics.format_match
 
             # Monitor indexing
             index_metrics = await self.data_quality_monitor.monitor_indexing(
-                step_data, step_name,
+                step_data,
+                step_name,
             )
-            self.execution_state["index_scores"][step_name] = index_metrics.overall_valid
+            self.execution_state["index_scores"][
+                step_name
+            ] = index_metrics.overall_valid
 
             # Log step quality summary
-            await self._log_step_quality_summary(step_name, quality_metrics, compatibility_metrics, format_metrics, index_metrics)
+            await self._log_step_quality_summary(
+                step_name,
+                quality_metrics,
+                compatibility_metrics,
+                format_metrics,
+                index_metrics,
+            )
 
             # Check for quality alerts
             if quality_metrics.overall_score < 0.8:
@@ -236,7 +269,9 @@ class ComprehensivePipelineExecutor:
             self.logger.info(f"✅ Quality summary logged for {step_name}")
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to log quality summary for {step_name}: {e}")
+            self.logger.exception(
+                f"❌ Failed to log quality summary for {step_name}: {e}"
+            )
 
     async def _handle_quality_alert(self, step_name: str, quality_metrics) -> None:
         """Handle quality alerts for low quality data."""
@@ -264,7 +299,11 @@ class ComprehensivePipelineExecutor:
                 report_type="quality_alert",
                 additional_metadata={
                     "step_name": step_name,
-                    "alert_severity": "warning" if quality_metrics.overall_score >= 0.6 else "critical",
+                    "alert_severity": (
+                        "warning"
+                        if quality_metrics.overall_score >= 0.6
+                        else "critical"
+                    ),
                 },
             )
         except Exception as e:
@@ -281,10 +320,26 @@ class ComprehensivePipelineExecutor:
         quality_report = await self.data_quality_monitor.generate_quality_report()
 
         # Calculate overall metrics
-        overall_quality_score = np.mean(list(self.execution_state["quality_scores"].values())) if self.execution_state["quality_scores"] else 0.0
-        overall_compatibility_rate = np.mean(list(self.execution_state["compatibility_scores"].values())) if self.execution_state["compatibility_scores"] else 0.0
-        overall_format_rate = np.mean(list(self.execution_state["format_scores"].values())) if self.execution_state["format_scores"] else 0.0
-        overall_index_rate = np.mean(list(self.execution_state["index_scores"].values())) if self.execution_state["index_scores"] else 0.0
+        overall_quality_score = (
+            np.mean(list(self.execution_state["quality_scores"].values()))
+            if self.execution_state["quality_scores"]
+            else 0.0
+        )
+        overall_compatibility_rate = (
+            np.mean(list(self.execution_state["compatibility_scores"].values()))
+            if self.execution_state["compatibility_scores"]
+            else 0.0
+        )
+        overall_format_rate = (
+            np.mean(list(self.execution_state["format_scores"].values()))
+            if self.execution_state["format_scores"]
+            else 0.0
+        )
+        overall_index_rate = (
+            np.mean(list(self.execution_state["index_scores"].values()))
+            if self.execution_state["index_scores"]
+            else 0.0
+        )
 
         # Generate comprehensive report
         return {
@@ -301,20 +356,23 @@ class ComprehensivePipelineExecutor:
                 "overall_format_rate": overall_format_rate,
                 "overall_index_rate": overall_index_rate,
                 "step_quality_scores": self.execution_state["quality_scores"],
-                "step_compatibility_scores": self.execution_state["compatibility_scores"],
+                "step_compatibility_scores": self.execution_state[
+                    "compatibility_scores"
+                ],
                 "step_format_scores": self.execution_state["format_scores"],
                 "step_index_scores": self.execution_state["index_scores"],
             },
             "quality_monitoring_report": quality_report,
             "pipeline_result": pipeline_result,
             "execution_metadata": {
-                "start_time": datetime.fromtimestamp(self.execution_state["start_time"]).isoformat(),
+                "start_time": datetime.fromtimestamp(
+                    self.execution_state["start_time"]
+                ).isoformat(),
                 "end_time": datetime.now().isoformat(),
                 "total_duration": self.execution_state["total_execution_time"],
                 "training_input": training_input,
             },
         }
-
 
     async def _log_comprehensive_results(
         self,
@@ -337,11 +395,19 @@ class ComprehensivePipelineExecutor:
                     "symbol": symbol,
                     "exchange": exchange,
                     "timeframe": timeframe,
-                    "overall_success": comprehensive_report["execution_summary"]["overall_success"],
-                    "overall_quality_score": comprehensive_report["quality_metrics"]["overall_quality_score"],
-                    "success_rate": comprehensive_report["execution_summary"]["success_rate"],
+                    "overall_success": comprehensive_report["execution_summary"][
+                        "overall_success"
+                    ],
+                    "overall_quality_score": comprehensive_report["quality_metrics"][
+                        "overall_quality_score"
+                    ],
+                    "success_rate": comprehensive_report["execution_summary"][
+                        "success_rate"
+                    ],
                     "total_steps": 7,
-                    "completed_steps": len(comprehensive_report["execution_summary"]["completed_steps"]),
+                    "completed_steps": len(
+                        comprehensive_report["execution_summary"]["completed_steps"]
+                    ),
                 },
             )
 
@@ -352,20 +418,38 @@ class ComprehensivePipelineExecutor:
                 config=self.config,
                 step_name="comprehensive_pipeline_final_metrics",
                 metrics={
-                    "overall_success": float(comprehensive_report["execution_summary"]["overall_success"]),
-                    "overall_quality_score": comprehensive_report["quality_metrics"]["overall_quality_score"],
-                    "overall_compatibility_rate": comprehensive_report["quality_metrics"]["overall_compatibility_rate"],
-                    "overall_format_rate": comprehensive_report["quality_metrics"]["overall_format_rate"],
-                    "overall_index_rate": comprehensive_report["quality_metrics"]["overall_index_rate"],
-                    "success_rate": comprehensive_report["execution_summary"]["success_rate"],
-                    "total_execution_time": comprehensive_report["execution_summary"]["total_execution_time"],
+                    "overall_success": float(
+                        comprehensive_report["execution_summary"]["overall_success"]
+                    ),
+                    "overall_quality_score": comprehensive_report["quality_metrics"][
+                        "overall_quality_score"
+                    ],
+                    "overall_compatibility_rate": comprehensive_report[
+                        "quality_metrics"
+                    ]["overall_compatibility_rate"],
+                    "overall_format_rate": comprehensive_report["quality_metrics"][
+                        "overall_format_rate"
+                    ],
+                    "overall_index_rate": comprehensive_report["quality_metrics"][
+                        "overall_index_rate"
+                    ],
+                    "success_rate": comprehensive_report["execution_summary"][
+                        "success_rate"
+                    ],
+                    "total_execution_time": comprehensive_report["execution_summary"][
+                        "total_execution_time"
+                    ],
                 },
                 additional_metadata={
                     "symbol": symbol,
                     "exchange": exchange,
                     "timeframe": timeframe,
-                    "completed_steps": comprehensive_report["execution_summary"]["completed_steps"],
-                    "failed_steps": comprehensive_report["execution_summary"]["failed_steps"],
+                    "completed_steps": comprehensive_report["execution_summary"][
+                        "completed_steps"
+                    ],
+                    "failed_steps": comprehensive_report["execution_summary"][
+                        "failed_steps"
+                    ],
                 },
             )
 
@@ -386,40 +470,67 @@ class ComprehensivePipelineExecutor:
             "index_scores": self.execution_state["index_scores"],
         }
 
-    async def print_execution_summary(self, comprehensive_report: dict[str, Any]) -> None:
+    async def print_execution_summary(
+        self, comprehensive_report: dict[str, Any]
+    ) -> None:
         """Print comprehensive execution summary."""
-        print("\n" + "="*100)
+        print("\n" + "=" * 100)
         print("COMPREHENSIVE PIPELINE EXECUTION SUMMARY")
-        print("="*100)
+        print("=" * 100)
 
         # Execution summary
         execution_summary = comprehensive_report["execution_summary"]
-        print(f"Overall Success: {'✅' if execution_summary['overall_success'] else '❌'}")
+        print(
+            f"Overall Success: {'✅' if execution_summary['overall_success'] else '❌'}"
+        )
         print(f"Success Rate: {execution_summary['success_rate']:.1%}")
-        print(f"Total Execution Time: {execution_summary['total_execution_time']:.2f} seconds")
+        print(
+            f"Total Execution Time: {execution_summary['total_execution_time']:.2f} seconds"
+        )
         print(f"Completed Steps: {len(execution_summary['completed_steps'])}/7")
         print(f"Failed Steps: {len(execution_summary['failed_steps'])}")
 
         # Quality metrics
         quality_metrics = comprehensive_report["quality_metrics"]
         print("\nQuality Metrics:")
-        print(f"  Overall Quality Score: {quality_metrics['overall_quality_score']:.3f}")
-        print(f"  Overall Compatibility Rate: {quality_metrics['overall_compatibility_rate']:.1%}")
+        print(
+            f"  Overall Quality Score: {quality_metrics['overall_quality_score']:.3f}"
+        )
+        print(
+            f"  Overall Compatibility Rate: {quality_metrics['overall_compatibility_rate']:.1%}"
+        )
         print(f"  Overall Format Rate: {quality_metrics['overall_format_rate']:.1%}")
         print(f"  Overall Index Rate: {quality_metrics['overall_index_rate']:.1%}")
 
         # Step-by-step results
         print("\nStep-by-Step Results:")
-        step_order = ["step01", "step1_5", "step02", "step03", "step04", "step05", "step06", "step07"]
+        step_order = [
+            "step01",
+            "step1_5",
+            "step02",
+            "step03",
+            "step04",
+            "step05",
+            "step06",
+            "step07",
+        ]
 
         for step_name in step_order:
             if step_name in execution_summary["completed_steps"]:
-                quality_score = quality_metrics["step_quality_scores"].get(step_name, 0.0)
-                compatibility = quality_metrics["step_compatibility_scores"].get(step_name, False)
-                format_match = quality_metrics["step_format_scores"].get(step_name, False)
+                quality_score = quality_metrics["step_quality_scores"].get(
+                    step_name, 0.0
+                )
+                compatibility = quality_metrics["step_compatibility_scores"].get(
+                    step_name, False
+                )
+                format_match = quality_metrics["step_format_scores"].get(
+                    step_name, False
+                )
                 index_valid = quality_metrics["step_index_scores"].get(step_name, False)
 
-                print(f"  {step_name}: ✅ (Quality: {quality_score:.3f}, Compat: {'✅' if compatibility else '❌'}, Format: {'✅' if format_match else '❌'}, Index: {'✅' if index_valid else '❌'})")
+                print(
+                    f"  {step_name}: ✅ (Quality: {quality_score:.3f}, Compat: {'✅' if compatibility else '❌'}, Format: {'✅' if format_match else '❌'}, Index: {'✅' if index_valid else '❌'})"
+                )
             elif step_name in execution_summary["failed_steps"]:
                 print(f"  {step_name}: ❌ (Failed)")
             else:
@@ -431,11 +542,14 @@ class ComprehensivePipelineExecutor:
             qs = quality_report["quality_summary"]
             print("\nQuality Monitoring Summary:")
             print(f"  Total Quality Checks: {qs.get('total_checks', 0)}")
-            print(f"  Average Quality Score: {qs.get('average_quality_score', 0.0):.3f}")
+            print(
+                f"  Average Quality Score: {qs.get('average_quality_score', 0.0):.3f}"
+            )
             print(f"  Critical Issues: {qs.get('critical_issues_count', 0)}")
             print(f"  Poor Quality Count: {qs.get('poor_quality_count', 0)}")
 
-        print("="*100)
+        print("=" * 100)
+
 
 async def main():
     """Main execution function."""
@@ -467,19 +581,25 @@ async def main():
     executor = ComprehensivePipelineExecutor(config)
 
     try:
-        comprehensive_report = await executor.execute_pipeline_with_quality_monitoring(training_input)
+        comprehensive_report = await executor.execute_pipeline_with_quality_monitoring(
+            training_input
+        )
 
         # Print comprehensive summary
         await executor.print_execution_summary(comprehensive_report)
 
         # Return execution status
         status = await executor.get_execution_status()
-        print(f"\nFinal Status: {'✅ SUCCESS' if status['overall_success'] else '❌ FAILED'}")
+        print(
+            f"\nFinal Status: {'✅ SUCCESS' if status['overall_success'] else '❌ FAILED'}"
+        )
 
     except Exception as e:
         print(f"❌ Pipeline execution failed: {e}")
         import traceback
+
         traceback.print_exc()
 
+
 if __name__ == "__main__":
-    asyncio.run( main())
+    asyncio.run(main())

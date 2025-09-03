@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Core errors package.
 
@@ -44,7 +45,6 @@ __all__ = [
     "ServiceUnavailableError",
     "BusinessRuleError",
     "DataIntegrityError",
-
     # Mapping
     "ErrorMapper",
     "error_mapper",

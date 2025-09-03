@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Time utilities for Ares Trading System
 """
@@ -75,8 +76,16 @@ def resolve_time_window_ms(
         except Exception:
             return None
 
-    t0 = as_int(cfg.get("t0_ms")) or as_int(cfg.get("start_timestamp_ms")) or as_int(os.environ.get("ARES_T0_MS"))
-    t1 = as_int(cfg.get("t1_ms")) or as_int(cfg.get("end_timestamp_ms")) or as_int(os.environ.get("ARES_T1_MS"))
+    t0 = (
+        as_int(cfg.get("t0_ms"))
+        or as_int(cfg.get("start_timestamp_ms"))
+        or as_int(os.environ.get("ARES_T0_MS"))
+    )
+    t1 = (
+        as_int(cfg.get("t1_ms"))
+        or as_int(cfg.get("end_timestamp_ms"))
+        or as_int(os.environ.get("ARES_T1_MS"))
+    )
 
     if t0 is None:
         # Fallback implementation for t0

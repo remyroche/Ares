@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/utils/parquet_utils.py
 
 import gc
 import os
@@ -11,6 +10,8 @@ import pandas as pd
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+# src/utils/parquet_utils.py
+
 
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
@@ -19,7 +20,8 @@ class ParquetUtils:
         self.logger = system_logger.getChild("ParquetUtils")
 
     @handles_errors(
-        default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file",
+        default_return={"valid": False, "error": "validation_error"},
+        context="ParquetUtils.validate_parquet_file",
     )
     def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
         """
@@ -57,7 +59,9 @@ class ParquetUtils:
             result["columns"] = sample_df.columns.tolist()
             result["shape"] = sample_df.shape
             # Convert dtypes to str to ensure JSON-serializable values
-            result["dtypes"] = {k: str(v) for k, v in sample_df.dtypes.to_dict().items()}
+            result["dtypes"] = {
+                k: str(v) for k, v in sample_df.dtypes.to_dict().items()
+            }
             result["valid"] = True
         except Exception as e:  # pragma: no cover - defensive guard
             result["error"] = f"Failed to read parquet file: {e}"
@@ -97,9 +101,7 @@ class ParquetUtils:
         engines: list[str | None] = [None, "pyarrow", "fastparquet"]
         for idx, engine in enumerate(engines, start=1):
             try:
-                strategy_msg = (
-                    f"   Trying strategy {idx}/{len(engines)}: {'default' if engine is None else engine} engine"
-                )
+                strategy_msg = f"   Trying strategy {idx}/{len(engines)}: {'default' if engine is None else engine} engine"
                 self.logger.info(strategy_msg)
                 read_kwargs = dict(kwargs)
                 if engine is not None:
@@ -107,7 +109,9 @@ class ParquetUtils:
                 df = pd.read_parquet(file_path, columns=columns, **read_kwargs)
                 if nrows is not None and len(df) > nrows:
                     df = df.head(nrows)
-                self.logger.info(f"✅ Successfully read with strategy {idx}: {df.shape}")
+                self.logger.info(
+                    f"✅ Successfully read with strategy {idx}: {df.shape}"
+                )
                 return df
             except Exception as e:
                 self.logger.warning(f"   Strategy {idx} failed: {e}")
@@ -117,7 +121,9 @@ class ParquetUtils:
         return None
 
     @handles_errors(default_return=False, context="ParquetUtils.repair_parquet_file")
-    def repair_parquet_file(self, file_path: str, backup_path: str | None = None) -> bool:
+    def repair_parquet_file(
+        self, file_path: str, backup_path: str | None = None
+    ) -> bool:
         """
         Attempt to repair a corrupted parquet file.
 
@@ -143,6 +149,7 @@ class ParquetUtils:
 
         self.logger.error(f"❌ Could not read file for repair: {file_path}")
         return False
+
 
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""

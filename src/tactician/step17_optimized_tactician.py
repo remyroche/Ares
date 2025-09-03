@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Step17 Optimized Tactician
 
@@ -21,16 +22,20 @@ from .comprehensive_enhanced_scenario_predictor import (
 # Simple logger setup
 logger = logging.getLogger(__name__)
 
+
 # Simple error handling decorator
 def handle_errors(func):
     """Simple error handling decorator."""
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
             logger.exception(f"Error in {func.__name__}: {e}")
             return None
+
     return wrapper
+
 
 class Step17OptimizedTactician:
     """
@@ -63,66 +68,141 @@ class Step17OptimizedTactician:
         # COMPREHENSIVE decision thresholds (ALL configurable by step17)
         self.decision_thresholds = {
             # Entry decision thresholds (ALL configurable)
-            "entry_profit_threshold": tactician_config.get("entry_profit_threshold", 0.6),
+            "entry_profit_threshold": tactician_config.get(
+                "entry_profit_threshold", 0.6
+            ),
             "entry_risk_threshold": tactician_config.get("entry_risk_threshold", 0.2),
-            "entry_confidence_threshold": tactician_config.get("entry_confidence_threshold", 0.7),
-            "entry_profit_risk_ratio": tactician_config.get("entry_profit_risk_ratio", 2.0),
-            "entry_scenario_dominance": tactician_config.get("entry_scenario_dominance", 0.4),
-            "entry_analyst_confidence_min": tactician_config.get("entry_analyst_confidence_min", 0.5),
-            "entry_neutral_threshold": tactician_config.get("entry_neutral_threshold", 0.3),
-            "entry_volatility_threshold": tactician_config.get("entry_volatility_threshold", 0.02),
-            "entry_volume_threshold": tactician_config.get("entry_volume_threshold", 1.2),
-
+            "entry_confidence_threshold": tactician_config.get(
+                "entry_confidence_threshold", 0.7
+            ),
+            "entry_profit_risk_ratio": tactician_config.get(
+                "entry_profit_risk_ratio", 2.0
+            ),
+            "entry_scenario_dominance": tactician_config.get(
+                "entry_scenario_dominance", 0.4
+            ),
+            "entry_analyst_confidence_min": tactician_config.get(
+                "entry_analyst_confidence_min", 0.5
+            ),
+            "entry_neutral_threshold": tactician_config.get(
+                "entry_neutral_threshold", 0.3
+            ),
+            "entry_volatility_threshold": tactician_config.get(
+                "entry_volatility_threshold", 0.02
+            ),
+            "entry_volume_threshold": tactician_config.get(
+                "entry_volume_threshold", 1.2
+            ),
             # Exit decision thresholds (ALL configurable)
             "exit_risk_threshold": tactician_config.get("exit_risk_threshold", 0.5),
             "exit_confidence_drop": tactician_config.get("exit_confidence_drop", 0.2),
             "exit_profit_threshold": tactician_config.get("exit_profit_threshold", 0.8),
-            "exit_time_threshold": tactician_config.get("exit_time_threshold", 3600),  # seconds
-            "exit_drawdown_threshold": tactician_config.get("exit_drawdown_threshold", 0.05),
-            "exit_volatility_spike": tactician_config.get("exit_volatility_spike", 0.05),
-
+            "exit_time_threshold": tactician_config.get(
+                "exit_time_threshold", 3600
+            ),  # seconds
+            "exit_drawdown_threshold": tactician_config.get(
+                "exit_drawdown_threshold", 0.05
+            ),
+            "exit_volatility_spike": tactician_config.get(
+                "exit_volatility_spike", 0.05
+            ),
             # Direction decision thresholds (ALL configurable)
             "direction_profit_bias": tactician_config.get("direction_profit_bias", 0.1),
             "direction_risk_bias": tactician_config.get("direction_risk_bias", 0.1),
-            "direction_neutral_bias": tactician_config.get("direction_neutral_bias", 0.05),
-            "direction_confidence_bias": tactician_config.get("direction_confidence_bias", 0.15),
-
+            "direction_neutral_bias": tactician_config.get(
+                "direction_neutral_bias", 0.05
+            ),
+            "direction_confidence_bias": tactician_config.get(
+                "direction_confidence_bias", 0.15
+            ),
             # Confidence calculation weights (ALL configurable)
-            "confidence_base_weight": tactician_config.get("confidence_base_weight", 0.4),
-            "confidence_scenario_dominance_weight": tactician_config.get("confidence_scenario_dominance_weight", 0.2),
-            "confidence_risk_reward_weight": tactician_config.get("confidence_risk_reward_weight", 0.1),
-            "confidence_analyst_weight": tactician_config.get("confidence_analyst_weight", 0.1),
-            "confidence_volatility_weight": tactician_config.get("confidence_volatility_weight", 0.1),
-            "confidence_volume_weight": tactician_config.get("confidence_volume_weight", 0.1),
-
+            "confidence_base_weight": tactician_config.get(
+                "confidence_base_weight", 0.4
+            ),
+            "confidence_scenario_dominance_weight": tactician_config.get(
+                "confidence_scenario_dominance_weight", 0.2
+            ),
+            "confidence_risk_reward_weight": tactician_config.get(
+                "confidence_risk_reward_weight", 0.1
+            ),
+            "confidence_analyst_weight": tactician_config.get(
+                "confidence_analyst_weight", 0.1
+            ),
+            "confidence_volatility_weight": tactician_config.get(
+                "confidence_volatility_weight", 0.1
+            ),
+            "confidence_volume_weight": tactician_config.get(
+                "confidence_volume_weight", 0.1
+            ),
             # Position sizing parameters (ALL configurable)
-            "position_size_base_multiplier": tactician_config.get("position_size_base_multiplier", 1.0),
-            "position_size_confidence_multiplier": tactician_config.get("position_size_confidence_multiplier", 1.5),
-            "position_size_scenario_dominance_multiplier": tactician_config.get("position_size_scenario_dominance_multiplier", 1.2),
-            "position_size_risk_reward_multiplier": tactician_config.get("position_size_risk_reward_multiplier", 1.3),
-            "position_size_analyst_confidence_multiplier": tactician_config.get("position_size_analyst_confidence_multiplier", 1.1),
-            "position_size_volatility_multiplier": tactician_config.get("position_size_volatility_multiplier", 0.8),
-            "position_size_volume_multiplier": tactician_config.get("position_size_volume_multiplier", 1.1),
-
+            "position_size_base_multiplier": tactician_config.get(
+                "position_size_base_multiplier", 1.0
+            ),
+            "position_size_confidence_multiplier": tactician_config.get(
+                "position_size_confidence_multiplier", 1.5
+            ),
+            "position_size_scenario_dominance_multiplier": tactician_config.get(
+                "position_size_scenario_dominance_multiplier", 1.2
+            ),
+            "position_size_risk_reward_multiplier": tactician_config.get(
+                "position_size_risk_reward_multiplier", 1.3
+            ),
+            "position_size_analyst_confidence_multiplier": tactician_config.get(
+                "position_size_analyst_confidence_multiplier", 1.1
+            ),
+            "position_size_volatility_multiplier": tactician_config.get(
+                "position_size_volatility_multiplier", 0.8
+            ),
+            "position_size_volume_multiplier": tactician_config.get(
+                "position_size_volume_multiplier", 1.1
+            ),
             # Leverage calculation parameters (ALL configurable)
-            "leverage_base_multiplier": tactician_config.get("leverage_base_multiplier", 1.0),
-            "leverage_confidence_multiplier": tactician_config.get("leverage_confidence_multiplier", 2.0),
-            "leverage_scenario_dominance_multiplier": tactician_config.get("leverage_scenario_dominance_multiplier", 1.5),
-            "leverage_risk_reward_multiplier": tactician_config.get("leverage_risk_reward_multiplier", 1.8),
-            "leverage_analyst_confidence_multiplier": tactician_config.get("leverage_analyst_confidence_multiplier", 1.2),
-            "leverage_volatility_multiplier": tactician_config.get("leverage_volatility_multiplier", 0.7),
-            "leverage_volume_multiplier": tactician_config.get("leverage_volume_multiplier", 1.3),
-
+            "leverage_base_multiplier": tactician_config.get(
+                "leverage_base_multiplier", 1.0
+            ),
+            "leverage_confidence_multiplier": tactician_config.get(
+                "leverage_confidence_multiplier", 2.0
+            ),
+            "leverage_scenario_dominance_multiplier": tactician_config.get(
+                "leverage_scenario_dominance_multiplier", 1.5
+            ),
+            "leverage_risk_reward_multiplier": tactician_config.get(
+                "leverage_risk_reward_multiplier", 1.8
+            ),
+            "leverage_analyst_confidence_multiplier": tactician_config.get(
+                "leverage_analyst_confidence_multiplier", 1.2
+            ),
+            "leverage_volatility_multiplier": tactician_config.get(
+                "leverage_volatility_multiplier", 0.7
+            ),
+            "leverage_volume_multiplier": tactician_config.get(
+                "leverage_volume_multiplier", 1.3
+            ),
             # Stop loss and take profit multipliers (ALL configurable)
-            "stop_loss_base_multiplier": tactician_config.get("stop_loss_base_multiplier", 1.0),
-            "stop_loss_confidence_multiplier": tactician_config.get("stop_loss_confidence_multiplier", 0.8),
-            "stop_loss_volatility_multiplier": tactician_config.get("stop_loss_volatility_multiplier", 1.2),
-            "stop_loss_risk_multiplier": tactician_config.get("stop_loss_risk_multiplier", 1.1),
-
-            "take_profit_base_multiplier": tactician_config.get("take_profit_base_multiplier", 1.0),
-            "take_profit_confidence_multiplier": tactician_config.get("take_profit_confidence_multiplier", 1.2),
-            "take_profit_volatility_multiplier": tactician_config.get("take_profit_volatility_multiplier", 0.8),
-            "take_profit_profit_multiplier": tactician_config.get("take_profit_profit_multiplier", 1.3),
+            "stop_loss_base_multiplier": tactician_config.get(
+                "stop_loss_base_multiplier", 1.0
+            ),
+            "stop_loss_confidence_multiplier": tactician_config.get(
+                "stop_loss_confidence_multiplier", 0.8
+            ),
+            "stop_loss_volatility_multiplier": tactician_config.get(
+                "stop_loss_volatility_multiplier", 1.2
+            ),
+            "stop_loss_risk_multiplier": tactician_config.get(
+                "stop_loss_risk_multiplier", 1.1
+            ),
+            "take_profit_base_multiplier": tactician_config.get(
+                "take_profit_base_multiplier", 1.0
+            ),
+            "take_profit_confidence_multiplier": tactician_config.get(
+                "take_profit_confidence_multiplier", 1.2
+            ),
+            "take_profit_volatility_multiplier": tactician_config.get(
+                "take_profit_volatility_multiplier", 0.8
+            ),
+            "take_profit_profit_multiplier": tactician_config.get(
+                "take_profit_profit_multiplier", 1.3
+            ),
         }
 
         # Risk management parameters (ALL configurable by step17)
@@ -134,7 +214,9 @@ class Step17OptimizedTactician:
             "volatility_cap": tactician_config.get("volatility_cap", 0.1),
             "volume_cap": tactician_config.get("volume_cap", 5.0),
             "confidence_cap": tactician_config.get("confidence_cap", 0.95),
-            "scenario_dominance_cap": tactician_config.get("scenario_dominance_cap", 0.9),
+            "scenario_dominance_cap": tactician_config.get(
+                "scenario_dominance_cap", 0.9
+            ),
             "risk_reward_cap": tactician_config.get("risk_reward_cap", 5.0),
         }
 
@@ -170,16 +252,22 @@ class Step17OptimizedTactician:
             self.logger.info("Initializing Step17 Optimized Tactician...")
 
             # Initialize comprehensive scenario predictor
-            self.scenario_predictor = ComprehensiveEnhancedScenarioPredictor(self.config)
+            self.scenario_predictor = ComprehensiveEnhancedScenarioPredictor(
+                self.config
+            )
             success = await self.scenario_predictor.initialize()
 
             if not success:
-                self.logger.error("Failed to initialize comprehensive scenario predictor")
+                self.logger.error(
+                    "Failed to initialize comprehensive scenario predictor"
+                )
                 return False
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for step17 optimized Tactician")
+                self.logger.error(
+                    "Invalid configuration for step17 optimized Tactician"
+                )
                 return False
 
             self.is_initialized = True
@@ -187,7 +275,9 @@ class Step17OptimizedTactician:
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Step17 Optimized Tactician initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Step17 Optimized Tactician initialization failed: {e}"
+            )
             return False
 
     def _validate_configuration(self) -> bool:
@@ -247,22 +337,31 @@ class Step17OptimizedTactician:
                 return self._generate_error_predictions(symbol, timeframe)
 
             # Extract comprehensive features
-            features = self.scenario_predictor.extract_comprehensive_features(market_data)
+            features = self.scenario_predictor.extract_comprehensive_features(
+                market_data
+            )
             features = features.reshape(1, -1)  # Reshape for single prediction
 
             # Generate scenario predictions
             scenario_predictions = await self.scenario_predictor.predict_scenarios(
-                features, market_data,
+                features,
+                market_data,
             )
 
             # Make step17-optimized trading decisions
             trading_decisions = self._make_step17_optimized_decisions(
-                scenario_predictions, analyst_confidence, market_data,
+                scenario_predictions,
+                analyst_confidence,
+                market_data,
             )
 
             # Calculate step17-optimized position sizing and leverage
             position_management = self._calculate_step17_optimized_position_management(
-                scenario_predictions, trading_decisions, analyst_barriers, analyst_confidence, market_data,
+                scenario_predictions,
+                trading_decisions,
+                analyst_barriers,
+                analyst_confidence,
+                market_data,
             )
 
             result = {
@@ -326,8 +425,10 @@ class Step17OptimizedTactician:
                 risk_zone_prob < self.decision_thresholds["entry_risk_threshold"],
                 confidence > self.decision_thresholds["entry_confidence_threshold"],
                 risk_reward_ratio > self.decision_thresholds["entry_profit_risk_ratio"],
-                scenario_dominance > self.decision_thresholds["entry_scenario_dominance"],
-                analyst_confidence > self.decision_thresholds["entry_analyst_confidence_min"],
+                scenario_dominance
+                > self.decision_thresholds["entry_scenario_dominance"],
+                analyst_confidence
+                > self.decision_thresholds["entry_analyst_confidence_min"],
                 neutral_prob < self.decision_thresholds["entry_neutral_threshold"],
                 volatility < self.decision_thresholds["entry_volatility_threshold"],
                 volume_ratio > self.decision_thresholds["entry_volume_threshold"],
@@ -341,8 +442,13 @@ class Step17OptimizedTactician:
             if self.current_position:
                 exit_conditions = [
                     risk_zone_prob > self.decision_thresholds["exit_risk_threshold"],
-                    confidence < (self.current_position.get("entry_confidence", 0.0) - self.decision_thresholds["exit_confidence_drop"]),
-                    profit_zone_prob > self.decision_thresholds["exit_profit_threshold"],
+                    confidence
+                    < (
+                        self.current_position.get("entry_confidence", 0.0)
+                        - self.decision_thresholds["exit_confidence_drop"]
+                    ),
+                    profit_zone_prob
+                    > self.decision_thresholds["exit_profit_threshold"],
                     self._check_exit_time_threshold(),
                     self._check_exit_drawdown_threshold(),
                     volatility > self.decision_thresholds["exit_volatility_spike"],
@@ -352,18 +458,31 @@ class Step17OptimizedTactician:
 
             # Step17-optimized direction decision (ALL configurable)
             direction = self._calculate_step17_optimized_direction(
-                profit_zone_prob, risk_zone_prob, neutral_prob, confidence, dominant_zone,
+                profit_zone_prob,
+                risk_zone_prob,
+                neutral_prob,
+                confidence,
+                dominant_zone,
             )
 
             # Step17-optimized confidence calculation
             decision_confidence = self._calculate_step17_optimized_confidence(
-                scenario_analysis, confidence, analyst_confidence, volatility, volume_ratio,
+                scenario_analysis,
+                confidence,
+                analyst_confidence,
+                volatility,
+                volume_ratio,
             )
 
             # Step17-optimized reasoning
             reasoning = self._generate_step17_optimized_reasoning(
-                entry_signal, exit_signal, scenario_analysis, confidence, analyst_confidence,
-                volatility, volume_ratio,
+                entry_signal,
+                exit_signal,
+                scenario_analysis,
+                confidence,
+                analyst_confidence,
+                volatility,
+                volume_ratio,
             )
 
             return {
@@ -381,8 +500,12 @@ class Step17OptimizedTactician:
                     "dominant_zone": dominant_zone,
                     "volatility": volatility,
                     "volume_ratio": volume_ratio,
-                    "predicted_scenario": scenario_predictions.get("predicted_scenario", 16),
-                    "scenario_name": scenario_predictions.get("scenario_name", "Neutral"),
+                    "predicted_scenario": scenario_predictions.get(
+                        "predicted_scenario", 16
+                    ),
+                    "scenario_name": scenario_predictions.get(
+                        "scenario_name", "Neutral"
+                    ),
                 },
             }
 
@@ -430,29 +553,87 @@ class Step17OptimizedTactician:
             base_position_size = self.risk_management["max_position_size"]
 
             # Apply step17-optimized multipliers
-            position_size = base_position_size * self.decision_thresholds["position_size_base_multiplier"]
-            position_size *= (1 + confidence * self.decision_thresholds["position_size_confidence_multiplier"])
-            position_size *= (1 + scenario_analysis.get("scenario_dominance", 0.0) * self.decision_thresholds["position_size_scenario_dominance_multiplier"])
-            position_size *= (1 + scenario_analysis.get("risk_reward_ratio", 1.0) * self.decision_thresholds["position_size_risk_reward_multiplier"])
-            position_size *= (1 + analyst_confidence * self.decision_thresholds["position_size_analyst_confidence_multiplier"])
-            position_size *= (1 - volatility * self.decision_thresholds["position_size_volatility_multiplier"])
-            position_size *= (1 + volume_ratio * self.decision_thresholds["position_size_volume_multiplier"])
+            position_size = (
+                base_position_size
+                * self.decision_thresholds["position_size_base_multiplier"]
+            )
+            position_size *= (
+                1
+                + confidence
+                * self.decision_thresholds["position_size_confidence_multiplier"]
+            )
+            position_size *= (
+                1
+                + scenario_analysis.get("scenario_dominance", 0.0)
+                * self.decision_thresholds[
+                    "position_size_scenario_dominance_multiplier"
+                ]
+            )
+            position_size *= (
+                1
+                + scenario_analysis.get("risk_reward_ratio", 1.0)
+                * self.decision_thresholds["position_size_risk_reward_multiplier"]
+            )
+            position_size *= (
+                1
+                + analyst_confidence
+                * self.decision_thresholds[
+                    "position_size_analyst_confidence_multiplier"
+                ]
+            )
+            position_size *= (
+                1
+                - volatility
+                * self.decision_thresholds["position_size_volatility_multiplier"]
+            )
+            position_size *= (
+                1
+                + volume_ratio
+                * self.decision_thresholds["position_size_volume_multiplier"]
+            )
 
             # Apply caps
-            position_size = min(position_size, self.risk_management["max_position_size"])
+            position_size = min(
+                position_size, self.risk_management["max_position_size"]
+            )
             position_size = max(position_size, 0.0)
 
             # Step17-optimized leverage calculation (ALL configurable)
             base_leverage = 1.0
 
             # Apply step17-optimized multipliers
-            leverage = base_leverage * self.decision_thresholds["leverage_base_multiplier"]
-            leverage *= (1 + confidence * self.decision_thresholds["leverage_confidence_multiplier"])
-            leverage *= (1 + scenario_analysis.get("scenario_dominance", 0.0) * self.decision_thresholds["leverage_scenario_dominance_multiplier"])
-            leverage *= (1 + scenario_analysis.get("risk_reward_ratio", 1.0) * self.decision_thresholds["leverage_risk_reward_multiplier"])
-            leverage *= (1 + analyst_confidence * self.decision_thresholds["leverage_analyst_confidence_multiplier"])
-            leverage *= (1 - volatility * self.decision_thresholds["leverage_volatility_multiplier"])
-            leverage *= (1 + volume_ratio * self.decision_thresholds["leverage_volume_multiplier"])
+            leverage = (
+                base_leverage * self.decision_thresholds["leverage_base_multiplier"]
+            )
+            leverage *= (
+                1
+                + confidence
+                * self.decision_thresholds["leverage_confidence_multiplier"]
+            )
+            leverage *= (
+                1
+                + scenario_analysis.get("scenario_dominance", 0.0)
+                * self.decision_thresholds["leverage_scenario_dominance_multiplier"]
+            )
+            leverage *= (
+                1
+                + scenario_analysis.get("risk_reward_ratio", 1.0)
+                * self.decision_thresholds["leverage_risk_reward_multiplier"]
+            )
+            leverage *= (
+                1
+                + analyst_confidence
+                * self.decision_thresholds["leverage_analyst_confidence_multiplier"]
+            )
+            leverage *= (
+                1
+                - volatility
+                * self.decision_thresholds["leverage_volatility_multiplier"]
+            )
+            leverage *= (
+                1
+                + volume_ratio * self.decision_thresholds["leverage_volume_multiplier"]
+            )
 
             # Apply caps
             leverage = min(leverage, self.risk_management["max_leverage"])
@@ -463,15 +644,42 @@ class Step17OptimizedTactician:
             analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
 
             # Apply step17-optimized multipliers
-            stop_loss = analyst_lower * self.decision_thresholds["stop_loss_base_multiplier"]
-            stop_loss *= (1 - confidence * self.decision_thresholds["stop_loss_confidence_multiplier"])
-            stop_loss *= (1 + volatility * self.decision_thresholds["stop_loss_volatility_multiplier"])
-            stop_loss *= (1 + risk_zone_prob * self.decision_thresholds["stop_loss_risk_multiplier"])
+            stop_loss = (
+                analyst_lower * self.decision_thresholds["stop_loss_base_multiplier"]
+            )
+            stop_loss *= (
+                1
+                - confidence
+                * self.decision_thresholds["stop_loss_confidence_multiplier"]
+            )
+            stop_loss *= (
+                1
+                + volatility
+                * self.decision_thresholds["stop_loss_volatility_multiplier"]
+            )
+            stop_loss *= (
+                1
+                + risk_zone_prob * self.decision_thresholds["stop_loss_risk_multiplier"]
+            )
 
-            take_profit = analyst_upper * self.decision_thresholds["take_profit_base_multiplier"]
-            take_profit *= (1 + confidence * self.decision_thresholds["take_profit_confidence_multiplier"])
-            take_profit *= (1 - volatility * self.decision_thresholds["take_profit_volatility_multiplier"])
-            take_profit *= (1 + profit_zone_prob * self.decision_thresholds["take_profit_profit_multiplier"])
+            take_profit = (
+                analyst_upper * self.decision_thresholds["take_profit_base_multiplier"]
+            )
+            take_profit *= (
+                1
+                + confidence
+                * self.decision_thresholds["take_profit_confidence_multiplier"]
+            )
+            take_profit *= (
+                1
+                - volatility
+                * self.decision_thresholds["take_profit_volatility_multiplier"]
+            )
+            take_profit *= (
+                1
+                + profit_zone_prob
+                * self.decision_thresholds["take_profit_profit_multiplier"]
+            )
 
             return {
                 "position_size": position_size,
@@ -480,11 +688,15 @@ class Step17OptimizedTactician:
                 "take_profit": take_profit,
                 "risk_metrics": {
                     "max_drawdown": self.risk_management["max_drawdown"],
-                    "correlation_threshold": self.risk_management["correlation_threshold"],
+                    "correlation_threshold": self.risk_management[
+                        "correlation_threshold"
+                    ],
                     "volatility_cap": self.risk_management["volatility_cap"],
                     "volume_cap": self.risk_management["volume_cap"],
                     "confidence_cap": self.risk_management["confidence_cap"],
-                    "scenario_dominance_cap": self.risk_management["scenario_dominance_cap"],
+                    "scenario_dominance_cap": self.risk_management[
+                        "scenario_dominance_cap"
+                    ],
                     "risk_reward_cap": self.risk_management["risk_reward_cap"],
                     "calculated_volatility": volatility,
                     "calculated_volume_ratio": volume_ratio,
@@ -492,7 +704,9 @@ class Step17OptimizedTactician:
             }
 
         except Exception as e:
-            self.logger.exception(f"❌ Step17 optimized position management calculation failed: {e}")
+            self.logger.exception(
+                f"❌ Step17 optimized position management calculation failed: {e}"
+            )
             return {
                 "position_size": 0.0,
                 "leverage": 1.0,
@@ -524,9 +738,15 @@ class Step17OptimizedTactician:
         """
         try:
             # Step17-optimized direction calculation (ALL configurable)
-            if dominant_zone == "profit" and profit_zone_prob > self.decision_thresholds["direction_profit_bias"]:
+            if (
+                dominant_zone == "profit"
+                and profit_zone_prob > self.decision_thresholds["direction_profit_bias"]
+            ):
                 return "LONG"
-            if dominant_zone == "risk" and risk_zone_prob > self.decision_thresholds["direction_risk_bias"]:
+            if (
+                dominant_zone == "risk"
+                and risk_zone_prob > self.decision_thresholds["direction_risk_bias"]
+            ):
                 return "SHORT"
             if neutral_prob > self.decision_thresholds["direction_neutral_bias"]:
                 return "NEUTRAL"
@@ -535,7 +755,9 @@ class Step17OptimizedTactician:
             return "NEUTRAL"
 
         except Exception as e:
-            self.logger.exception(f"❌ Step17 optimized direction calculation failed: {e}")
+            self.logger.exception(
+                f"❌ Step17 optimized direction calculation failed: {e}"
+            )
             return "NEUTRAL"
 
     def _calculate_step17_optimized_confidence(
@@ -564,34 +786,51 @@ class Step17OptimizedTactician:
             confidence = 0.0
 
             # Base confidence
-            confidence += model_confidence * self.decision_thresholds["confidence_base_weight"]
+            confidence += (
+                model_confidence * self.decision_thresholds["confidence_base_weight"]
+            )
 
             # Scenario dominance boost
             scenario_dominance = scenario_analysis.get("scenario_dominance", 0.0)
-            confidence += scenario_dominance * self.decision_thresholds["confidence_scenario_dominance_weight"]
+            confidence += (
+                scenario_dominance
+                * self.decision_thresholds["confidence_scenario_dominance_weight"]
+            )
 
             # Risk-reward ratio boost
             risk_reward_ratio = scenario_analysis.get("risk_reward_ratio", 1.0)
-            confidence += min(risk_reward_ratio / 2.0, 1.0) * self.decision_thresholds["confidence_risk_reward_weight"]
+            confidence += (
+                min(risk_reward_ratio / 2.0, 1.0)
+                * self.decision_thresholds["confidence_risk_reward_weight"]
+            )
 
             # Analyst confidence boost
-            confidence += analyst_confidence * self.decision_thresholds["confidence_analyst_weight"]
+            confidence += (
+                analyst_confidence
+                * self.decision_thresholds["confidence_analyst_weight"]
+            )
 
             # Volatility adjustment
             volatility_factor = 1.0 - min(volatility / 0.05, 1.0)
-            confidence += volatility_factor * self.decision_thresholds["confidence_volatility_weight"]
+            confidence += (
+                volatility_factor
+                * self.decision_thresholds["confidence_volatility_weight"]
+            )
 
             # Volume adjustment
             volume_factor = min(volume_ratio / 2.0, 1.0)
-            confidence += volume_factor * self.decision_thresholds["confidence_volume_weight"]
+            confidence += (
+                volume_factor * self.decision_thresholds["confidence_volume_weight"]
+            )
 
             # Apply caps
             confidence = min(confidence, self.risk_management["confidence_cap"])
             return max(confidence, 0.0)
 
-
         except Exception as e:
-            self.logger.exception(f"❌ Step17 optimized confidence calculation failed: {e}")
+            self.logger.exception(
+                f"❌ Step17 optimized confidence calculation failed: {e}"
+            )
             return 0.5
 
     def _calculate_volatility(self, market_data: pd.DataFrame) -> float:
@@ -620,7 +859,9 @@ class Step17OptimizedTactician:
                 entry_time = self.current_position.get("entry_time")
                 if entry_time:
                     elapsed_time = (datetime.now() - entry_time).total_seconds()
-                    return elapsed_time > self.decision_thresholds["exit_time_threshold"]
+                    return (
+                        elapsed_time > self.decision_thresholds["exit_time_threshold"]
+                    )
             return False
         except Exception as e:
             self.logger.exception(f"❌ Exit time threshold check failed: {e}")
@@ -634,7 +875,9 @@ class Step17OptimizedTactician:
                 current_price = self.current_position.get("current_price", 0)
                 if entry_price > 0 and current_price > 0:
                     drawdown = (entry_price - current_price) / entry_price
-                    return drawdown > self.decision_thresholds["exit_drawdown_threshold"]
+                    return (
+                        drawdown > self.decision_thresholds["exit_drawdown_threshold"]
+                    )
             return False
         except Exception as e:
             self.logger.exception(f"❌ Exit drawdown threshold check failed: {e}")
@@ -686,22 +929,30 @@ class Step17OptimizedTactician:
                 reasoning_parts.append(f"Volume ratio: {volume_ratio:.2f}")
 
             elif exit_signal:
-                reasoning_parts.append("EXIT SIGNAL: Step17-optimized risk conditions detected")
+                reasoning_parts.append(
+                    "EXIT SIGNAL: Step17-optimized risk conditions detected"
+                )
                 risk_prob = scenario_analysis.get("risk_zone_probability", 0.0)
                 reasoning_parts.append(f"Risk probability: {risk_prob:.1%}")
 
             else:
-                reasoning_parts.append("NO SIGNAL: Step17-optimized conditions not favorable")
+                reasoning_parts.append(
+                    "NO SIGNAL: Step17-optimized conditions not favorable"
+                )
                 dominant_zone = scenario_analysis.get("dominant_zone", "neutral")
                 reasoning_parts.append(f"Dominant zone: {dominant_zone}")
 
             return " | ".join(reasoning_parts)
 
         except Exception as e:
-            self.logger.exception(f"❌ Step17 optimized reasoning generation failed: {e}")
+            self.logger.exception(
+                f"❌ Step17 optimized reasoning generation failed: {e}"
+            )
             return f"Error generating step17 optimized reasoning: {e}"
 
-    def _generate_error_predictions(self, symbol: str, timeframe: str) -> dict[str, Any]:
+    def _generate_error_predictions(
+        self, symbol: str, timeframe: str
+    ) -> dict[str, Any]:
         """Generate error predictions when something goes wrong."""
         return {
             "scenario_predictions": {
@@ -753,10 +1004,12 @@ class Step17OptimizedTactician:
         """Update current position information."""
         try:
             self.current_position = position_data
-            self.position_history.append({
-                **position_data,
-                "timestamp": datetime.now().isoformat(),
-            })
+            self.position_history.append(
+                {
+                    **position_data,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
             # Keep only last 100 positions
             if len(self.position_history) > 100:
@@ -775,15 +1028,31 @@ class Step17OptimizedTactician:
                 self.performance_metrics["total_profit"] += trade_result["profit"]
             else:
                 self.performance_metrics["losing_trades"] += 1
-                self.performance_metrics["total_loss"] += abs(trade_result.get("profit", 0))
+                self.performance_metrics["total_loss"] += abs(
+                    trade_result.get("profit", 0)
+                )
 
             # Calculate derived metrics
             total_trades = self.performance_metrics["total_trades"]
             if total_trades > 0:
-                self.performance_metrics["win_rate"] = self.performance_metrics["winning_trades"] / total_trades
-                self.performance_metrics["avg_profit_per_trade"] = self.performance_metrics["total_profit"] / self.performance_metrics["winning_trades"] if self.performance_metrics["winning_trades"] > 0 else 0.0
-                self.performance_metrics["avg_loss_per_trade"] = self.performance_metrics["total_loss"] / self.performance_metrics["losing_trades"] if self.performance_metrics["losing_trades"] > 0 else 0.0
-                self.performance_metrics["profit_factor"] = self.performance_metrics["total_profit"] / max(self.performance_metrics["total_loss"], 0.001)
+                self.performance_metrics["win_rate"] = (
+                    self.performance_metrics["winning_trades"] / total_trades
+                )
+                self.performance_metrics["avg_profit_per_trade"] = (
+                    self.performance_metrics["total_profit"]
+                    / self.performance_metrics["winning_trades"]
+                    if self.performance_metrics["winning_trades"] > 0
+                    else 0.0
+                )
+                self.performance_metrics["avg_loss_per_trade"] = (
+                    self.performance_metrics["total_loss"]
+                    / self.performance_metrics["losing_trades"]
+                    if self.performance_metrics["losing_trades"] > 0
+                    else 0.0
+                )
+                self.performance_metrics["profit_factor"] = self.performance_metrics[
+                    "total_profit"
+                ] / max(self.performance_metrics["total_loss"], 0.001)
 
         except Exception as e:
             self.logger.exception(f"❌ Performance metrics update failed: {e}")
@@ -796,9 +1065,22 @@ class Step17OptimizedTactician:
             "position_history_count": len(self.position_history),
             "is_initialized": self.is_initialized,
             "scenario_predictor_status": {
-                "is_trained": self.scenario_predictor.is_trained if self.scenario_predictor else False,
-                "n_scenarios": len(self.scenario_predictor.scenarios) if self.scenario_predictor else 0,
-                "last_training_time": self.scenario_predictor.last_training_time.isoformat() if self.scenario_predictor and self.scenario_predictor.last_training_time else None,
+                "is_trained": (
+                    self.scenario_predictor.is_trained
+                    if self.scenario_predictor
+                    else False
+                ),
+                "n_scenarios": (
+                    len(self.scenario_predictor.scenarios)
+                    if self.scenario_predictor
+                    else 0
+                ),
+                "last_training_time": (
+                    self.scenario_predictor.last_training_time.isoformat()
+                    if self.scenario_predictor
+                    and self.scenario_predictor.last_training_time
+                    else None
+                ),
             },
         }
 
@@ -812,7 +1094,13 @@ class Step17OptimizedTactician:
         return {
             "decision_thresholds": self.decision_thresholds,
             "risk_management": self.risk_management,
-            "scenario_predictor_config": self.scenario_predictor.get_comprehensive_configuration_summary() if self.scenario_predictor else {},
+            "scenario_predictor_config": (
+                self.scenario_predictor.get_comprehensive_configuration_summary()
+                if self.scenario_predictor
+                else {}
+            ),
             "is_initialized": self.is_initialized,
-            "total_configurable_parameters": len(self.decision_thresholds) + len(self.risk_management) + 50,  # Approximate count
+            "total_configurable_parameters": len(self.decision_thresholds)
+            + len(self.risk_management)
+            + 50,  # Approximate count
         }

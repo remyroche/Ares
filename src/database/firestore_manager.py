@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import os
 import uuid
@@ -20,7 +21,10 @@ from src.utils.warning_symbols import (
 
 if TYPE_CHECKING:
     import logging
+
     # TODO: Add proper implementation
+
+
 class FirestoreManager:
     """
     Manages all interactions with Google Cloud Firestore.
@@ -122,11 +126,15 @@ class FirestoreManager:
 
     @handles_errors(fallback=None)
     def _get_collection_path(
-        self, collection_name: str, is_public: bool = False,
+        self,
+        collection_name: str,
+        is_public: bool = False,
     ) -> str | None:
         """Constructs the full Firestore collection path."""
         if self._app_id is None:
-            self.logger.error(error("App ID not set. Cannot construct collection path."))
+            self.logger.error(
+                error("App ID not set. Cannot construct collection path.")
+            )
             return None
 
         base_path = f"artifacts/{self._app_id}"
@@ -143,7 +151,9 @@ class FirestoreManager:
     async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Helper to run any blocking function in a thread pool."""
         if not self._firestore_enabled or not self._initialized or not self._db:
-            self.logger.warning(warning("Firestore not available. Cannot perform operation."))
+            self.logger.warning(
+                warning("Firestore not available. Cannot perform operation.")
+            )
             return None
 
         loop = asyncio.get_running_loop()
@@ -152,7 +162,11 @@ class FirestoreManager:
 
     @handles_errors(fallback=False)
     async def set_document(
-        self, collection_name: str, doc_id: str, data: dict[str, Any], is_public: bool = False,
+        self,
+        collection_name: str,
+        doc_id: str,
+        data: dict[str, Any],
+        is_public: bool = False,
     ) -> bool:
         """Sets a document with a specified ID (creates or overwrites)."""
         if not self._firestore_enabled:
@@ -181,7 +195,10 @@ class FirestoreManager:
 
     @handles_errors(fallback=None)
     async def get_document(
-        self, collection_name: str, doc_id: str, is_public: bool = False,
+        self,
+        collection_name: str,
+        doc_id: str,
+        is_public: bool = False,
     ) -> dict[str, Any] | None:
         """Retrieves a single document by its ID."""
         if not self._firestore_enabled:
@@ -206,12 +223,17 @@ class FirestoreManager:
         if result is not None:
             self.logger.debug(f"Document {doc_id} retrieved from {collection_name}.")
         else:
-            self.logger.warning(missing(f"Document {doc_id} not found in {collection_name}."))
+            self.logger.warning(
+                missing(f"Document {doc_id} not found in {collection_name}.")
+            )
         return result
 
     @handles_errors(fallback=None)
     async def add_document(
-        self, collection_name: str, data: dict[str, Any], is_public: bool = False,
+        self,
+        collection_name: str,
+        data: dict[str, Any],
+        is_public: bool = False,
     ) -> str | None:
         """Adds a document with an auto-generated ID."""
         if not self._firestore_enabled:
@@ -238,7 +260,10 @@ class FirestoreManager:
 
     @handles_errors(fallback=[])
     async def get_collection(
-        self, collection_name: str, is_public: bool = False, query_filters: list[tuple[str, str, Any]] | None = None,
+        self,
+        collection_name: str,
+        is_public: bool = False,
+        query_filters: list[tuple[str, str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieves all documents from a collection, optionally with filters."""
         if not self._firestore_enabled:
@@ -271,7 +296,10 @@ class FirestoreManager:
 
     @handles_errors(fallback=False)
     async def delete_document(
-        self, collection_name: str, doc_id: str, is_public: bool = False,
+        self,
+        collection_name: str,
+        doc_id: str,
+        is_public: bool = False,
     ) -> bool:
         """Deletes a document by its ID."""
         if not self._firestore_enabled:
@@ -296,6 +324,7 @@ class FirestoreManager:
             self.logger.info(f"Document {doc_id} deleted from {collection_name}.")
             return True
         return False
+
 
 # Global database instance.
 # It should be initialized asynchronously in the main application entry point.

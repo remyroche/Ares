@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Data Type Optimization Utilities
 
@@ -72,7 +73,9 @@ def optimize_dataframe_dtypes(
     # Optimize categorical columns
     if preserve_categorical:
         for col in df.select_dtypes(include=["object"]).columns:
-            if len(df) > 0 and df[col].nunique() / len(df) < 0.5:  # Less than 50% unique values
+            if (
+                len(df) > 0 and df[col].nunique() / len(df) < 0.5
+            ):  # Less than 50% unique values
                 optimized_df[col] = df[col].astype("category")
 
     # Optimize boolean columns
@@ -95,7 +98,9 @@ def optimize_dataframe_dtypes(
                 )
 
     final_memory = optimized_df.memory_usage(deep=True).sum()
-    memory_reduction = (initial_memory - final_memory) / initial_memory if initial_memory else 0.0
+    memory_reduction = (
+        (initial_memory - final_memory) / initial_memory if initial_memory else 0.0
+    )
 
     logger.info("🔧 Data type optimization complete:")
     logger.info(f"   Initial memory: {initial_memory / 1024**2:.2f} MB")
@@ -189,7 +194,10 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
                         if df[col].dtype == "int64":
                             c_min = df[col].min()
                             c_max = df[col].max()
-                            if c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                            if (
+                                c_min > np.iinfo(np.int32).min
+                                and c_max < np.iinfo(np.int32).max
+                            ):
                                 optimized_df[col] = df[col].astype("int32")
                 except Exception as e:
                     logger.debug(f"Could not optimize {col} to {dtype}: {e}")

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Request and DTO validation decorators.
 
@@ -17,6 +18,7 @@ from .compose import P, R, uniform_wrapper
 # Try to import optional validation libraries
 try:
     import pydantic
+
     PYDANTIC_AVAILABLE = True
 except ImportError:
     pydantic = None
@@ -24,6 +26,7 @@ except ImportError:
 
 try:
     import pandas as pd
+
     PANDAS_AVAILABLE = True
 except ImportError:
     pd = None
@@ -51,6 +54,7 @@ def validates(
         def create_user(name: str, age: int, email: str) -> dict:
             return {"name": name, "age": age, "email": email}
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         # Get function signature and type hints
         sig = inspect.signature(func)
@@ -105,7 +109,9 @@ def validates(
         # Call function with validated arguments
         return func(**bound.arguments)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         # Reuse sync validation logic
         sig = inspect.signature(func)
         type_hints = get_type_hints(func)
@@ -175,6 +181,7 @@ def validate_schema(
         def create_user(data: dict) -> User:
             return User(**data)
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         # Determine which parameter to validate
         sig = inspect.signature(func)
@@ -184,7 +191,11 @@ def validate_schema(
             if param_name not in sig.parameters:
                 msg = f"Parameter {param_name} not found in {func.__name__}"
                 raise ValueError(msg)
-            param_value = kwargs.get(param_name) if param_name in kwargs else args[params.index(param_name)]
+            param_value = (
+                kwargs.get(param_name)
+                if param_name in kwargs
+                else args[params.index(param_name)]
+            )
         else:
             # Default to first parameter
             if not args:
@@ -214,7 +225,9 @@ def validate_schema(
         args[0] = validated_value
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         # Reuse sync validation logic
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
@@ -223,7 +236,11 @@ def validate_schema(
             if param_name not in sig.parameters:
                 msg = f"Parameter {param_name} not found in {func.__name__}"
                 raise ValueError(msg)
-            param_value = kwargs.get(param_name) if param_name in kwargs else args[params.index(param_name)]
+            param_value = (
+                kwargs.get(param_name)
+                if param_name in kwargs
+                else args[params.index(param_name)]
+            )
         else:
             if not args:
                 msg = "No arguments provided to validate"
@@ -358,7 +375,9 @@ def validate_dataframe(
 
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         # Reuse sync validation logic
         sig = inspect.signature(func)
         bound = sig.bind(*args, **kwargs)
@@ -433,6 +452,7 @@ def validate_dataframe(
 
 
 # Helper functions
+
 
 def _validate_param(
     name: str,

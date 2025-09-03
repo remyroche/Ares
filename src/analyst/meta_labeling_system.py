@@ -1,8 +1,7 @@
 from __future__ import annotations
-# src/analyst/meta_labeling_system.py
 
-from src.core.decorators import handles_errors
-
+import asyncio
+import logging
 import os
 from datetime import datetime
 from typing import Any
@@ -11,18 +10,18 @@ import numpy as np
 import pandas as pd
 
 from src.config import CONFIG
-import logging
-import asyncio
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-)
 from src.core.decorators import (
     validates as comprehensive_data_validation,
     validates as validate_data_quality,
     traced as with_tracing_span,
 )
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+)
+
+# src/analyst/meta_labeling_system.py
 
 
 class MetaLabelingSystem:
@@ -30,6 +29,7 @@ class MetaLabelingSystem:
     Comprehensive meta-labeling system for path-dependent trading signals.
     Implements both analyst labels (setup identification) and tactician labels (entry optimization).
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
@@ -141,14 +141,12 @@ class MetaLabelingSystem:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error("Error calculating technical indicators: {e}")
 
-
             # Volume analysis with error handling
             try:
                 features.update(self._calculate_volume_features(volume_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error("Error calculating volume features: {e}")
-
 
             # Price action patterns with error handling
             try:
@@ -157,7 +155,6 @@ class MetaLabelingSystem:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error("Error calculating price action patterns: {e}")
 
-
             # Volatility patterns with error handling
             try:
                 features.update(self._calculate_volatility_patterns(price_data))
@@ -165,14 +162,12 @@ class MetaLabelingSystem:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error("Error calculating volatility patterns: {e}")
 
-
             # Momentum patterns with error handling
             try:
                 features.update(self._calculate_momentum_patterns(price_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
                 self.logger.error("Error calculating momentum patterns: {e}")
-
 
             return features
 
@@ -449,9 +444,11 @@ class MetaLabelingSystem:
 
             return {
                 "STRONG_TREND_CONTINUATION": 1 if strong_trend_continuation else 0,
-                "strong_trend_confidence": min(abs(trend_strength) * 10, 1.0)
-                if strong_trend_continuation
-                else 0,
+                "strong_trend_confidence": (
+                    min(abs(trend_strength) * 10, 1.0)
+                    if strong_trend_continuation
+                    else 0
+                ),
             }
 
         except (KeyError, IndexError, AttributeError) as e:
@@ -482,9 +479,9 @@ class MetaLabelingSystem:
 
             return {
                 "EXHAUSTION_REVERSAL": 1 if exhaustion_reversal else 0,
-                "exhaustion_confidence": min((rsi - 70) / 30, 1.0)
-                if exhaustion_reversal
-                else 0,
+                "exhaustion_confidence": (
+                    min((rsi - 70) / 30, 1.0) if exhaustion_reversal else 0
+                ),
             }
 
         except (KeyError, IndexError, AttributeError) as e:
@@ -514,9 +511,9 @@ class MetaLabelingSystem:
 
             return {
                 "RANGE_MEAN_REVERSION": 1 if range_mean_reversion else 0,
-                "range_reversion_confidence": min(abs(bb_position - 0.5) * 2, 1.0)
-                if range_mean_reversion
-                else 0,
+                "range_reversion_confidence": (
+                    min(abs(bb_position - 0.5) * 2, 1.0) if range_mean_reversion else 0
+                ),
             }
 
         except (KeyError, IndexError, AttributeError) as e:
@@ -554,9 +551,9 @@ class MetaLabelingSystem:
             return {
                 "BREAKOUT_SUCCESS": 1 if breakout_success else 0,
                 "BREAKOUT_FAILURE": 1 if is_failed_breakout else 0,
-                "breakout_confidence": min(volume_ratio / 2, 1.0)
-                if breakout_success
-                else 0,
+                "breakout_confidence": (
+                    min(volume_ratio / 2, 1.0) if breakout_success else 0
+                ),
             }
 
         except (KeyError, IndexError, ValueError) as e:
@@ -825,16 +822,26 @@ class MetaLabelingSystem:
             current_price = data["close"].iloc[-1]
             vwap = data["close"].rolling(window=20).mean().iloc[-1]
             price_vwap_ratio = current_price / vwap if vwap > 0 else 1.0
-            
+
             # Calculate momentum
-            momentum = (data["close"].iloc[-1] - data["close"].iloc[-6]) / data["close"].iloc[-6] if len(data) >= 6 else 0
-            
+            momentum = (
+                (data["close"].iloc[-1] - data["close"].iloc[-6])
+                / data["close"].iloc[-6]
+                if len(data) >= 6
+                else 0
+            )
+
             # Calculate volume spike
-            volume_spike = volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(window=20).mean().iloc[-1] if len(volume_data) >= 20 else 1.0
-            
+            volume_spike = (
+                volume_data["volume"].iloc[-1]
+                / volume_data["volume"].rolling(window=20).mean().iloc[-1]
+                if len(volume_data) >= 20
+                else 1.0
+            )
+
             # Calculate recent high
             recent_high = data["high"].rolling(window=20).max().iloc[-1]
-            
+
             # VWAP reversion entry
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
             signals["VWAP_REVERSION_ENTRY"] = 1 if is_vwap_reversion else 0
@@ -863,17 +870,16 @@ class MetaLabelingSystem:
                 # Check for significant imbalance flip
                 if "prev_order_imbalance" in data:
                     prev_imbalance = data["prev_order_imbalance"]
-                    is_imbalance_flip = (
-                        abs(order_imbalance) > 0.3 and 
-                        np.sign(order_imbalance) != np.sign(prev_imbalance)
-                    )
+                    is_imbalance_flip = abs(order_imbalance) > 0.3 and np.sign(
+                        order_imbalance
+                    ) != np.sign(prev_imbalance)
                 else:
                     is_imbalance_flip = abs(order_imbalance) > 0.3
             else:
                 # No order book data available
                 order_imbalance = 0
                 is_imbalance_flip = False
-            
+
             signals["ORDERBOOK_IMBALANCE_FLIP"] = 1 if is_imbalance_flip else 0
 
             # Aggressive taker spike

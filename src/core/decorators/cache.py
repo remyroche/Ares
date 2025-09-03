@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Caching decorators with flexible policies.
 
@@ -22,11 +23,14 @@ from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
 
 # Context variable for request-scoped cache
-request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar("request_cache", default=None)
+request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar(
+    "request_cache", default=None
+)
 
 
 class CachePolicy(Enum):
     """Cache policy types."""
+
     PER_REQUEST = "per_request"  # Cache only within a single request
     CROSS_REQUEST = "cross_request"  # Cache across requests
     DISTRIBUTED = "distributed"  # Use distributed cache (Redis, etc.)
@@ -35,6 +39,7 @@ class CachePolicy(Enum):
 @dataclass
 class CacheEntry:
     """Single cache entry with metadata."""
+
     value: Any
     created_at: float
     expires_at: float | None
@@ -251,6 +256,7 @@ def cached(
         def api_call(endpoint: str) -> dict:
             return requests.get(endpoint).json()
     """
+
     def get_cache_backend() -> dict[str, Any] | CacheBackend:
         """Get appropriate cache backend based on policy."""
         if policy == CachePolicy.PER_REQUEST:
@@ -311,7 +317,9 @@ def cached(
                     cache.set(cache_key, e, ttl)
             raise
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         # Generate cache key
         if key_func:
             cache_key = key_func(func, args, kwargs)
@@ -414,6 +422,7 @@ def memoize(
                 return n
             return fibonacci(n-1) + fibonacci(n-2)
     """
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         # Use functools.lru_cache for the implementation
         cached_func = functools.lru_cache(maxsize=maxsize, typed=typed)(func)

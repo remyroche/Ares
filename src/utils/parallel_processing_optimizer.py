@@ -55,7 +55,9 @@ class MacM1ParallelOptimizer:
         self.is_m1_mac: bool = self._detect_m1_mac()
         # On M1, favor 4 workers by default; otherwise default to cpu_count
         default_workers = 4 if self.is_m1_mac else min(8, cpu_count)
-        self.max_workers: int = max_workers if max_workers and max_workers > 0 else default_workers
+        self.max_workers: int = (
+            max_workers if max_workers and max_workers > 0 else default_workers
+        )
         self.chunk_size: int = max(1, chunk_size)
         self.use_process_pool: bool = bool(use_process_pool)
         self.memory_limit_mb: int = max(128, memory_limit_mb)
@@ -125,8 +127,10 @@ class MacM1ParallelOptimizer:
             chunk_size = self._get_optimal_chunk_size(size)
         chunks: list[pd.DataFrame] = []
         for i in range(0, size, chunk_size):
-            chunks.append(df.iloc[i: i + chunk_size].copy())
-        logger.debug(f"📦 Split DataFrame into {len(chunks)} chunks of ~{chunk_size} rows each")
+            chunks.append(df.iloc[i : i + chunk_size].copy())
+        logger.debug(
+            f"📦 Split DataFrame into {len(chunks)} chunks of ~{chunk_size} rows each"
+        )
         return chunks
 
     def _merge_chunks(self, chunks: Iterable[pd.DataFrame]) -> pd.DataFrame:
@@ -145,7 +149,10 @@ class MacM1ParallelOptimizer:
     def parallel_apply(
         self,
         df: pd.DataFrame,
-        func: Callable[[pd.DataFrame, Any], pd.DataFrame] | Callable[[pd.DataFrame], pd.DataFrame],
+        func: (
+            Callable[[pd.DataFrame, Any], pd.DataFrame]
+            | Callable[[pd.DataFrame], pd.DataFrame]
+        ),
         *args: Any,
         **kwargs: Any,
     ) -> pd.DataFrame:
@@ -233,21 +240,34 @@ class MacM1ParallelOptimizer:
         Perform rolling operations with different window sizes in parallel.
         """
 
-        def rolling_operation(chunk_df: pd.DataFrame, window_size: int, op: str) -> pd.DataFrame:
+        def rolling_operation(
+            chunk_df: pd.DataFrame, window_size: int, op: str
+        ) -> pd.DataFrame:
             numeric_cols = chunk_df.select_dtypes(include=[np.number]).columns
             result = chunk_df.copy()
             for col in numeric_cols:
                 if op == "mean":
-                    result[f"{col}_rolling_{window_size}"] = chunk_df[col].rolling(window_size).mean()
+                    result[f"{col}_rolling_{window_size}"] = (
+                        chunk_df[col].rolling(window_size).mean()
+                    )
                 elif op == "std":
-                    result[f"{col}_rolling_{window_size}_std"] = chunk_df[col].rolling(window_size).std()
+                    result[f"{col}_rolling_{window_size}_std"] = (
+                        chunk_df[col].rolling(window_size).std()
+                    )
                 elif op == "min":
-                    result[f"{col}_rolling_{window_size}_min"] = chunk_df[col].rolling(window_size).min()
+                    result[f"{col}_rolling_{window_size}_min"] = (
+                        chunk_df[col].rolling(window_size).min()
+                    )
                 elif op == "max":
-                    result[f"{col}_rolling_{window_size}_max"] = chunk_df[col].rolling(window_size).max()
+                    result[f"{col}_rolling_{window_size}_max"] = (
+                        chunk_df[col].rolling(window_size).max()
+                    )
             return result
 
-        feature_funcs = [partial(rolling_operation, window_size=w, op=operation) for w in window_sizes]
+        feature_funcs = [
+            partial(rolling_operation, window_size=w, op=operation)
+            for w in window_sizes
+        ]
         return self.parallel_feature_engineering(df, feature_funcs)
 
     def get_system_info(self) -> dict[str, Any]:
@@ -292,7 +312,9 @@ def get_parallel_optimizer() -> MacM1ParallelOptimizer:
     return _parallel_optimizer
 
 
-def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def parallel_feature_engineering(
+    max_workers: int = 4,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for parallel feature engineering functions that return a DataFrame.
     Skips parallelization for async functions.
@@ -331,7 +353,11 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
             # Run function in parallel by applying it to chunks and merging
             def apply_func(chunk: pd.DataFrame) -> pd.DataFrame:
                 # type: ignore[misc]
-                return func(chunk, *[a for a in args if not isinstance(a, pd.DataFrame)], **kwargs)
+                return func(
+                    chunk,
+                    *[a for a in args if not isinstance(a, pd.DataFrame)],
+                    **kwargs,
+                )
 
             return optimizer.parallel_apply(df_arg, apply_func)
 

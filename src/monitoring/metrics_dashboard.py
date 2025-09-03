@@ -29,6 +29,7 @@ class MetricType(Enum):
     RISK_METRICS = "risk_metrics"
     ENSEMBLE_METRICS = "ensemble_metrics"
 
+
 @dataclass
 class DashboardMetric:
     metric_name: str
@@ -40,6 +41,7 @@ class DashboardMetric:
     last_updated: datetime
     metadata: dict[str, Any]
     unit: str | None
+
 
 class MetricsDashboard:
     """Real-time metrics dashboard."""

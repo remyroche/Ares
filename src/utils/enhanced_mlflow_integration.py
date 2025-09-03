@@ -1,7 +1,9 @@
 from __future__ import annotations
-# src/utils/enhanced_mlflow_integration.py
 
 from src.core.decorators import handles_errors
+
+# src/utils/enhanced_mlflow_integration.py
+
 
 """
 Enhanced MLflow Integration for Enhanced Training Manager
@@ -18,7 +20,6 @@ This ensures complete traceability and reproducibility of all training runs.
 """
 
 import os
-
 import sys
 import tempfile
 from datetime import datetime
@@ -56,9 +57,16 @@ def with_enhanced_mlflow_logging(step_name: str):
             # Step execution logic
             return results
     """
+
     def decorator(func):
         @wraps(func)
-        async def wrapper(self, training_input: dict[str, Any], pipeline_state: dict[str, Any], *args, **kwargs):
+        async def wrapper(
+            self,
+            training_input: dict[str, Any],
+            pipeline_state: dict[str, Any],
+            *args,
+            **kwargs,
+        ):
             # Extract metadata from config
             config = getattr(self, "config", {})
             metadata = extract_training_metadata(config)
@@ -71,8 +79,12 @@ def with_enhanced_mlflow_logging(step_name: str):
             run_id = None
             try:
                 # Set up MLflow
-                tracking_uri = config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
-                experiment_name = config.get("mlflow", {}).get("experiment_name") or "ares_training"
+                tracking_uri = (
+                    config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
+                )
+                experiment_name = (
+                    config.get("mlflow", {}).get("experiment_name") or "ares_training"
+                )
 
                 mlflow.set_tracking_uri(tracking_uri)
                 mlflow.set_experiment(experiment_name)
@@ -121,7 +133,9 @@ def with_enhanced_mlflow_logging(step_name: str):
 
                     # Execute the step
                     start_time = datetime.now()
-                    result = await func(self, training_input, pipeline_state, *args, **kwargs)
+                    result = await func(
+                        self, training_input, pipeline_state, *args, **kwargs
+                    )
                     end_time = datetime.now()
                     execution_duration = (end_time - start_time).total_seconds()
 
@@ -130,7 +144,9 @@ def with_enhanced_mlflow_logging(step_name: str):
                         "step_execution_end": end_time.isoformat(),
                         "execution_duration_seconds": execution_duration,
                         "step_status": "completed" if result else "failed",
-                        "result_keys": list(result.keys()) if isinstance(result, dict) else [],
+                        "result_keys": (
+                            list(result.keys()) if isinstance(result, dict) else []
+                        ),
                     }
 
                     log_enhanced_training_metadata(
@@ -146,7 +162,10 @@ def with_enhanced_mlflow_logging(step_name: str):
                     if isinstance(result, dict):
                         metrics = {}
                         for key, value in result.items():
-                            if isinstance(value, int | float) and key not in ["status", "duration"]:
+                            if isinstance(value, int | float) and key not in [
+                                "status",
+                                "duration",
+                            ]:
                                 metrics[f"step_{key}"] = float(value)
 
                         if metrics:
@@ -163,11 +182,15 @@ def with_enhanced_mlflow_logging(step_name: str):
                                 },
                             )
 
-                    system_logger.info(f"✅ Step {step_name} executed and logged to MLflow (Run ID: {run_id})")
+                    system_logger.info(
+                        f"✅ Step {step_name} executed and logged to MLflow (Run ID: {run_id})"
+                    )
                     return result
 
             except Exception as e:
-                system_logger.error(f"❌ MLflow logging failed for step {step_name}: {e}")
+                system_logger.error(
+                    f"❌ MLflow logging failed for step {step_name}: {e}"
+                )
                 # Still execute the step even if MLflow logging fails
                 return await func(self, training_input, pipeline_state, *args, **kwargs)
 
@@ -226,7 +249,9 @@ def log_step_artifact(
         system_logger.info(f"✅ Logged artifact '{artifact_path}' for step {step_name}")
 
     except Exception as e:
-        system_logger.error(f"Failed to log artifact '{artifact_path}' for step {step_name}: {e}")
+        system_logger.error(
+            f"Failed to log artifact '{artifact_path}' for step {step_name}: {e}"
+        )
 
 
 def generate_standardized_artifact_name(
@@ -264,7 +289,9 @@ def generate_standardized_artifact_name(
     clean_artifact_type = artifact_type.replace(" ", "_").replace("-", "_").lower()
 
     # Build the standardized name
-    artifact_name = f"{exchange}_{token}_{date_str}_{time_str}_{step_num}_{clean_artifact_type}"
+    artifact_name = (
+        f"{exchange}_{token}_{date_str}_{time_str}_{step_num}_{clean_artifact_type}"
+    )
 
     if extension:
         if not extension.startswith("."):
@@ -325,10 +352,14 @@ def log_step_dataframe(
         # Clean up temporary file
         os.unlink(tmp_path)
 
-        system_logger.info(f"✅ Logged DataFrame '{artifact_name}' for step {step_name}")
+        system_logger.info(
+            f"✅ Logged DataFrame '{artifact_name}' for step {step_name}"
+        )
 
     except Exception as e:
-        system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
+        system_logger.error(
+            f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}"
+        )
 
 
 def create_standardized_artifact_folders(base_dir: str = "artifacts") -> dict[str, str]:
@@ -360,7 +391,10 @@ def create_standardized_artifact_folders(base_dir: str = "artifacts") -> dict[st
 
 
 def get_standardized_artifact_path(
-    artifact_type: str, step_name: str, artifact_name: str, base_dir: str = "artifacts",
+    artifact_type: str,
+    step_name: str,
+    artifact_name: str,
+    base_dir: str = "artifacts",
 ) -> str:
     """Get standardized path for an artifact based on its type."
 
@@ -418,7 +452,11 @@ def log_step_dataframe_with_standardized_name(
 
     # Generate standardized artifact name
     artifact_name = generate_standardized_artifact_name(
-        exchange=exchange, token=token, step_number=step_name, artifact_type=artifact_type, extension="parquet",
+        exchange=exchange,
+        token=token,
+        step_number=step_name,
+        artifact_type=artifact_type,
+        extension="parquet",
     )
 
     # Get standardized path
@@ -467,7 +505,11 @@ def log_step_artifact_with_standardized_name(
 
     # Generate standardized artifact name
     artifact_name = generate_standardized_artifact_name(
-        exchange=exchange, token=token, step_number=step_name, artifact_type=artifact_type, extension=file_extension,
+        exchange=exchange,
+        token=token,
+        step_number=step_name,
+        artifact_type=artifact_type,
+        extension=file_extension,
     )
 
     # Get standardized path
@@ -514,7 +556,11 @@ def log_step_report(
 
         # Generate standardized report name
         report_name = generate_standardized_artifact_name(
-            exchange=exchange, token=token, step_number=step_name, artifact_type=report_type, extension="json",
+            exchange=exchange,
+            token=token,
+            step_number=step_name,
+            artifact_type=report_type,
+            extension="json",
         )
 
         # Get standardized path
@@ -523,7 +569,9 @@ def log_step_report(
         # Create temporary file
         import json
 
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp_file:
+        with tempfile.NamedTemporaryFile(
+            suffix=".json", delete=False, mode="w"
+        ) as tmp_file:
             json.dump(report_data, tmp_file, indent=2, default=str)
             tmp_path = tmp_file.name
 
@@ -607,7 +655,9 @@ def log_step_model(
         system_logger.info(f"✅ Logged model '{model_name}' for step {step_name}")
 
     except Exception as e:
-        system_logger.error(f"Failed to log model '{model_name}' for step {step_name}: {e}")
+        system_logger.error(
+            f"Failed to log model '{model_name}' for step {step_name}: {e}"
+        )
 
 
 def log_step_metrics(
@@ -674,19 +724,27 @@ class EnhancedMLflowManager:
     def _setup_mlflow(self) -> None:
         """Set up MLflow tracking and experiment."""
         try:
-            tracking_uri = self.config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
-            experiment_name = self.config.get("mlflow", {}).get("experiment_name") or "ares_training"
+            tracking_uri = (
+                self.config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
+            )
+            experiment_name = (
+                self.config.get("mlflow", {}).get("experiment_name") or "ares_training"
+            )
 
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment_name)
 
-            self.logger.info(f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}")
+            self.logger.info(
+                f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}"
+            )
 
         except Exception as e:
             self.logger.exception(f"Failed to setup MLflow: {e}")
             raise
 
-    def start_run(self, run_name: str | None = None, step_name: str | None = None) -> str:
+    def start_run(
+        self, run_name: str | None = None, step_name: str | None = None
+    ) -> str:
         """Start an MLflow run with enhanced metadata."
 
         Args:
@@ -717,7 +775,9 @@ class EnhancedMLflowManager:
                     },
                 )
 
-                self.logger.info(f"✅ Started enhanced MLflow run: {self.current_run_id}")
+                self.logger.info(
+                    f"✅ Started enhanced MLflow run: {self.current_run_id}"
+                )
                 return self.current_run_id
 
         except Exception as e:
@@ -789,7 +849,9 @@ class EnhancedMLflowManager:
 
         try:
             # Convert metrics to float
-            float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, int | float)}
+            float_metrics = {
+                k: float(v) for k, v in metrics.items() if isinstance(v, int | float)
+            }
 
             if not float_metrics:
                 self.logger.warning("No valid metrics to log")
@@ -814,7 +876,9 @@ class EnhancedMLflowManager:
                 additional_metadata=extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged {len(float_metrics)} metrics with enhanced metadata")
+            self.logger.info(
+                f"✅ Logged {len(float_metrics)} metrics with enhanced metadata"
+            )
 
         except Exception as e:
             self.logger.exception(f"Failed to log metrics: {e}")
@@ -854,7 +918,9 @@ class EnhancedMLflowManager:
                 additional_metadata=extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged {len(parameters)} parameters with enhanced metadata")
+            self.logger.info(
+                f"✅ Logged {len(parameters)} parameters with enhanced metadata"
+            )
 
         except Exception as e:
             self.logger.exception(f"Failed to log parameters: {e}")
@@ -900,7 +966,9 @@ class EnhancedMLflowManager:
                 additional_metadata=extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged artifact '{artifact_path}' with enhanced metadata")
+            self.logger.info(
+                f"✅ Logged artifact '{artifact_path}' with enhanced metadata"
+            )
 
         except Exception as e:
             self.logger.exception(f"Failed to log artifact '{artifact_path}': {e}")
@@ -921,7 +989,9 @@ class EnhancedMLflowManager:
         """
         try:
             # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(
+                suffix=".parquet", delete=False
+            ) as tmp_file:
                 df.to_parquet(tmp_file.name, index=False)
                 tmp_path = tmp_file.name
 
@@ -965,7 +1035,9 @@ class EnhancedMLflowManager:
             # Create temporary file
             import json
 
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp_file:
+            with tempfile.NamedTemporaryFile(
+                suffix=".json", delete=False, mode="w"
+            ) as tmp_file:
                 json.dump(summary, tmp_file, indent=2, default=str)
                 tmp_path = tmp_file.name
 
@@ -1027,7 +1099,9 @@ class EnhancedMLflowManager:
             self.current_run_id = None
 
 
-@handles_errors(default_return=None, context="enhanced_mlflow_integration.log_step_metadata")
+@handles_errors(
+    default_return=None, context="enhanced_mlflow_integration.log_step_metadata"
+)
 def log_step_metadata(
     config: dict[str, Any],
     step_name: str,
@@ -1066,7 +1140,9 @@ def log_step_metadata(
         system_logger.error(f"Failed to log step metadata for {step_name}: {e}")
 
 
-@handles_errors(default_return=None, context="enhanced_mlflow_integration.log_model_performance")
+@handles_errors(
+    default_return=None, context="enhanced_mlflow_integration.log_model_performance"
+)
 def log_model_performance(
     config: dict[str, Any],
     model_name: str,
@@ -1107,7 +1183,9 @@ def log_model_performance(
         system_logger.error(f"Failed to log model performance for {model_name}: {e}")
 
 
-@handles_errors(default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion")
+@handles_errors(
+    default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion"
+)
 def log_pipeline_completion(
     config: dict[str, Any],
     pipeline_results: dict[str, Any],
@@ -1175,7 +1253,9 @@ def create_detailed_step_report(
             "step_version": "1.0",
         },
         "execution_summary": {
-            "status": "completed" if not errors_encountered else "completed_with_errors",
+            "status": (
+                "completed" if not errors_encountered else "completed_with_errors"
+            ),
             "start_time": execution_metadata.get("start_time"),
             "end_time": execution_metadata.get("end_time"),
             "duration_seconds": execution_metadata.get("duration_seconds"),
@@ -1196,25 +1276,38 @@ def create_detailed_step_report(
         "artifacts_generated": {
             "count": len(artifacts_generated),
             "artifacts": artifacts_generated,
-            "artifact_types": list({os.path.splitext(artifact)[1] for artifact in artifacts_generated}),
+            "artifact_types": list(
+                {os.path.splitext(artifact)[1] for artifact in artifacts_generated}
+            ),
         },
         "metrics_calculated": {
             "count": len(metrics_calculated),
             "metrics": metrics_calculated,
-            "metric_types": list({type(v).__name__ for v in metrics_calculated.values()}),
+            "metric_types": list(
+                {type(v).__name__ for v in metrics_calculated.values()}
+            ),
         },
         "step_data_summary": {
             "data_keys": list(step_data.keys()) if isinstance(step_data, dict) else [],
-            "data_types": {k: type(v).__name__ for k, v in step_data.items()} if isinstance(step_data, dict) else {},
+            "data_types": (
+                {k: type(v).__name__ for k, v in step_data.items()}
+                if isinstance(step_data, dict)
+                else {}
+            ),
             "data_sizes": (
-                {k: len(v) if hasattr(v, "__len__") else "N/A" for k, v in step_data.items()}
+                {
+                    k: len(v) if hasattr(v, "__len__") else "N/A"
+                    for k, v in step_data.items()
+                }
                 if isinstance(step_data, dict)
                 else {}
             ),
         },
         "quality_metrics": {
             "data_quality_score": execution_metadata.get("data_quality_score", 0.0),
-            "processing_efficiency": execution_metadata.get("processing_efficiency", 0.0),
+            "processing_efficiency": execution_metadata.get(
+                "processing_efficiency", 0.0
+            ),
             "error_rate": len(errors_encountered) if errors_encountered else 0,
         },
         "errors_and_warnings": {
@@ -1226,6 +1319,8 @@ def create_detailed_step_report(
             "python_version": sys.version,
             "platform": sys.platform,
             "memory_available_gb": execution_metadata.get("memory_available_gb"),
-            "disk_space_available_gb": execution_metadata.get("disk_space_available_gb"),
+            "disk_space_available_gb": execution_metadata.get(
+                "disk_space_available_gb"
+            ),
         },
     }

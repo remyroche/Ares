@@ -207,7 +207,8 @@ def _tf_band(timeframe: str) -> str:
 
 
 def get_model_choice_for_label(
-    label: str, timeframe: str,
+    label: str,
+    timeframe: str,
 ) -> tuple[str, dict[str, Any]]:
     """Return (model_key, params) for the given base label and timeframe.
 
@@ -294,9 +295,7 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
             "logistic_regression": LogisticRegression(
                 C=float(params.get("C", 1.0)),
                 penalty=str(params.get("penalty", "l2")),
-                solver=(
-                    "liblinear" if params.get("penalty", "l2") == "l2" else "saga"
-                ),
+                solver=("liblinear" if params.get("penalty", "l2") == "l2" else "saga"),
                 max_iter=1000,
                 random_state=42,
             ),
@@ -304,6 +303,7 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
 
         if key == "hmm_gaussian":
             try:
+
                 class HMMWrapper:
                     def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(

@@ -21,6 +21,7 @@ class TrackingType(Enum):
     DECISION_PATH = "decision_path"
     MODEL_BEHAVIOR = "model_behavior"
 
+
 class TrackingSystem:
     """Comprehensive tracking system (scaffold)."""
 

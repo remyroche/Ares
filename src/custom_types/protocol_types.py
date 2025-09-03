@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/types/protocol_types.py
 
 """
@@ -15,7 +16,7 @@ from .trading_types import OrderRequest, RiskParameters, TradeDecision
 
 # Generic type variables
 T = TypeVar("T")
-ConfigT = TypeVar("ConfigT", bound=dict[str , Any])
+ConfigT = TypeVar("ConfigT", bound=dict[str, Any])
 DataT = TypeVar("DataT")
 ResultT = TypeVar("ResultT")
 
@@ -55,7 +56,7 @@ class ModelPredictor(Protocol[T]):
         ...
 
     @abstractmethod
-    def get_feature_importance(self) -> dict[str , float]:
+    def get_feature_importance(self) -> dict[str, float]:
         """Get feature importance scores."""
         ...
 
@@ -135,7 +136,7 @@ class StateManager(Protocol[T]):
         ...
 
     @abstractmethod
-    async def get_all_states(self) -> dict[str , T]:
+    async def get_all_states(self) -> dict[str, T]:
         """Get all states."""
         ...
 
@@ -185,12 +186,12 @@ class Monitorable(Protocol):
     """Protocol for monitorable components."""
 
     @abstractmethod
-    def get_health_status(self) -> dict[str , Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get health status."""
         ...
 
     @abstractmethod
-    def get_metrics(self) -> dict[str , float]:
+    def get_metrics(self) -> dict[str, float]:
         """Get performance metrics."""
         ...
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 HMM Regime Barrier Optimizer
 
@@ -29,6 +30,7 @@ warnings.filterwarnings("ignore")
 # Import MLflow for experiment tracking
 try:
     import mlflow
+
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
@@ -36,11 +38,13 @@ except ImportError:
 # Import Optuna for optimization
 try:
     import optuna
+
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
 
 class HMMRegimeBarrierOptimizer:
     """
@@ -95,7 +99,9 @@ class HMMRegimeBarrierOptimizer:
             Dictionary containing optimization results
         """
         try:
-            self.logger.info(f"🔧 Starting HMM regime barrier optimization for column '{regime_column}'")
+            self.logger.info(
+                f"🔧 Starting HMM regime barrier optimization for column '{regime_column}'"
+            )
 
             if regime_column not in data.columns:
                 msg = f"Regime column '{regime_column}' not found in data"
@@ -115,14 +121,22 @@ class HMMRegimeBarrierOptimizer:
 
                 regime_data = data[data[regime_column] == regime]
                 if len(regime_data) < 100:  # Need sufficient data for optimization
-                    self.logger.warning(f"⚠️ Insufficient data for regime {regime} ({len(regime_data)} samples)")
+                    self.logger.warning(
+                        f"⚠️ Insufficient data for regime {regime} ({len(regime_data)} samples)"
+                    )
                     continue
 
-                self.logger.info(f"🎯 Optimizing barriers for regime {regime} ({len(regime_data)} samples)")
-                regime_optimization = await self._optimize_regime_barriers(regime_data, regime)
+                self.logger.info(
+                    f"🎯 Optimizing barriers for regime {regime} ({len(regime_data)} samples)"
+                )
+                regime_optimization = await self._optimize_regime_barriers(
+                    regime_data, regime
+                )
                 self.optimization_results[regime] = regime_optimization
 
-            self.logger.info(f"✅ HMM regime barrier optimization completed for {len(self.optimization_results)} regimes")
+            self.logger.info(
+                f"✅ HMM regime barrier optimization completed for {len(self.optimization_results)} regimes"
+            )
             return self.optimization_results
 
         except Exception as e:
@@ -130,7 +144,9 @@ class HMMRegimeBarrierOptimizer:
             # Return default barriers on error
             return self._get_default_barriers()
 
-    def _create_regime_barrier_map(self, regimes: np.ndarray) -> dict[str, dict[str, Any]]:
+    def _create_regime_barrier_map(
+        self, regimes: np.ndarray
+    ) -> dict[str, dict[str, Any]]:
         """Create a barrier map for each regime."""
         barrier_map = {}
 
@@ -140,7 +156,9 @@ class HMMRegimeBarrierOptimizer:
 
             # Create regime-specific barrier configuration
             barrier_map[str(regime)] = {
-                "profit_take_multiplier": self.config.get("profit_take_multiplier", 0.002),
+                "profit_take_multiplier": self.config.get(
+                    "profit_take_multiplier", 0.002
+                ),
                 "stop_loss_multiplier": self.config.get("stop_loss_multiplier", 0.001),
                 "time_barrier_minutes": self.config.get("time_barrier_minutes", 30),
                 "max_lookahead": self.config.get("max_lookahead", 100),
@@ -150,7 +168,9 @@ class HMMRegimeBarrierOptimizer:
 
         return barrier_map
 
-    async def _optimize_regime_barriers(self, regime_data: pd.DataFrame, regime: Any) -> dict[str, Any]:
+    async def _optimize_regime_barriers(
+        self, regime_data: pd.DataFrame, regime: Any
+    ) -> dict[str, Any]:
         """Optimize barriers for a specific regime."""
         try:
             # Simple optimization based on regime characteristics
@@ -213,7 +233,9 @@ class HMMRegimeBarrierOptimizer:
         """Get default barriers when optimization fails."""
         return {
             "default": {
-                "profit_take_multiplier": self.config.get("profit_take_multiplier", 0.002),
+                "profit_take_multiplier": self.config.get(
+                    "profit_take_multiplier", 0.002
+                ),
                 "stop_loss_multiplier": self.config.get("stop_loss_multiplier", 0.001),
                 "time_barrier_minutes": self.config.get("time_barrier_minutes", 30),
                 "max_lookahead": self.config.get("max_lookahead", 100),
@@ -257,7 +279,9 @@ class HMMRegimeBarrierOptimizer:
 
     def get_regime_barriers(self, regime: str) -> dict[str, Any]:
         """Get barriers for a specific regime."""
-        return self.barrier_map.get(str(regime), self._get_default_barriers().get("default", {}))
+        return self.barrier_map.get(
+            str(regime), self._get_default_barriers().get("default", {})
+        )
 
     def reset_optimization(self) -> None:
         """Reset optimization results and barrier map."""

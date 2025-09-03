@@ -1,27 +1,27 @@
 from __future__ import annotations
+
 """Monitoring Module."
 
 This module provides system-wide monitoring capabilities for the trading system,
 including health checks, performance tracking, and alerting functionality.
 """
-from src.core.decorators import handles_errors
-
-from src.core.domain import handle_specific_errors
-
-# src/supervisor/monitoring.py
-
 import asyncio
 from datetime import datetime
 from typing import Any
 
+from src.core.decorators import handles_errors
+from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid
+
+# src/supervisor/monitoring.py
 
 
 class Monitoring:
     """
     Enhanced Monitoring component with DI, type hints, and robust error handling.
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Monitoring")

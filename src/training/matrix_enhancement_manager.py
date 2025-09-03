@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/matrix_enhancement_manager.py
 
 """Matrix Enhancement Manager for advanced ML training processes.
@@ -51,6 +52,7 @@ class MatrixEnhancementConfig:
     min_explained_variance: float = 0.95
     correlation_threshold: float = 0.8
     condition_number_threshold: float = 1e12
+
 
 class MatrixEnhancementManager:
     """Advanced matrix enhancement manager for ML training processes.
@@ -112,7 +114,9 @@ class MatrixEnhancementManager:
 
             # Create DataFrame
             svd_df = pd.DataFrame(
-                svd_features, columns=svd_feature_names, index=features_df.index,
+                svd_features,
+                columns=svd_feature_names,
+                index=features_df.index,
             )
 
             # Combine with original features
@@ -174,7 +178,9 @@ class MatrixEnhancementManager:
 
             # Create DataFrame
             nmf_df = pd.DataFrame(
-                nmf_features, columns=nmf_feature_names, index=features_df.index,
+                nmf_features,
+                columns=nmf_feature_names,
+                index=features_df.index,
             )
 
             # Combine with original features
@@ -256,7 +262,9 @@ class MatrixEnhancementManager:
                 for i in range(self.config.spectral_n_clusters)
             ]
             distance_df = pd.DataFrame(
-                distances, columns=distance_feature_names, index=features_df.index,
+                distances,
+                columns=distance_feature_names,
+                index=features_df.index,
             )
 
             # Combine all features

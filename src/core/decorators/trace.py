@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Distributed tracing decorators for observability.
 
@@ -17,11 +18,14 @@ from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
 
 # Context variable for current trace
-current_trace_var: ContextVar[Optional["TraceContext"]] = ContextVar("current_trace", default=None)
+current_trace_var: ContextVar[Optional["TraceContext"]] = ContextVar(
+    "current_trace", default=None
+)
 
 
 class SpanKind(Enum):
     """Types of spans in distributed tracing."""
+
     INTERNAL = "internal"
     SERVER = "server"
     CLIENT = "client"
@@ -31,6 +35,7 @@ class SpanKind(Enum):
 
 class SpanStatus(Enum):
     """Status of a span."""
+
     UNSET = "unset"
     OK = "ok"
     ERROR = "error"
@@ -39,6 +44,7 @@ class SpanStatus(Enum):
 @dataclass
 class Span:
     """Represents a single span in a trace."""
+
     name: str
     trace_id: str
     span_id: str
@@ -80,6 +86,7 @@ class Span:
 @dataclass
 class TraceContext:
     """Context for a complete trace."""
+
     trace_id: str
     spans: list[Span] = field(default_factory=list)
     baggage: dict[str, str] = field(default_factory=dict)
@@ -161,6 +168,7 @@ def traced(
         def fetch_user(user_id: str) -> dict:
             return api.get_user(user_id)
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         # Get or create trace context
         trace = get_current_trace()
@@ -212,7 +220,9 @@ def traced(
             # End span
             span.end()
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         # Get or create trace context
         trace = get_current_trace()
         if trace is None:
@@ -263,7 +273,9 @@ def traced(
             # End span
             span.end()
 
-    return uniform_wrapper(f"traced({span_name or 'auto'})", sync_handler, async_handler)
+    return uniform_wrapper(
+        f"traced({span_name or 'auto'})", sync_handler, async_handler
+    )
 
 
 def span_event(name: str, attributes: dict[str, Any] = None) -> None:
@@ -337,6 +349,7 @@ def trace_method(
             def update_user(self, user_id: str, data: dict) -> dict:
                 return self.db.update_user(user_id, data)
     """
+
     def decorator(cls: type) -> type:
         prefix = span_prefix or cls.__name__
 

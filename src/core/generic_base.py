@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/core/generic_base.py
 
 """
@@ -26,6 +27,7 @@ DataT = TypeVar("DataT")
 ResultT = TypeVar("ResultT")
 ErrorT = TypeVar("ErrorT", bound=Exception)
 ComponentT = TypeVar("ComponentT", bound=TradingComponent)
+
 
 # Protocol constraints for data processing
 @runtime_checkable
@@ -60,6 +62,7 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
     """
     Generic base class for trading components with type-safe configuration.
     """
+
     def __init__(self, config: ConfigT) -> None:
         self._config = config
         self._is_running = False
@@ -99,6 +102,7 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     """
     Generic base class for data processors with input/output type constraints.
     """
+
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._processing_stats = {"processed": 0, "errors": 0}
@@ -117,6 +121,7 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
     """
     Generic base class for error handlers with type-safe error handling.
     """
+
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._error_count = 0
@@ -135,6 +140,7 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     """
     Generic base class for async context managers that manage components.
     """
+
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._components: list[ComponentT] = []
@@ -181,6 +187,7 @@ class GenericFactory(Generic[ComponentT], ABC):
     """
     Generic base class for component factories.
     """
+
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._created_components: list[ComponentT] = []
@@ -203,6 +210,7 @@ class GenericValidator(Generic[DataT], ABC):
     """
     Generic base class for data validators.
     """
+
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
         self._validation_rules: list[Callable[[DataT], bool]] = []

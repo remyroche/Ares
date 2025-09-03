@@ -31,9 +31,7 @@ TRAINING_STEPS: list[str] = [
 
 def get_unified_data_loader_import() -> str:
     """Get the import statement for the unified data loader."""
-    return (
-        "from src.training.steps.unified_data_loader import get_unified_data_loader"
-    )
+    return "from src.training.steps.unified_data_loader import get_unified_data_loader"
 
 
 def get_unified_data_loading_code(
@@ -88,6 +86,8 @@ def get_unified_data_loading_code(
             self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
     """
+
+
 def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
     """Get step-specific guidance for updating."""
     from src.config.constants import (
@@ -211,6 +211,8 @@ def generate_step_update_template(step_name: str) -> str:
 #         regime_data = json.load(f)
 #     # Process regime data as needed
 """
+
+
 def main() -> None:
     """Main function to generate update guidance."""
     high_complexity_areas = {
@@ -241,4 +243,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

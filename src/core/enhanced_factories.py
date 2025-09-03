@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/core/enhanced_factories.py
 
 """
@@ -32,6 +33,7 @@ class TradingSystemFactory:
     """
     Factory for creating complete trading systems with dependency injection.
     """
+
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("TradingSystemFactory")
@@ -89,6 +91,7 @@ class ExchangeClientFactory:
     """
     Factory for creating exchange clients with dependency injection support.
     """
+
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("ExchangeClientFactory")
@@ -128,6 +131,7 @@ class DatabaseFactory:
     """
     Factory for creating database managers with dependency injection support.
     """
+
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("DatabaseFactory")
@@ -159,6 +163,7 @@ class StateManagerFactory:
     """
     Factory for creating state managers with dependency injection support.
     """
+
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("StateManagerFactory")
@@ -180,11 +185,14 @@ class PerformanceReporterFactory:
     """
     Factory for creating performance reporters with dependency injection support.
     """
+
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("PerformanceReporterFactory")
 
-    def create_performance_reporter(self, config: dict[str, Any]) -> IPerformanceReporter:
+    def create_performance_reporter(
+        self, config: dict[str, Any]
+    ) -> IPerformanceReporter:
         """Create a performance reporter instance."""
         try:
             reporter = PerformanceReporter(config)

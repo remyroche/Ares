@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Wavelet Feature Selection Demo.
 
 This script demonstrates the complete wavelet feature selection workflow using the two-model strategy:
@@ -24,6 +25,7 @@ from src.training.wavelet_feature_selection_workflow import (
     WaveletFeatureSelectionWorkflow,
 )
 from src.utils.logger import system_logger
+
 
 class WaveletFeatureSelectionDemo:
     """Demo class for the wavelet feature selection workflow using two-model strategy.
@@ -407,6 +409,7 @@ class WaveletFeatureSelectionDemo:
         except Exception as e:
             self.logger.exception(f"Error saving results: {e}")
 
+
 async def main() -> None:
     """Main demo function."""
     try:
@@ -424,6 +427,7 @@ async def main() -> None:
         pass
     except Exception:
         pass
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Structured logging decorators with correlation IDs.
 
@@ -20,9 +21,23 @@ correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", defaul
 
 # Sensitive field names to mask
 SENSITIVE_FIELDS = {
-    "password", "passwd", "pwd", "secret", "token", "api_key", "apikey",
-    "access_key", "private_key", "auth", "authorization", "credit_card",
-    "card_number", "cvv", "ssn", "social_security", "tax_id",
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+    "auth",
+    "authorization",
+    "credit_card",
+    "card_number",
+    "cvv",
+    "ssn",
+    "social_security",
+    "tax_id",
 }
 
 
@@ -70,7 +85,9 @@ def mask_sensitive_data(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
         return masked
 
     if isinstance(data, list | tuple):
-        return type(data)(mask_sensitive_data(item, depth + 1, max_depth) for item in data)
+        return type(data)(
+            mask_sensitive_data(item, depth + 1, max_depth) for item in data
+        )
 
     if isinstance(data, str):
         # Check if the string itself looks like sensitive data
@@ -110,6 +127,7 @@ def log_call(
             # password will be masked in logs
             return {"id": 123, "username": username}
     """
+
     def get_logger(func: Callable) -> logging.Logger:
         """Get appropriate logger for function."""
         if logger_name:
@@ -171,7 +189,9 @@ def log_call(
 
             # Log successful completion
             duration = time.time() - start_time if start_time else None
-            log_data = prepare_log_data(func, args, kwargs, result=result, duration=duration)
+            log_data = prepare_log_data(
+                func, args, kwargs, result=result, duration=duration
+            )
             log_method(f"Completed {func.__name__}", extra=log_data)
 
             return result
@@ -183,7 +203,9 @@ def log_call(
             logger.error(f"Failed {func.__name__}", extra=log_data, exc_info=True)
             raise
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         logger = get_logger(func)
         log_method = getattr(logger, level.lower(), logger.info)
 
@@ -198,7 +220,9 @@ def log_call(
 
             # Log successful completion
             duration = time.time() - start_time if start_time else None
-            log_data = prepare_log_data(func, args, kwargs, result=result, duration=duration)
+            log_data = prepare_log_data(
+                func, args, kwargs, result=result, duration=duration
+            )
             log_method(f"Completed {func.__name__}", extra=log_data)
 
             return result
@@ -230,6 +254,7 @@ def log_execution_time(
         def slow_operation():
             time.sleep(0.2)  # Will be logged
     """
+
     def get_logger(func: Callable) -> logging.Logger:
         if logger_name:
             return logging.getLogger(logger_name)
@@ -254,7 +279,9 @@ def log_execution_time(
                     },
                 )
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         start_time = time.time()
 
         try:
@@ -300,6 +327,7 @@ def audit_log(
             # This will create an audit log entry
             return database.delete_user(user_id)
     """
+
     def get_context_data() -> dict[str, Any]:
         """Get context data for audit log."""
         context = {
@@ -372,7 +400,9 @@ def audit_log(
             )
             raise
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         logger = logging.getLogger(logger_name)
 
         audit_action = action or func.__name__
@@ -426,4 +456,6 @@ def audit_log(
             )
             raise
 
-    return uniform_wrapper(f"audit_log({action or 'auto'})", sync_handler, async_handler)
+    return uniform_wrapper(
+        f"audit_log({action or 'auto'})", sync_handler, async_handler
+    )

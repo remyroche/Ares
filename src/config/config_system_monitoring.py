@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_system_monitoring.py
 
 """
@@ -126,7 +127,6 @@ def get_system_monitoring_search_space() -> dict[str, dict[str, Any]]:
         "check_interval": {"min": 30, "max": 90, "type": "int"},
         "processing_interval": {"min": 10, "max": 30, "type": "int"},
         "strategy_interval": {"min": 60, "max": 180, "type": "int"},
-
         # History limits
         "max_analysis_history": {"min": 500, "max": 2000, "type": "int"},
         "max_history": {"min": 50, "max": 200, "type": "int"},
@@ -135,14 +135,12 @@ def get_system_monitoring_search_space() -> dict[str, dict[str, Any]]:
         "max_calculation_history": {"min": 150, "max": 600, "type": "int"},
         "max_history_size": {"min": 500, "max": 2000, "type": "int"},
         "max_strategy_history": {"min": 75, "max": 300, "type": "int"},
-
         # Performance monitoring
         "real_time_interval": {"min": 15, "max": 60, "type": "int"},
         "drift_check_interval": {"min": 180, "max": 600, "type": "int"},
         "performance_snapshot_interval": {"min": 300, "max": 1200, "type": "int"},
         "feature_analysis_interval": {"min": 600, "max": 1800, "type": "int"},
         "prediction_drift_threshold": {"min": 0.02, "max": 0.1, "type": "float"},
-
         # System performance
         "max_cache_size": {"min": 500, "max": 2000, "type": "int"},
         "max_workers": {"min": 4, "max": 16, "type": "int"},
@@ -151,15 +149,12 @@ def get_system_monitoring_search_space() -> dict[str, dict[str, Any]]:
         "recovery_cooldown": {"min": 30, "max": 120, "type": "int"},
         "failure_threshold": {"min": 3, "max": 8, "type": "int"},
         "timeout": {"min": 30, "max": 120, "type": "int"},
-
         # Data processing
         "snapshot_frequency": {"min": 1800, "max": 7200, "type": "int"},
-
         # Learning and adaptation
         "learning_rate": {"min": 0.005, "max": 0.05, "type": "float"},
         "min_weight": {"min": 0.05, "max": 0.2, "type": "float"},
         "max_weight": {"min": 0.7, "max": 0.9, "type": "float"},
-
         # Performance multiplier parameters
         "performance_multiplier_base": {"min": 0.3, "max": 0.7, "type": "float"},
         "performance_multiplier_range": {"min": 0.5, "max": 1.5, "type": "float"},

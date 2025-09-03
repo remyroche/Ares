@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Domain-specific decorators built on top of core decorators.
 
@@ -6,41 +7,44 @@ This module provides specialized decorators for the trading system
 that compose and extend the core decorator functionality.
 """
 
-from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Union, TypeVar
-import pandas as pd
-import numpy as np
-import time
-import logging
 import asyncio
+import logging
+import time
 from enum import Enum
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+
+import numpy as np
+import pandas as pd
 
 from src.core.decorators import (
-    compose,
-    validates,
-    handles_errors,
-    retry,
-    timeout,
     cached,
-    log_call,
-    log_execution_time,
-    traced,
-    fallback,
+    compose,
     ensure_async,
     ensure_sync,
+    fallback,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    retry,
+    timeout,
+    traced,
+    validates,
 )
 from src.core.errors import (
-    ValidationError,
-    DataIntegrityError,
     BusinessRuleError,
+    DataIntegrityError,
+    ValidationError,
 )
 
 # Type variables
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar("F", bound=Callable[..., Any])
+
 
 # Enums for configuration
 class ValidationLevel(str, Enum):
     """Validation level for data quality checks."""
+
     ERROR = "ERROR"
     WARNING = "WARNING"
     INFO = "INFO"
@@ -48,6 +52,7 @@ class ValidationLevel(str, Enum):
 
 class PerformanceLevel(str, Enum):
     """Performance monitoring levels."""
+
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
@@ -73,9 +78,10 @@ def validate_data_quality(
 ) -> Callable[[F], F]:
     """
     Comprehensive data quality validation decorator.
-    
+
     Validates pandas DataFrames for various quality issues.
     """
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -87,7 +93,7 @@ def validate_data_quality(
             for value in kwargs.values():
                 if isinstance(value, pd.DataFrame):
                     dfs_to_validate.append(value)
-            
+
             # Validate each DataFrame
             issues = []
             for df in dfs_to_validate:
@@ -106,7 +112,7 @@ def validate_data_quality(
                     min_unique_values=min_unique_values,
                 )
                 issues.extend(df_issues)
-            
+
             # Handle validation results
             if issues:
                 if validation_level == ValidationLevel.ERROR or fail_on_issues:
@@ -115,11 +121,12 @@ def validate_data_quality(
                     logging.warning(f"Data quality issues in {context}: {issues}")
                 else:
                     logging.info(f"Data quality issues in {context}: {issues}")
-            
+
             # Execute function
             return func(*args, **kwargs)
-        
+
         return wrapper
+
     return decorator
 
 
@@ -139,33 +146,33 @@ def _validate_dataframe(
 ) -> List[str]:
     """Internal function to validate a DataFrame."""
     issues = []
-    
+
     # Check required columns
     if required_columns:
         missing_cols = set(required_columns) - set(df.columns)
         if missing_cols:
             issues.append(f"Missing required columns: {missing_cols}")
-    
+
     # Check minimum rows
     if len(df) < min_rows:
         issues.append(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
-    
+
     # Check null ratio
     if max_null_ratio < 1.0:
         null_ratios = df.isnull().sum() / len(df)
         high_null_cols = null_ratios[null_ratios > max_null_ratio]
         if not high_null_cols.empty:
             issues.append(f"Columns with high null ratio: {high_null_cols.to_dict()}")
-    
+
     # Check duplicates
     if check_duplicates and df.duplicated().any():
         issues.append(f"Found {df.duplicated().sum()} duplicate rows")
-    
+
     # Check NaN values
     if check_nan and df.isnull().any().any():
         nan_cols = df.columns[df.isnull().any()].tolist()
         issues.append(f"Columns with NaN values: {nan_cols}")
-    
+
     # Check infinite values
     if check_infinite:
         numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -175,7 +182,7 @@ def _validate_dataframe(
                 inf_cols.append(col)
         if inf_cols:
             issues.append(f"Columns with infinite values: {inf_cols}")
-    
+
     # Check constant features
     if check_constant:
         constant_cols = []
@@ -184,7 +191,7 @@ def _validate_dataframe(
                 constant_cols.append(col)
         if constant_cols:
             issues.append(f"Constant or low-variance columns: {constant_cols}")
-    
+
     # Check high correlations
     if check_correlation and len(df.columns) > 1:
         numeric_df = df.select_dtypes(include=[np.number])
@@ -202,7 +209,7 @@ def _validate_dataframe(
                     high_corr_pairs.append((col, high_corr_col))
             if high_corr_pairs:
                 issues.append(f"Highly correlated column pairs: {high_corr_pairs}")
-    
+
     return issues
 
 
@@ -213,21 +220,25 @@ def validate_feature_engineering_with_lookahead_bias_detection(
     timestamp_column: str = "timestamp",
 ) -> Callable[[F], F]:
     """Validate feature engineering and detect lookahead bias."""
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
             result = func(*args, **kwargs)
-            
+
             if isinstance(result, pd.DataFrame) and check_future_data:
                 # Check for potential lookahead bias
                 if timestamp_column in result.columns:
                     # Ensure features don't use future data
                     # This is a simplified check - real implementation would be more sophisticated
-                    logging.info(f"Validated features for lookahead bias with lag={lag_periods}")
-            
+                    logging.info(
+                        f"Validated features for lookahead bias with lag={lag_periods}"
+                    )
+
             return result
-        
+
         return wrapper
+
     return decorator
 
 
@@ -240,18 +251,17 @@ def monitor_step_execution(
     log_outputs: bool = False,
 ) -> Callable[[F], F]:
     """Monitor step execution with performance tracking."""
+
     def decorator(func: F) -> F:
         # Compose multiple decorators
         return compose(
             log_execution_time,
             log_call(
-                include_args=log_inputs,
-                include_result=log_outputs,
-                max_length=100
+                include_args=log_inputs, include_result=log_outputs, max_length=100
             ),
-            traced(name=f"step.{step_name}")
+            traced(name=f"step.{step_name}"),
         )(func)
-    
+
     return decorator
 
 
@@ -261,11 +271,12 @@ def quality_gate(
     fail_on_breach: bool = True,
 ) -> Callable[[F], F]:
     """Quality gate decorator to ensure minimum performance standards."""
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
             result = func(*args, **kwargs)
-            
+
             # Check if result contains quality metrics
             if isinstance(result, dict) and "metrics" in result:
                 quality_score = result["metrics"].get("quality_score", 1.0)
@@ -275,10 +286,11 @@ def quality_gate(
                         raise BusinessRuleError(msg)
                     else:
                         logging.warning(msg)
-            
+
             return result
-        
+
         return wrapper
+
     return decorator
 
 
@@ -289,25 +301,27 @@ def secure_data_processing(
     audit: bool = True,
 ) -> Callable[[F], F]:
     """Secure data processing with sensitive data protection."""
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Log operation if auditing is enabled
             if audit:
                 logging.info(f"Secure operation: {func.__name__}")
-            
+
             # Execute function
             result = func(*args, **kwargs)
-            
+
             # Mask sensitive columns in result if needed
             if isinstance(result, pd.DataFrame) and mask_sensitive_columns:
                 for col in mask_sensitive_columns:
                     if col in result.columns:
                         result[col] = "***MASKED***"
-            
+
             return result
-        
+
         return wrapper
+
     return decorator
 
 
@@ -317,24 +331,26 @@ def prevent_data_leakage(
     max_lookahead: int = 0,
 ) -> Callable[[F], F]:
     """Prevent data leakage in time series operations."""
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Add metadata about leakage prevention
             if hasattr(func, "__name__"):
                 logging.debug(f"Applying data leakage prevention to {func.__name__}")
-            
+
             # Execute function
             result = func(*args, **kwargs)
-            
+
             # Validate no future data is used if result is a DataFrame
             if isinstance(result, pd.DataFrame) and temporal_column in result.columns:
                 # Check would be implemented here
                 pass
-            
+
             return result
-        
+
         return wrapper
+
     return decorator
 
 
@@ -344,17 +360,13 @@ def ensure_data_integrity(
     integrity_checks: Optional[List[str]] = None,
 ) -> Callable[[F], F]:
     """Ensure data integrity before and after operations."""
+
     def decorator(func: F) -> F:
         # Compose with validation and error handling
         return compose(
-            validates,
-            handles_errors(
-                fallback=None,
-                log_errors=True,
-                raise_errors=True
-            )
+            validates, handles_errors(fallback=None, log_errors=True, raise_errors=True)
         )(func)
-    
+
     return decorator
 
 
@@ -365,25 +377,31 @@ def validate_pipeline_step(
     stage: Optional[str] = None,
 ) -> Callable[[F], F]:
     """Validate pipeline step prerequisites and outputs."""
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Check prerequisites
             if prerequisites:
-                logging.info(f"Checking prerequisites for {func.__name__}: {prerequisites}")
-            
+                logging.info(
+                    f"Checking prerequisites for {func.__name__}: {prerequisites}"
+                )
+
             # Execute function
             result = func(*args, **kwargs)
-            
+
             # Validate outputs
             if outputs and isinstance(result, dict):
                 missing_outputs = set(outputs) - set(result.keys())
                 if missing_outputs:
-                    raise ValidationError(f"Missing required outputs: {missing_outputs}")
-            
+                    raise ValidationError(
+                        f"Missing required outputs: {missing_outputs}"
+                    )
+
             return result
-        
+
         return wrapper
+
     return decorator
 
 
@@ -393,6 +411,7 @@ def validate_klines_data_quality(
     check_ohlc_integrity: bool = True,
 ) -> Callable[[F], F]:
     """Validate OHLC/klines data quality."""
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -401,36 +420,47 @@ def validate_klines_data_quality(
                 required_columns=required_columns,
                 check_nan=True,
                 check_infinite=True,
-                context="klines_validation"
+                context="klines_validation",
             )
-            
+
             # Apply validation
             validated_func = validator(func)
             result = validated_func(*args, **kwargs)
-            
+
             # Additional OHLC integrity checks
             if check_ohlc_integrity and isinstance(result, pd.DataFrame):
                 # Check high >= low
                 if "high" in result.columns and "low" in result.columns:
                     invalid_rows = result["high"] < result["low"]
                     if invalid_rows.any():
-                        raise DataIntegrityError(f"Found {invalid_rows.sum()} rows where high < low")
-                
+                        raise DataIntegrityError(
+                            f"Found {invalid_rows.sum()} rows where high < low"
+                        )
+
                 # Check OHLC relationships
-                if all(col in result.columns for col in ["open", "high", "low", "close"]):
+                if all(
+                    col in result.columns for col in ["open", "high", "low", "close"]
+                ):
                     # High should be >= max(open, close)
-                    invalid_high = result["high"] < result[["open", "close"]].max(axis=1)
+                    invalid_high = result["high"] < result[["open", "close"]].max(
+                        axis=1
+                    )
                     if invalid_high.any():
-                        raise DataIntegrityError(f"Found {invalid_high.sum()} rows with invalid high values")
-                    
+                        raise DataIntegrityError(
+                            f"Found {invalid_high.sum()} rows with invalid high values"
+                        )
+
                     # Low should be <= min(open, close)
                     invalid_low = result["low"] > result[["open", "close"]].min(axis=1)
                     if invalid_low.any():
-                        raise DataIntegrityError(f"Found {invalid_low.sum()} rows with invalid low values")
-            
+                        raise DataIntegrityError(
+                            f"Found {invalid_low.sum()} rows with invalid low values"
+                        )
+
             return result
-        
+
         return wrapper
+
     return decorator
 
 
@@ -440,15 +470,13 @@ def validate_multi_timeframe_data_quality(
     alignment_tolerance: int = 1000,  # milliseconds
 ) -> Callable[[F], F]:
     """Validate multi-timeframe data quality and alignment."""
+
     def decorator(func: F) -> F:
         return compose(
-            validate_data_quality(
-                context="multi_timeframe",
-                check_timestamps=True
-            ),
-            traced(name="validate.multi_timeframe")
+            validate_data_quality(context="multi_timeframe", check_timestamps=True),
+            traced(name="validate.multi_timeframe"),
         )(func)
-    
+
     return decorator
 
 
@@ -463,22 +491,22 @@ def create_step_decorator(
 ) -> Callable[[F], F]:
     """Create a comprehensive decorator for a pipeline step."""
     decorators = []
-    
+
     if handle_errors:
         decorators.append(handles_errors(log_errors=True))
-    
+
     if timeout_seconds:
         decorators.append(timeout(seconds=timeout_seconds))
-    
+
     if validate_inputs:
         decorators.append(validates)
-    
+
     if monitor_performance:
         decorators.append(monitor_step_execution(step_name))
-    
+
     if cache_results:
         decorators.append(cached(ttl=3600))
-    
+
     return compose(*decorators)
 
 
@@ -487,25 +515,20 @@ __all__ = [
     # Enums
     "ValidationLevel",
     "PerformanceLevel",
-    
     # Data Quality
     "validate_data_quality",
     "validate_feature_engineering_with_lookahead_bias_detection",
     "validate_klines_data_quality",
     "validate_multi_timeframe_data_quality",
-    
     # Monitoring and Performance
     "monitor_step_execution",
     "quality_gate",
-    
     # Security and Processing
     "secure_data_processing",
     "prevent_data_leakage",
     "ensure_data_integrity",
-    
     # Pipeline Management
     "validate_pipeline_step",
-    
     # Utilities
     "create_step_decorator",
 ]

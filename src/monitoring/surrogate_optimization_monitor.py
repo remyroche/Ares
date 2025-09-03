@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Surrogate Optimization Monitoring System
 
@@ -11,22 +12,25 @@ This module provides comprehensive monitoring capabilities for surrogate optimiz
 - Dashboard integration
 """
 
-from src.core.decorators import handles_errors
+import os.path
 from dataclasses import asdict
-from typing import Any
 from datetime import datetime
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from src.core.decorators import handles_errors
+
 # Utilities
 from src.utils.logger import system_logger
 
-import os.path
 
 @dataclass
 class OptimizationMetrics:
     """Data class for optimization metrics."""
+
     timestamp: float
     trial_id: int
     surrogate_score: float
@@ -39,14 +43,17 @@ class OptimizationMetrics:
     memory_usage: float
     cpu_usage: float
 
+
 @dataclass
 class PerformanceAlert:
     """Data class for performance alerts."""
+
     timestamp: float
     alert_type: str
     severity: str
     message: str
     metrics: dict[str, Any]
+
 
 class SurrogateOptimizationMonitor:
     """Comprehensive monitoring system for surrogate optimization."""
@@ -89,7 +96,9 @@ class SurrogateOptimizationMonitor:
         """Start real-time monitoring thread."""
         if self.monitoring_thread is None or not self.monitoring_thread.is_alive():
             self.is_monitoring = True
-            self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+            self.monitoring_thread = threading.Thread(
+                target=self._monitoring_loop, daemon=True
+            )
             self.monitoring_thread.start()
             self.logger.info("Started real-time monitoring")
 
@@ -143,33 +152,45 @@ class SurrogateOptimizationMonitor:
         if metrics.actual_score is not None:
             accuracy = self._calculate_surrogate_accuracy(metrics)
             if accuracy < self.alert_thresholds["surrogate_accuracy_threshold"]:
-                alerts.append(PerformanceAlert(
-                    timestamp=time.time(),
-                    alert_type="low_surrogate_accuracy",
-                    severity="warning",
-                    message=f"Low surrogate accuracy: {accuracy:.3f}",
-                    metrics={"accuracy": accuracy, "trial_id": metrics.trial_id},
-                ))
+                alerts.append(
+                    PerformanceAlert(
+                        timestamp=time.time(),
+                        alert_type="low_surrogate_accuracy",
+                        severity="warning",
+                        message=f"Low surrogate accuracy: {accuracy:.3f}",
+                        metrics={"accuracy": accuracy, "trial_id": metrics.trial_id},
+                    )
+                )
 
         # Check training time
         if metrics.training_time > self.alert_thresholds["training_time_threshold"]:
-            alerts.append(PerformanceAlert(
-                timestamp=time.time(),
-                alert_type="slow_training",
-                severity="warning",
-                message=f"Slow training time: {metrics.training_time:.2f}s",
-                metrics={"training_time": metrics.training_time, "trial_id": metrics.trial_id},
-            ))
+            alerts.append(
+                PerformanceAlert(
+                    timestamp=time.time(),
+                    alert_type="slow_training",
+                    severity="warning",
+                    message=f"Slow training time: {metrics.training_time:.2f}s",
+                    metrics={
+                        "training_time": metrics.training_time,
+                        "trial_id": metrics.trial_id,
+                    },
+                )
+            )
 
         # Check memory usage
         if metrics.memory_usage > self.alert_thresholds["memory_usage_threshold"]:
-            alerts.append(PerformanceAlert(
-                timestamp=time.time(),
-                alert_type="high_memory_usage",
-                severity="critical",
-                message=f"High memory usage: {metrics.memory_usage:.1%}",
-                metrics={"memory_usage": metrics.memory_usage, "trial_id": metrics.trial_id},
-            ))
+            alerts.append(
+                PerformanceAlert(
+                    timestamp=time.time(),
+                    alert_type="high_memory_usage",
+                    severity="critical",
+                    message=f"High memory usage: {metrics.memory_usage:.1%}",
+                    metrics={
+                        "memory_usage": metrics.memory_usage,
+                        "trial_id": metrics.trial_id,
+                    },
+                )
+            )
 
         # Add alerts
         for alert in alerts:
@@ -182,7 +203,9 @@ class SurrogateOptimizationMonitor:
             return 0.0
 
         # Simple accuracy based on relative error
-        relative_error = abs(metrics.surrogate_score - metrics.actual_score) / (abs(metrics.actual_score) + 1e-8)
+        relative_error = abs(metrics.surrogate_score - metrics.actual_score) / (
+            abs(metrics.actual_score) + 1e-8
+        )
         return max(0.0, 1.0 - relative_error)
 
     def _update_performance_tracking(self, metrics: OptimizationMetrics) -> None:
@@ -206,7 +229,10 @@ class SurrogateOptimizationMonitor:
                     alert_type="convergence_stall",
                     severity="warning",
                     message="Possible convergence stall detected",
-                    metrics={"improvement": improvement, "trials_checked": len(recent_scores)},
+                    metrics={
+                        "improvement": improvement,
+                        "trials_checked": len(recent_scores),
+                    },
                 )
                 self.alerts.append(stall_alert)
                 self.logger.warning("Convergence stall detected")
@@ -269,7 +295,7 @@ class SurrogateOptimizationMonitor:
         # Calculate improvement rate
         improvements = []
         for i in range(1, len(scores)):
-            improvement = scores[i] - scores[i-1]
+            improvement = scores[i] - scores[i - 1]
             improvements.append(max(0, improvement))
 
         return np.mean(improvements) if improvements else 0.0
@@ -284,7 +310,9 @@ class SurrogateOptimizationMonitor:
 
         # Time efficiency (faster is better)
         avg_training_time = np.mean([m.training_time for m in self.metrics_history])
-        time_efficiency = max(0, 1.0 - avg_training_time / 60.0)  # Normalize to 1 minute
+        time_efficiency = max(
+            0, 1.0 - avg_training_time / 60.0
+        )  # Normalize to 1 minute
         factors.append(time_efficiency)
 
         # Accuracy efficiency
@@ -353,7 +381,9 @@ class SurrogateOptimizationMonitor:
 
         return report
 
-    def create_performance_visualizations(self, save_dir: str | None = None) -> dict[str, plt.Figure]:
+    def create_performance_visualizations(
+        self, save_dir: str | None = None
+    ) -> dict[str, plt.Figure]:
         """Create performance visualization plots."""
         if not self.metrics_history:
             return {}
@@ -391,9 +421,12 @@ class SurrogateOptimizationMonitor:
         expensive_count = eval_types.count("expensive")
         surrogate_count = eval_types.count("surrogate")
 
-        axes[1, 0].pie([expensive_count, surrogate_count],
-                      labels=["Expensive", "Surrogate"],
-                      autopct="%1.1f%%", startangle=90)
+        axes[1, 0].pie(
+            [expensive_count, surrogate_count],
+            labels=["Expensive", "Surrogate"],
+            autopct="%1.1f%%",
+            startangle=90,
+        )
         axes[1, 0].set_title("Evaluation Type Distribution")
 
         # Training time distribution
@@ -421,9 +454,16 @@ class SurrogateOptimizationMonitor:
                 accuracy_trials.append(metrics.trial_id)
 
         if accuracy_metrics:
-            axes[0].plot(accuracy_trials, accuracy_metrics, "g-", alpha=0.7, linewidth=2)
-            axes[0].axhline(y=self.alert_thresholds["surrogate_accuracy_threshold"],
-                           color="r", linestyle="--", alpha=0.7, label="Threshold")
+            axes[0].plot(
+                accuracy_trials, accuracy_metrics, "g-", alpha=0.7, linewidth=2
+            )
+            axes[0].axhline(
+                y=self.alert_thresholds["surrogate_accuracy_threshold"],
+                color="r",
+                linestyle="--",
+                alpha=0.7,
+                label="Threshold",
+            )
             axes[0].set_title("Surrogate Accuracy Over Time")
             axes[0].set_xlabel("Trial ID")
             axes[0].set_ylabel("Accuracy")
@@ -433,8 +473,13 @@ class SurrogateOptimizationMonitor:
         # Accuracy distribution
         if accuracy_metrics:
             axes[1].hist(accuracy_metrics, bins=15, alpha=0.7, color="orange")
-            axes[1].axvline(x=self.alert_thresholds["surrogate_accuracy_threshold"],
-                           color="r", linestyle="--", alpha=0.7, label="Threshold")
+            axes[1].axvline(
+                x=self.alert_thresholds["surrogate_accuracy_threshold"],
+                color="r",
+                linestyle="--",
+                alpha=0.7,
+                label="Threshold",
+            )
             axes[1].set_title("Surrogate Accuracy Distribution")
             axes[1].set_xlabel("Accuracy")
             axes[1].set_ylabel("Frequency")
@@ -463,7 +508,8 @@ class SurrogateOptimizationMonitor:
         """Clear metrics older than N days."""
         cutoff_time = time.time() - (days * 24 * 3600)
         self.metrics_history = [
-            metrics for metrics in self.metrics_history
+            metrics
+            for metrics in self.metrics_history
             if metrics.timestamp >= cutoff_time
         ]
         self.logger.info(f"Cleared metrics older than {days} days")

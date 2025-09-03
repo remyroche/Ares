@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/monitoring/fractional_performance_tracker.py
 
 """Performance tracking and monitoring for fractional implementations."""
@@ -14,10 +15,15 @@ import pandas as pd
 from src.config.fractional_implementations_config import FractionalImplementationsConfig
 from src.utils.logger import get_logger
 
+
 class FractionalPerformanceTracker:
     """Comprehensive performance tracking for fractional implementations."""
 
-    def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
+    def __init__(
+        self,
+        config: FractionalImplementationsConfig,
+        output_dir: str = "data/fractional_performance",
+    ):
         """Initialize performance tracker.
 
         Args:
@@ -183,14 +189,20 @@ class FractionalPerformanceTracker:
 
             # Create plots
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-            fig.suptitle("Fractional Implementations Performance Dashboard", fontsize=16)
+            fig.suptitle(
+                "Fractional Implementations Performance Dashboard", fontsize=16
+            )
 
             # Sharpe Ratio
             if "sharpe_ratio" in df.columns:
                 axes[0, 0].plot(df["timestamp"], df["sharpe_ratio"], label="Current")
                 if self.baseline_metrics.get("sharpe_ratio"):
-                    axes[0, 0].axhline(y=self.baseline_metrics["sharpe_ratio"],
-                                      color="r", linestyle="--", label="Baseline")
+                    axes[0, 0].axhline(
+                        y=self.baseline_metrics["sharpe_ratio"],
+                        color="r",
+                        linestyle="--",
+                        label="Baseline",
+                    )
                 axes[0, 0].set_title("Sharpe Ratio")
                 axes[0, 0].legend()
                 axes[0, 0].tick_params(axis="x", rotation=45)
@@ -199,8 +211,12 @@ class FractionalPerformanceTracker:
             if "max_drawdown" in df.columns:
                 axes[0, 1].plot(df["timestamp"], df["max_drawdown"], label="Current")
                 if self.baseline_metrics.get("max_drawdown"):
-                    axes[0, 1].axhline(y=self.baseline_metrics["max_drawdown"],
-                                      color="r", linestyle="--", label="Baseline")
+                    axes[0, 1].axhline(
+                        y=self.baseline_metrics["max_drawdown"],
+                        color="r",
+                        linestyle="--",
+                        label="Baseline",
+                    )
                 axes[0, 1].set_title("Maximum Drawdown")
                 axes[0, 1].legend()
                 axes[0, 1].tick_params(axis="x", rotation=45)
@@ -209,8 +225,12 @@ class FractionalPerformanceTracker:
             if "win_rate" in df.columns:
                 axes[1, 0].plot(df["timestamp"], df["win_rate"], label="Current")
                 if self.baseline_metrics.get("win_rate"):
-                    axes[1, 0].axhline(y=self.baseline_metrics["win_rate"],
-                                      color="r", linestyle="--", label="Baseline")
+                    axes[1, 0].axhline(
+                        y=self.baseline_metrics["win_rate"],
+                        color="r",
+                        linestyle="--",
+                        label="Baseline",
+                    )
                 axes[1, 0].set_title("Win Rate")
                 axes[1, 0].legend()
                 axes[1, 0].tick_params(axis="x", rotation=45)
@@ -219,8 +239,12 @@ class FractionalPerformanceTracker:
             if "profit_factor" in df.columns:
                 axes[1, 1].plot(df["timestamp"], df["profit_factor"], label="Current")
                 if self.baseline_metrics.get("profit_factor"):
-                    axes[1, 1].axhline(y=self.baseline_metrics["profit_factor"],
-                                      color="r", linestyle="--", label="Baseline")
+                    axes[1, 1].axhline(
+                        y=self.baseline_metrics["profit_factor"],
+                        color="r",
+                        linestyle="--",
+                        label="Baseline",
+                    )
                 axes[1, 1].set_title("Profit Factor")
                 axes[1, 1].legend()
                 axes[1, 1].tick_params(axis="x", rotation=45)
@@ -275,7 +299,9 @@ class FractionalPerformanceTracker:
                         baseline = self.baseline_metrics.get(metric, 0)
                         if baseline != 0:
                             change = (value - baseline) / abs(baseline)
-                            change_class = "improvement" if change > 0 else "degradation"
+                            change_class = (
+                                "improvement" if change > 0 else "degradation"
+                            )
                             change_text = f"({change:+.2%})"
                         else:
                             change_text = ""
@@ -372,7 +398,10 @@ class FractionalPerformanceTracker:
             Path to exported report
         """
         if output_file is None:
-            output_file = self.output_dir / f"performance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            output_file = (
+                self.output_dir
+                / f"performance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
 
         report = {
             "report_generated": datetime.now().isoformat(),

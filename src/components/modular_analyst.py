@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/components/modular_analyst.py
 
 from datetime import datetime
 from typing import Any
@@ -13,6 +12,8 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
+
+# src/components/modular_analyst.py
 
 
 class ModularAnalyst:
@@ -85,7 +86,9 @@ class ModularAnalyst:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Modular Analyst initialization failed: {e}"))
+            self.logger.exception(
+                failed(f"❌ Modular Analyst initialization failed: {e}")
+            )
             return False
 
     @handles_errors(fallback=None)
@@ -171,7 +174,9 @@ class ModularAnalyst:
             self.logger.info("Analysis modules initialized successfully")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing analysis modules: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing analysis modules: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_technical_analysis(self) -> None:
@@ -190,7 +195,9 @@ class ModularAnalyst:
             self.logger.info("Technical analysis module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing technical analysis: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing technical analysis: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_fundamental_analysis(self) -> None:
@@ -209,7 +216,9 @@ class ModularAnalyst:
             self.logger.info("Fundamental analysis module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing fundamental analysis: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing fundamental analysis: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_sentiment_analysis(self) -> None:
@@ -226,7 +235,9 @@ class ModularAnalyst:
             self.logger.info("Sentiment analysis module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing sentiment analysis: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing sentiment analysis: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_risk_analysis(self) -> None:
@@ -245,7 +256,9 @@ class ModularAnalyst:
             self.logger.info("Risk analysis module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing risk analysis: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing risk analysis: {e}")
+            )
 
     @handles_errors(
         error_handlers={
@@ -283,7 +296,9 @@ class ModularAnalyst:
 
             # Perform fundamental analysis
             if self.enable_fundamental_analysis:
-                fundamental_results = await self._perform_fundamental_analysis(market_data)
+                fundamental_results = await self._perform_fundamental_analysis(
+                    market_data
+                )
                 self.analysis_results["fundamental"] = fundamental_results
 
             # Perform sentiment analysis
@@ -327,7 +342,9 @@ class ModularAnalyst:
             required_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_fields:
                 if field not in market_data:
-                    self.logger.error(missing(f"Missing required market data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required market data field: {field}")
+                    )
                     return False
 
             # Validate data types
@@ -380,7 +397,9 @@ class ModularAnalyst:
 
             # Calculate Bollinger Bands
             if self.technical_indicators.get("bollinger_bands", False):
-                results["bollinger_bands"] = self._calculate_bollinger_bands(market_data)
+                results["bollinger_bands"] = self._calculate_bollinger_bands(
+                    market_data
+                )
 
             # Calculate Stochastic
             if self.technical_indicators.get("stochastic", False):
@@ -432,7 +451,9 @@ class ModularAnalyst:
 
             # Calculate Earnings Growth
             if self.fundamental_metrics.get("earnings_growth", False):
-                results["earnings_growth"] = self._calculate_earnings_growth(market_data)
+                results["earnings_growth"] = self._calculate_earnings_growth(
+                    market_data
+                )
 
             self.logger.info("Fundamental analysis completed")
             return results
@@ -464,15 +485,21 @@ class ModularAnalyst:
 
             # Calculate Social Sentiment
             if self.sentiment_metrics.get("social_sentiment", False):
-                results["social_sentiment"] = self._calculate_social_sentiment(market_data)
+                results["social_sentiment"] = self._calculate_social_sentiment(
+                    market_data
+                )
 
             # Calculate Market Sentiment
             if self.sentiment_metrics.get("market_sentiment", False):
-                results["market_sentiment"] = self._calculate_market_sentiment(market_data)
+                results["market_sentiment"] = self._calculate_market_sentiment(
+                    market_data
+                )
 
             # Calculate Fear Greed Index
             if self.sentiment_metrics.get("fear_greed_index", False):
-                results["fear_greed_index"] = self._calculate_fear_greed_index(market_data)
+                results["fear_greed_index"] = self._calculate_fear_greed_index(
+                    market_data
+                )
 
             self.logger.info("Sentiment analysis completed")
             return results
@@ -564,7 +591,9 @@ class ModularAnalyst:
             self.logger.exception(error(f"Error calculating MACD: {e}"))
             return {"macd_line": 0.0, "signal_line": 0.0, "histogram": 0.0}
 
-    def _calculate_bollinger_bands(self, market_data: dict[str, Any]) -> dict[str, float]:
+    def _calculate_bollinger_bands(
+        self, market_data: dict[str, Any]
+    ) -> dict[str, float]:
         """Calculate Bollinger Bands."""
         try:
             # Simulate Bollinger Bands calculation
@@ -830,8 +859,10 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular analyst: {e}"))
 
+
 # Global modular analyst instance
 modular_analyst: ModularAnalyst | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_modular_analyst(

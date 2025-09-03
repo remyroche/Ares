@@ -1,10 +1,9 @@
 from __future__ import annotations
-# src/training/optimization_manager.py
-
-from src.core.decorators import handles_errors
 
 from datetime import datetime
 from typing import Any
+
+from src.core.decorators import handles_errors
 
 # Removed error_handler imports - using core decorators instead
 from src.utils.logger import system_logger
@@ -14,10 +13,14 @@ from src.utils.warning_symbols import (
     invalid,
 )
 
+# src/training/optimization_manager.py
+
+
 class OptimizationManager:
     """Optimization manager responsible for hyperparameter optimization and model tuning."
     This module handles all optimization-related operations for trained models.
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize optimization manager."
 
@@ -483,18 +486,18 @@ class OptimizationManager:
 
             # Optimize analyst ensembles
             if model_results.get("analyst_models"):
-                ensemble_optimization_results["optimized_ensembles"][
-                    "analyst"
-                ] = await self._optimize_analyst_ensembles(
-                    model_results["analyst_models"],
+                ensemble_optimization_results["optimized_ensembles"]["analyst"] = (
+                    await self._optimize_analyst_ensembles(
+                        model_results["analyst_models"],
+                    )
                 )
 
             # Optimize tactician ensembles
             if model_results.get("tactician_models"):
-                ensemble_optimization_results["optimized_ensembles"][
-                    "tactician"
-                ] = await self._optimize_tactician_ensembles(
-                    model_results["tactician_models"],
+                ensemble_optimization_results["optimized_ensembles"]["tactician"] = (
+                    await self._optimize_tactician_ensembles(
+                        model_results["tactician_models"],
+                    )
                 )
 
             self.logger.info("✅ Ensemble optimization completed")
@@ -649,6 +652,7 @@ class OptimizationManager:
             self.logger.info("✅ Optimization Manager stopped successfully")
         except Exception as e:
             self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
+
 
 @handles_errors(
     exceptions=(Exception,),

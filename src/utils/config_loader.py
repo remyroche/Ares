@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/utils/config_loader.py
 
 import os
 import os.path
@@ -8,6 +7,8 @@ from typing import Any
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, missing, yaml
+
+# src/utils/config_loader.py
 
 
 class ConfigLoader:
@@ -168,7 +169,11 @@ class ConfigLoader:
             source: Source dictionary to merge from
         """
         for key, value in source.items():
-            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            if (
+                key in target
+                and isinstance(target[key], dict)
+                and isinstance(value, dict)
+            ):
                 self._deep_merge(target[key], value)
             else:
                 target[key] = value

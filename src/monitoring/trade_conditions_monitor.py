@@ -22,6 +22,7 @@ class TradeAction(Enum):
     HOLD = "hold"
     CANCEL_ORDER = "cancel_order"
 
+
 class TradeConditionsMonitor:
     """Trade conditions monitor scaffold."""
 

@@ -30,18 +30,23 @@ from src.utils.logger import system_logger
 _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
 
+
 class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
 
     def __init__(self) -> None:
         self.logger = system_logger.getChild("HMMCompositeManager")
-        self._cache: dict[str, dict[str, Any]] = {}  # Simple cache to avoid repeated file checks/loads
+        self._cache: dict[str, dict[str, Any]] = (
+            {}
+        )  # Simple cache to avoid repeated file checks/loads
         # Use shared global sets so multiple instances do not re-log the same events
         self._logged_loads = _GLOBAL_LOGGED_LOADS
         self._logged_events = _GLOBAL_LOGGED_EVENTS
 
         # Enhanced features
-        self._file_metadata_cache: dict[str, dict[str, Any]] = {}  # Cache for file metadata
+        self._file_metadata_cache: dict[str, dict[str, Any]] = (
+            {}
+        )  # Cache for file metadata
         self._last_cleanup = time.time()
         self._cleanup_interval = 3600  # Cleanup cache every hour
 
@@ -93,7 +98,9 @@ class HMMCompositeManager:
             # Remove old cache entries (older than 1 hour)
             cutoff_time = current_time - 3600
             old_keys = [
-                k for k, v in self._cache.items() if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
+                k
+                for k, v in self._cache.items()
+                if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
             ]
             for key in old_keys:
                 with contextlib.suppress(Exception):
@@ -189,7 +196,9 @@ class HMMCompositeManager:
             return self._cache[cache_key]["data"]  # type: ignore[return-value]
 
         if not os.path.exists(composite_path):
-            event_key = f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
+            event_key = (
+                f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
+            )
             if auto_create:
                 if event_key not in self._logged_events:
                     self.logger.info(
@@ -647,8 +656,10 @@ class HMMCompositeManager:
             "last_cleanup": self._last_cleanup,
         }
 
+
 # Global instance for easy access
 _hmm_composite_manager: HMMCompositeManager | None = None
+
 
 def get_hmm_composite_manager() -> HMMCompositeManager:
     """Get the global HMM composite manager instance."""

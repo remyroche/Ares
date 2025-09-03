@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/sr_optimization_config.py
 
 """
@@ -23,53 +24,65 @@ class SROptimizationConfig:
     optimization_timeout: int = 3600  # 1 hour
 
     # Performance thresholds
-    performance_thresholds: dict[str, float] = field(default_factory=lambda: {
-        "min_sharpe_ratio": 0.5,
-        "max_drawdown": -0.15,
-        "min_win_rate": 0.55,
-        "min_profit_factor": 1.3,
-        "min_signal_clarity": 0.1,
-    })
+    performance_thresholds: dict[str, float] = field(
+        default_factory=lambda: {
+            "min_sharpe_ratio": 0.5,
+            "max_drawdown": -0.15,
+            "min_win_rate": 0.55,
+            "min_profit_factor": 1.3,
+            "min_signal_clarity": 0.1,
+        }
+    )
 
     # Method weight optimization ranges
-    method_weight_ranges: dict[str, dict[str, float]] = field(default_factory=lambda: {
-        "fractal_weight": {"min": 0.1, "max": 0.6},
-        "volume_weight": {"min": 0.1, "max": 0.5},
-        "pivot_weight": {"min": 0.1, "max": 0.4},
-        "atr_weight": {"min": 0.05, "max": 0.3},
-    })
+    method_weight_ranges: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "fractal_weight": {"min": 0.1, "max": 0.6},
+            "volume_weight": {"min": 0.1, "max": 0.5},
+            "pivot_weight": {"min": 0.1, "max": 0.4},
+            "atr_weight": {"min": 0.05, "max": 0.3},
+        }
+    )
 
     # Strength weight optimization ranges
-    strength_weight_ranges: dict[str, dict[str, float]] = field(default_factory=lambda: {
-        "touch_count_weight": {"min": 0.2, "max": 0.5},
-        "total_volume_weight": {"min": 0.1, "max": 0.4},
-        "level_age_weight": {"min": 0.1, "max": 0.4},
-        "bounce_rate_weight": {"min": 0.1, "max": 0.4},
-        "isolation_score_weight": {"min": 0.05, "max": 0.3},
-    })
+    strength_weight_ranges: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "touch_count_weight": {"min": 0.2, "max": 0.5},
+            "total_volume_weight": {"min": 0.1, "max": 0.4},
+            "level_age_weight": {"min": 0.1, "max": 0.4},
+            "bounce_rate_weight": {"min": 0.1, "max": 0.4},
+            "isolation_score_weight": {"min": 0.05, "max": 0.3},
+        }
+    )
 
     # DBSCAN optimization ranges
-    dbscan_ranges: dict[str, dict[str, Any]] = field(default_factory=lambda: {
-        "dbscan_eps": {"min": 0.005, "max": 0.02},
-        "dbscan_min_samples": {"min": 2, "max": 6, "type": "int"},
-    })
+    dbscan_ranges: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "dbscan_eps": {"min": 0.005, "max": 0.02},
+            "dbscan_min_samples": {"min": 2, "max": 6, "type": "int"},
+        }
+    )
 
     # Timeframe weight optimization ranges
-    timeframe_weight_ranges: dict[str, dict[str, float]] = field(default_factory=lambda: {
-        "tf_1m_weight": {"min": 0.05, "max": 0.2},
-        "tf_5m_weight": {"min": 0.1, "max": 0.25},
-        "tf_15m_weight": {"min": 0.15, "max": 0.3},
-        "tf_1h_weight": {"min": 0.2, "max": 0.35},
-        "tf_4h_weight": {"min": 0.15, "max": 0.3},
-        "tf_1d_weight": {"min": 0.05, "max": 0.2},
-    })
+    timeframe_weight_ranges: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "tf_1m_weight": {"min": 0.05, "max": 0.2},
+            "tf_5m_weight": {"min": 0.1, "max": 0.25},
+            "tf_15m_weight": {"min": 0.15, "max": 0.3},
+            "tf_1h_weight": {"min": 0.2, "max": 0.35},
+            "tf_4h_weight": {"min": 0.15, "max": 0.3},
+            "tf_1d_weight": {"min": 0.05, "max": 0.2},
+        }
+    )
 
     # Advanced method optimization ranges
-    advanced_ranges: dict[str, dict[str, float]] = field(default_factory=lambda: {
-        "fibonacci_sensitivity": {"min": 0.5, "max": 0.9},
-        "elliott_confidence_threshold": {"min": 0.4, "max": 0.8},
-        "order_flow_hvn_threshold": {"min": 1.2, "max": 2.0},
-    })
+    advanced_ranges: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "fibonacci_sensitivity": {"min": 0.5, "max": 0.9},
+            "elliott_confidence_threshold": {"min": 0.4, "max": 0.8},
+            "order_flow_hvn_threshold": {"min": 1.2, "max": 2.0},
+        }
+    )
 
     # Optimization strategies
     enable_optuna: bool = True
@@ -79,15 +92,27 @@ class SROptimizationConfig:
 
     # Market regime optimization
     enable_regime_optimization: bool = False
-    regime_periods: list[str] = field(default_factory=lambda: [
-        "bull_market", "bear_market", "sideways_market", "volatile_market",
-    ])
+    regime_periods: list[str] = field(
+        default_factory=lambda: [
+            "bull_market",
+            "bear_market",
+            "sideways_market",
+            "volatile_market",
+        ]
+    )
 
     # Multi-timeframe optimization
     enable_multi_timeframe_optimization: bool = True
-    timeframes: list[str] = field(default_factory=lambda: [
-        "1m", "5m", "15m", "1h", "4h", "1d",
-    ])
+    timeframes: list[str] = field(
+        default_factory=lambda: [
+            "1m",
+            "5m",
+            "15m",
+            "1h",
+            "4h",
+            "1d",
+        ]
+    )
 
     # Advanced optimization features
     enable_advanced_methods: bool = True
@@ -177,13 +202,15 @@ def get_comprehensive_optimization_config() -> SROptimizationConfig:
     config.enable_multi_timeframe_optimization = True
     config.enable_regime_optimization = True
     config.enable_real_time_adaptation = True
-    config.performance_thresholds.update({
-        "min_sharpe_ratio": 0.7,
-        "max_drawdown": -0.1,
-        "min_win_rate": 0.6,
-        "min_profit_factor": 1.5,
-        "min_signal_clarity": 0.15,
-    })
+    config.performance_thresholds.update(
+        {
+            "min_sharpe_ratio": 0.7,
+            "max_drawdown": -0.1,
+            "min_win_rate": 0.6,
+            "min_profit_factor": 1.5,
+            "min_signal_clarity": 0.15,
+        }
+    )
     return config
 
 
@@ -193,35 +220,45 @@ def get_market_specific_config(market_type: str) -> SROptimizationConfig:
 
     if market_type == "crypto":
         # Crypto markets are more volatile
-        config.performance_thresholds.update({
-            "min_sharpe_ratio": 0.4,
-            "max_drawdown": -0.2,
-            "min_win_rate": 0.5,
-            "min_profit_factor": 1.2,
-        })
+        config.performance_thresholds.update(
+            {
+                "min_sharpe_ratio": 0.4,
+                "max_drawdown": -0.2,
+                "min_win_rate": 0.5,
+                "min_profit_factor": 1.2,
+            }
+        )
         config.dbscan_ranges["dbscan_eps"]["max"] = 0.03  # Higher volatility
-        config.timeframe_weight_ranges["tf_1h_weight"]["max"] = 0.4  # More weight on hourly
+        config.timeframe_weight_ranges["tf_1h_weight"][
+            "max"
+        ] = 0.4  # More weight on hourly
 
     elif market_type == "forex":
         # Forex markets are more stable
-        config.performance_thresholds.update({
-            "min_sharpe_ratio": 0.6,
-            "max_drawdown": -0.1,
-            "min_win_rate": 0.6,
-            "min_profit_factor": 1.4,
-        })
+        config.performance_thresholds.update(
+            {
+                "min_sharpe_ratio": 0.6,
+                "max_drawdown": -0.1,
+                "min_win_rate": 0.6,
+                "min_profit_factor": 1.4,
+            }
+        )
         config.dbscan_ranges["dbscan_eps"]["max"] = 0.015  # Lower volatility
         config.timeframe_weight_ranges["tf_4h_weight"]["max"] = 0.4  # More weight on 4h
 
     elif market_type == "stocks":
         # Stock markets are moderate
-        config.performance_thresholds.update({
-            "min_sharpe_ratio": 0.5,
-            "max_drawdown": -0.15,
-            "min_win_rate": 0.55,
-            "min_profit_factor": 1.3,
-        })
-        config.timeframe_weight_ranges["tf_1d_weight"]["max"] = 0.3  # More weight on daily
+        config.performance_thresholds.update(
+            {
+                "min_sharpe_ratio": 0.5,
+                "max_drawdown": -0.15,
+                "min_win_rate": 0.55,
+                "min_profit_factor": 1.3,
+            }
+        )
+        config.timeframe_weight_ranges["tf_1d_weight"][
+            "max"
+        ] = 0.3  # More weight on daily
 
     return config
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """Multi-Output Prediction Configuration.
 
 This module provides configuration settings for enabling intelligent multi-output
@@ -19,7 +20,6 @@ def get_multi_output_config() -> dict[str, Any]:
     return {
         # Enable multi-output prediction
         "enable_multi_output": True,
-
         # Multi-output model configuration
         "multi_output_models": {
             "model_type": "LightGBM",  # "LightGBM", "RandomForest", "NeuralNetwork"
@@ -34,7 +34,6 @@ def get_multi_output_config() -> dict[str, Any]:
             "test_size": 0.2,
             "random_state": 42,
         },
-
         # Profit-based feature engineering configuration
         "profit_feature_engineering": {
             "profit_column": "potential_profit_pct",
@@ -51,13 +50,28 @@ def get_multi_output_config() -> dict[str, Any]:
                 "volume",
                 "rolling",
             ],
-            "profit_bins": [-float("inf"), -0.005, -0.002, -0.001, 0, 0.001, 0.002, 0.005, float("inf")],
+            "profit_bins": [
+                -float("inf"),
+                -0.005,
+                -0.002,
+                -0.001,
+                0,
+                0.001,
+                0.002,
+                0.005,
+                float("inf"),
+            ],
             "profit_labels": [
-                "Large Loss", "Medium Loss", "Small Loss", "Tiny Loss",
-                "No Profit", "Tiny Profit", "Small Profit", "Large Profit",
+                "Large Loss",
+                "Medium Loss",
+                "Small Loss",
+                "Tiny Loss",
+                "No Profit",
+                "Tiny Profit",
+                "Small Profit",
+                "Large Profit",
             ],
         },
-
         # Enhanced training configuration
         "enhanced_training": {
             "enable_enhanced_hmm_training": True,
@@ -72,7 +86,6 @@ def get_multi_output_config() -> dict[str, Any]:
                 "regime_aware_splitting": True,
             },
         },
-
         # Enhanced data-driven feature selection configuration
         "feature_reduction": {
             "target_features": 100,
@@ -95,7 +108,6 @@ def get_multi_output_config() -> dict[str, Any]:
             "enable_ensemble_selection": True,
             "enable_final_rfe": True,
         },
-
         # Model trainer configuration
         "model_trainer": {
             "enable_multi_output": True,
@@ -104,7 +116,6 @@ def get_multi_output_config() -> dict[str, Any]:
             "model_directory": "models",
             "multi_output_model_directory": "models/multi_output_models",
         },
-
         # Triple barrier method configuration for multi-output
         "triple_barrier_multi_output": {
             "enable_direction_labeling": True,
@@ -116,7 +127,6 @@ def get_multi_output_config() -> dict[str, Any]:
             "lower_barrier": -0.01,  # 1% stop loss
             "time_horizon": 100,  # Maximum bars to hold position
         },
-
         # Fractional labeling configuration
         "fractional_labeling": {
             "enable_fractional_labels": True,
@@ -152,7 +162,6 @@ def get_multi_output_config() -> dict[str, Any]:
                 },
             },
         },
-
         # Performance monitoring
         "performance_monitoring": {
             "enable_metrics_tracking": True,
@@ -162,7 +171,6 @@ def get_multi_output_config() -> dict[str, Any]:
             "enable_feature_importance": True,
             "enable_model_comparison": True,
         },
-
         # Validation and testing
         "validation": {
             "enable_cross_validation": True,
@@ -182,7 +190,6 @@ def get_multi_output_config() -> dict[str, Any]:
                 "profit_accuracy",
             ],
         },
-
         # Logging and reporting
         "logging": {
             "enable_detailed_logging": True,
@@ -259,7 +266,6 @@ def get_enhanced_training_pipeline_config() -> dict[str, Any]:
             "enable_profit_based_features": True,
             "enable_direction_profit_prediction": True,
         },
-
         # Step-specific configurations
         "steps": {
             "step4_triple_barrier_method": {
@@ -282,7 +288,6 @@ def get_enhanced_training_pipeline_config() -> dict[str, Any]:
                 "enable_profit_based_training": True,
             },
         },
-
         # Include multi-output configuration
         **multi_output_config,
     }
@@ -313,7 +318,9 @@ def validate_multi_output_config(config: dict[str, Any]) -> bool:
     model_type = config["multi_output_models"].get("model_type")
     valid_model_types = ["LightGBM", "RandomForest", "NeuralNetwork"]
     if model_type not in valid_model_types:
-        print(f"❌ Invalid model type: {model_type}. Must be one of {valid_model_types}")
+        print(
+            f"❌ Invalid model type: {model_type}. Must be one of {valid_model_types}"
+        )
         return False
 
     # Validate profit feature engineering
@@ -332,7 +339,9 @@ if __name__ == "__main__":
     print("Multi-output configuration:")
     print(f"  - Enable multi-output: {config['enable_multi_output']}")
     print(f"  - Model type: {config['multi_output_models']['model_type']}")
-    print(f"  - Use profit features: {config['multi_output_models']['use_profit_features']}")
+    print(
+        f"  - Use profit features: {config['multi_output_models']['use_profit_features']}"
+    )
 
     # Validate configuration
     validate_multi_output_config(config)
@@ -346,5 +355,9 @@ if __name__ == "__main__":
     # Test enhanced pipeline configuration
     pipeline_config = get_enhanced_training_pipeline_config()
     print("\nEnhanced pipeline configuration:")
-    print(f"  - Enable enhanced steps: {pipeline_config['pipeline']['enable_enhanced_steps']}")
-    print(f"  - Enable multi-output training: {pipeline_config['pipeline']['enable_multi_output_training']}")
+    print(
+        f"  - Enable enhanced steps: {pipeline_config['pipeline']['enable_enhanced_steps']}"
+    )
+    print(
+        f"  - Enable multi-output training: {pipeline_config['pipeline']['enable_multi_output_training']}"
+    )

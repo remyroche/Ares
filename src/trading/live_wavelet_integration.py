@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Live Trading Wavelet Integration
 
@@ -85,7 +86,8 @@ class LiveWaveletIntegration:
 
     @handles_errors(fallback=None)
     async def process_market_data(
-        self, market_data: dict[str, Any],
+        self,
+        market_data: dict[str, Any],
     ) -> dict[str, Any] | None:
         """
         Process market data and generate wavelet signals.
@@ -109,7 +111,8 @@ class LiveWaveletIntegration:
 
             # Generate wavelet signal
             signal = await self.wavelet_analyzer.generate_signal(
-                price_data, volume_data,
+                price_data,
+                volume_data,
             )
 
             if signal is None:
@@ -143,11 +146,14 @@ class LiveWaveletIntegration:
             self.logger.exception(f"Error processing market data - Invalid data: {e}")
             return None
         except Exception as e:
-            self.logger.exception(f"Error processing market data - Unexpected error: {e}")
+            self.logger.exception(
+                f"Error processing market data - Unexpected error: {e}"
+            )
             return None
 
     def _extract_price_data(
-        self, market_data: dict[str, Any],
+        self,
+        market_data: dict[str, Any],
     ) -> pd.DataFrame | None:
         """Extract price data from market data."""
         try:
@@ -174,11 +180,14 @@ class LiveWaveletIntegration:
             )
             return None
         except Exception as e:
-            self.logger.exception(f"Error extracting price data - Unexpected error: {e}")
+            self.logger.exception(
+                f"Error extracting price data - Unexpected error: {e}"
+            )
             return None
 
     def _extract_volume_data(
-        self, market_data: dict[str, Any],
+        self,
+        market_data: dict[str, Any],
     ) -> pd.DataFrame | None:
         """Extract volume data from market data."""
         try:
@@ -194,7 +203,9 @@ class LiveWaveletIntegration:
             )
             return None
         except Exception as e:
-            self.logger.exception(f"Error extracting volume data - Unexpected error: {e}")
+            self.logger.exception(
+                f"Error extracting volume data - Unexpected error: {e}"
+            )
             return None
 
     def _validate_signal(self, signal: WaveletSignal) -> bool:
@@ -216,14 +227,17 @@ class LiveWaveletIntegration:
             return True
 
         except (AttributeError, TypeError) as e:
-            self.logger.exception(f"Error validating signal - Invalid signal object: {e}")
+            self.logger.exception(
+                f"Error validating signal - Invalid signal object: {e}"
+            )
             return False
         except Exception as e:
             self.logger.exception(f"Error validating signal - Unexpected error: {e}")
             return False
 
     def _create_analysis_results(
-        self, signal: WaveletSignal,
+        self,
+        signal: WaveletSignal,
         market_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Create analysis results for trading pipeline."""
@@ -247,7 +261,8 @@ class LiveWaveletIntegration:
                     "wavelet_signal": signal.signal_type,
                     "wavelet_confidence": signal.confidence,
                     "combined_signal": self._combine_with_existing_signals(
-                        signal, market_data,
+                        signal,
+                        market_data,
                     ),
                 },
                 # Performance metrics
@@ -270,7 +285,8 @@ class LiveWaveletIntegration:
             return {}
 
     def _combine_with_existing_signals(
-        self, wavelet_signal: WaveletSignal,
+        self,
+        wavelet_signal: WaveletSignal,
         market_data: dict[str, Any],
     ) -> str:
         """Combine wavelet signal with existing trading signals."""
@@ -344,12 +360,12 @@ class LiveWaveletIntegration:
                             "buy_count": signal_types.count("buy"),
                             "sell_count": signal_types.count("sell"),
                             "hold_count": signal_types.count("hold"),
-                            "avg_confidence": np.mean(confidences)
-                            if confidences
-                            else 0.0,
-                            "avg_computation_time": np.mean(computation_times)
-                            if computation_times
-                            else 0.0,
+                            "avg_confidence": (
+                                np.mean(confidences) if confidences else 0.0
+                            ),
+                            "avg_computation_time": (
+                                np.mean(computation_times) if computation_times else 0.0
+                            ),
                         },
                     },
                 )

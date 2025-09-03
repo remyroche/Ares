@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/data_access_utils.py
 
 """Utility functions for accessing the unified training database across different steps."""
@@ -11,6 +12,7 @@ import pandas as pd
 
 from src.training.data_manager import UnifiedDataManager
 from src.utils.logger import system_logger
+
 
 def get_data_manager(
     data_dir: str,
@@ -36,6 +38,7 @@ def get_data_manager(
         exchange=exchange,
         lookback_days=lookback_days or 730,
     )
+
 
 def load_training_data(
     data_dir: str,
@@ -66,6 +69,7 @@ def load_training_data(
         error_msg = f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         raise
+
 
 def load_validation_data_for_optimization(
     data_dir: str,
@@ -113,6 +117,7 @@ def load_validation_data_for_optimization(
         logger.exception(error_msg)
         raise
 
+
 def get_dataset_metadata(
     data_dir: str,
     symbol: str = "ETHUSDT",
@@ -137,6 +142,7 @@ def get_dataset_metadata(
         error_msg = f"Error loading dataset metadata for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         raise
+
 
 def validate_dataset_integrity(
     data_dir: str,
@@ -169,6 +175,7 @@ def validate_dataset_integrity(
             "warnings": [],
         }
 
+
 def update_dataset_with_new_features(
     data_dir: str,
     updated_data: pd.DataFrame,
@@ -198,6 +205,7 @@ def update_dataset_with_new_features(
         )
         logger.exception(error_msg)
         raise
+
 
 def check_unified_database_exists(
     data_dir: str,
@@ -236,6 +244,7 @@ def check_unified_database_exists(
         )
         return False
 
+
 def get_time_splits_info(
     data_dir: str,
     symbol: str = "ETHUSDT",
@@ -260,6 +269,7 @@ def get_time_splits_info(
         error_msg = f"Error getting time splits info for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         return {}
+
 
 def ensure_temporal_consistency(
     data_dir: str,
@@ -303,6 +313,7 @@ def ensure_temporal_consistency(
         logger.exception(error_msg)
         return False
 
+
 # Convenience functions for common use cases
 def get_training_features_and_labels(
     data_dir: str,
@@ -311,6 +322,7 @@ def get_training_features_and_labels(
     """Get training features and labels."""
     return load_training_data(data_dir, split_type="train", **kwargs)
 
+
 def get_validation_features_and_labels(
     data_dir: str,
     **kwargs,
@@ -318,12 +330,14 @@ def get_validation_features_and_labels(
     """Get validation features and labels."""
     return load_training_data(data_dir, split_type="validation", **kwargs)
 
+
 def get_test_features_and_labels(
     data_dir: str,
     **kwargs,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Get test features and labels."""
     return load_training_data(data_dir, split_type="test", **kwargs)
+
 
 def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
     """Get the full dataset."""

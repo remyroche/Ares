@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Advanced Neural Network Models for Multi-Output Training
 
@@ -18,6 +19,7 @@ from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 from torch import nn
 
 logger = logging.getLogger(__name__)
+
 
 class TemporalConvNet(nn.Module):
     """
@@ -54,8 +56,12 @@ class TemporalConvNet(nn.Module):
             out_channels = num_channels[i]
             layers.append(
                 TemporalBlock(
-                    in_channels, out_channels, kernel_size,
-                    stride=1, dilation=2**i, padding=(kernel_size-1) * 2**i,
+                    in_channels,
+                    out_channels,
+                    kernel_size,
+                    stride=1,
+                    dilation=2**i,
+                    padding=(kernel_size - 1) * 2**i,
                     dropout=dropout,
                 ),
             )
@@ -85,6 +91,7 @@ class TemporalConvNet(nn.Module):
         # Classification
         return self.classifier(x)
 
+
 class TemporalBlock(nn.Module):
     """Temporal Block for TCN with residual connections."""
 
@@ -101,19 +108,31 @@ class TemporalBlock(nn.Module):
         super().__init__()
 
         self.conv1 = nn.Conv1d(
-            in_channels, out_channels, kernel_size,
-            stride=stride, padding=padding, dilation=dilation,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
         )
         self.conv2 = nn.Conv1d(
-            out_channels, out_channels, kernel_size,
-            stride=stride, padding=padding, dilation=dilation,
+            out_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
         )
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
 
         # Residual connection
-        self.downsample = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else None
+        self.downsample = (
+            nn.Conv1d(in_channels, out_channels, 1)
+            if in_channels != out_channels
+            else None
+        )
 
     def forward(self, x):
         residual = x
@@ -131,6 +150,7 @@ class TemporalBlock(nn.Module):
 
         out += residual
         return out
+
 
 class CNN1D(nn.Module):
     """
@@ -161,14 +181,20 @@ class CNN1D(nn.Module):
         layers = []
         in_channels = input_size
 
-        for _i, (filters, kernel_size) in enumerate(zip(num_filters, kernel_sizes, strict=False)):
-            layers.extend([
-                nn.Conv1d(in_channels, filters, kernel_size, padding=kernel_size//2),
-                nn.BatchNorm1d(filters),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.MaxPool1d(2),
-            ])
+        for _i, (filters, kernel_size) in enumerate(
+            zip(num_filters, kernel_sizes, strict=False)
+        ):
+            layers.extend(
+                [
+                    nn.Conv1d(
+                        in_channels, filters, kernel_size, padding=kernel_size // 2
+                    ),
+                    nn.BatchNorm1d(filters),
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                    nn.MaxPool1d(2),
+                ]
+            )
             in_channels = filters
 
         self.conv_layers = nn.Sequential(*layers)
@@ -197,6 +223,7 @@ class CNN1D(nn.Module):
 
         # Classification
         return self.classifier(x)
+
 
 class TransformerClassifier(nn.Module):
     """
@@ -263,6 +290,7 @@ class TransformerClassifier(nn.Module):
         # Classification
         return self.classifier(x)
 
+
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
@@ -272,7 +300,9 @@ class PositionalEncoding(nn.Module):
 
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model)
+        )
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -281,8 +311,9 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pe", pe)
 
     def forward(self, x):
-        x = x + self.pe[:x.size(0), :]
+        x = x + self.pe[: x.size(0), :]
         return self.dropout(x)
+
 
 class LSTMClassifier(nn.Module):
     """
@@ -344,6 +375,7 @@ class LSTMClassifier(nn.Module):
         # Classification
         return self.classifier(hidden)
 
+
 class GRUClassifier(nn.Module):
     """
     GRU-based classifier for time series data.
@@ -404,6 +436,7 @@ class GRUClassifier(nn.Module):
         # Classification
         return self.classifier(hidden)
 
+
 class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
     """
     Wrapper class to make PyTorch models compatible with scikit-learn interface.
@@ -451,7 +484,9 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
         # Create dataset and dataloader
         dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
         dataloader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True,
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
         )
 
         # Initialize model
@@ -531,6 +566,7 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
 
         return probabilities.cpu().numpy()
 
+
 def create_neural_model(
     model_type: str,
     input_size: int,
@@ -605,6 +641,7 @@ def create_neural_model(
 
     msg = f"Unsupported model type: {model_type}"
     raise ValueError(msg)
+
 
 # Model configuration presets
 NEURAL_MODEL_CONFIGS = {

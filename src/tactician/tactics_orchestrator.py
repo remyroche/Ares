@@ -349,7 +349,7 @@ class DecisionPolicy:
                 return None
 
             # Get SR breakout prediction using centralized logic
-            prediction = await self.sr_predictor.predict_breakout(market_data)
+            prediction = await self.sr_predictor.predict_sr_breakout(market_data, current_price=float(market_data["close"].iloc[-1]))
 
             if not prediction:
                 return None
@@ -388,11 +388,14 @@ class DecisionPolicy:
             if not self.ml_tactics:
                 return None
 
-            # Get ML tactics decision
-            return await self.ml_tactics.get_tactics_decision(
-                market_data,
-                analyst_confidence,
-                tactician_confidence,
+            # Generate multi-output predictions (used for green-light gating)
+            analyst_barriers = self._extract_analyst_barriers({})
+            return await self.ml_tactics.generate_multi_output_predictions(
+                market_data=market_data,
+                analyst_barriers=analyst_barriers,
+                symbol="BTCUSDT",
+                timeframe="1m",
+                analyst_confidence=analyst_confidence,
             )
 
         except Exception as e:

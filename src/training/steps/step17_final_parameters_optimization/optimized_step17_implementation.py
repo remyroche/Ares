@@ -35,13 +35,11 @@ except ImportError:
 # Import Optuna for optimization
 try:
     import optuna
-except Exception as e:
-    pass  # TODO: Handle exception properly
-import copy
-
-OPTUNA_AVAILABLE = True
-    except ImportError:
+    OPTUNA_AVAILABLE = True
+except ImportError:
     OPTUNA_AVAILABLE = False
+
+import copy
 
 
 class OptimizationPhase(Enum):

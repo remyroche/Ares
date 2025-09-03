@@ -40,13 +40,11 @@ except ImportError:
 # Import MLflow for experiment tracking
 try:
     import mlflow
-except Exception as e:
-    pass  # TODO: Handle exception properly
-import copy
-
     MLFLOW_AVAILABLE = True
-    except ImportError:
+except ImportError:
     MLFLOW_AVAILABLE = False
+
+import copy
 
 
 class OptimizationObjective(Enum):

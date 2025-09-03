@@ -121,7 +121,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.info("✅ Walk forward validation validation passed")
         return True
 
-    @handles_errors, default_return=(False, {}), context="Step13._validate_walk_forward_files")
+    @handles_errors(default_return=(False, {}), context="Step13._validate_walk_forward_files")
     def _validate_walk_forward_files(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -163,7 +163,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.info("✅ All walk forward validation files exist")
         return True, {"missing_files": [], "files": file_details}
 
-    @handles_errors, default_return=(False, {}), context="Step13._validate_walk_forward_performance")
+    @handles_errors(default_return=(False, {}), context="Step13._validate_walk_forward_performance")
     def _validate_walk_forward_performance(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -252,7 +252,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.error(f"Performance file not found: {performance_file}")
         return False, {"missing_file": performance_file}
 
-    @handles_errors, default_return=(False, {}), context="Step13._validate_walk_forward_stability")
+    @handles_errors(default_return=(False, {}), context="Step13._validate_walk_forward_stability")
     def _validate_walk_forward_stability(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -326,7 +326,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.error(f"Metadata file not found: {metadata_file}")
         return False, {"missing_file": metadata_file}
 
-    @handles_errors, default_return=(False, {}), context="Step13._validate_walk_forward_consistency")
+    @handles_errors(default_return=(False, {}), context="Step13._validate_walk_forward_consistency")
     def _validate_walk_forward_consistency(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:

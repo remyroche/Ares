@@ -423,7 +423,7 @@ connection_params = {
             elif hasattr(connection, "get"):  # Redis
                 if query.strip().upper().startswith("SELECT"):
                     # Redis doesn't support SQL queries'
-                    return [{"error": "Redis doesn't support SQL queries"}]'
+                    return [{"error": "Redis doesn't support SQL queries"}]
                 else:
                     return [{"message": "Redis operation executed"}]
 

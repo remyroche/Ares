@@ -439,7 +439,7 @@ def _get_cpu_usage() -> float:
 import os.path
 
 return psutil.cpu_percent(interval=0.1)
-    except ImportError:
+except ImportError:
         return 0.0
 
 

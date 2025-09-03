@@ -164,7 +164,6 @@ class MetaLabelRelevanceEvaluator:
 
     Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.'
     """
-
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
         self,

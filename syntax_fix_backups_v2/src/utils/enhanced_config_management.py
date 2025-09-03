@@ -3,12 +3,12 @@ Enhanced Configuration Management Utilities
 
 This module provides structured configuration management for the training pipeline.
 """
-
 import json
 import logging
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 try:
     from src.utils.logger import system_logger
@@ -52,7 +52,7 @@ class Step1Config:
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: float = 60.0
 
-    def validate(self) -> list[str]:
+    def validate(self) -> List[str]:
         """Validate configuration and return any issues."""
         issues = []
 
@@ -75,12 +75,12 @@ class Step1Config:
 
         return issues
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "Step1Config":
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "Step1Config":
         """Create configuration from dictionary."""
         return cls(**config_dict)
 
@@ -130,7 +130,7 @@ class Step1_5Config:
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: float = 60.0
 
-    def validate(self) -> list[str]:
+    def validate(self) -> List[str]:
         """Validate configuration and return any issues."""
         issues = []
 
@@ -151,12 +151,12 @@ class Step1_5Config:
 
         return issues
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "Step1_5Config":
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "Step1_5Config":
         """Create configuration from dictionary."""
         return cls(**config_dict)
 
@@ -180,7 +180,7 @@ class PipelineConfig:
     default_exchange: str = "BINANCE"
     default_timeframe: str = "1m"
 
-    def validate(self) -> list[str]:
+    def validate(self) -> List[str]:
         """Validate pipeline configuration."""
         issues = []
 
@@ -200,7 +200,7 @@ class PipelineConfig:
 
         return issues
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
             "step01": self.step01.to_dict(),
@@ -215,7 +215,7 @@ class PipelineConfig:
         }
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "PipelineConfig":
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "PipelineConfig":
         """Create configuration from dictionary."""
         step1_config = Step1Config.from_dict(config_dict.get("step01", {}))
         step1_5_config = Step1_5Config.from_dict(config_dict.get("step1_5", {}))
@@ -247,7 +247,7 @@ class ConfigManager:
 
         if config_path.exists():
             try:
-                with open(config_path) as f:
+                with open(config_path, "r") as f:
                     config_dict = json.load(f)
 
                 config = PipelineConfig.from_dict(config_dict)
@@ -271,7 +271,7 @@ class ConfigManager:
 
             self.logger.info(f"Saved configuration to {config_path}")
         except Exception as e:
-            self.logger.exception(f"Error saving configuration to {config_path}: {e}")
+            self.logger.error(f"Error saving configuration to {config_path}: {e}")
 
     def validate_config(self, config: PipelineConfig) -> bool:
         """Validate configuration and log any issues."""
@@ -282,8 +282,9 @@ class ConfigManager:
             for issue in issues:
                 self.logger.error(f"  - {issue}")
             return False
-        self.logger.info("Configuration validation passed")
-        return True
+        else:
+            self.logger.info("Configuration validation passed")
+            return True
 
     def create_environment_config(self, environment: str) -> PipelineConfig:
         """Create environment-specific configuration."""
@@ -319,7 +320,7 @@ class ConfigManager:
     def load_environment_config(self, environment: str) -> PipelineConfig:
         """Load environment-specific configuration."""
         config_name = f"pipeline_config_{environment}.json"
-        config = await self.load_config(config_name)
+        config = self.await load_config(config_name)
 
         if config.environment != environment:
             # Create new environment-specific config
@@ -358,7 +359,8 @@ def validate_and_save_config(config: PipelineConfig, config_name: str = "pipelin
     if config_manager.validate_config(config):
         config_manager.save_config(config, config_name)
         return True
-    return False
+    else:
+        return False
 
 
 # Environment-specific configuration presets

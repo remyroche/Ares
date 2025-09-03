@@ -56,7 +56,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
         if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate = name_candidate.split(".")[-1].split("'>")[0]'
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
     except Exception:
         pass
 

@@ -796,7 +796,7 @@ import copy
 logger = logging.getLogger(__name__)
 logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
         
-        # Return data with error indicator
+# Return data with error indicator
         data_copy = data.copy()
         data_copy['label'] = 0  # Default to HOLD
         data_copy['labeling_method'] = 'error_fallback'

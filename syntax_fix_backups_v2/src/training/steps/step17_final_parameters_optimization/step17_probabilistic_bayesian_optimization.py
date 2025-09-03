@@ -521,7 +521,7 @@ n_estimators=params.get('n_estimators', 200),
             
             return model
         
-            # Run optimization
+        # Run optimization
         results = self.analyst_optimizer.optimize(
             X=X,
             y=y_combined,

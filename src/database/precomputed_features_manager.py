@@ -18,7 +18,7 @@ try:
 except Exception as e:
     pass  # TODO: Handle exception properly
 import copy
-import os.path
+import os
 
 INFLUXDB_AVAILABLE = True
 except Exception:

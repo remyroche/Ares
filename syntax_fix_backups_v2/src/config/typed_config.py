@@ -3,7 +3,6 @@
 """
 Type-safe configuration management with runtime validation.
 """
-
 from pathlib import Path
 from typing import Any
 import json
@@ -29,7 +28,6 @@ class TypedConfigManager:
     """
     Type-safe configuration manager with runtime validation.
     """
-
     def __init__(self, config_path: str | None = None):
         self._config_path = config_path
         self._config: ConfigDict | None = None

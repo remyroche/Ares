@@ -1,7 +1,7 @@
 # src/database/efficient_features_database.py
 
 import os
-import os.path
+import os
 import pickle
 from datetime import datetime
 from typing import Any

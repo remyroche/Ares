@@ -151,7 +151,7 @@ class RegimeDataSplittingStep:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
 import numpy as np
-import os.path
+import os
             from src.config.constants import (
         except Exception as e:
             pass  # TODO: Handle exception properly
@@ -579,7 +579,7 @@ async def run_step(
 
 
 if __name__ == "__main__":
-    async def await _test() -> None:
+    async def _test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(_test())

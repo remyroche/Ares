@@ -7,7 +7,7 @@ using LightGBM + XGBoost ensemble with comprehensive feature engineering and tim
 """
 import json
 import os
-import os.path
+import os
 import pickle
 import warnings
 from datetime import datetime

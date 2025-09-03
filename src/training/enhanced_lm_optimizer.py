@@ -1360,7 +1360,7 @@ import copy
 feature_stability = dict.fromkeys(features_df.columns, 0)
 n_folds = 5
 
-            # Time series cross-validation for stability analysis
+# Time series cross-validation for stability analysis
             tscv = TimeSeriesSplit(n_splits=n_folds)
 
             for _fold_idx, (train_idx, _val_idx) in enumerate(tscv.split(features_df)):

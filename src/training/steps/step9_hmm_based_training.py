@@ -5262,7 +5262,7 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
         pass  # TODO: Handle exception properly
 import copy
 import numpy as np
-import os.path
+import os
 
 # Create configuration
 config = {

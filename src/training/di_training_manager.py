@@ -107,7 +107,7 @@ class DITrainingManager(InjectableBase):
                 from src.training.core.pipeline_base import TrainingPipeline
         except Exception as e:
             pass  # TODO: Handle exception properly
-import os.path
+import os
 
 self.training_pipeline = TrainingPipeline(self.training_config)
 

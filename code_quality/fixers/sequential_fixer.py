@@ -679,8 +679,13 @@ class SequentialFixer:
             for i, rec in enumerate(summary["recommendations"], 1):
                 print(f"  {i}. [{rec['priority'].upper()}] {rec['message']}")
 
-        duration = self.results["pipeline_info"]["duration"]
-        print(f"\nPipeline completed in {duration:.2f} seconds")
+        # Check if duration exists before trying to print it
+        if "duration" in self.results["pipeline_info"]:
+            duration = self.results["pipeline_info"]["duration"]
+            print(f"\nPipeline completed in {duration:.2f} seconds")
+        elif self.start_time and self.end_time:
+            duration = self.end_time - self.start_time
+            print(f"\nPipeline completed in {duration:.2f} seconds")
 
 
 def main():

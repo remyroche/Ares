@@ -586,6 +586,8 @@ class PositionMonitor:
                         with open(path, 'r') as f:
                             import yaml
                     except Exception as e:
+                        pass  # TODO: Handle exception
+                    except Exception as e:
                         pass  # TODO: Handle exception properly
 import copy
 

@@ -325,6 +325,8 @@ class RegularizationManager:
                     # Convert to tensors for PyTorch model
                     import torch
                 except Exception as e:
+                    pass  # TODO: Handle exception
+                except Exception as e:
                     pass  # TODO: Handle exception properly
 import numpy as np
 

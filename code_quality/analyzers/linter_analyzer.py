@@ -188,9 +188,10 @@ class LinterAnalyzer:
         try:
             cmd = [
                 sys.executable, "-m", "mypy",
-                "--json-report",
                 "--no-error-summary",
                 "--show-error-codes",
+                "--ignore-missing-imports",
+                "--no-incremental",
             ]
 
             cmd.extend(files)

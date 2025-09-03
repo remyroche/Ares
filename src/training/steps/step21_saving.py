@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -180,14 +181,13 @@ class SavingStep:
             results: dict[str, Any] = {}
 
             # Ensure directory exists
-            os.makedirs(data_dir, exist_ok=True)
+            ensure_directory(data_dir)
 
             # Save as JSON
             json_file = (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.json"
             )
-            with open(json_file, "w") as f:
-                json.dump(training_summary, f, indent=2)
+            safe_json_dump(training_summary, json_file, indent=2)
             results["json_file"] = json_file
 
             # Save as pickle
@@ -411,12 +411,11 @@ class SavingStep:
                     }
 
             # Ensure directory exists
-            os.makedirs(data_dir, exist_ok=True)
+            ensure_directory(data_dir)
 
             # Save report
             report_file = f"{data_dir}/{exchange}_{symbol}_training_report.json"
-            with open(report_file, "w") as f:
-                json.dump(report, f, indent=2)
+            safe_json_dump(report, report_file, indent=2)
 
             return {"report": report, "report_file": report_file}
 

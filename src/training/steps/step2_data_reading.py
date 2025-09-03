@@ -16,6 +16,12 @@ import time
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import common operations
+from src.utils.common_operations import (
+    safe_read_parquet, safe_to_parquet, ensure_directory,
+    validate_dataframe_schema, validate_data_quality
+)
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -169,7 +175,7 @@ class DataReadingStep:
             dataframes = []
             for file_path in sorted(parquet_files):
                 self.logger.info(f"📖 Reading {file_path.name}")
-                df = pd.read_parquet(file_path)
+                df = safe_read_parquet(file_path)
                 
                 # Standardize timestamps and validate schema
                 df = self.standards.standardize_timestamp(df, "timestamp")

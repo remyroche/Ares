@@ -16,6 +16,12 @@ import asyncio
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import common operations
+from src.utils.common_operations import (
+    safe_read_parquet, list_parquet_files, safe_file_exists,
+    validate_dataframe_schema, safe_copy
+)
+
 try:
     from src.utils.error_handler import handle_errors
     from src.utils.logger import system_logger
@@ -316,7 +322,7 @@ import os.path
             dfs = []
             for file_path in sorted(parquet_files):
                 try:
-                    df = pd.read_parquet(file_path, columns=columns)
+                    df = safe_read_parquet(file_path, columns=columns)
                     dfs.append(df)
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")

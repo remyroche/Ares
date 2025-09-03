@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import glob
+import logging
 import os
+import os.path
 import sys
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -12,19 +14,15 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+import psutil
 
+# Ensure project root is on path
 from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.core.decorators import traced, validates
-
 
 # src/training/steps/step1_5_data_converter.py
 
 
-# Ensure project root is on path
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators, traced, validates
-import logging
-import psutil
-import os.path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 

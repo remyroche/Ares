@@ -334,7 +334,7 @@ def main():
 
     # Save to file if requested
     if args.output:
-        with open(args.output="w") as f:
+        with open(args.output, "w") as f:
             f.write(action_plan)
         print(f"\nDetailed report saved to: {args.output}")
 

@@ -37,8 +37,10 @@ async def run_30m_hmm_step():
         success = await run_step(
             symbol=symbol,
             exchange=exchange,
-            data_dir, data_dir=timeframe=timeframe,
-            lookback_days, lookback_days=lookback_days)
+            data_dir=data_dir,
+            timeframe=timeframe,
+            lookback_days=lookback_days,
+        )
 
         if success:
             logger.info(

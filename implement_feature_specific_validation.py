@@ -150,11 +150,15 @@ def analyze_feature_issues_detailed(
 
         if issues:
             analysis["feature_issues"][feature] = {
-                "type": feature_type, "issues": issues,
+                "type": feature_type,
+                "issues": issues,
                 "stats": {
-                    "missing_pct": missing_pct, "infinite_pct": infinite_pct,
-                    "variance": variance, "unique_values": unique_values,
-                    "total_rows": total_rows=},
+                    "missing_pct": missing_pct,
+                    "infinite_pct": infinite_pct,
+                    "variance": variance,
+                    "unique_values": unique_values,
+                    "total_rows": total_rows,
+                },
             }
 
             # Count issue types

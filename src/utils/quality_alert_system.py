@@ -243,12 +243,7 @@ class QualityAlertManager:
             # Create email message
             subject = f"Data Quality Alert: {alert.level}"
 
-            body = f""""
-        except Exception as e:
-            pass  # TODO: Handle exception
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-Data Quality Alert
+            body = f"""Data Quality Alert
 
 Level: {alert.level}
 Message: {alert.message}
@@ -257,8 +252,8 @@ Action Required: {"Yes" if alert.action_required else "No"}
 
 Details:
 """
-if alert.details:
-    for key, value in alert.details.items():
+            if alert.details:
+                for key, value in alert.details.items():
                     body += f"• {key}: {value}\n"
 
             body += "\n---\nData Quality Monitoring System"
@@ -277,10 +272,9 @@ if alert.details:
                 # Create message
                 from email.mime.multipart import MIMEMultipart
                 from email.mime.text import MIMEText
-import os.path
-
-msg = MIMEMultipart()
-msg["From"] = email_config.get("from_email", "noreply@example.com")
+                
+                msg = MIMEMultipart()
+                msg["From"] = email_config.get("from_email", "noreply@example.com")
                 msg["To"] = email_config.get("to_email", "admin@example.com")
                 msg["Subject"] = subject
 

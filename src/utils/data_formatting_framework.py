@@ -390,11 +390,9 @@ class DataFormattingFramework:
         if strategy == "intelligent":
             # Use enhanced missing value handler for intelligent gap filling
             from .enhanced_missing_value_handler import enhanced_missing_value_handler
-import copy
-import os.path
-
-return enhanced_missing_value_handler.handle_missing_values_intelligently(
-data, "timestamp", symbol, exchange, timeframe
+            
+            return enhanced_missing_value_handler.handle_missing_values_intelligently(
+                data, "timestamp", symbol, exchange, timeframe
             )
 
         # Fallback to traditional strategies

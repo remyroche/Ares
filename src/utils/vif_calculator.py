@@ -35,8 +35,6 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
     """
     if features is None:
         # Fallback implementation for features
-        # Fallback implementation for features
-        # Fallback implementation for features
         features = data.select_dtypes(include=[np.number]).columns.tolist()
 
     vif_scores = {}
@@ -61,13 +59,10 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         try:
             # Calculate R-squared
             from sklearn.linear_model import LinearRegression
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-model = LinearRegression()
-model.fit(X_clean, y_clean)
-r_squared = model.score(X_clean, y_clean)
+            
+            model = LinearRegression()
+            model.fit(X_clean, y_clean)
+            r_squared = model.score(X_clean, y_clean)
 
             # Calculate VIF
             if r_squared < 1.0:
@@ -98,8 +93,6 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
     logger = system_logger.getChild("VIFCalculator")
 
     if features is None:
-        # Fallback implementation for features
-        # Fallback implementation for features
         # Fallback implementation for features
         features = data.select_dtypes(include=[np.number]).columns.tolist()
 
@@ -203,8 +196,6 @@ def calculate_vif_iterative(
     logger = system_logger.getChild("VIFCalculator")
 
     if features is None:
-        # Fallback implementation for features
-        # Fallback implementation for features
         # Fallback implementation for features
         features = data.select_dtypes(include=[np.number]).columns.tolist()
 

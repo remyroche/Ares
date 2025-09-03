@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Validator for Step 3: Parameter Optimization."
+"""Validator for Step 3: Parameter Optimization.
 
-import pandas as pd
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
 """
-from src.core.domain import (
-
+import pandas as pd
 from src.core.decorators import validates
+from src.core.domain import (
     smart_validation_cache,
     validate_step3_comprehensive
 )
@@ -116,7 +115,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization results: {results_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(results_file), "optimization results")
             if not file_exists:
                 return False
@@ -194,7 +193,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization config: {config_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(config_file), "optimization config")
             if not file_exists:
                 return False
@@ -261,14 +260,14 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(logs_file), "optimization logs")
             if not file_exists:
                 return False
 
             logs_data = safe_json_load(logs_file)
 
-            # Check if it's a list'
+            # Check if it's a list
             if not isinstance(logs_data, list):
                 self.logger.warning("⚠️ Optimization logs should be a list")
                 return False
@@ -307,14 +306,14 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(metrics_file), "optimization metrics")
             if not file_exists:
                 return False
 
             metrics_data = safe_json_load(metrics_file)
 
-            # Check if it's a dictionary'
+            # Check if it's a dictionary
             if not isinstance(metrics_data, dict):
                 self.logger.warning("⚠️ Optimization metrics should be a dictionary")
                 return False
@@ -354,7 +353,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate optimization metrics: {error_context}")
             return False
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 3 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -400,7 +399,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         return validation_result
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_outputs(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 3 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -485,7 +484,7 @@ async def run_validator(
         validator = Step3ParameterOptimizationValidator(config)
         
         # Validate prerequisites using BaseValidator methods
-        prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
+        prereq_result = validator.validate_prerequisites(symbol, exchange, timeframe)
         
         # Validate step execution
         step_result = await validator.validate_step3_parameter_optimization(
@@ -493,7 +492,7 @@ async def run_validator(
         )
         
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result = validator.validate_outputs(symbol, exchange, timeframe)
         
         # Combine results
         validation_passed = (
@@ -533,10 +532,10 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-import datetime as datetime
+    import datetime as datetime
     
     test_input = {
-    "symbol": "ETHUSDT",
+        "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",
         "data_dir": "data_cache",

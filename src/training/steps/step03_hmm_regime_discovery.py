@@ -70,6 +70,10 @@ if centralized_decorators is None:
     monitor_step_execution = create_fallback_decorator()
     secure_step_execution = create_fallback_decorator()
     validate_pipeline_step = create_fallback_decorator()
+    validates = create_fallback_decorator()
+    cached = create_fallback_decorator()
+    traced = create_fallback_decorator()
+    handles_errors = create_fallback_decorator()
 else:
     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
@@ -84,6 +88,10 @@ else:
     monitor_step_execution = centralized_decorators.monitor_step_execution
     secure_step_execution = centralized_decorators.secure_step_execution
     validate_pipeline_step = centralized_decorators.validate_pipeline_step
+    validates = centralized_decorators.validates
+    cached = centralized_decorators.cached
+    traced = centralized_decorators.traced
+    handles_errors = centralized_decorators.handles_errors
 
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
@@ -580,7 +588,7 @@ class HMMRegimeDiscoveryStep:
             return False
 
     @traced(span_name="fix_missing_data")
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "Data fix failed"},
         context="fix_missing_data"
     )
@@ -657,7 +665,7 @@ class HMMRegimeDiscoveryStep:
     @traced(span_name="load_and_prepare_data")
     @cached
     @validates()
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_prepare_data"
     )
@@ -1098,7 +1106,7 @@ class HMMRegimeDiscoveryStep:
 
     @traced(span_name="perform_hmm_regime_discovery")
     @log_execution_time
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "HMM regime discovery failed"},
         context="perform_hmm_regime_discovery"
     )
@@ -1150,7 +1158,7 @@ class HMMRegimeDiscoveryStep:
             return {"success": False, "error": str(e)}
 
     @traced(span_name="perform_hmmlearn_regime_discovery")
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "HMMLearn regime discovery failed"},
         context="perform_hmmlearn_regime_discovery"
     )
@@ -1380,7 +1388,7 @@ class HMMRegimeDiscoveryStep:
             return {"success": False, "error": str(e)}
 
     @traced(span_name="perform_simple_regime_discovery")
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "Simple regime discovery failed"},
         context="perform_simple_regime_discovery"
     )
@@ -1478,7 +1486,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in simple regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @handles_errors
+    @handles_errors(
         default_return={"state_to_regime_map": {}, "state_analysis": {}},
         context="interpret_hmm_states"
     )
@@ -1603,7 +1611,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"✅ Transition matrix calculated for {len(transitions)} regimes")
         return transitions
 
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "error": "Enhanced regime change detection failed"},
         context="enhanced_regime_change_detection"
     )
@@ -1682,7 +1690,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in advanced regime change detection: {e}")
             return {"success": False, "error": str(e)}
 
-    @handles_errors
+    @handles_errors(
         default_return=np.zeros(0, dtype=bool),
         context="apply_persistence_filter"
     )
@@ -1713,7 +1721,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error applying persistence filter: {e}")
             return transitions
 
-    @handles_errors
+    @handles_errors(
         default_return=np.zeros(0, dtype=float),
         context="calculate_transition_confidence"
     )
@@ -1741,7 +1749,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error calculating transition confidence: {e}")
             return np.zeros(len(transitions), dtype=float)
 
-    @handles_errors
+    @handles_errors(
         default_return=np.zeros(0, dtype=float),
         context="calculate_regime_strength"
     )
@@ -1798,7 +1806,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error creating regime change events: {e}")
             return []
 
-    @handles_errors
+    @handles_errors(
         default_return=np.zeros(0, dtype=int),
         context="calculate_regime_durations"
     )

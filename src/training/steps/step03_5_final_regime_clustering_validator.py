@@ -109,7 +109,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         try:
             self.logger.info(f"📁 Validating final regime file: {regime_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(regime_file), "regime file")
             if not file_exists:
                 return False
@@ -117,7 +117,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             # Load and validate the regime file
             df = pd.read_parquet(regime_file)
 
-            # Use BaseValidator's DataFrame validation'
+            # Use BaseValidator's DataFrame validation
             df_valid, df_metrics = self.validate_dataframe_quality(
                 df=df,
                 min_rows=100,
@@ -163,7 +163,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating analysis report: {analysis_report.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(analysis_report), "analysis report")
             if not file_exists:
                 return False
@@ -214,14 +214,14 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         try:
             self.logger.info(f"📊 Validating characteristics file: {characteristics_file.name}")
 
-            # Use BaseValidator's file validation'
+            # Use BaseValidator's file validation
             file_exists, file_metrics = self.validate_file_exists(str(characteristics_file), "characteristics file")
             if not file_exists:
                 return False
 
             characteristics_data = safe_json_load(characteristics_file)
 
-            # Check if it's a dictionary'
+            # Check if it's a dictionary
             if not isinstance(characteristics_data, dict):
                 self.logger.warning("⚠️ Characteristics file should contain a dictionary")
                 return False
@@ -231,7 +231,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
                 self.logger.warning("⚠️ Empty characteristics data")
                 return False
 
-            # Validate each regime's characteristics'
+            # Validate each regime's characteristics
             for regime_id, characteristics in characteristics_data.items():
                 if not isinstance(characteristics, dict):
                     self.logger.warning(f"⚠️ Invalid characteristics format for regime {regime_id}")
@@ -258,7 +258,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate characteristics file: {error_context}")
             return False
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 3.5 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -304,7 +304,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
 
         return validation_result
 
-    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_outputs(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 3.5 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -350,7 +350,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
                     if file_path.endswith(".parquet"):
                         try:
                             df = pd.read_parquet(file_path)
-                            # Use BaseValidator's DataFrame validation'
+                            # Use BaseValidator's DataFrame validation
                             df_valid, df_metrics = self.validate_dataframe_quality(
                                 df, min_rows=100, check_data_types=True
                             )
@@ -394,7 +394,7 @@ async def run_validator(
         validator = Step3_5FinalRegimeClusteringValidator(config)
         
         # Validate prerequisites using BaseValidator methods
-        prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
+        prereq_result = validator.validate_prerequisites(symbol, exchange, timeframe)
         
         # Validate step execution
         step_result = await validator.validate_step3_5_final_regime_clustering(
@@ -402,7 +402,7 @@ async def run_validator(
         )
         
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result = validator.validate_outputs(symbol, exchange, timeframe)
         
         # Combine results
         validation_passed = (
@@ -442,10 +442,10 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-import datetime as datetime
+    import datetime as datetime
     
     test_input = {
-    "symbol": "ETHUSDT",
+        "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",
         "data_dir": "data_cache",

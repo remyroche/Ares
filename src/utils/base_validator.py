@@ -297,14 +297,9 @@ class BaseValidator(ABC):
             if check_model_integrity and metrics["is_file"]:
                 try:
                     import pickle
-                except Exception as e:
-                    pass  # TODO: Handle exception properly
-        except Exception as e:
-            pass  # TODO: Handle exception
-import os.path
-
-with open(model_path, "rb") as f:
-    model = pickle.load(f)
+                    
+                    with open(model_path, "rb") as f:
+                        model = pickle.load(f)
 
                     # Basic model validation
                     if hasattr(model, "predict"):
@@ -512,7 +507,7 @@ with open(model_path, "rb") as f:
                 )
                 return False, metrics
 
-            # Check if it's actually a directory'
+            # Check if it's actually a directory
             if not is_directory:
                 self.logger.warning(
                     f"⚠️ Path exists but is not a directory: {directory}",

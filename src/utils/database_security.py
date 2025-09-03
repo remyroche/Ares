@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .error_handler import handle_errors
+from .error_handler import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -342,12 +342,9 @@ class DatabaseSecurityManager:
         """Create secure Redis connection."""
         try:
             import redis
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-connection_params = {
-"host": params["host"],
+            
+            connection_params = {
+                "host": params["host"],
                 "port": params["port"],
                 "db": params.get("database", 0),
                 "password": params.get("password"),
@@ -369,7 +366,7 @@ connection_params = {
         except ImportError:
             raise Exception("redis not installed for Redis connections")
 
-    @handles_errors(Exception,, fallback=None, context="secure query execution")
+    @handles_errors(Exception, fallback=None, context="secure query execution")
     def execute_secure_query(
         self, connection: Any, query: str, parameters: Optional[List[Any]] = None
     ) -> Optional[List[Dict[str, Any]]]:
@@ -422,7 +419,7 @@ connection_params = {
 
             elif hasattr(connection, "get"):  # Redis
                 if query.strip().upper().startswith("SELECT"):
-                    # Redis doesn't support SQL queries'
+                    # Redis doesn't support SQL queries
                     return [{"error": "Redis doesn't support SQL queries"}]
                 else:
                     return [{"message": "Redis operation executed"}]
@@ -445,9 +442,9 @@ connection_params = {
 
             # Check for SQL injection indicators
             injection_indicators = [
-                r"';?\s*--",'
-                r"';?\s*#",'
-                r"';?\s*/\*",'
+                r"';?\s*--",
+                r"';?\s*#",
+                r"';?\s*/\*",
                 r"UNION\s+SELECT",
                 r"OR\s+1\s*=\s*1",
                 r"AND\s+1\s*=\s*1",
@@ -461,7 +458,7 @@ connection_params = {
             # Check query structure
             query_upper = query.upper().strip()
             if not any(query_upper.startswith(keyword) for keyword in self.security_policies["allowed_sql_keywords"]):
-                self.logger.error(f"Query doesn't start with allowed keyword: {query}")'
+                self.logger.error(f"Query doesn't start with allowed keyword: {query}")
                 return False
 
             return True
@@ -472,7 +469,7 @@ connection_params = {
 
     def _convert_sql_to_mongo(self, sql_query: str, parameters: Optional[List[Any]]) -> Dict[str, Any]:
         """Convert SQL-like query to MongoDB query format."""
-        # This is a simplified conversion - in practice, you'd use a proper SQL-to-MongoDB parser'
+        # This is a simplified conversion - in practice, you'd use a proper SQL-to-MongoDB parser
         try:
             # Extract table name (collection name)
             from_match = re.search(r"FROM\s+(\w+)", sql_query, re.IGNORECASE)
@@ -496,7 +493,7 @@ connection_params = {
 
     def _parse_where_clause(self, where_clause: str, parameters: Optional[List[Any]]) -> Dict[str, Any]:
         """Parse WHERE clause and convert to MongoDB query format."""
-        # This is a simplified parser - in practice, you'd use a proper SQL parser'
+        # This is a simplified parser - in practice, you'd use a proper SQL parser
         mongo_query = {}
 
         try:
@@ -579,7 +576,7 @@ connection_params = {
         for field in sensitive_fields:
             if field in encrypted_data:
                 # In a real implementation, you would encrypt this value
-                # For now, we'll just mark it as encrypted'
+                # For now, we'll just mark it as encrypted
                 encrypted_data[field] = f"[ENCRYPTED]{str(encrypted_data[field])[:4]}..."
 
         return encrypted_data
@@ -599,7 +596,7 @@ connection_params = {
         for field in sensitive_fields:
             if field in decrypted_data:
                 # In a real implementation, you would decrypt this value
-                # For now, we'll just remove the encryption marker'
+                # For now, we'll just remove the encryption marker
                 value = str(decrypted_data[field])
                 if value.startswith("[ENCRYPTED]"):
                     decrypted_data[field] = value[12:]  # Remove "[ENCRYPTED]" prefix

@@ -17,6 +17,7 @@ from src.utils.enhanced_validation_decorators import (
     validate_step4_comprehensive,
     smart_validation_cache
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step4RegimeDataSplittingValidator")
 
@@ -151,8 +152,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             if not file_exists:
                 return False
 
-            with open(stats_file, 'r') as f:
-                stats_data = json.load(f)
+            stats_data = safe_json_load(stats_file)
 
             # Check if it's a dictionary
             if not isinstance(stats_data, dict):

@@ -13,6 +13,7 @@ from src.utils.validation_decorators import (
     validate_dataframe_operation,
     validate_step2_operation,
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
 
@@ -131,8 +132,7 @@ class Step11AnalystCreationValidator:
             self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
             # Load and validate the metadata file
-            with open(metadata_file, "r") as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_file)
 
             # Check required fields
             required_fields = ["accuracy", "model_type", "creation_date"]

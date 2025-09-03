@@ -24,6 +24,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
     quality_gate,
 )
+from src.utils.common_operations import safe_json_load
 
 logger = system_logger.getChild("Step2DataReadingValidator")
 
@@ -198,8 +199,7 @@ import numpy as np
             validation_metadata = {}
             if validation_report_path.exists():
                 try:
-                    with open(validation_report_path, 'r') as f:
-                        validation_metadata = json.load(f)
+                    validation_metadata = safe_json_load(validation_report_path)
                     logger.info("✅ Validation report found and loaded")
                 except Exception as e:
                     logger.warning(f"⚠️ Error reading validation report: {e}")

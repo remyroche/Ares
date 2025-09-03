@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Step 5: Labeling with Standardized Data Quality Management."
+"""Step 5: Labeling with Standardized Data Quality Management.
 
-from src.core.decorators import handles_errors, traced
-import logging
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
 
 Key Enhancements:
 - Dynamic Label Generation: Added the ability to generate triple barrier labels directly within step05 using regime-aware methods
 - Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
-- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available'
+- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
+import logging
+from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time
 import asyncio
 import sys
 from pathlib import Path
@@ -187,11 +187,8 @@ class LabelingStep:
         
         try:
             # Try to import and initialize RegimeSpecificTripleBarrierOptimizer
-import copy
-import numpy as np
-import pandas as pd
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+            import copy
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
                 RegimeSpecificTripleBarrierOptimizer
             )
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
@@ -336,7 +333,7 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
                 data["meta_label"] = tb_labels
 
             # Save results under standardized labeled_data directory
-            labeled_data.to_parquet(output_path)
+            data.to_parquet(output_path)
             self.logger.info(f"✅ Labeled data saved to {output_path}")
 
             # Save labeling metadata alongside labeled data
@@ -501,7 +498,7 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails'
+            # Don't fail the step if MLflow logging fails
 
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method."
@@ -683,11 +680,9 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
             # Generate regime-aware labels
             try:
                 # Use the regime-aware triple barrier labeling
-            except Exception as e:
-                pass  # TODO: Handle exception properly
-
-RegimeAwareTripleBarrierLabeling
-)
+                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+                    RegimeAwareTripleBarrierLabeling
+                )
                 
                 regime_labeler = RegimeAwareTripleBarrierLabeling(
                     default_profit_take_multiplier=0.002,

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Validator for Step 9: Tactician Specialist Training."""
 
 import asyncio

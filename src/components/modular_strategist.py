@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/components/modular_strategist.py
 
 from datetime import datetime, timedelta

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Refactored cross-timeframe and interaction feature generation with reduced complexity.
 This module breaks down the high-complexity feature generation methods into smaller,

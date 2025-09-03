@@ -1,3 +1,4 @@
+from __future__ import annotations
 # aggtrades_data_formatting.py
 
 import csv

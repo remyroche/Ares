@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Examples of using the core decorator system.
 

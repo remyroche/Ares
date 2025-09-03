@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Comprehensive SR Training Pipeline.
 
 This module provides a complete training pipeline that integrates:

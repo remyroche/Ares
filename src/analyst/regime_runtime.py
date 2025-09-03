@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/analyst/regime_runtime.py
 
 import os

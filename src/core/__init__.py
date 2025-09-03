@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/core/__init__.py
 
 from .dependency_injection import (

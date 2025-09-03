@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/enhanced_optimization_orchestrator.py
 
 from src.core.decorators import handles_errors

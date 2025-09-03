@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/wavelet_integration_demo.py
 
 """Comprehensive Wavelet Transform Integration Demo

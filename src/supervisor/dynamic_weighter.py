@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Dynamic Weighter Module.
 
 This module provides dynamic weighting strategies for ensemble models,

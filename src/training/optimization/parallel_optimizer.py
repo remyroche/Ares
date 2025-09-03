@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/optimization/parallel_optimizer.py
 
 """Parallel Optimizer for efficient parameter optimization using parallel processing."""

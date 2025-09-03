@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/optimization/adaptive_trial_allocator.py
 
 """Adaptive Trial Allocator for intelligent trial distribution based on parameter importance."""

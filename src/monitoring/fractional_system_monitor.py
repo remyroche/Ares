@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/monitoring/fractional_system_monitor.py
 
 """Fractional System Monitor: Production monitoring for combined fractional system.

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/optimization/cached_optimizer.py
 
 from src.core.decorators import handles_errors

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/interfaces/__init__.py
 
 from .base_interfaces import (

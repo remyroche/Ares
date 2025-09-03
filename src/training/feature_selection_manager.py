@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/feature_selection_manager.py
 
 import json

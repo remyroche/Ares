@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/utils/confidence.py
 
 import numpy as np
@@ -270,4 +271,3 @@ def get_confidence_threshold_signals(confidence_scores: dict[str, np.ndarray], t
         1,  # Long signal
         np.where((final_confidence >= threshold) & (direction_prediction == 0), -1, 0),  # Short signal  # No signal
     )
-

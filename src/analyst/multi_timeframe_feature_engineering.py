@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/analyst/multi_timeframe_feature_engineering.py
 
 """Multi-Timeframe Feature Engineering System.

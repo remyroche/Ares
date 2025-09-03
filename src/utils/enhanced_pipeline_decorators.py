@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Enhanced Pipeline Decorators for Training Manager
 Provides comprehensive decorators, detailed reporting, and consistent storage for all pipeline steps.

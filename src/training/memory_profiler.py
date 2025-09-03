@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/memory_profiler.py
 
 import gc

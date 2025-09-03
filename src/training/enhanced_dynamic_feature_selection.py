@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/enhanced_dynamic_feature_selection.py
 
 import json

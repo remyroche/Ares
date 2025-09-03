@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Retry, timeout, and circuit breaker decorators.
 

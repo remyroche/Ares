@@ -24,7 +24,9 @@ from src.tactician.position_monitor import PositionAction, PositionAssessment, P
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, invalid
+from src.utils.warning_symbols import failed, invalid, warning
+from src.core.decorators import handles_errors
+from src.tactician.ml_tactics_manager import MLTacticsManager
 
 class DecisionPolicy:
     """
@@ -441,6 +443,62 @@ class TacticsOrchestrator:
             self.logger.exception(failed(f'❌ Configuration validation failed: {e}'))
             return False
 
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='tactics single-run execution')
+    async def execute_tactics(self, tactics_input: dict[str, Any]) -> bool:
+        """
+        Execute a single tactics cycle using provided inputs.
+
+        Expected tactics_input keys:
+          - market_data: pd.DataFrame
+          - analyst_predictions: dict with 'upper_barrier','lower_barrier','confidence'
+          - symbol: str
+          - timeframe: str
+        """
+        try:
+            market_data: pd.DataFrame | None = tactics_input.get('market_data')
+            analyst_predictions: dict[str, Any] | None = tactics_input.get('analyst_predictions')
+            symbol: str = tactics_input.get('symbol', 'UNKNOWN')
+            timeframe: str = tactics_input.get('timeframe', '1m')
+            if market_data is None or analyst_predictions is None:
+                self.logger.error(invalid('Missing market_data or analyst_predictions'))
+                return False
+            if not self.decision_policy or not self.decision_policy.ml_tactics:
+                self.logger.error(invalid('ML tactics not initialized'))
+                return False
+            analyst_barriers = self._extract_analyst_barriers(analyst_predictions)
+            analyst_confidence = float(analyst_predictions.get('confidence', 0.5))
+            tactician_predictions = await self.decision_policy.ml_tactics.generate_multi_output_predictions(
+                market_data=market_data,
+                analyst_barriers=analyst_barriers,
+                symbol=symbol,
+                timeframe=timeframe,
+                analyst_confidence=analyst_confidence,
+            )
+            if not tactician_predictions:
+                return False
+            enriched = self._augment_predictions_with_target_probabilities(tactician_predictions)
+            combined_confidence = float(enriched.get('combined_confidence', 0.5))
+            action = self._determine_action_from_predictions(enriched)
+            position_size = await self._calculate_position_size(enriched)
+            leverage = await self._calculate_leverage(enriched)
+            decision = TradeDecision(
+                action=action or 'HOLD',
+                confidence=combined_confidence,
+                position_size=position_size,
+                leverage=leverage,
+                price=None,
+                metadata={
+                    'tactician_predictions': enriched,
+                    'green_light_signal': enriched.get('green_light_signal', {}),
+                    'timestamp': datetime.now().isoformat(),
+                },
+            )
+            self.decision_history.append(decision)
+            return True
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Single-run execution failed: {e}'))
+            return False
+
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='tactics orchestration start')
     async def start_orchestration(self) -> bool:
         """
@@ -615,9 +673,23 @@ class TacticsOrchestrator:
             action = self._determine_action_from_predictions(tactician_predictions)
             if not action:
                 return None
-            position_size = await self._calculate_position_size(tactician_predictions)
-            leverage = await self._calculate_leverage(tactician_predictions)
-            return TradeDecision(action=action, confidence=combined_confidence, position_size=position_size, leverage=leverage, price=None, metadata={'analyst_predictions': analyst_predictions, 'tactician_predictions': tactician_predictions, 'green_light_signal': tactician_predictions.get('green_light_signal', {}), 'timestamp': datetime.now().isoformat()})
+            # Enrich predictions with target-hit probabilities for sizing/leverage
+            enriched_predictions = self._augment_predictions_with_target_probabilities(tactician_predictions)
+            position_size = await self._calculate_position_size(enriched_predictions)
+            leverage = await self._calculate_leverage(enriched_predictions)
+            return TradeDecision(
+                action=action,
+                confidence=combined_confidence,
+                position_size=position_size,
+                leverage=leverage,
+                price=None,
+                metadata={
+                    'analyst_predictions': analyst_predictions,
+                    'tactician_predictions': enriched_predictions,
+                    'green_light_signal': enriched_predictions.get('green_light_signal', {}),
+                    'timestamp': datetime.now().isoformat(),
+                },
+            )
         except Exception as e:
             self.logger.exception(failed(f'❌ Error creating trade decision: {e}'))
             return None
@@ -658,7 +730,14 @@ class TacticsOrchestrator:
             if not self.position_sizer:
                 return 0.0
             combined_confidence = tactician_predictions.get('combined_confidence', 0.5)
-            return await self.position_sizer.calculate_position_size(ml_predictions=tactician_predictions, analyst_confidence=combined_confidence, tactician_confidence=combined_confidence)
+            sizing = await self.position_sizer.calculate_position_size(
+                ml_predictions=tactician_predictions,
+                analyst_confidence=combined_confidence,
+                tactician_confidence=combined_confidence,
+            )
+            if isinstance(sizing, dict):
+                return float(sizing.get('final_position_size', 0.0))
+            return float(sizing or 0.0)
         except Exception as e:
             self.logger.exception(failed(f'❌ Error calculating position size: {e}'))
             return 0.0
@@ -677,10 +756,63 @@ class TacticsOrchestrator:
             if not self.leverage_sizer:
                 return 1.0
             combined_confidence = tactician_predictions.get('combined_confidence', 0.5)
-            return await self.leverage_sizer.calculate_leverage(ml_predictions=tactician_predictions, analyst_confidence=combined_confidence, tactician_confidence=combined_confidence)
+            lev = await self.leverage_sizer.calculate_leverage(
+                ml_predictions=tactician_predictions,
+                analyst_confidence=combined_confidence,
+                tactician_confidence=combined_confidence,
+            )
+            if isinstance(lev, dict):
+                return float(lev.get('final_leverage', lev.get('ml_leverage', 1.0)))
+            return float(lev or 1.0)
         except Exception as e:
             self.logger.exception(failed(f'❌ Error calculating leverage: {e}'))
             return 1.0
+
+    def _augment_predictions_with_target_probabilities(self, predictions: dict[str, Any]) -> dict[str, Any]:
+        """Derive price target and adverse hit probabilities from multi-output predictions.
+
+        Produces keys:
+          - price_target_confidences: {'0.5%','1.0%','1.5%','2.0%'}
+          - adversarial_confidences:  same keys representing adverse move risks
+        """
+        try:
+            # Gather confidences for 25% and 50% barriers across timeframes
+            c_05_candidates = []
+            c_10_candidates = []
+            for key in ['twenty_five_percent', 'twenty_five_percent_5m']:
+                if key in predictions and predictions[key]:
+                    c = float(predictions[key].get('confidence', 0.0))
+                    c_05_candidates.append(c)
+            for key in ['fifty_percent', 'fifty_percent_5m']:
+                if key in predictions and predictions[key]:
+                    c = float(predictions[key].get('confidence', 0.0))
+                    c_10_candidates.append(c)
+
+            conf_05 = max(c_05_candidates) if c_05_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.9
+            conf_10 = max(c_10_candidates) if c_10_candidates else float(predictions.get('combined_confidence', 0.5)) * 0.8
+            # Extrapolate to 1.5% and 2.0% from 1.0%
+            conf_15 = max(0.0, min(1.0, conf_10 * 0.75))
+            conf_20 = max(0.0, min(1.0, conf_10 * 0.6))
+
+            price_target_confidences = {
+                '0.5%': float(max(0.0, min(1.0, conf_05))),
+                '1.0%': float(max(0.0, min(1.0, conf_10))),
+                '1.5%': float(conf_15),
+                '2.0%': float(conf_20),
+            }
+
+            # Adverse probabilities as complementary likelihoods
+            adversarial_confidences = {
+                k: float(max(0.0, min(1.0, 1.0 - v))) for k, v in price_target_confidences.items()
+            }
+
+            enriched = predictions.copy()
+            enriched['price_target_confidences'] = price_target_confidences
+            enriched['adversarial_confidences'] = adversarial_confidences
+            return enriched
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Failed to augment predictions: {e}'))
+            return predictions
 
     async def _check_exit_signals(self, tactician_predictions: dict[str, Any]) -> None:
         """
@@ -708,6 +840,29 @@ class TacticsOrchestrator:
             pass
         except Exception as e:
             self.logger.exception(failed(f'❌ Error executing decisions: {e}'))
+
+    def get_tactics_results(self) -> dict[str, Any]:
+        """Return the latest decision and associated predictions/metrics."""
+        try:
+            if not self.decision_history:
+                return {}
+            d = self.decision_history[-1]
+            md = d.metadata or {}
+            preds = md.get('tactician_predictions') or md.get('tactician_predictions', {})
+            return {
+                'action': d.action,
+                'confidence': d.confidence,
+                'position_size': d.position_size,
+                'leverage': d.leverage,
+                'price_target_confidences': preds.get('price_target_confidences', {}),
+                'adversarial_confidences': preds.get('adversarial_confidences', {}),
+                'combined_confidence': preds.get('combined_confidence', 0.5),
+                'green_light_signal': preds.get('green_light_signal', {}),
+                'timestamp': md.get('timestamp', datetime.now().isoformat()),
+            }
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Error getting tactics results: {e}'))
+            return {}
 
     async def _close_position(self, assessment: PositionAssessment) -> None:
         """

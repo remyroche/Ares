@@ -73,10 +73,24 @@ class Step08AdvancedFeatureSelection:
         self.enable_mrmr = self.step_config.get("enable_mrmr", True)
         self.enable_rf_importance = self.step_config.get("enable_rf_importance", True)
         
-        # Phase 2 configuration (Boruta)
+        # Phase 2 configuration (Boruta with redundancy)
         self.phase2_targets = self.step_config.get("phase2_targets", [100, 80, 60])
         self.boruta_max_iter = self.step_config.get("boruta_max_iter", 100)
         self.boruta_alpha = self.step_config.get("boruta_alpha", 0.05)
+        
+        # Redundancy configuration
+        self.enable_redundancy_analysis = self.step_config.get("enable_redundancy_analysis", True)
+        self.min_redundancy_correlation = self.step_config.get("min_redundancy_correlation", 0.7)
+        self.redundancy_groups_per_concept = self.step_config.get("redundancy_groups_per_concept", 2)
+        self.feature_concept_patterns = self.step_config.get("feature_concept_patterns", {
+            "momentum": ["rsi", "macd", "momentum", "roc"],
+            "volatility": ["bb_", "atr", "volatility", "std"],
+            "volume": ["volume", "vwap", "obv", "mfi"],
+            "trend": ["ema", "sma", "trend", "adx"],
+            "microstructure": ["spread", "imbalance", "flow", "tick"],
+            "regime": ["regime", "cluster", "state"],
+            "support_resistance": ["sr_", "support", "resistance", "level"]
+        })
         
         # Validation configuration
         self.n_splits_ts = self.step_config.get("n_splits_ts", 5)
@@ -446,7 +460,7 @@ class Step08AdvancedFeatureSelection:
         regime_labels: Optional[pd.Series] = None
     ) -> Tuple[dict[str, Any], dict[str, Any]]:
         """
-        Phase 2: Boruta selection for multiple target sizes with interpretability.
+        Phase 2: Boruta selection with redundancy analysis for multiple target sizes.
         
         Args:
             X: Feature dataframe (already filtered to ~150 features)
@@ -457,6 +471,13 @@ class Step08AdvancedFeatureSelection:
             Feature sets and interpretability results
         """
         feature_sets = {}
+        
+        # 1. Perform redundancy analysis
+        redundancy_groups = {}
+        if self.enable_redundancy_analysis:
+            self.logger.info("🔄 Analyzing feature redundancy...")
+            redundancy_groups = self._analyze_feature_redundancy(X)
+            self.logger.info(f"   Found {len(redundancy_groups)} redundancy groups")
         
         if BORUTA_AVAILABLE:
             # Run Boruta
@@ -516,34 +537,54 @@ class Step08AdvancedFeatureSelection:
         
         # Create feature sets for each target size
         for target_size in self.phase2_targets:
-            self.logger.info(f"📊 Creating feature set with {target_size} features...")
+            self.logger.info(f"📊 Creating redundancy-aware feature set with {target_size} features...")
             
-            # Select top features
-            top_features = feature_importance.head(target_size).index.tolist()
+            # Select features with redundancy consideration
+            if self.enable_redundancy_analysis and redundancy_groups:
+                selected_features = self._select_features_with_redundancy(
+                    feature_importance, 
+                    redundancy_groups, 
+                    target_size,
+                    confirmed_features
+                )
+            else:
+                # Fallback to simple top selection
+                selected_features = feature_importance.head(target_size).index.tolist()
             
             # Validate with time-series CV
             ts_validation = self._time_series_validate_features(
-                X[top_features], y, n_splits=self.n_splits_ts
+                X[selected_features], y, n_splits=self.n_splits_ts
             )
             
             # Validate per regime if available
             regime_validation = {}
             if regime_labels is not None:
                 regime_validation = self._per_regime_validate_features(
-                    X[top_features], y, regime_labels
+                    X[selected_features], y, regime_labels
                 )
             
+            # Calculate redundancy statistics
+            redundancy_stats = self._calculate_redundancy_stats(
+                selected_features, redundancy_groups
+            ) if redundancy_groups else {}
+            
             feature_sets[target_size] = {
-                'features': top_features,
-                'importance_scores': feature_importance[top_features].to_dict(),
+                'features': selected_features,
+                'importance_scores': feature_importance[selected_features].to_dict(),
                 'ts_validation': ts_validation,
                 'regime_validation': regime_validation,
-                'boruta_confirmed': len([f for f in top_features if f in confirmed_features]),
-                'boruta_confirmed_ratio': len([f for f in top_features if f in confirmed_features]) / len(top_features)
+                'boruta_confirmed': len([f for f in selected_features if f in confirmed_features]),
+                'boruta_confirmed_ratio': len([f for f in selected_features if f in confirmed_features]) / len(selected_features),
+                'redundancy_stats': redundancy_stats
             }
             
             self.logger.info(f"   TS validation score: {ts_validation['mean_score']:.4f} ± {ts_validation['std_score']:.4f}")
             self.logger.info(f"   Boruta confirmed: {feature_sets[target_size]['boruta_confirmed']} features")
+            
+            if redundancy_stats:
+                self.logger.info(f"   Redundancy groups: {redundancy_stats['groups_represented']}")
+                self.logger.info(f"   Average redundancy: {redundancy_stats['average_redundancy']:.1f} features/group")
+                self.logger.info(f"   Concept coverage: {sum(redundancy_stats['concept_coverage'].values())} features across {len([v for v in redundancy_stats['concept_coverage'].values() if v > 0])} concepts")
         
         # Generate interpretability analysis
         self.logger.info("🔮 Generating interpretability analysis...")
@@ -744,6 +785,218 @@ class Step08AdvancedFeatureSelection:
         # Sort and return top interactions
         interactions.sort(key=lambda x: x[2], reverse=True)
         return [(f1, f2, round(score, 3)) for f1, f2, score in interactions[:top_k]]
+    
+    def _analyze_feature_redundancy(self, X: pd.DataFrame) -> dict[str, List[str]]:
+        """
+        Analyze feature redundancy to identify groups of correlated features.
+        
+        Args:
+            X: Feature dataframe
+            
+        Returns:
+            Dictionary mapping group names to feature lists
+        """
+        redundancy_groups = {}
+        
+        # 1. Correlation-based redundancy
+        corr_matrix = X.corr().abs()
+        
+        # Find highly correlated feature pairs
+        high_corr_pairs = []
+        for i in range(len(X.columns)):
+            for j in range(i + 1, len(X.columns)):
+                if corr_matrix.iloc[i, j] >= self.min_redundancy_correlation:
+                    high_corr_pairs.append((X.columns[i], X.columns[j], corr_matrix.iloc[i, j]))
+        
+        # Group correlated features using connected components
+        from collections import defaultdict
+        feature_graph = defaultdict(set)
+        for f1, f2, _ in high_corr_pairs:
+            feature_graph[f1].add(f2)
+            feature_graph[f2].add(f1)
+        
+        # Find connected components
+        visited = set()
+        corr_group_id = 0
+        for feature in feature_graph:
+            if feature not in visited:
+                # BFS to find connected component
+                component = set()
+                queue = [feature]
+                while queue:
+                    current = queue.pop(0)
+                    if current not in visited:
+                        visited.add(current)
+                        component.add(current)
+                        queue.extend(feature_graph[current] - visited)
+                
+                if len(component) > 1:
+                    redundancy_groups[f'corr_group_{corr_group_id}'] = list(component)
+                    corr_group_id += 1
+        
+        # 2. Concept-based redundancy
+        for concept, patterns in self.feature_concept_patterns.items():
+            concept_features = []
+            for feature in X.columns:
+                feature_lower = feature.lower()
+                if any(pattern in feature_lower for pattern in patterns):
+                    concept_features.append(feature)
+            
+            if len(concept_features) > 1:
+                # Only add if not already in correlation groups
+                new_features = []
+                for f in concept_features:
+                    if not any(f in group for group in redundancy_groups.values()):
+                        new_features.append(f)
+                
+                if len(new_features) > 1:
+                    redundancy_groups[f'concept_{concept}'] = new_features
+        
+        return redundancy_groups
+    
+    def _select_features_with_redundancy(
+        self, 
+        feature_importance: pd.Series,
+        redundancy_groups: dict[str, List[str]],
+        target_size: int,
+        confirmed_features: List[str]
+    ) -> List[str]:
+        """
+        Select features considering redundancy to ensure robustness.
+        
+        Args:
+            feature_importance: Feature importance scores
+            redundancy_groups: Dictionary of redundancy groups
+            target_size: Target number of features
+            confirmed_features: Boruta-confirmed features
+            
+        Returns:
+            List of selected features
+        """
+        selected_features = []
+        used_groups = set()
+        feature_to_groups = {}
+        
+        # Create reverse mapping
+        for group_name, features in redundancy_groups.items():
+            for feature in features:
+                if feature not in feature_to_groups:
+                    feature_to_groups[feature] = []
+                feature_to_groups[feature].append(group_name)
+        
+        # First pass: Select best features, considering redundancy
+        for feature in feature_importance.index:
+            if len(selected_features) >= target_size:
+                break
+                
+            # Check if feature belongs to any redundancy group
+            if feature in feature_to_groups:
+                groups = feature_to_groups[feature]
+                
+                # Count how many features from each group are already selected
+                group_counts = {}
+                for group in groups:
+                    group_features = redundancy_groups[group]
+                    count = sum(1 for f in selected_features if f in group_features)
+                    group_counts[group] = count
+                
+                # Allow selection if we don't have enough redundancy for any group
+                min_count = min(group_counts.values()) if group_counts else 0
+                if min_count < self.redundancy_groups_per_concept:
+                    selected_features.append(feature)
+                    for group in groups:
+                        used_groups.add(group)
+            else:
+                # Feature not in any redundancy group, select it
+                selected_features.append(feature)
+        
+        # Second pass: Ensure minimum redundancy for important groups
+        if len(selected_features) < target_size:
+            for group_name, group_features in redundancy_groups.items():
+                if len(selected_features) >= target_size:
+                    break
+                    
+                # Count current features from this group
+                current_count = sum(1 for f in selected_features if f in group_features)
+                
+                # Add more if needed
+                if current_count < self.redundancy_groups_per_concept:
+                    # Sort group features by importance
+                    group_importance = feature_importance[
+                        feature_importance.index.isin(group_features)
+                    ].sort_values(ascending=False)
+                    
+                    for feature in group_importance.index:
+                        if feature not in selected_features and len(selected_features) < target_size:
+                            selected_features.append(feature)
+                            current_count += 1
+                            if current_count >= self.redundancy_groups_per_concept:
+                                break
+        
+        # Third pass: Fill remaining slots with best available features
+        while len(selected_features) < target_size:
+            for feature in feature_importance.index:
+                if feature not in selected_features:
+                    selected_features.append(feature)
+                    break
+            else:
+                break  # No more features available
+        
+        # Prioritize Boruta-confirmed features
+        confirmed_selected = [f for f in selected_features if f in confirmed_features]
+        unconfirmed_selected = [f for f in selected_features if f not in confirmed_features]
+        
+        # Reorder to put confirmed features first
+        final_features = confirmed_selected + unconfirmed_selected
+        
+        return final_features[:target_size]
+    
+    def _calculate_redundancy_stats(
+        self, 
+        selected_features: List[str],
+        redundancy_groups: dict[str, List[str]]
+    ) -> dict[str, Any]:
+        """
+        Calculate redundancy statistics for selected features.
+        
+        Args:
+            selected_features: List of selected features
+            redundancy_groups: Dictionary of redundancy groups
+            
+        Returns:
+            Dictionary of redundancy statistics
+        """
+        stats = {
+            'groups_represented': 0,
+            'average_redundancy': 0,
+            'min_redundancy': float('inf'),
+            'max_redundancy': 0,
+            'concept_coverage': {},
+            'group_feature_counts': {}
+        }
+        
+        # Calculate group representation
+        for group_name, group_features in redundancy_groups.items():
+            count = sum(1 for f in selected_features if f in group_features)
+            if count > 0:
+                stats['groups_represented'] += 1
+                stats['group_feature_counts'][group_name] = count
+                stats['min_redundancy'] = min(stats['min_redundancy'], count)
+                stats['max_redundancy'] = max(stats['max_redundancy'], count)
+        
+        # Calculate average redundancy
+        if stats['group_feature_counts']:
+            stats['average_redundancy'] = sum(stats['group_feature_counts'].values()) / len(stats['group_feature_counts'])
+        else:
+            stats['min_redundancy'] = 0
+        
+        # Calculate concept coverage
+        for concept in self.feature_concept_patterns:
+            concept_features = [f for f in selected_features 
+                              if any(p in f.lower() for p in self.feature_concept_patterns[concept])]
+            stats['concept_coverage'][concept] = len(concept_features)
+        
+        return stats
     
     async def _save_selection_results(
         self,

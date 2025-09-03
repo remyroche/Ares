@@ -268,7 +268,7 @@ def get_enhanced_training_pipeline_config() -> dict[str, Any]:
         },
         # Step-specific configurations
         "steps": {
-            "step4_triple_barrier_method": {
+            "step4_5_triple_barrier_method": {
                 "enable_multi_output_labeling": True,
                 "enable_direction_labeling": True,
                 "enable_profit_labeling": True,

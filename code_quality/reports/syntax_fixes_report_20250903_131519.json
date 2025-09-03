@@ -1,0 +1,26 @@
+{
+  "fixed": 0,
+  "failed": 133,
+  "fixed_files": [],
+  "error_patterns": {
+    "invalid syntax": 28,
+    "unexpected indent": 64,
+    "expected an indented block after 'try' statement on line 321": 1,
+    "expected an indented block after 'try' statement on line 2541": 1,
+    "expected an indented block after 'if' statement on line 65": 1,
+    "unindent does not match any outer indentation level": 11,
+    "expected an indented block after 'try' statement on line 53": 1,
+    "unterminated string literal (detected at line 96)": 1,
+    "unterminated string literal (detected at line 729)": 1,
+    "expected 'except' or 'finally' block": 4,
+    "unmatched ')'": 12,
+    "invalid syntax. Perhaps you forgot a comma?": 1,
+    "expected an indented block after 'try' statement on line 188": 1,
+    "expected an indented block after 'try' statement on line 25": 1,
+    "expected an indented block after 'try' statement on line 26": 1,
+    "expected an indented block after 'if' statement on line 542": 1,
+    "expected an indented block after 'try' statement on line 153": 1,
+    "unexpected unindent": 1,
+    "expected an indented block after 'try' statement on line 37": 1
+  }
+}

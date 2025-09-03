@@ -1,0 +1,933 @@
+[
+  {
+    "file": "/workspace/src/training/wavelet_caching_workflow.py",
+    "line": 240,
+    "offset": 0,
+    "msg": "expected 'except' or 'finally' block",
+    "text": "import copy\n"
+  },
+  {
+    "file": "/workspace/src/utils/model_performance_monitor.py",
+    "line": 388,
+    "offset": 0,
+    "msg": "expected 'except' or 'finally' block",
+    "text": "from src.core.decorators import handles_errors\n"
+  },
+  {
+    "file": "/workspace/src/utils/quality_alert_system.py",
+    "line": 260,
+    "offset": 0,
+    "msg": "expected 'except' or 'finally' block",
+    "text": "if alert.details:\n"
+  },
+  {
+    "file": "/workspace/src/analyst/autoencoder_feature_generator.py",
+    "line": 1925,
+    "offset": 0,
+    "msg": "expected 'except' or 'finally' block",
+    "text": "perm_model = LogisticRegression(random_state=42, max_iter=1000)\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/raw_data_quality_checker.py",
+    "line": 544,
+    "offset": 9,
+    "msg": "expected an indented block after 'if' statement on line 542",
+    "text": "        combined_data.loc[resampled_time] = orig_row\n"
+  },
+  {
+    "file": "/workspace/src/training/feature_integration.py",
+    "line": 66,
+    "offset": 0,
+    "msg": "expected an indented block after 'if' statement on line 65",
+    "text": "import copy\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+    "line": 154,
+    "offset": 0,
+    "msg": "expected an indented block after 'try' statement on line 153",
+    "text": "import copy\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step14_tactician_labeling_validator.py",
+    "line": 189,
+    "offset": 0,
+    "msg": "expected an indented block after 'try' statement on line 188",
+    "text": "from src.utils.logger import log_io_operation\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/enhanced_step1_data_collection.py",
+    "line": 26,
+    "offset": 1,
+    "msg": "expected an indented block after 'try' statement on line 25",
+    "text": "from src.utils.enhanced_data_quality_validator import (\n"
+  },
+  {
+    "file": "/workspace/src/training/enhanced_training_manager.py",
+    "line": 2542,
+    "offset": 0,
+    "msg": "expected an indented block after 'try' statement on line 2541",
+    "text": "from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/enhanced_step1_5_data_converter.py",
+    "line": 27,
+    "offset": 1,
+    "msg": "expected an indented block after 'try' statement on line 26",
+    "text": "from src.utils.enhanced_data_quality_validator import (\n"
+  },
+  {
+    "file": "/workspace/src/training/model_trainer.py",
+    "line": 322,
+    "offset": 0,
+    "msg": "expected an indented block after 'try' statement on line 321",
+    "text": "from src.utils.mlflow_utils import log_params_with_metadata\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step1/data_gap_detector.py",
+    "line": 38,
+    "offset": 0,
+    "msg": "expected an indented block after 'try' statement on line 37",
+    "text": "from src.core.decorators import handles_errors, traced\n"
+  },
+  {
+    "file": "/workspace/src/training/multi_output_model_trainer.py",
+    "line": 54,
+    "offset": 1,
+    "msg": "expected an indented block after 'try' statement on line 53",
+    "text": "from .steps.step9_hmm_based_training import (\n"
+  },
+  {
+    "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+    "line": 222,
+    "offset": 13,
+    "msg": "invalid syntax",
+    "text": "            return True\n"
+  },
+  {
+    "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+    "line": 30,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "class EventType(Enum):\n"
+  },
+  {
+    "file": "/workspace/src/integration/paper_trading_integration.py",
+    "line": 15,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from datetime import datetime\n"
+  },
+  {
+    "file": "/workspace/src/tactician/position_sizer.py",
+    "line": 16,
+    "offset": 86,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors\n"
+  },
+  {
+    "file": "/workspace/src/tactician/ml_target_validator.py",
+    "line": 13,
+    "offset": 86,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors, validates\n"
+  },
+  {
+    "file": "/workspace/src/tactician/ml_tactics_manager.py",
+    "line": 7,
+    "offset": 86,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors\n"
+  },
+  {
+    "file": "/workspace/src/training/feature_engineering.py",
+    "line": 2,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from collections.abc import Callable\n"
+  },
+  {
+    "file": "/workspace/src/utils/data_loader.py",
+    "line": 21,
+    "offset": 5,
+    "msg": "invalid syntax",
+    "text": "    as,\n"
+  },
+  {
+    "file": "/workspace/src/utils/enhanced_memory_management.py",
+    "line": 40,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "except ImportError:\n"
+  },
+  {
+    "file": "/workspace/src/utils/configuration_security.py",
+    "line": 102,
+    "offset": 31,
+    "msg": "invalid syntax",
+    "text": "    @handles_errors(Exception,, fallback=None, context=\"configuration loading\")\n"
+  },
+  {
+    "file": "/workspace/src/utils/enhanced_missing_value_handler.py",
+    "line": 81,
+    "offset": 31,
+    "msg": "invalid syntax",
+    "text": "    @handles_errors(Exception,, fallback=None, context=\"missing value handling\")\n"
+  },
+  {
+    "file": "/workspace/src/analyst/liquidation_risk_model.py",
+    "line": 3,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from src.core.domain import handle_specific_errors\n"
+  },
+  {
+    "file": "/workspace/src/analyst/unified_regime_classifier.py",
+    "line": 20,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "import os\n"
+  },
+  {
+    "file": "/workspace/src/database/precomputed_features_manager.py",
+    "line": 24,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "except Exception:\n"
+  },
+  {
+    "file": "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+    "line": 40,
+    "offset": 13,
+    "msg": "invalid syntax",
+    "text": "        self.logger = logging.getLogger(self.__class__.__name__)\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+    "line": 11,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "import numpy as np\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step14_tactician_labeling.py",
+    "line": 626,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from src.utils.logger import log_dataframe_overview, log_io_operation\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/hmm_feature_enhancer.py",
+    "line": 4,
+    "offset": 34,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import (, traced\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step11_analyst_creation_validator.py",
+    "line": 6,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "import joblib\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step03_parameter_optimization_validator.py",
+    "line": 10,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import validates\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+    "line": 120,
+    "offset": 20,
+    "msg": "invalid syntax",
+    "text": "    @handles_errors, default_return=(False, {}), context=\"Step14._validate_monte_carlo_files\"\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step04_regime_data_splitting_validator.py",
+    "line": 9,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import validates\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step09_5_hmm_lm_generalist_training_validator.py",
+    "line": 6,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "import joblib\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step06_feature_engineering_validator.py",
+    "line": 6,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "import pandas as pd\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step05_labeling_validator.py",
+    "line": 9,
+    "offset": 1,
+    "msg": "invalid syntax",
+    "text": "from src.core.decorators import validates\n"
+  },
+  {
+    "file": "/workspace/src/training/core/checkpoint_manager.py",
+    "line": 39,
+    "offset": 33,
+    "msg": "invalid syntax",
+    "text": "        self.checkpoint_interval: int = self.checkpoint_config.get(\n"
+  },
+  {
+    "file": "/workspace/src/training/core/stage_context.py",
+    "line": 31,
+    "offset": 39,
+    "msg": "invalid syntax",
+    "text": "        self.enable_context_management: bool = self.context_config.get(\n"
+  },
+  {
+    "file": "/workspace/src/training/core/pipeline_orchestrator.py",
+    "line": 34,
+    "offset": 31,
+    "msg": "invalid syntax",
+    "text": "        self.pipeline_interval: int = self.pipeline_config.get(\n"
+  },
+  {
+    "file": "/workspace/src/strategist/strategist_backup.py",
+    "line": 59,
+    "offset": 13,
+    "msg": "invalid syntax. Perhaps you forgot a comma?",
+    "text": "            self.strategist_config.get(\"strategy_interval\", 1800)"
+  },
+  {
+    "file": "/workspace/src/supervisor/system_coordinator_backup.py",
+    "line": 630,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            analyst_decision = analyst_signals.get(\"analyst_decision\", {})\n"
+  },
+  {
+    "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+    "line": 19,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    performance_monitor,\n"
+  },
+  {
+    "file": "/workspace/src/pipelines/improved_pipeline_executor.py",
+    "line": 159,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        prices = []\n"
+  },
+  {
+    "file": "/workspace/src/tactician/position_division_strategy.py",
+    "line": 13,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    handle_errors,\n"
+  },
+  {
+    "file": "/workspace/src/tactician/tactician.py",
+    "line": 100,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    @handles_errors(\n"
+  },
+  {
+    "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+    "line": 47,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        self.barrier_calculator = DynamicBarrierCalculator(self.config)\n"
+  },
+  {
+    "file": "/workspace/src/training/multi_output_probability_trainer.py",
+    "line": 38,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    def fit(\n"
+  },
+  {
+    "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+    "line": 1356,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            tscv = TimeSeriesSplit(n_splits=n_folds)\n"
+  },
+  {
+    "file": "/workspace/src/training/multi_objective_optimizer.py",
+    "line": 70,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    @handles_errors(\n"
+  },
+  {
+    "file": "/workspace/src/training/calibration_manager.py",
+    "line": 134,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            if self.enable_temperature_scaling:\n"
+  },
+  {
+    "file": "/workspace/src/training/training_orchestrator.py",
+    "line": 419,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            self.logger.info(\"\u2705 All component managers initialized\")\n"
+  },
+  {
+    "file": "/workspace/src/training/factory.py",
+    "line": 186,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    if memory_gb < 8:\n"
+  },
+  {
+    "file": "/workspace/src/training/training_manager.py",
+    "line": 205,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            self.logger.info(\"Feature integration manager initialized successfully\")\n"
+  },
+  {
+    "file": "/workspace/src/training/enhanced_coarse_optimizer.py",
+    "line": 468,
+    "offset": 16,
+    "msg": "unexpected indent",
+    "text": "                if isinstance(shap_values, list):\n"
+  },
+  {
+    "file": "/workspace/src/training/di_training_manager.py",
+    "line": 116,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            await self._initialize_training_steps()\n"
+  },
+  {
+    "file": "/workspace/src/exchange/binance.py",
+    "line": 14,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    handle_network_operations,\n"
+  },
+  {
+    "file": "/workspace/src/utils/vif_calculator.py",
+    "line": 73,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            if r_squared < 1.0:\n"
+  },
+  {
+    "file": "/workspace/src/utils/data_formatting_framework.py",
+    "line": 401,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        handled_data = data.copy()\n"
+  },
+  {
+    "file": "/workspace/src/utils/base_validator.py",
+    "line": 310,
+    "offset": 20,
+    "msg": "unexpected indent",
+    "text": "                    if hasattr(model, \"predict\"):\n"
+  },
+  {
+    "file": "/workspace/src/utils/database_security.py",
+    "line": 358,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            if params.get(\"ssl\", False):\n"
+  },
+  {
+    "file": "/workspace/src/analyst/enhanced_prediction_integrator.py",
+    "line": 10,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    ValidationLevel,\n"
+  },
+  {
+    "file": "/workspace/src/analyst/regime_expert_orchestrator.py",
+    "line": 17,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    )\n"
+  },
+  {
+    "file": "/workspace/src/analyst/meta_label_relevance.py",
+    "line": 114,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    if magnitudes.ndim == 1:\n"
+  },
+  {
+    "file": "/workspace/src/database/migration_utils.py",
+    "line": 412,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    if len(sys.argv) < 2:\n"
+  },
+  {
+    "file": "/workspace/src/training/optimization/computational_optimization_manager.py",
+    "line": 1747,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    valid_fields = {field.name for field in fields(ComputationalOptimizationConfig)}\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/fractional_feature_selector.py",
+    "line": 693,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            history_file = output_path / \"selection_history.json\"\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py",
+    "line": 41,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    MultiTimeframeHMMEnsemble,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step09_hmm_based_training_validator.py",
+    "line": 32,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    min_quality_score=0.7,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step02_5_sr_optimization_validator.py",
+    "line": 94,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        default_return={\"valid\": False, \"errors\": [\"Validation failed\"]},\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step04_5_triple_barrier_method_validator.py",
+    "line": 32,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    min_quality_score=0.7,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step16_confidence_calibration.py",
+    "line": 857,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step21_saving.py",
+    "line": 248,
+    "offset": 16,
+    "msg": "unexpected indent",
+    "text": "                log_step_report,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/combined_fractional_system.py",
+    "line": 466,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            history_file = output_path / \"performance_history.json\"\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step03_5_final_regime_clustering_validator.py",
+    "line": 447,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    test_input = {\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/precompute_wavelet_features.py",
+    "line": 168,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            elif file_path.suffix.lower() == \".h5\":\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step02_5_sr_optimization.py",
+    "line": 1516,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    test_config = {\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step02_data_reading_validator.py",
+    "line": 35,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    min_quality_score=0.8,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step07_enhanced_matrix_operations.py",
+    "line": 161,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        model_performance_thresholds={},\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step03_hmm_regime_discovery.py",
+    "line": 200,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        min_quality_score=0.7,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/unified_data_loader.py",
+    "line": 34,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    from src.core.domain import (\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step02_data_reading.py",
+    "line": 148,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        min_quality_score=0.8,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step03_parameter_optimization.py",
+    "line": 130,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        default_return={\"success\": False, \"error\": \"Data loading failed\"},\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step09_hmm_based_training.py",
+    "line": 1053,
+    "offset": 20,
+    "msg": "unexpected indent",
+    "text": "                    self.models[f\"{model_name}_single\"] = {\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step04_regime_data_splitting.py",
+    "line": 142,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        min_quality_score=0.8,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step09_5_hmm_lm_generalist_training.py",
+    "line": 124,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        default_return={\"status\": \"FAILED\", \"error\": \"Execution failed\"},\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/integrated_data_quality_pipeline.py",
+    "line": 54,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        default_return={\"success\": False, \"error\": \"Pipeline failed\"},\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization.py",
+    "line": 66,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        default_return={\"status\": \"FAILED\", \"error\": \"Execution failed\"},\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step03_5_final_regime_clustering.py",
+    "line": 881,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    test_config = {\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+    "line": 47,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    MLFLOW_AVAILABLE = True\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+    "line": 42,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    OPTUNA_AVAILABLE = True\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+    "line": 33,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    MLFLOW_AVAILABLE = True\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+    "line": 776,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    async def test() -> None:\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+    "line": 522,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            return model\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+    "line": 39,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    SROptimizationParameters,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step1/comprehensive_gap_filler.py",
+    "line": 940,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        logger.info(f\"\ud83d\udcc1 Data cache path: {self.data_cache_path}\")\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step1/data_quality_monitor.py",
+    "line": 226,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            quality_results = await manager.comprehensive_quality_check(\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py",
+    "line": 73,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        min_quality_score=0.6,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+    "line": 468,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    dates = pd.date_range(\"2024-01-01\", periods=1000, freq=\"1min\")\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+    "line": 802,
+    "offset": 8,
+    "msg": "unexpected indent",
+    "text": "        data_copy = data.copy()\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+    "line": 706,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    dates = pd.date_range(\"2024-01-01\", periods=1000, freq=\"1min\")\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+    "line": 301,
+    "offset": 12,
+    "msg": "unexpected indent",
+    "text": "            self.logger.info(\"\u2705 Saved optimization results\")\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/data_preparation_components/training_validation_config.py",
+    "line": 394,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    blank_mode = _os.getenv(\"BLANK_TRAINING_MODE\", \"0\") == \"1\"\n"
+  },
+  {
+    "file": "/workspace/src/pipelines/components/lifecycle_manager.py",
+    "line": 18,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    performance_monitor,\n"
+  },
+  {
+    "file": "/workspace/src/pipelines/components/data_manager.py",
+    "line": 22,
+    "offset": 4,
+    "msg": "unexpected indent",
+    "text": "    handle_specific_errors,\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+    "line": 85,
+    "offset": 0,
+    "msg": "unexpected unindent",
+    "text": "class OptimizationCache:\n"
+  },
+  {
+    "file": "/workspace/src/training/enhanced_matrix_operations.py",
+    "line": 1549,
+    "offset": 34,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "                except Exception:\n"
+  },
+  {
+    "file": "/workspace/src/training/enhanced_training_manager_optimized.py",
+    "line": 431,
+    "offset": 35,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "            if writer is not None:\n"
+  },
+  {
+    "file": "/workspace/src/training/optimized_feature_selection_manager.py",
+    "line": 308,
+    "offset": 20,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "            except:\n"
+  },
+  {
+    "file": "/workspace/src/utils/model_manager.py",
+    "line": 95,
+    "offset": 49,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "        _NP_ORIGINAL_BITGEN_CTOR = original_ctor\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step10_unified_regime_intelligence_validator.py",
+    "line": 548,
+    "offset": 26,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "   except Exception as e:\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step11_analyst_creation.py",
+    "line": 163,
+    "offset": 55,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "                except Exception as e:  # noqa: BLE001\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step01_5_data_converter_validator.py",
+    "line": 432,
+    "offset": 35,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "    _asyncio.run(test_validator())\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step01_data_collection_validator.py",
+    "line": 435,
+    "offset": 32,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "\t_asyncio.run(test_validator())\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step05_hmm_based_training_validator.py",
+    "line": 724,
+    "offset": 35,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "    _asyncio.run(test_validator())\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step05_regime_data_splitting_validator.py",
+    "line": 87,
+    "offset": 34,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "    asyncio.run(test_validator())\n"
+  },
+  {
+    "file": "/workspace/src/training/steps/step1/data_resampler.py",
+    "line": 816,
+    "offset": 24,
+    "msg": "unindent does not match any outer indentation level",
+    "text": "        report += f\"\"\"\"\n"
+  },
+  {
+    "file": "/workspace/src/utils/data_optimizer.py",
+    "line": 98,
+    "offset": 86,
+    "msg": "unmatched ')'",
+    "text": "    @handles_errors, default_return=lambda self, df: df, context=\"optimize dataframe\")"
+  },
+  {
+    "file": "/workspace/src/analyst/ml_confidence_predictor.py",
+    "line": 1640,
+    "offset": 74,
+    "msg": "unmatched ')'",
+    "text": "            self.logger.error(\"Error in directional prediction: {str(e}\"))"
+  },
+  {
+    "file": "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+    "line": 1977,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step05_labeling.py",
+    "line": 612,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step19_monte_carlo_validation.py",
+    "line": 243,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step12_analyst_enhancement.py",
+    "line": 3623,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step18_walk_forward_validation.py",
+    "line": 196,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+    "line": 1154,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/fractional_differentiation.py",
+    "line": 15,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step04_5_triple_barrier_method.py",
+    "line": 340,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step1/data_quality_dashboard.py",
+    "line": 22,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+    "line": 15,
+    "offset": 1,
+    "msg": "unmatched ')'",
+    "text": ")"
+  },
+  {
+    "file": "/workspace/src/training/data_manager.py",
+    "line": 729,
+    "offset": 97,
+    "msg": "unterminated string literal (detected at line 729)",
+    "text": "                    f\"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}\",'"
+  },
+  {
+    "file": "/workspace/src/training/data_efficiency_optimizer.py",
+    "line": 96,
+    "offset": 18,
+    "msg": "unterminated string literal (detected at line 96)",
+    "text": "            \"\"\"),\""
+  }
+]

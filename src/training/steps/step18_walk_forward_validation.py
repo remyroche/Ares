@@ -1,6 +1,5 @@
 # src/training/steps/step18_*.py
 
-from src.core.domain import ParquetDatasetManager
 
 import asyncio
 import contextlib
@@ -11,6 +10,8 @@ from typing import Any, Dict
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from src.core.domain import ParquetDatasetManager
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
     validation_error,
 )
 
@@ -162,7 +163,6 @@ from src.training.enhanced_training_manager_optimized import (
 import os
 from src.utils.enhanced_mlflow_integration import (
 
-from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
     with_enhanced_mlflow_logging,
     log_step_report,

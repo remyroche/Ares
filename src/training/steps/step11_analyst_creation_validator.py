@@ -1,8 +1,9 @@
 # src/training/steps/step11_*.py
 
-from src.core.domain import (
 
 from src.core.decorators import validates
+from src.core.domain import (
+import joblib
     validate_dataframe_operation,
     validate_file_operation,
     validate_step2_operation
@@ -106,7 +107,6 @@ class Step11AnalystCreationValidator:
 
             # Try to load the model to ensure it's valid
             try:
-                import joblib
                 model = joblib.load(model_file)
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")

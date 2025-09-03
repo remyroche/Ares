@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Data Gap Detector for Step1.
 
+import pandas as pd
+from src.utils.logger import system_logger
+from .missing_data_downloader_and_gap_filler import (
 Detects missing data gaps in aggtrades, klines, and futures files.
 """
 
@@ -8,9 +11,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
 
-from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -34,7 +35,6 @@ class DataGapDetector:
 
         # Import the gap filler for immediate gap filling
         try:
-            from .missing_data_downloader_and_gap_filler import (
 from src.core.decorators import handles_errors, traced
                 MissingDataDownloaderAndGapFiller,
             )

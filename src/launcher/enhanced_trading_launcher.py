@@ -77,6 +77,7 @@ class EnhancedTradingLauncher:
         self.enable_detailed_reporting = self.launcher_config.get(
             "enable_detailed_reporting",
             True,
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -100,7 +101,8 @@ class EnhancedTradingLauncher:
             # Validate configuration
             if not self._validate_configuration():
                 self.logger.error(
-                    invalid("Invalid configuration for enhanced trading launcher"),
+                    invalid("Invalid configuration for enhanced trading launcher")
+                )
                 return False
 
             # Initialize components based on configuration
@@ -112,13 +114,15 @@ class EnhancedTradingLauncher:
 
         except Exception as e:
             self.logger.exception(
-                f"❌ Enhanced Trading Launcher initialization failed: {e}",
+                f"❌ Enhanced Trading Launcher initialization failed: {e}"
+            )
             return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
+    )
     def _validate_configuration(self) -> bool:
         """Validate launcher configuration."""
         try:
@@ -146,22 +150,20 @@ class EnhancedTradingLauncher:
             if self.enable_paper_trading:
                 self.paper_trading_integration = await setup_paper_trading_integration(
                     self.config
+                )
                 if self.paper_trading_integration:
                     self.logger.info("✅ Paper trading integration initialized")
                 else:
                     self.logger.warning(
-                        "⚠️ Failed to initialize paper trading integration",
+                        "⚠️ Failed to initialize paper trading integration"
+                    )
 
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
-import os
                     from src.backtesting.enhanced_backtester import (
-                except Exception as e:
-                    pass  # TODO: Handle exception properly
-
-setup_enhanced_backtester as _setup_backtester,
-)
+                        setup_enhanced_backtester as _setup_backtester,
+                    )
                     self.enhanced_backtester = await _setup_backtester(self.config)
                 except Exception as e:
                     self.logger.error(failed(f"Backtester import/setup failed: {e}"))
@@ -578,4 +580,4 @@ async def setup_enhanced_trading_launcher(
 
     except Exception as e:
         system_logger.exception(f"Error setting up enhanced trading launcher: {e}")
-        return None
+        return None)

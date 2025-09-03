@@ -1,8 +1,9 @@
 # src/training/steps/step7_feature_engineering_validator.py
 
-from src.core.domain import (
 
 from src.core.decorators import validates
+from src.core.domain import (
+import pandas as pd
     smart_validation_cache,
     validate_step6_comprehensive
 )
@@ -12,7 +13,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger

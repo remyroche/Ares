@@ -1,4 +1,6 @@
 """
+import yaml
+import shutil
 Configuration Security Module
 
 This module provides secure configuration management including:
@@ -16,7 +18,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import yaml
 
 from .error_handler import handle_errors
 from .logger import system_logger
@@ -354,7 +355,6 @@ class ConfigurationSecurityManager:
                     json.dump(config, f, indent=2)
             else:
                 # For other formats, just copy the file
-                import shutil
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy

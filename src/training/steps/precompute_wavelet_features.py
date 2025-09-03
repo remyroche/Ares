@@ -159,6 +159,8 @@ class WaveletFeaturePrecomputer:
                         dataset = pd.read_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
+        except Exception as e:
+            pass  # TODO: Handle exception
 import copy
 
 with log_io_operation(self.logger, "read_csv", data_path):

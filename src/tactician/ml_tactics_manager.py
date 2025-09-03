@@ -1,7 +1,6 @@
 # src/tactician/ml_tactics_manager.py
 
 
-from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 
 from datetime import datetime
 from typing import Any
@@ -15,6 +14,7 @@ from src.core.decorators import handles_errors as handles_errors_src_core_decora
 from src.utils.logger import system_logger
 
 
+from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 class MLTacticsManager:
     """
     ML Tactics Manager responsible for ML-based tactics and decision making.

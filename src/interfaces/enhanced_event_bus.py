@@ -938,4 +938,4 @@ async def setup_enhanced_event_bus(
 
     except Exception as e:
         print(f"Error setting up enhanced event bus: {e}")
-        return None
+        return None)

@@ -95,11 +95,12 @@ class CodeInteractionMapper:
         """Generate comprehensive interaction report."""
         print("\n[6/6] Generating interaction reports...")
 
-        # Create reports directory
-        reports_dir = self.project_root / "code_quality" / "interaction_reports"
-        reports_dir.mkdir(exist_ok=True)
-
+        # Create reports directory with datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        reports_dir = Path("code_quality/visualizers/reports") / f"report_{timestamp}"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"  - Output directory: {reports_dir}")
 
         # Save raw JSON data
         json_file = reports_dir / f"interactions_{timestamp}.json"
@@ -181,6 +182,8 @@ class CodeInteractionMapper:
             "json": str(json_file),
             "summary": str(summary_file),
             "html": str(html_file),
+            "report_dir": str(reports_dir),
+            "timestamp": timestamp
         }
 
     def _generate_visual_diagrams(self, output_dir: Path, timestamp: str):
@@ -275,9 +278,11 @@ class CodeInteractionMapper:
         print("\n" + "=" * 80)
         print("CODE INTERACTION MAPPING COMPLETE!")
         print("=" * 80)
-        print("\nGenerated reports:")
+        print(f"\nAll reports saved to: {report_files.get('report_dir', 'reports')}")
+        print("\nGenerated files:")
         for report_type, file_path in report_files.items():
-            print(f"  - {report_type.upper()}: {file_path}")
+            if report_type not in ['report_dir', 'timestamp']:
+                print(f"  - {report_type.upper()}: {Path(file_path).name}")
 
         return report_files
 

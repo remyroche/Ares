@@ -33,12 +33,17 @@ from sklearn.feature_selection import (
 )
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
-    mean_squared_error, mean_absolute_error, r2_score
+    mean_squared_error, mean_absolute_error, r2_score,
+    average_precision_score
 )
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
+from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.feature_selection import SelectFromModel
+from sklearn.pipeline import Pipeline
 
 # Multi-output training will be imported when needed
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
@@ -105,6 +110,12 @@ class EnhancedHMMBasedTrainingStep:
         self.model_architectures = {}
         for timeframe, model_config in specialist_config.items():
             self.model_architectures[timeframe] = model_config
+        # Provide sensible defaults if not configured
+        if not self.model_architectures:
+            self.model_architectures = {
+                "1m": "LogisticRegression",
+                "5m": "LightGBM",
+            }
 
         # Regime-specific configuration
         self.regime_config = config.get("regime_specific_training", {
@@ -680,21 +691,32 @@ class EnhancedHMMBasedTrainingStep:
             
             # Prepare data for multi-output training
             X = prepared_data["features"].values
-            y = prepared_data["single_target"].values if "single_target" in prepared_data else np.random.choice([0, 1], size=len(X))
+            y = prepared_data.get("single_target")
+            if y is None:
+                # Fallback: derive a simple direction from potential_profit_pct if available, else zeros
+                if "direction_target" in prepared_data:
+                    y = prepared_data["direction_target"].values
+                else:
+                    y = np.zeros(len(X))
             
-            # Create market data for target generation
-            market_data = pd.DataFrame({
-                'close': np.random.randn(len(X)),  # Placeholder - should use actual market data
-                'volume': np.random.randn(len(X))
-            })
+            # Market data for PnL evaluation must come from real series aligned with features
+            # Expect caller to provide aligned market_data in prepared_data when available
+            market_data = prepared_data.get("market_data")
+            if market_data is None or "close" not in getattr(market_data, 'columns', []):
+                # Safe fallback to avoid crashes; PnL metrics will be skipped if not present
+                market_data = pd.DataFrame({"close": pd.Series(index=prepared_data["features"].index, dtype=float)})
             
             # Generate multi-output targets
             y_multi = self.multi_output_trainer.prepare_multi_output_targets(X, y, market_data)
             
-            # Split data for training
-            split_idx = int(0.8 * len(X))
-            X_train, X_test = X[:split_idx], X[split_idx:]
-            y_train_multi = {k: v[:split_idx] for k, v in y_multi.items()}
+            # Purged time split with embargo to prevent leakage
+            n_samples = len(X)
+            embargo = max(5, int(0.01 * n_samples))  # 1% or minimum 5 samples
+            split_idx = int(0.8 * n_samples)
+            train_end = max(0, split_idx - embargo)
+
+            X_train, X_test = X[:train_end], X[split_idx:]
+            y_train_multi = {k: v[:train_end] for k, v in y_multi.items()}
             y_test_multi = {k: v[split_idx:] for k, v in y_multi.items()}
             
             # Train multi-output model
@@ -706,11 +728,84 @@ class EnhancedHMMBasedTrainingStep:
             price_action_probabilities = self.multi_output_trainer.predict_probabilities(
                 X_test, market_data.iloc[split_idx:]
             )
+            from src.utils.common_operations import standardize_price_action_probabilities
+            price_action_probabilities = standardize_price_action_probabilities(price_action_probabilities)
+
+            # Compute PR-AUC for primary head if available
+            pr_auc_scores = {}
+            try:
+                if "direction_probability" in price_action_probabilities and "direction_target" in prepared_data:
+                    y_true = prepared_data["direction_target"].values[split_idx:]
+                    y_proba = price_action_probabilities["direction_probability"]
+                    # If scalar provided, replicate to match length
+                    if np.isscalar(y_proba):
+                        y_proba = np.full_like(y_true, float(y_proba), dtype=float)
+                    pr_auc_scores["direction_pr_auc"] = float(average_precision_score(y_true, y_proba))
+            except Exception:
+                pass
+
+            # Fast PnL simulator on OOS segment (validation-only)
+            pnl_metrics = {}
+            try:
+                if "close" in market_data.columns:
+                    costs_bps = float(self.config.get("costs_bps", 8.0))  # 0.08% per round-trip
+                    entry_prices = market_data.iloc[split_idx:]["close"].values
+                    # Simple threshold on direction probability
+                    if "direction_probability" in price_action_probabilities:
+                        prob = price_action_probabilities["direction_probability"]
+                        threshold = float(self.config.get("prob_threshold", 0.6))
+                        if np.isscalar(prob):
+                            positions = np.ones_like(entry_prices, dtype=int) if float(prob) > threshold else np.zeros_like(entry_prices, dtype=int)
+                        else:
+                            positions = (np.asarray(prob) > threshold).astype(int)  # 1 long, 0 flat
+                        # Entry/exit when position changes
+                        returns = []
+                        wins = 0
+                        trades = 0
+                        prev_pos = 0
+                        prev_price = None
+                        for i, (pos, px) in enumerate(zip(positions, entry_prices)):
+                            if prev_pos == 0 and pos == 1:
+                                prev_pos = 1
+                                prev_price = px
+                            elif prev_pos == 1 and pos == 0 and prev_price is not None:
+                                gross = (px / prev_price) - 1.0
+                                net = gross - (costs_bps / 10000.0)
+                                returns.append(net)
+                                if net > 0:
+                                    wins += 1
+                                trades += 1
+                                prev_pos = 0
+                                prev_price = None
+                        if prev_pos == 1 and prev_price is not None:
+                            gross = (entry_prices[-1] / prev_price) - 1.0
+                            net = gross - (costs_bps / 10000.0)
+                            returns.append(net)
+                            if net > 0:
+                                wins += 1
+                            trades += 1
+                        import math
+                        pnl = float(np.nansum(returns))
+                        win_rate = float(wins / trades) if trades > 0 else 0.0
+                        sharpe = 0.0
+                        if len(returns) > 1 and np.std(returns) > 1e-12:
+                            sharpe = float(np.mean(returns) / np.std(returns) * math.sqrt(252))
+                        pnl_metrics = {
+                            "pnl": pnl,
+                            "win_rate": win_rate,
+                            "sharpe": sharpe,
+                            "trades": trades,
+                            "composite_metric": float(0.5 * pnl + 0.25 * win_rate + 0.25 * (sharpe / 10.0)),
+                        }
+            except Exception:
+                pass
             
             multi_output_result = {
                 "trained_models": trained_models,
                 "price_action_probabilities": price_action_probabilities,
-                "model_type": "multi_output"
+                "model_type": "multi_output",
+                "pr_auc": pr_auc_scores,
+                "pnl_metrics": pnl_metrics
             }
             
             if multi_output_result:
@@ -802,14 +897,29 @@ class EnhancedHMMBasedTrainingStep:
                         n_jobs=-1
                     )
                     model.fit(X_train_scaled, y_train)
+                elif architecture == "LogisticRegression":
+                    # Calibrated LR with L2 by default (optionally L1 via config)
+                    base_lr = LogisticRegression(
+                        penalty=self.config.get("lr_penalty", "l2"),
+                        solver="liblinear" if self.config.get("lr_penalty", "l2") == "l1" else "lbfgs",
+                        max_iter=200,
+                        class_weight="balanced"
+                    )
+                    model = CalibratedClassifierCV(base_lr, method="isotonic", cv=3)
+                    model.fit(X_train_scaled, y_train)
                 else:
                     self.logger.warning(f"   ⚠️ Architecture {architecture} not implemented for single-output")
                     continue
                 
                 # Evaluate
-                y_pred = model.predict(X_val_scaled)
-                accuracy = accuracy_score(y_val, y_pred)
-                cv_scores.append(accuracy)
+                if hasattr(model, "predict_proba"):
+                    y_proba = model.predict_proba(X_val_scaled)[:, 1]
+                    pr_auc = average_precision_score(y_val, y_proba)
+                    cv_scores.append(pr_auc)
+                else:
+                    y_pred = model.predict(X_val_scaled)
+                    accuracy = accuracy_score(y_val, y_pred)
+                    cv_scores.append(accuracy)
             
             # Train final model on full dataset
             scaler = StandardScaler()
@@ -817,36 +927,44 @@ class EnhancedHMMBasedTrainingStep:
             
             if architecture == "LightGBM":
                 final_model = lgb.LGBMClassifier(
-                    n_estimators=100,
-                    learning_rate=0.1,
-                    max_depth=6,
+                    n_estimators=self.config.get("lgb_n_estimators", 300),
+                    learning_rate=self.config.get("lgb_learning_rate", 0.075),
+                    max_depth=self.config.get("lgb_max_depth", 4),
                     random_state=42,
                     verbose=-1
                 )
             elif architecture == "RandomForest":
                 final_model = RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=10,
+                    n_estimators=self.config.get("rf_n_estimators", 150),
+                    max_depth=self.config.get("rf_max_depth", 8),
+                    max_features=self.config.get("rf_max_features", "sqrt"),
                     random_state=42,
                     n_jobs=-1
                 )
+            elif architecture == "LogisticRegression":
+                base_lr = LogisticRegression(
+                    penalty=self.config.get("lr_penalty", "l2"),
+                    solver="liblinear" if self.config.get("lr_penalty", "l2") == "l1" else "lbfgs",
+                    max_iter=500,
+                    class_weight="balanced"
+                )
+                final_model = CalibratedClassifierCV(base_lr, method="isotonic", cv=3)
             else:
                 return None
             
             final_model.fit(X_scaled, y)
             
-            # Calculate metrics
-            y_pred_final = final_model.predict(X_scaled)
-            final_accuracy = accuracy_score(y, y_pred_final)
+            # Replace optimistic training-set metrics with CV summary; also compute PR-AUC on OOF-like fold averages
+            final_accuracy = None
             
             result = {
                 "model": final_model,
                 "scaler": scaler,
                 "architecture": architecture,
                 "cv_scores": cv_scores,
-                "cv_mean": np.mean(cv_scores) if cv_scores else 0.0,
-                "cv_std": np.std(cv_scores) if cv_scores else 0.0,
-                "final_accuracy": final_accuracy,
+                "cv_mean": float(np.mean(cv_scores)) if cv_scores else 0.0,
+                "cv_std": float(np.std(cv_scores)) if cv_scores else 0.0,
+                "final_accuracy": final_accuracy,  # No training-set metric reported
                 "feature_importance": dict(zip(features.columns, final_model.feature_importances_)) if hasattr(final_model, 'feature_importances_') else {},
                 "n_features": len(features.columns)
             }

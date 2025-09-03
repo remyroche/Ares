@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any
 
 # Common utilities
-from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -1369,11 +1369,18 @@ class UnifiedRegimeIntelligenceStep:
             self.model.to(device)
 
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode="min", factor=0.5, patience=5, verbose=False
+            )
             criterion = nn.CrossEntropyLoss()
+            scaler = torch.cuda.amp.GradScaler() if self.device_str == "cuda" else None
 
             # Training loop
             best_val_loss: float = float("inf")
-            for epoch in range(self.epochs):
+            patience = int(self.config.get("early_stopping_patience", 15))
+            patience_counter = 0
+            max_epochs = int(self.config.get("max_epochs", self.epochs))
+            for epoch in range(max_epochs):
                 # Training phase
                 self.model.train()
                 train_loss = 0.0
@@ -1397,26 +1404,38 @@ class UnifiedRegimeIntelligenceStep:
                         if tf in train_hmm:
                             batch_hmm[tf] = train_hmm[tf][start_idx:end_idx].to(device)
 
-                    # Forward pass
-                    outputs = self.model(batch_hmm, batch_features)
-
-                    # Calculate losses
-                    regime_loss = criterion(outputs["regime_logits"], batch_regime)
-                    transition_loss = criterion(
-                        outputs["transition_logits"], batch_transition,
-                    )
-                    tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
-                    confidence_loss = F.mse_loss(
-                        outputs["confidence_logits"].squeeze(),
-                        torch.ones_like(outputs["confidence_logits"].squeeze()),
-                    )
-
-                    total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
-
-                    # Backward pass
-                    optimizer.zero_grad()
-                    total_loss.backward()
-                    optimizer.step()
+                    # Forward pass with AMP
+                    optimizer.zero_grad(set_to_none=True)
+                    if scaler is not None:
+                        with torch.cuda.amp.autocast():  # type: ignore[attr-defined]
+                            outputs = self.model(batch_hmm, batch_features)
+                            regime_loss = criterion(outputs["regime_logits"], batch_regime)
+                            transition_loss = criterion(outputs["transition_logits"], batch_transition)
+                            tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
+                            confidence_loss = F.mse_loss(
+                                outputs["confidence_logits"].squeeze(),
+                                torch.ones_like(outputs["confidence_logits"].squeeze()),
+                            )
+                            total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                        scaler.scale(total_loss).backward()
+                        # Gradient clipping
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
+                        outputs = self.model(batch_hmm, batch_features)
+                        regime_loss = criterion(outputs["regime_logits"], batch_regime)
+                        transition_loss = criterion(outputs["transition_logits"], batch_transition)
+                        tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
+                        confidence_loss = F.mse_loss(
+                            outputs["confidence_logits"].squeeze(),
+                            torch.ones_like(outputs["confidence_logits"].squeeze()),
+                        )
+                        total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                        total_loss.backward()
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        optimizer.step()
 
                     train_loss += total_loss.item()
 
@@ -1443,7 +1462,8 @@ class UnifiedRegimeIntelligenceStep:
                             if tf in val_hmm:
                                 batch_hmm[tf] = val_hmm[tf][start_idx - split_idx:end_idx - split_idx].to(device)
 
-                        outputs = self.model(batch_hmm, batch_features)
+                        with torch.cuda.amp.autocast(enabled=(scaler is not None)):
+                            outputs = self.model(batch_hmm, batch_features)
 
                         regime_loss = criterion(outputs["regime_logits"], batch_regime)
                         transition_loss = criterion(
@@ -1458,7 +1478,8 @@ class UnifiedRegimeIntelligenceStep:
                         total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
                         val_loss += total_loss.item()
 
-                # Log progress
+                # Scheduler step and logging
+                scheduler.step(val_loss)
                 if epoch % 10 == 0:
                     self.logger.info(
                         f"📊 Epoch {epoch}: Train Loss: {train_loss/len(train_loader):.4f}, "
@@ -1472,6 +1493,16 @@ class UnifiedRegimeIntelligenceStep:
                         self.model.state_dict(),
                         os.path.join(self.artifacts_dir, "best_model.pth"),
                     )
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+
+                # Early stopping
+                if patience_counter >= patience:
+                    self.logger.info(
+                        f"⏹️ Early stopping at epoch {epoch} with best val loss {best_val_loss:.4f}"
+                    )
+                    break
 
             self.logger.info("✅ Model training completed successfully")
             return True
@@ -1559,7 +1590,7 @@ class UnifiedRegimeIntelligenceStep:
             transition_pred = torch.argmax(transition_probs, dim=-1).item()
             tpsl_pred = torch.argmax(tpsl_probs, dim=-1).item()
 
-            return {
+            result = {
                 "regime": {
                     "prediction": regime_pred,
                     "probabilities": regime_probs.cpu().numpy()[0],
@@ -1580,6 +1611,29 @@ class UnifiedRegimeIntelligenceStep:
                 },
                 "confidence_score": confidence_score,
             }
+
+            # Thin adapter: map logits/softmax outputs to unified price action probability schema
+            try:
+                # direction_probability: probability of long (class 1) from TPSL head
+                direction_probability = float(tpsl_probs[0, 1].item()) if tpsl_probs.ndim == 2 else float(torch.max(tpsl_probs).item())
+                # triple_barrier_probability: proxy using regime confidence × long probability
+                triple_barrier_probability = float(torch.max(regime_probs).item()) * direction_probability
+                # magnitude_probability: use max regime probability as a stability proxy
+                magnitude_probability = float(torch.max(regime_probs).item())
+                # barrier_avoidance_probability: 1 - probability of short (class 0) from TPSL head
+                barrier_avoidance_probability = float(1.0 - float(tpsl_probs[0, 0].item())) if tpsl_probs.ndim == 2 else float(torch.sigmoid(outputs["confidence_logits"]).item())
+
+                result["price_action_probabilities"] = {
+                    "triple_barrier_probability": max(0.0, min(1.0, triple_barrier_probability)),
+                    "direction_probability": max(0.0, min(1.0, direction_probability)),
+                    "magnitude_probability": max(0.0, min(1.0, magnitude_probability)),
+                    "barrier_avoidance_probability": max(0.0, min(1.0, barrier_avoidance_probability)),
+                }
+                result["price_action_probabilities"] = standardize_price_action_probabilities(result["price_action_probabilities"])
+            except Exception:
+                pass
+
+            return result
 
         except Exception as e:
             self.logger.exception(f"🚨 Error making prediction: {e}")

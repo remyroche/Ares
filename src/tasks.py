@@ -8,7 +8,7 @@ from celery.schedules import crontab
 
 from src.ares_pipeline import AresPipeline
 from src.database.sqlite_manager import SQLiteManager
-from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.training.core.training_manager import create_training_manager
 
 # src/tasks.py
 
@@ -52,7 +52,7 @@ def run_monthly_training_pipeline() -> None:
             await db_manager.initialize()
 
             # Initialize enhanced training manager
-            training_manager = EnhancedTrainingManager(db_manager)
+            training_manager = TrainingManager(db_manager)
 
             # Get current trading symbol and exchange
             env_settings = get_environment_settings()

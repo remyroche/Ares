@@ -139,9 +139,9 @@ class AutoFixer:
     def _register_builtin_plugins(self):
         """Register built-in code fixing plugins."""
         try:
-            from code_quality.plugins.autopep8_fixer import Autopep8Fixer
+            from code_quality.plugins.autopep8_fixer import Autopep8Fixer as Autopep8Fixer_code_quality_plugins_autopep8_fixer
             from code_quality.plugins.black_fixer import BlackFixer
-            from code_quality.plugins.docformatter_fixer import DocformatterFixer
+            from code_quality.plugins.docformatter_fixer import DocformatterFixer as DocformatterFixer_2
             from code_quality.plugins.isort_fixer import IsortFixer
             from code_quality.plugins.unify_fixer import UnifyFixer
             from code_quality.plugins.yapf_fixer import YapfFixer

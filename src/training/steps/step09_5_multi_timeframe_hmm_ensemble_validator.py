@@ -32,10 +32,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         self.logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
         self.step_name = "step09_5_multi_timeframe_hmm_ensemble"
 
-    @handles_errors
-        default_return={"validation_passed": False, "error": "Unknown error"},
-        context="multi-timeframe HMM ensemble validation",
-    )
+    @handles_errors(default_return={"validation_passed": False, "error": "Unknown error"}, context="multi-timeframe HMM ensemble validation", )
     async def validate_step_outputs(
         self,
         symbol: str,
@@ -194,10 +191,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                 "checks_failed": 1,
             }
 
-    @handles_errors
-        default_return={"validation_passed": False, "error": "Unknown error"},
-        context="multi-timeframe HMM ensemble data validation",
-    )
+    @handles_errors(default_return={"validation_passed": False, "error": "Unknown error"}, context="multi-timeframe HMM ensemble data validation", )
     async def validate_input_data(
         self,
         symbol: str,
@@ -304,10 +298,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                 "checks_failed": 1,
             }
 
-    @handles_errors
-        default_return={"validation_passed": False, "error": "Unknown error"},
-        context="multi-timeframe HMM ensemble performance validation",
-    )
+    @handles_errors(default_return={"validation_passed": False, "error": "Unknown error"}, context="multi-timeframe HMM ensemble performance validation", )
     async def validate_performance(
         self,
         symbol: str,

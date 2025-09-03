@@ -39,8 +39,8 @@ try:
     from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
-    from src.monitoring.metrics_dashboard import MetricsDashboard
-    from src.monitoring.ml_monitor import MLMonitor
+    from src.monitoring.metrics_dashboard import MetricsDashboard as MetricsDashboard_src_monitoring_metrics_dashboard
+    from src.monitoring.ml_monitor import MLMonitor as MLMonitor_src_monitoring_ml_monitor
     from src.monitoring.performance_dashboard import PerformanceDashboard
     from src.monitoring.performance_monitor import PerformanceMonitor
     from src.supervisor.performance_reporter import PerformanceReporter

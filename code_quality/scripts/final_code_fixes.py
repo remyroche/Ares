@@ -100,7 +100,7 @@ def create_type_stubs_for_key_modules():
             # Create basic stub content
             stub_content = f'''"""Type stubs for {Path(module_path).stem}"""
 
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import A, Callableny, Dict, List, Optional, Union, Callable
 import datetime
 import pandas as pd
 import numpy as np

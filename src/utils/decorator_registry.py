@@ -3,9 +3,8 @@ from __future__ import annotations
 """Central registry for all decorators with metadata and versioning."""
 
 import logging
-from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import A, Callableny
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from src.utils.warning_symbols import warning
+from src.utils.warning_symbols import warning as warning_src_utils_warning_symbols
 
 
 def launch_bot_with_monitoring():

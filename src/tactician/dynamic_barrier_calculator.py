@@ -115,10 +115,7 @@ class DynamicBarrierCalculator:
         self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
-    @handles_errors
-        default_return=(0.001, 0.00025),
-        context="dynamic_barrier_calculator.calculate_dynamic_barriers"
-    )
+    @handles_errors(default_return=(0.001, 0.00025), context="dynamic_barrier_calculator.calculate_dynamic_barriers" )
     @traced("DynamicBarrier.calculateBarriers")
     def calculate_dynamic_barriers(
         self, 

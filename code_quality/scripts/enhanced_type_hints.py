@@ -326,7 +326,7 @@ class TypeHintEnhancer(ast.NodeTransformer):
         if "logging.Logger" in type_hint:
             self.imports_needed.add("import logging")
         if any(t in type_hint for t in ["Dict", "List", "Tuple", "Union", "Optional", "Any", "Callable"]):
-            self.imports_needed.add("from typing import Dict, List, Tuple, Union, Optional, Any, Callable")
+            self.imports_needed.add("from typing import Dict, List, Tuple, U, Callablenion, Optional, Any, Callable")
 
 
 class EnhancedTypeHintAdder:

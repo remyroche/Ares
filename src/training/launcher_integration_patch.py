@@ -8,12 +8,11 @@ This module contains the updated training functions that use the optimized train
 
 import asyncio
 import os
-from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import A, Callableny
 
 from src.config.computational_optimization_config import get_optimization_config
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )

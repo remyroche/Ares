@@ -26,27 +26,7 @@ A focused tool specifically for function-related validation:
 ### 3. Runner Script (`run_validation.py`)
 A convenient wrapper that runs both tools with easy configuration.
 
-## Directory Structure
 
-```
-code_quality/
-├── pipelines/         # Orchestration pipelines for running multiple tools
-├── scripts/           # Individual code quality tools
-├── analyzers/         # Code analysis modules
-├── fixers/           # Code fixing modules
-├── reports/          # Generated reports (timestamped)
-├── utils/            # Utility modules (report aggregator, etc.)
-└── core/             # Core functionality
-```
-
-### Pipelines
-
-The `pipelines/` directory contains orchestration scripts that coordinate multiple tools:
-- **Unified Pipelines**: Run all tools comprehensively
-- **Category Pipelines**: Focus on specific types of issues (syntax, async, types)
-- **Enhanced Pipelines**: Include unified reporting with per-file/directory analysis
-
-See [pipelines/README.md](pipelines/README.md) for detailed pipeline documentation.
 
 ## Installation
 

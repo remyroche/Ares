@@ -16,9 +16,13 @@ from typing import Any
 import h5py
 import joblib
 import numpy as np
-
-from src.utils.error_handler import (
 import asyncio
+
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_json_dump, safe_json_load, safe_copy
+)
+from src.utils.error_handler import (
 
     error,
     failed,
@@ -238,7 +242,7 @@ class ModelManager:
         """Initialize directories."""
         # Create models directory
         if not os.path.exists(self.models_dir):
-            os.makedirs(self.models_dir, exist_ok=True)
+            ensure_directory(self.models_dir)
             self.logger.info(f"Created models directory: {self.models_dir}")
 
         # Create subdirectories
@@ -246,7 +250,7 @@ class ModelManager:
         for subdir in subdirs:
             subdir_path = os.path.join(self.models_dir, subdir)
             if not os.path.exists(subdir_path):
-                os.makedirs(subdir_path, exist_ok=True)
+                ensure_directory(subdir_path)
                 self.logger.info(f"Created subdirectory: {subdir_path}")
 
         self.logger.info("Directories initialized successfully")
@@ -267,7 +271,7 @@ class ModelManager:
             self.model_metadata = {
                 "models": {},
                 "active_model": None,
-                "last_updated": datetime.now().isoformat(),
+                "last_updated": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "version": "1.0.0",
             }
             self.logger.info("Created new model metadata")
@@ -344,7 +348,7 @@ class ModelManager:
             "size": stat.st_size,
             "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
             "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "registered": datetime.now().isoformat(),
+            "registered": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
         }
 
         # Add metadata
@@ -354,11 +358,11 @@ class ModelManager:
             self.model_metadata.setdefault("models", {})[model_name] = {
                 "description": f"Model {model_name}",
                 "version": "1.0.0",
-                "created": datetime.now().isoformat(),
+                "created": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
             }
 
         # Update metadata
-        self.model_metadata["last_updated"] = datetime.now().isoformat()
+        self.model_metadata["last_updated"] = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
         # Save metadata
         await self._save_metadata()
@@ -484,7 +488,7 @@ class ModelManager:
 
         self.active_model = model_name
         self.model_metadata["active_model"] = model_name
-        self.model_metadata["last_updated"] = datetime.now().isoformat()
+        self.model_metadata["last_updated"] = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
         # Save metadata
         await self._save_metadata()
@@ -541,8 +545,8 @@ class ModelManager:
 
         # Create backup directory
         backup_dir = os.path.join(self.models_dir, "backups")
-        os.makedirs(backup_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ensure_directory(backup_dir)
+        timestamp = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
         backup_path = os.path.join(
             backup_dir,
             f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",

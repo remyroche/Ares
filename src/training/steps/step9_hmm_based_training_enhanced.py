@@ -19,9 +19,12 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.feature_selection import (
 import asyncio
-
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_read_parquet, safe_to_parquet, safe_copy
+)
+from sklearn.feature_selection import (
     f_classif,
     f_regression,
     mutual_info_classif,
@@ -75,7 +78,7 @@ class EnhancedHMMBasedTrainingStep:
         self.label_encoders = {}
 
         # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
-        sr_config = config.copy()
+        sr_config = safe_copy(config, deep=True)
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = SRBreakoutPredictor(sr_config)
@@ -187,7 +190,7 @@ class EnhancedHMMBasedTrainingStep:
                 self.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
             
-            unified_data = pd.read_parquet(unified_data_path)
+            unified_data = safe_read_parquet(unified_data_path)
             
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:
@@ -196,7 +199,7 @@ class EnhancedHMMBasedTrainingStep:
             
             # Filter for specific regime
             regime_mask = unified_data['composite_cluster_id'] == regime
-            regime_data = unified_data[regime_mask].copy()
+            regime_data = safe_copy(unified_data[regime_mask])
             
             # Regime-specific data validation
             if len(regime_data) < self.regime_config["min_regime_samples"]:
@@ -395,7 +398,7 @@ class EnhancedHMMBasedTrainingStep:
             
             validation_results = {
                 "regime": regime,
-                "validation_timestamp": datetime.now().isoformat(),
+                "validation_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "metrics": {},
                 "quality_checks": {},
                 "success": True
@@ -606,7 +609,7 @@ class EnhancedHMMBasedTrainingStep:
             "timestamp", "timeframe", "composite_cluster_id", "sample_weight"
         ]
         feature_columns = [col for col in data.columns if col not in exclude_columns]
-        features = data[feature_columns].copy()
+        features = safe_copy(data[feature_columns])
         
         # Handle missing values
         features = features.fillna(0)
@@ -668,7 +671,7 @@ class EnhancedHMMBasedTrainingStep:
             "regime_key": prepared_data["regime_key"],
             "single_output_results": None,
             "multi_output_results": None,
-            "training_timestamp": datetime.now().isoformat()
+            "training_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
         }
         
         # Train multi-output model if data is available
@@ -1115,7 +1118,7 @@ async def run_enhanced_step(
             logger.error(f"❌ Labeled data not found: {labeled_path}")
             return False
         
-        data = pd.read_parquet(labeled_path)
+        data = safe_read_parquet(labeled_path)
         logger.info(f"✅ Loaded labeled data: {data.shape}")
         
         # Prepare enhanced data

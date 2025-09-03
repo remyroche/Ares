@@ -736,16 +736,16 @@ class SRDetectionOptimizer:
     ) -> float:
         """Calculate enhanced performance score with comprehensive S/R validation."""
         try:
-            # Import backtesting validator
-            from src.tactician.sr_backtesting_validator import (
-                setup_sr_backtesting_validator,
+            # Import parameter optimizer
+            from src.tactician.sr_parameter_optimizer import (
+                setup_sr_parameter_optimizer,
             )
 
-            # Initialize backtesting validator
-            validator = await setup_sr_backtesting_validator(self.config)
-            if not validator:
+            # Initialize parameter optimizer
+            optimizer = await setup_sr_parameter_optimizer(self.config)
+            if not optimizer:
                 self.logger.warning(
-                    "Backtesting validator not available, using fallback scoring"
+                    "Parameter optimizer not available, using fallback scoring"
                 )
                 return self._calculate_fallback_score(
                     sr_context, market_data, target_data
@@ -762,19 +762,18 @@ class SRDetectionOptimizer:
             # Get current price
             current_price = market_data["close"].iloc[-1]
 
-            # Validate S/R levels through backtesting
-            backtest_result = await validator.validate_sr_levels(
+            # Optimize S/R parameters through backtesting
+            optimization_result = await optimizer.optimize_parameters(
                 market_data=market_data,
                 sr_levels=all_levels,
-                current_price=current_price,
             )
 
-            if not backtest_result:
+            if not optimization_result:
                 return 0.0
 
             # Calculate enhanced performance score
             performance_score = self._calculate_timeframe_specific_score(
-                backtest_result, target_timeframe
+                optimization_result, target_timeframe
             )
 
             # Store backtesting results for analysis

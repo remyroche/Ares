@@ -12,13 +12,8 @@ import pandas as pd
 import yaml
 
 <<<<<<< HEAD
-=======
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-from src.utils.centralized_decorators import (
-    with_tracing_span,
-)
->>>>>>> origin/main
 from src.utils.logger import get_logger
 from src.utils.warning_symbols import error, warning
 

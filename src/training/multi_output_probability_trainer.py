@@ -23,10 +23,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils.class_weight import compute_class_weight
 
-from src.utils.centralized_decorators import (
-    comprehensive_validation,
-    performance_monitor,
-)
+from src.core.decorators import validates, log_execution_time
 from src.utils.logger import system_logger
 
 # Import advanced neural network models
@@ -314,7 +311,7 @@ from src.core.decorators import handles_errors
             self.logger.warning(f"No specific model configuration for timeframe {self.timeframe}, using defaults")
 
     @handles_errors(fallback={})
-    @comprehensive_validation()
+    @validates(strict=True)
     def prepare_multi_output_targets(
         self,
         X: np.ndarray,

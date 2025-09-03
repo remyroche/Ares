@@ -690,6 +690,46 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 with open(report_path, 'w') as f:
                     f.write(content)
                 self.logger.info(f"💾 Saved {report_name} report")
+
+        # Persist filtered train/val features for Step 08 legacy consumer
+        try:
+            symbol = training_input.get("symbol", "UNKNOWN")
+            exchange = training_input.get("exchange", "UNKNOWN")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data/training")
+
+            features_dir = Path(data_dir)
+            features_dir.mkdir(parents=True, exist_ok=True)
+
+            # Derive filtered features using selected_features if available
+            selected_features = pipeline_state.get("selected_features", [])
+            engineered_data = pipeline_state.get("engineered_data", {})
+
+            def _save_split(df, split_name: str) -> None:
+                if df is None:
+                    return
+                if selected_features:
+                    available = [c for c in selected_features if c in df.columns]
+                    if available:
+                        df_to_save = df[available]
+                    else:
+                        df_to_save = df
+                else:
+                    df_to_save = df
+                out_path = features_dir / f"{exchange}_{symbol}_{timeframe}_features_filtered_{split_name}.parquet"
+                try:
+                    df_to_save.to_parquet(out_path)
+                    self.logger.info(f"💾 Saved filtered features: {out_path}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to save filtered {split_name} features: {e}")
+
+            train_df = engineered_data.get("train") if isinstance(engineered_data, dict) else None
+            val_df = engineered_data.get("val") if isinstance(engineered_data, dict) else None
+
+            _save_split(train_df, "train")
+            _save_split(val_df, "val")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Skipped filtered feature persistence due to error: {e}")
     
     def get_required_inputs(self) -> list:
         """Get list of required inputs for this step."""

@@ -1,6 +1,7 @@
 # src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
 
 """
+from sklearn.neural_network import MLPClassifier
 Multi-Timeframe Ensemble Integration
 
 This integrates multi-timeframe training into the existing ensemble system,
@@ -327,7 +328,6 @@ class MultiTimeframeEnsemble:
 
             # Use MLP as a simplified sequence model
             # TODO: Implement proper LSTM when TensorFlow/PyTorch is available
-            from sklearn.neural_network import MLPClassifier
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy

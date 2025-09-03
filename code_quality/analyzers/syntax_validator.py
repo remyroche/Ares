@@ -512,8 +512,13 @@ class SyntaxValidator:
         severity_counts = defaultdict(int)
 
         for error in self.syntax_errors:
-            error_counts[error.error_type] += 1
-            severity_counts[error.severity] += 1
+            # Handle both SyntaxError objects and dict representations
+            if isinstance(error, dict):
+                error_counts[error.get("error_type", "unknown")] += 1
+                severity_counts[error.get("severity", "error")] += 1
+            else:
+                error_counts[error.error_type] += 1
+                severity_counts[error.severity] += 1
 
         # Count files by status
         total_files = len(self.file_stats)
@@ -524,14 +529,22 @@ class SyntaxValidator:
         # Group errors by file
         errors_by_file = defaultdict(list)
         for error in self.syntax_errors:
-            errors_by_file[error.file_path].append(error.to_dict())
+            if isinstance(error, dict):
+                errors_by_file[error.get("file_path", "unknown")].append(error)
+            else:
+                errors_by_file[error.file_path].append(error.to_dict())
 
         # Group errors by directory
         errors_by_directory = defaultdict(lambda: {"files": 0, "errors": 0, "warnings": 0})
         for error in self.syntax_errors:
-            dir_path = str(Path(error.file_path).parent)
+            if isinstance(error, dict):
+                file_path = error.get("file_path", "unknown")
+            else:
+                file_path = error.file_path
+            dir_path = str(Path(file_path).parent)
             errors_by_directory[dir_path]["files"] += 1
-            if error.severity == "error":
+            severity = error.get("severity", "error") if isinstance(error, dict) else error.severity
+            if severity == "error":
                 errors_by_directory[dir_path]["errors"] += 1
             else:
                 errors_by_directory[dir_path]["warnings"] += 1
@@ -556,21 +569,49 @@ class SyntaxValidator:
         }
 
 
-    def get_file_errors(self, file_path: str) -> list[SyntaxError]:
+    def get_file_errors(self, file_path: str) -> list[SyntaxError | dict]:
         """Get all syntax errors for a specific file."""
-        return [error for error in self.syntax_errors if error.file_path == file_path]
+        result = []
+        for error in self.syntax_errors:
+            if isinstance(error, dict):
+                if error.get("file_path") == file_path:
+                    result.append(error)
+            elif error.file_path == file_path:
+                result.append(error)
+        return result
 
-    def get_directory_errors(self, directory: str) -> list[SyntaxError]:
+    def get_directory_errors(self, directory: str) -> list[SyntaxError | dict]:
         """Get all syntax errors for a specific directory."""
-        return [error for error in self.syntax_errors if error.file_path.startswith(directory)]
+        result = []
+        for error in self.syntax_errors:
+            if isinstance(error, dict):
+                if error.get("file_path", "").startswith(directory):
+                    result.append(error)
+            elif error.file_path.startswith(directory):
+                result.append(error)
+        return result
 
-    def get_errors_by_type(self, error_type: str) -> list[SyntaxError]:
+    def get_errors_by_type(self, error_type: str) -> list[SyntaxError | dict]:
         """Get all errors of a specific type."""
-        return [error for error in self.syntax_errors if error.error_type == error_type]
+        result = []
+        for error in self.syntax_errors:
+            if isinstance(error, dict):
+                if error.get("error_type") == error_type:
+                    result.append(error)
+            elif error.error_type == error_type:
+                result.append(error)
+        return result
 
-    def get_errors_by_severity(self, severity: str) -> list[SyntaxError]:
+    def get_errors_by_severity(self, severity: str) -> list[SyntaxError | dict]:
         """Get all errors of a specific severity."""
-        return [error for error in self.syntax_errors if error.severity == severity]
+        result = []
+        for error in self.syntax_errors:
+            if isinstance(error, dict):
+                if error.get("severity") == severity:
+                    result.append(error)
+            elif error.severity == severity:
+                result.append(error)
+        return result
 
     def export_report(self, output_path: str) -> None:
         """Export the validation report to JSON."""

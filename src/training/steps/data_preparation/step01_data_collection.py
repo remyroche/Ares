@@ -4,15 +4,16 @@ This module handles the data collection step of the training pipeline.
 It downloads and consolidates all required data for training.
 """
 
-from typing import Any, Dict, Tuple, Optional
-from pathlib import Path
 import os
-import pandas as pd
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
+import pandas as pd
+
+from src.core.decorators import handles_errors
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
 
 
 class DataCollectionStep(BaseStep):
@@ -263,7 +264,7 @@ class DataCollectionStep(BaseStep):
             Mock DataFrame with OHLCV data
         """
         import numpy as np
-        
+
         # Generate timestamps
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)  # 30 days of data

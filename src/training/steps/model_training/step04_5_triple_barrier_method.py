@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Step 4: Triple Barrier Method."
 
+from src.core.decorators import handles_errors, traced
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
 """
@@ -12,7 +13,6 @@ from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
-from src.core.decorators import handles_errors, traced
 
 # Handle optional dependencies
 try:

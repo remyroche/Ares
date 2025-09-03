@@ -1,0 +1,5880 @@
+{
+  "pipeline_info": {
+    "target": "tests/",
+    "target_type": "directory",
+    "total_files": 5,
+    "start_time": "2025-09-03T13:05:14.544201",
+    "timestamp": "20250903_130514",
+    "config_used": {
+      "auto_fix_tools": [
+        "isort",
+        "autoflake",
+        "pyupgrade",
+        "yesqa"
+      ],
+      "linters": [
+        "flake8",
+        "pylint",
+        "mypy"
+      ],
+      "max_line_length": 120
+    }
+  },
+  "step_results": {
+    "auto_fix": {
+      "status": "success",
+      "total_files_processed": 5,
+      "successful_tools": [],
+      "failed_tools": [],
+      "directory_results": {
+        "tests": {
+          "tests/integration/supervisor/test_supervisor_data_flow.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          },
+          "tests/test_tactician_integration.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/test_tactician_integration.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/test_tactician_integration.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/test_tactician_integration.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/test_tactician_integration.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          },
+          "tests/test_strategist.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/test_strategist.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/test_strategist.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/test_strategist.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/test_strategist.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          },
+          "tests/integration/supervisor/test_system_coordinator.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          },
+          "tests/integration/supervisor/__init__.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          }
+        },
+        "tests/integration/supervisor": {
+          "tests/integration/supervisor/__init__.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/integration/supervisor/__init__.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          },
+          "tests/integration/supervisor/test_supervisor_data_flow.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          },
+          "tests/integration/supervisor/test_system_coordinator.py": {
+            "success": true,
+            "fixers_used": [
+              "isort",
+              "Pyupgrade",
+              "Autoflake",
+              "Yesqa"
+            ],
+            "results": [
+              {
+                "success": true,
+                "tool": "isort",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "Successfully sorted imports with isort",
+                "stdout": "",
+                "stderr": ""
+              },
+              {
+                "success": false,
+                "tool": "pyupgrade",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "pyupgrade not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "autoflake",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "autoflake not installed",
+                "skipped": true
+              },
+              {
+                "success": false,
+                "tool": "yesqa",
+                "file": "tests/integration/supervisor/test_system_coordinator.py",
+                "message": "yesqa not installed",
+                "skipped": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    "linter_analysis": {
+      "status": "success",
+      "results": {
+        "total_issues": 0,
+        "total_files_with_issues": 0,
+        "total_errors": 0,
+        "total_warnings": 0,
+        "by_file": {},
+        "by_directory": {},
+        "by_linter": {},
+        "by_error_type": {}
+      },
+      "full_results": {
+        "total_issues": 0,
+        "total_files_with_issues": 0,
+        "total_errors": 0,
+        "total_warnings": 0,
+        "by_file": {},
+        "by_directory": {},
+        "by_linter": {},
+        "by_error_type": {},
+        "linter_status": {
+          "flake8": {
+            "status": "parse_error"
+          },
+          "pylint": {
+            "status": "failed",
+            "error": ""
+          },
+          "mypy": {
+            "status": "failed",
+            "error": "usage: mypy [-h] [-v] [-V] [more options; see below]\n            [-m MODULE] [-p PACKAGE] [-c PROGRAM_TEXT] [files ...]\nmypy: error: unrecognized arguments: --json-report\n"
+          }
+        },
+        "raw_results": []
+      }
+    },
+    "syntax_validation": {
+      "status": "error",
+      "error": "'dict' object has no attribute 'error_type'"
+    },
+    "import_analysis": {
+      "status": "success",
+      "results": {
+        "summary": {
+          "total_files_analyzed": 5,
+          "total_imports": 55,
+          "total_issues": 1,
+          "duplicate_imports": 1,
+          "circular_dependencies": 0,
+          "conflicting_imports": 0
+        },
+        "issues": {
+          "duplicate_imports": [
+            {
+              "file": "tests/test_strategist.py",
+              "line": 494,
+              "type": "duplicate_import",
+              "message": "Duplicate import: time",
+              "severity": "warning",
+              "details": {
+                "import_info": {
+                  "type": "import",
+                  "module": "time",
+                  "as_name": "time",
+                  "line": 494
+                }
+              }
+            }
+          ],
+          "circular_dependencies": [],
+          "conflicting_imports": []
+        }
+      },
+      "full_results": {
+        "summary": {
+          "total_files_analyzed": 5,
+          "total_imports": 55,
+          "total_issues": 1,
+          "duplicate_imports": 1,
+          "circular_dependencies": 0,
+          "conflicting_imports": 0
+        },
+        "issues": {
+          "duplicate_imports": [
+            {
+              "file": "tests/test_strategist.py",
+              "line": 494,
+              "type": "duplicate_import",
+              "message": "Duplicate import: time",
+              "severity": "warning",
+              "details": {
+                "import_info": {
+                  "type": "import",
+                  "module": "time",
+                  "as_name": "time",
+                  "line": 494
+                }
+              }
+            }
+          ],
+          "circular_dependencies": [],
+          "conflicting_imports": []
+        },
+        "import_graph": {
+          "nodes": [],
+          "edges": [],
+          "has_cycles": false
+        },
+        "files": {
+          "tests/test_strategist.py": {
+            "total_imports": 16,
+            "import_types": {
+              "import": 6,
+              "from_import": 10
+            }
+          },
+          "tests/test_tactician_integration.py": {
+            "total_imports": 15,
+            "import_types": {
+              "import": 4,
+              "from_import": 11
+            }
+          },
+          "tests/integration/supervisor/test_supervisor_data_flow.py": {
+            "total_imports": 11,
+            "import_types": {
+              "import": 2,
+              "from_import": 9
+            }
+          },
+          "tests/integration/supervisor/test_system_coordinator.py": {
+            "total_imports": 13,
+            "import_types": {
+              "import": 2,
+              "from_import": 11
+            }
+          },
+          "tests/integration/supervisor/__init__.py": {
+            "total_imports": 0,
+            "import_types": {
+              "import": 0,
+              "from_import": 0
+            }
+          }
+        }
+      }
+    },
+    "signature_analysis": {
+      "status": "success",
+      "results": {
+        "summary": {
+          "total_files_analyzed": 5,
+          "total_functions": 140,
+          "total_function_calls": 166,
+          "total_issues": 16,
+          "signature_changes": 3,
+          "compatibility_issues": 0,
+          "missing_functions": 0,
+          "unused_functions": 13
+        },
+        "issues": {
+          "signature_changes": [
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 23,
+              "type": "signature_change",
+              "message": "Function 'mock_config' has different signature than in tests/test_strategist.py",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "base_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691acd50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "changed_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33e0d0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "differences": [
+                  "Returns: None vs Dict[str, Any]"
+                ]
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 28,
+              "type": "signature_change",
+              "message": "Function 'mock_config' has different signature than in tests/test_strategist.py",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "base_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691acd50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "changed_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b44ae90>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "differences": [
+                  "Returns: None vs Dict[str, Any]"
+                ]
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 261,
+              "type": "signature_change",
+              "message": "Function 'test_component_coordination' has different signature than in tests/test_tactician_integration.py",
+              "severity": "warning",
+              "details": {
+                "function_name": "test_component_coordination",
+                "base_signature": {
+                  "args": [
+                    "self",
+                    "config",
+                    "market_data"
+                  ],
+                  "defaults": [
+                    null,
+                    null,
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b31b690>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "changed_signature": {
+                  "args": [
+                    "self",
+                    "mock_config"
+                  ],
+                  "defaults": [
+                    null,
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691af890>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "differences": [
+                  "Arguments: ['self', 'config', 'market_data'] vs ['self', 'mock_config']",
+                  "Defaults: [None, None, None] vs [None, None]"
+                ]
+              }
+            }
+          ],
+          "compatibility_issues": [],
+          "missing_functions": [],
+          "unused_functions": [
+            {
+              "file": "tests/test_strategist.py",
+              "line": 215,
+              "type": "unused_function",
+              "message": "Function 'mock_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691acd50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_strategist.py",
+              "line": 240,
+              "type": "unused_function",
+              "message": "Function 'strategist' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "strategist",
+                "signature": {
+                  "args": [
+                    "self",
+                    "mock_config"
+                  ],
+                  "defaults": [
+                    null,
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691ad110>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_strategist.py",
+              "line": 245,
+              "type": "unused_function",
+              "message": "Function 'sample_market_data' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "sample_market_data",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6690ef810>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_tactician_integration.py",
+              "line": 22,
+              "type": "unused_function",
+              "message": "Function 'config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b317910>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_tactician_integration.py",
+              "line": 59,
+              "type": "unused_function",
+              "message": "Function 'market_data' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "market_data",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b345cd0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_tactician_integration.py",
+              "line": 372,
+              "type": "unused_function",
+              "message": "Function 'minimal_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "minimal_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd669107fd0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 23,
+              "type": "unused_function",
+              "message": "Function 'mock_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33e0d0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 43,
+              "type": "unused_function",
+              "message": "Function 'mock_state_manager' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_state_manager",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Mock",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33e090>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 52,
+              "type": "unused_function",
+              "message": "Function 'mock_db_manager' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_db_manager",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Mock",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33dfd0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 59,
+              "type": "unused_function",
+              "message": "Function 'mock_exchange_client' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_exchange_client",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Mock",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66919fe50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 28,
+              "type": "unused_function",
+              "message": "Function 'mock_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b44ae90>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 68,
+              "type": "unused_function",
+              "message": "Function 'success_func' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "success_func",
+                "signature": {
+                  "args": [],
+                  "defaults": [],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 76,
+              "type": "unused_function",
+              "message": "Function 'failing_func' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "failing_func",
+                "signature": {
+                  "args": [],
+                  "defaults": [],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            }
+          ]
+        }
+      },
+      "full_results": {
+        "summary": {
+          "total_files_analyzed": 4,
+          "total_functions": 140,
+          "total_function_calls": 166,
+          "total_issues": 16,
+          "signature_changes": 3,
+          "compatibility_issues": 0,
+          "missing_functions": 0,
+          "unused_functions": 13
+        },
+        "issues": {
+          "signature_changes": [
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 23,
+              "type": "signature_change",
+              "message": "Function 'mock_config' has different signature than in tests/test_strategist.py",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "base_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691acd50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "changed_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33e0d0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "differences": [
+                  "Returns: None vs Dict[str, Any]"
+                ]
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 28,
+              "type": "signature_change",
+              "message": "Function 'mock_config' has different signature than in tests/test_strategist.py",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "base_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691acd50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "changed_signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b44ae90>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "differences": [
+                  "Returns: None vs Dict[str, Any]"
+                ]
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 261,
+              "type": "signature_change",
+              "message": "Function 'test_component_coordination' has different signature than in tests/test_tactician_integration.py",
+              "severity": "warning",
+              "details": {
+                "function_name": "test_component_coordination",
+                "base_signature": {
+                  "args": [
+                    "self",
+                    "config",
+                    "market_data"
+                  ],
+                  "defaults": [
+                    null,
+                    null,
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b31b690>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "changed_signature": {
+                  "args": [
+                    "self",
+                    "mock_config"
+                  ],
+                  "defaults": [
+                    null,
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691af890>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                },
+                "differences": [
+                  "Arguments: ['self', 'config', 'market_data'] vs ['self', 'mock_config']",
+                  "Defaults: [None, None, None] vs [None, None]"
+                ]
+              }
+            }
+          ],
+          "compatibility_issues": [],
+          "missing_functions": [],
+          "unused_functions": [
+            {
+              "file": "tests/test_strategist.py",
+              "line": 215,
+              "type": "unused_function",
+              "message": "Function 'mock_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691acd50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_strategist.py",
+              "line": 240,
+              "type": "unused_function",
+              "message": "Function 'strategist' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "strategist",
+                "signature": {
+                  "args": [
+                    "self",
+                    "mock_config"
+                  ],
+                  "defaults": [
+                    null,
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6691ad110>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_strategist.py",
+              "line": 245,
+              "type": "unused_function",
+              "message": "Function 'sample_market_data' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "sample_market_data",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd6690ef810>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_tactician_integration.py",
+              "line": 22,
+              "type": "unused_function",
+              "message": "Function 'config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b317910>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_tactician_integration.py",
+              "line": 59,
+              "type": "unused_function",
+              "message": "Function 'market_data' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "market_data",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b345cd0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/test_tactician_integration.py",
+              "line": 372,
+              "type": "unused_function",
+              "message": "Function 'minimal_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "minimal_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd669107fd0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 23,
+              "type": "unused_function",
+              "message": "Function 'mock_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33e0d0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 43,
+              "type": "unused_function",
+              "message": "Function 'mock_state_manager' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_state_manager",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Mock",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33e090>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 52,
+              "type": "unused_function",
+              "message": "Function 'mock_db_manager' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_db_manager",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Mock",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b33dfd0>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_supervisor_data_flow.py",
+              "line": 59,
+              "type": "unused_function",
+              "message": "Function 'mock_exchange_client' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_exchange_client",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Mock",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66919fe50>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 28,
+              "type": "unused_function",
+              "message": "Function 'mock_config' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "mock_config",
+                "signature": {
+                  "args": [
+                    "self"
+                  ],
+                  "defaults": [
+                    null
+                  ],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": "Dict[str, Any]",
+                  "decorators": [
+                    "<ast.Attribute object at 0x7fd66b44ae90>"
+                  ],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 68,
+              "type": "unused_function",
+              "message": "Function 'success_func' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "success_func",
+                "signature": {
+                  "args": [],
+                  "defaults": [],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            },
+            {
+              "file": "tests/integration/supervisor/test_system_coordinator.py",
+              "line": 76,
+              "type": "unused_function",
+              "message": "Function 'failing_func' is defined but never called",
+              "severity": "warning",
+              "details": {
+                "function_name": "failing_func",
+                "signature": {
+                  "args": [],
+                  "defaults": [],
+                  "vararg": null,
+                  "kwarg": null,
+                  "returns": null,
+                  "decorators": [],
+                  "is_method": false,
+                  "class_name": null
+                }
+              }
+            }
+          ]
+        },
+        "functions": {
+          "tests/test_strategist.py": [
+            {
+              "name": "test_strategist_config_defaults",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 32,
+              "is_method": true,
+              "class_name": "TestStrategistConfig"
+            },
+            {
+              "name": "test_strategist_config_validation",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 41,
+              "is_method": true,
+              "class_name": "TestStrategistConfig"
+            },
+            {
+              "name": "test_technical_thresholds_validation",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 51,
+              "is_method": true,
+              "class_name": "TestStrategistConfig"
+            },
+            {
+              "name": "test_market_indicators_model",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 62,
+              "is_method": true,
+              "class_name": "TestStrategistConfig"
+            },
+            {
+              "name": "test_strategy_result_model",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 76,
+              "is_method": true,
+              "class_name": "TestStrategistConfig"
+            },
+            {
+              "name": "test_validate_required_columns",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 92,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "test_validate_data_sufficiency",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 111,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "test_performance_optimizer_rsi",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 125,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "test_performance_optimizer_sma",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 136,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "test_performance_optimizer_volatility",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 145,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "test_parallel_indicator_calculation",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b329a50>"
+              ],
+              "line": 154,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "test_strategy_component_extractor",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 175,
+              "is_method": true,
+              "class_name": "TestStrategistUtils"
+            },
+            {
+              "name": "mock_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691acd50>"
+              ],
+              "line": 215,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "strategist",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691ad110>"
+              ],
+              "line": 240,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "sample_market_data",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ef810>"
+              ],
+              "line": 245,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_initialize",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690efed0>"
+              ],
+              "line": 258,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_generate_strategy_basic",
+              "args": [
+                "self",
+                "strategist",
+                "sample_market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e990>"
+              ],
+              "line": 266,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_generate_strategy_with_analysis",
+              "args": [
+                "self",
+                "strategist",
+                "sample_market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691a9990>"
+              ],
+              "line": 283,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_generate_strategy_invalid_data",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b344d10>"
+              ],
+              "line": 314,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_risk_management",
+              "args": [
+                "self",
+                "strategist",
+                "sample_market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b314350>"
+              ],
+              "line": 336,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_strategy_history_management",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 363,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_stop",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669248b90>"
+              ],
+              "line": 383,
+              "is_method": true,
+              "class_name": "TestStrategist"
+            },
+            {
+              "name": "test_full_strategy_generation_flow",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691ba390>"
+              ],
+              "line": 395,
+              "is_method": true,
+              "class_name": "TestIntegration"
+            },
+            {
+              "name": "test_indicator_calculation_performance",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691b1790>"
+              ],
+              "line": 454,
+              "is_method": true,
+              "class_name": "TestPerformance"
+            },
+            {
+              "name": "test_caching_performance",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 492,
+              "is_method": true,
+              "class_name": "TestPerformance"
+            },
+            {
+              "name": "test_strategist_config_defaults",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 32,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_strategist_config_validation",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 41,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_technical_thresholds_validation",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 51,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_market_indicators_model",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 62,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_strategy_result_model",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 76,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_validate_required_columns",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 92,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_validate_data_sufficiency",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 111,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_performance_optimizer_rsi",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 125,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_performance_optimizer_sma",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 136,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_performance_optimizer_volatility",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 145,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_parallel_indicator_calculation",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b329a50>"
+              ],
+              "line": 154,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_strategy_component_extractor",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 175,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "mock_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691acd50>"
+              ],
+              "line": 215,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "strategist",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691ad110>"
+              ],
+              "line": 240,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "sample_market_data",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ef810>"
+              ],
+              "line": 245,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_initialize",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690efed0>"
+              ],
+              "line": 258,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_generate_strategy_basic",
+              "args": [
+                "self",
+                "strategist",
+                "sample_market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e990>"
+              ],
+              "line": 266,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_generate_strategy_with_analysis",
+              "args": [
+                "self",
+                "strategist",
+                "sample_market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691a9990>"
+              ],
+              "line": 283,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_generate_strategy_invalid_data",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b344d10>"
+              ],
+              "line": 314,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_risk_management",
+              "args": [
+                "self",
+                "strategist",
+                "sample_market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b314350>"
+              ],
+              "line": 336,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_strategy_history_management",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 363,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_stop",
+              "args": [
+                "self",
+                "strategist"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669248b90>"
+              ],
+              "line": 383,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_full_strategy_generation_flow",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691ba390>"
+              ],
+              "line": 395,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_indicator_calculation_performance",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691b1790>"
+              ],
+              "line": 454,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_caching_performance",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 492,
+              "is_method": false,
+              "class_name": null
+            }
+          ],
+          "tests/test_tactician_integration.py": [
+            {
+              "name": "config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b317910>"
+              ],
+              "line": 22,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "market_data",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b345cd0>"
+              ],
+              "line": 59,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_tactician_initialization",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691abf50>"
+              ],
+              "line": 85,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_setup_tactician",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691aa890>"
+              ],
+              "line": 104,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_tactics_execution",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ecbd0>"
+              ],
+              "line": 116,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_sr_breakout_detection",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b32b890>"
+              ],
+              "line": 147,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_position_sizing",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b328510>"
+              ],
+              "line": 177,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_leverage_sizing",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31c790>"
+              ],
+              "line": 201,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_component_coordination",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31b690>"
+              ],
+              "line": 225,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_enhanced_predictions",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31aa50>"
+              ],
+              "line": 248,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_error_handling",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919d310>"
+              ],
+              "line": 270,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_performance_tracking",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b38cdd0>"
+              ],
+              "line": 283,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_ml_feature_extraction",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691af7d0>"
+              ],
+              "line": 307,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "test_concurrent_operations",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669104890>"
+              ],
+              "line": 340,
+              "is_method": true,
+              "class_name": "TestTacticianIntegration"
+            },
+            {
+              "name": "minimal_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669107fd0>"
+              ],
+              "line": 372,
+              "is_method": true,
+              "class_name": "TestTacticianEdgeCases"
+            },
+            {
+              "name": "test_empty_market_data",
+              "args": [
+                "self",
+                "minimal_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669104310>"
+              ],
+              "line": 380,
+              "is_method": true,
+              "class_name": "TestTacticianEdgeCases"
+            },
+            {
+              "name": "test_missing_required_fields",
+              "args": [
+                "self",
+                "minimal_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66924a510>"
+              ],
+              "line": 401,
+              "is_method": true,
+              "class_name": "TestTacticianEdgeCases"
+            },
+            {
+              "name": "test_invalid_price_data",
+              "args": [
+                "self",
+                "minimal_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b303190>"
+              ],
+              "line": 419,
+              "is_method": true,
+              "class_name": "TestTacticianEdgeCases"
+            },
+            {
+              "name": "config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b317910>"
+              ],
+              "line": 22,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "market_data",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b345cd0>"
+              ],
+              "line": 59,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_tactician_initialization",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691abf50>"
+              ],
+              "line": 85,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_setup_tactician",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691aa890>"
+              ],
+              "line": 104,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_tactics_execution",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ecbd0>"
+              ],
+              "line": 116,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_sr_breakout_detection",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b32b890>"
+              ],
+              "line": 147,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_position_sizing",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b328510>"
+              ],
+              "line": 177,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_leverage_sizing",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31c790>"
+              ],
+              "line": 201,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_component_coordination",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31b690>"
+              ],
+              "line": 225,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_enhanced_predictions",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31aa50>"
+              ],
+              "line": 248,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_error_handling",
+              "args": [
+                "self",
+                "config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919d310>"
+              ],
+              "line": 270,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_performance_tracking",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b38cdd0>"
+              ],
+              "line": 283,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_ml_feature_extraction",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691af7d0>"
+              ],
+              "line": 307,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_concurrent_operations",
+              "args": [
+                "self",
+                "config",
+                "market_data"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669104890>"
+              ],
+              "line": 340,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "minimal_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669107fd0>"
+              ],
+              "line": 372,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_empty_market_data",
+              "args": [
+                "self",
+                "minimal_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669104310>"
+              ],
+              "line": 380,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_missing_required_fields",
+              "args": [
+                "self",
+                "minimal_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66924a510>"
+              ],
+              "line": 401,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_invalid_price_data",
+              "args": [
+                "self",
+                "minimal_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b303190>"
+              ],
+              "line": 419,
+              "is_method": false,
+              "class_name": null
+            }
+          ],
+          "tests/integration/supervisor/test_supervisor_data_flow.py": [
+            {
+              "name": "mock_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Dict[str, Any]",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e0d0>"
+              ],
+              "line": 23,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "mock_state_manager",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Mock",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e090>"
+              ],
+              "line": 43,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "mock_db_manager",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Mock",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33dfd0>"
+              ],
+              "line": 52,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "mock_exchange_client",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Mock",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919fe50>"
+              ],
+              "line": 59,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_queue_initialization",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919f3d0>"
+              ],
+              "line": 68,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_component_queue_wiring",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31c3d0>"
+              ],
+              "line": 90,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_data_flow_sentinel_to_analyst",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31ed10>"
+              ],
+              "line": 134,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_data_flow_analyst_to_strategist",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b328550>"
+              ],
+              "line": 159,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_data_flow_strategist_to_tactician",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ed790>"
+              ],
+              "line": 184,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_dependency_container_integration",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ece90>"
+              ],
+              "line": 210,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_queue_overflow_handling",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691c26d0>"
+              ],
+              "line": 236,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_concurrent_queue_access",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b345810>"
+              ],
+              "line": 259,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "test_component_lifecycle",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b347750>"
+              ],
+              "line": 294,
+              "is_method": true,
+              "class_name": "TestSupervisorDataFlow"
+            },
+            {
+              "name": "mock_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Dict[str, Any]",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e0d0>"
+              ],
+              "line": 23,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "mock_state_manager",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Mock",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e090>"
+              ],
+              "line": 43,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "mock_db_manager",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Mock",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33dfd0>"
+              ],
+              "line": 52,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "mock_exchange_client",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Mock",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919fe50>"
+              ],
+              "line": 59,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_queue_initialization",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919f3d0>"
+              ],
+              "line": 68,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_component_queue_wiring",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31c3d0>"
+              ],
+              "line": 90,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_data_flow_sentinel_to_analyst",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31ed10>"
+              ],
+              "line": 134,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_data_flow_analyst_to_strategist",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b328550>"
+              ],
+              "line": 159,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_data_flow_strategist_to_tactician",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ed790>"
+              ],
+              "line": 184,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_dependency_container_integration",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6690ece90>"
+              ],
+              "line": 210,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_queue_overflow_handling",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691c26d0>"
+              ],
+              "line": 236,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_concurrent_queue_access",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b345810>"
+              ],
+              "line": 259,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_component_lifecycle",
+              "args": [
+                "self",
+                "mock_config",
+                "mock_state_manager",
+                "mock_db_manager",
+                "mock_exchange_client"
+              ],
+              "defaults": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b347750>"
+              ],
+              "line": 294,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "producer",
+              "args": [
+                "queue",
+                "prefix",
+                "count"
+              ],
+              "defaults": [
+                null,
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 271,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "consumer",
+              "args": [
+                "queue",
+                "count"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 277,
+              "is_method": false,
+              "class_name": null
+            }
+          ],
+          "tests/integration/supervisor/test_system_coordinator.py": [
+            {
+              "name": "mock_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Dict[str, Any]",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b44ae90>"
+              ],
+              "line": 28,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_system_coordinator_initialization",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669105590>"
+              ],
+              "line": 47,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_circuit_breaker_functionality",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b317c90>"
+              ],
+              "line": 63,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_online_learning_weight_updates",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691ab710>"
+              ],
+              "line": 95,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_component_monitoring",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691c20d0>"
+              ],
+              "line": 111,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_health_monitoring",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b3282d0>"
+              ],
+              "line": 139,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_health_monitoring_warnings",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31c190>"
+              ],
+              "line": 162,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_recovery_manager",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919ce10>"
+              ],
+              "line": 182,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_recovery_manager_max_attempts",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b319390>"
+              ],
+              "line": 200,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_system_coordinator_component_registration",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31bb90>"
+              ],
+              "line": 221,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_system_coordinator_supervision_cycle",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e890>"
+              ],
+              "line": 238,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "test_component_coordination",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691af890>"
+              ],
+              "line": 261,
+              "is_method": true,
+              "class_name": "TestSystemCoordinatorIntegration"
+            },
+            {
+              "name": "mock_config",
+              "args": [
+                "self"
+              ],
+              "defaults": [
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": "Dict[str, Any]",
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b44ae90>"
+              ],
+              "line": 28,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_system_coordinator_initialization",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd669105590>"
+              ],
+              "line": 47,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_circuit_breaker_functionality",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b317c90>"
+              ],
+              "line": 63,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_online_learning_weight_updates",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691ab710>"
+              ],
+              "line": 95,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_component_monitoring",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691c20d0>"
+              ],
+              "line": 111,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_health_monitoring",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b3282d0>"
+              ],
+              "line": 139,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_health_monitoring_warnings",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31c190>"
+              ],
+              "line": 162,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_recovery_manager",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66919ce10>"
+              ],
+              "line": 182,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_recovery_manager_max_attempts",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b319390>"
+              ],
+              "line": 200,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_system_coordinator_component_registration",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b31bb90>"
+              ],
+              "line": 221,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_system_coordinator_supervision_cycle",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd66b33e890>"
+              ],
+              "line": 238,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "test_component_coordination",
+              "args": [
+                "self",
+                "mock_config"
+              ],
+              "defaults": [
+                null,
+                null
+              ],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [
+                "<ast.Attribute object at 0x7fd6691af890>"
+              ],
+              "line": 261,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "success_func",
+              "args": [],
+              "defaults": [],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 68,
+              "is_method": false,
+              "class_name": null
+            },
+            {
+              "name": "failing_func",
+              "args": [],
+              "defaults": [],
+              "vararg": null,
+              "kwarg": null,
+              "returns": null,
+              "decorators": [],
+              "line": 76,
+              "is_method": false,
+              "class_name": null
+            }
+          ]
+        },
+        "calls": {
+          "tests/test_strategist.py": [
+            {
+              "function_name": "main",
+              "args": [
+                "<ast.List object at 0x7fd66b36b0d0>"
+              ],
+              "keywords": [],
+              "line": 518,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd6691c1b10>"
+              ],
+              "keywords": [],
+              "line": 94,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd66919e350>"
+              ],
+              "keywords": [],
+              "line": 114,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_rsi_vectorized",
+              "args": [
+                "prices"
+              ],
+              "keywords": [
+                [
+                  "window",
+                  "14"
+                ]
+              ],
+              "line": 133,
+              "is_method_call": true
+            },
+            {
+              "function_name": "array",
+              "args": [
+                "<ast.List object at 0x7fd66b318950>"
+              ],
+              "keywords": [],
+              "line": 140,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_sma_vectorized",
+              "args": [
+                "prices"
+              ],
+              "keywords": [
+                [
+                  "window",
+                  "3"
+                ]
+              ],
+              "line": 141,
+              "is_method_call": true
+            },
+            {
+              "function_name": "array",
+              "args": [
+                "<ast.List object at 0x7fd66b319fd0>"
+              ],
+              "keywords": [],
+              "line": 149,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_volatility_vectorized",
+              "args": [
+                "prices"
+              ],
+              "keywords": [
+                [
+                  "window",
+                  "5"
+                ]
+              ],
+              "line": 150,
+              "is_method_call": true
+            },
+            {
+              "function_name": "Series",
+              "args": [
+                "<ast.BinOp object at 0x7fd66b3292d0>"
+              ],
+              "keywords": [],
+              "line": 159,
+              "is_method_call": true
+            },
+            {
+              "function_name": "Series",
+              "args": [
+                "<ast.BinOp object at 0x7fd66b328510>"
+              ],
+              "keywords": [],
+              "line": 160,
+              "is_method_call": true
+            },
+            {
+              "function_name": "extract_market_health",
+              "args": [
+                "analysis_results"
+              ],
+              "keywords": [],
+              "line": 185,
+              "is_method_call": true
+            },
+            {
+              "function_name": "extract_liquidation_risk",
+              "args": [
+                "analysis_results"
+              ],
+              "keywords": [],
+              "line": 195,
+              "is_method_call": true
+            },
+            {
+              "function_name": "extract_trading_decision",
+              "args": [
+                "analysis_results"
+              ],
+              "keywords": [],
+              "line": 206,
+              "is_method_call": true
+            },
+            {
+              "function_name": "date_range",
+              "args": [
+                "2024-01-01"
+              ],
+              "keywords": [
+                [
+                  "periods",
+                  "120"
+                ],
+                [
+                  "freq",
+                  "1H"
+                ]
+              ],
+              "line": 247,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randint",
+              "args": [
+                "1000",
+                "5000"
+              ],
+              "keywords": [
+                [
+                  "size",
+                  "120"
+                ]
+              ],
+              "line": 249,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd6690eed90>"
+              ],
+              "keywords": [],
+              "line": 251,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd6691a8a50>"
+              ],
+              "keywords": [],
+              "line": 326,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_strategy_history",
+              "args": [],
+              "keywords": [],
+              "line": 376,
+              "is_method_call": true
+            },
+            {
+              "function_name": "date_range",
+              "args": [
+                "2024-01-01"
+              ],
+              "keywords": [
+                [
+                  "periods",
+                  "200"
+                ],
+                [
+                  "freq",
+                  "1H"
+                ]
+              ],
+              "line": 413,
+              "is_method_call": true
+            },
+            {
+              "function_name": "linspace",
+              "args": [
+                "100",
+                "110",
+                "200"
+              ],
+              "keywords": [],
+              "line": 416,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randint",
+              "args": [
+                "5000",
+                "15000"
+              ],
+              "keywords": [
+                [
+                  "size",
+                  "200"
+                ]
+              ],
+              "line": 420,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd669105b50>"
+              ],
+              "keywords": [],
+              "line": 422,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_strategy_history",
+              "args": [],
+              "keywords": [],
+              "line": 443,
+              "is_method_call": true
+            },
+            {
+              "function_name": "Series",
+              "args": [
+                "<ast.BinOp object at 0x7fd6691bbc90>"
+              ],
+              "keywords": [],
+              "line": 459,
+              "is_method_call": true
+            },
+            {
+              "function_name": "Series",
+              "args": [
+                "<ast.BinOp object at 0x7fd6691bac10>"
+              ],
+              "keywords": [],
+              "line": 460,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_rsi_vectorized",
+              "args": [
+                "prices"
+              ],
+              "keywords": [],
+              "line": 501,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_rsi_vectorized",
+              "args": [
+                "prices"
+              ],
+              "keywords": [],
+              "line": 506,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "ValueError"
+              ],
+              "keywords": [],
+              "line": 44,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "ValueError"
+              ],
+              "keywords": [],
+              "line": 48,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "ValueError"
+              ],
+              "keywords": [],
+              "line": 54,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "ValidationError"
+              ],
+              "keywords": [],
+              "line": 104,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "ValidationError"
+              ],
+              "keywords": [],
+              "line": 108,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "ValidationError"
+              ],
+              "keywords": [],
+              "line": 122,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_indicators_parallel",
+              "args": [
+                "prices",
+                "volume",
+                "config"
+              ],
+              "keywords": [],
+              "line": 167,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 260,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 268,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_strategy",
+              "args": [
+                "sample_market_data",
+                "current_price"
+              ],
+              "keywords": [],
+              "line": 271,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 285,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_strategy",
+              "args": [
+                "sample_market_data",
+                "current_price",
+                "analysis_results"
+              ],
+              "keywords": [],
+              "line": 301,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 316,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_strategy",
+              "args": [
+                "<ast.Call object at 0x7fd6691a9790>",
+                "100.0"
+              ],
+              "keywords": [],
+              "line": 319,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_strategy",
+              "args": [
+                "invalid_data",
+                "102.0"
+              ],
+              "keywords": [],
+              "line": 329,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 338,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_strategy",
+              "args": [
+                "sample_market_data",
+                "current_price"
+              ],
+              "keywords": [],
+              "line": 346,
+              "is_method_call": true
+            },
+            {
+              "function_name": "_store_strategy_results",
+              "args": [
+                "strategy"
+              ],
+              "keywords": [],
+              "line": 373,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 385,
+              "is_method_call": true
+            },
+            {
+              "function_name": "stop",
+              "args": [],
+              "keywords": [],
+              "line": 386,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 410,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "200"
+              ],
+              "keywords": [],
+              "line": 417,
+              "is_method_call": true
+            },
+            {
+              "function_name": "stop",
+              "args": [],
+              "keywords": [],
+              "line": 447,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_indicators_parallel",
+              "args": [
+                "prices",
+                "volume",
+                "config"
+              ],
+              "keywords": [],
+              "line": 471,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_indicators_parallel",
+              "args": [
+                "prices",
+                "volume",
+                "config"
+              ],
+              "keywords": [],
+              "line": 479,
+              "is_method_call": true
+            },
+            {
+              "function_name": "date_range",
+              "args": [
+                "2024-01-01"
+              ],
+              "keywords": [
+                [
+                  "periods",
+                  "3"
+                ]
+              ],
+              "line": 97,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [],
+              "keywords": [],
+              "line": 109,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "50"
+              ],
+              "keywords": [],
+              "line": 115,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [],
+              "keywords": [],
+              "line": 320,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_strategy",
+              "args": [
+                "market_data",
+                "current_price"
+              ],
+              "keywords": [],
+              "line": 432,
+              "is_method_call": true
+            },
+            {
+              "function_name": "sleep",
+              "args": [
+                "0.1"
+              ],
+              "keywords": [],
+              "line": 440,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "100"
+              ],
+              "keywords": [],
+              "line": 159,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "100"
+              ],
+              "keywords": [],
+              "line": 160,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "120"
+              ],
+              "keywords": [],
+              "line": 248,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [],
+              "keywords": [],
+              "line": 431,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "10000"
+              ],
+              "keywords": [],
+              "line": 459,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "10000"
+              ],
+              "keywords": [],
+              "line": 460,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "1000"
+              ],
+              "keywords": [],
+              "line": 497,
+              "is_method_call": true
+            }
+          ],
+          "tests/test_tactician_integration.py": [
+            {
+              "function_name": "main",
+              "args": [
+                "<ast.List object at 0x7fd66b357390>"
+              ],
+              "keywords": [],
+              "line": 442,
+              "is_method_call": true
+            },
+            {
+              "function_name": "date_range",
+              "args": [],
+              "keywords": [
+                [
+                  "end",
+                  "<ast.Call object at 0x7fd66b316d50>"
+                ],
+                [
+                  "periods",
+                  "periods"
+                ],
+                [
+                  "freq",
+                  "1H"
+                ]
+              ],
+              "line": 62,
+              "is_method_call": true
+            },
+            {
+              "function_name": "seed",
+              "args": [
+                "42"
+              ],
+              "keywords": [],
+              "line": 65,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd66b314790>"
+              ],
+              "keywords": [],
+              "line": 69,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [],
+              "keywords": [],
+              "line": 384,
+              "is_method_call": true
+            },
+            {
+              "function_name": "DataFrame",
+              "args": [
+                "<ast.Dict object at 0x7fd66924bf90>"
+              ],
+              "keywords": [],
+              "line": 425,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 90,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 101,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 113,
+              "is_method_call": true
+            },
+            {
+              "function_name": "execute_tactics",
+              "args": [
+                "tactics_input"
+              ],
+              "keywords": [],
+              "line": 137,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 144,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 150,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_sr_context",
+              "args": [
+                "market_data",
+                "current_price"
+              ],
+              "keywords": [],
+              "line": 155,
+              "is_method_call": true
+            },
+            {
+              "function_name": "predict_sr_breakout",
+              "args": [
+                "market_data",
+                "current_price"
+              ],
+              "keywords": [],
+              "line": 164,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 174,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 180,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_position_size",
+              "args": [],
+              "keywords": [
+                [
+                  "ml_predictions",
+                  "ml_predictions"
+                ],
+                [
+                  "analyst_confidence",
+                  "0.7"
+                ],
+                [
+                  "tactician_confidence",
+                  "0.75"
+                ]
+              ],
+              "line": 188,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 198,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 204,
+              "is_method_call": true
+            },
+            {
+              "function_name": "calculate_leverage",
+              "args": [],
+              "keywords": [
+                [
+                  "ml_predictions",
+                  "ml_predictions"
+                ],
+                [
+                  "analyst_confidence",
+                  "0.7"
+                ],
+                [
+                  "tactician_confidence",
+                  "0.75"
+                ]
+              ],
+              "line": 212,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 222,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 229,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_decision",
+              "args": [],
+              "keywords": [
+                [
+                  "market_data",
+                  "market_data"
+                ],
+                [
+                  "analyst_confidence",
+                  "0.7"
+                ],
+                [
+                  "tactician_confidence",
+                  "0.75"
+                ]
+              ],
+              "line": 232,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 245,
+              "is_method_call": true
+            },
+            {
+              "function_name": "generate_enhanced_predictions",
+              "args": [],
+              "keywords": [
+                [
+                  "market_data",
+                  "market_data"
+                ],
+                [
+                  "analyst_barriers",
+                  "<ast.Dict object at 0x7fd66b31be90>"
+                ],
+                [
+                  "symbol",
+                  "BTC/USDT"
+                ],
+                [
+                  "timeframe",
+                  "1h"
+                ],
+                [
+                  "analyst_confidence",
+                  "0.7"
+                ]
+              ],
+              "line": 253,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 267,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 277,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 304,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 310,
+              "is_method_call": true
+            },
+            {
+              "function_name": "extract_ml_features",
+              "args": [
+                "market_data",
+                "current_price"
+              ],
+              "keywords": [],
+              "line": 315,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 337,
+              "is_method_call": true
+            },
+            {
+              "function_name": "gather",
+              "args": [
+                "<ast.Starred object at 0x7fd66b33fe50>"
+              ],
+              "keywords": [
+                [
+                  "return_exceptions",
+                  "True"
+                ]
+              ],
+              "line": 357,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 365,
+              "is_method_call": true
+            },
+            {
+              "function_name": "execute_tactics",
+              "args": [
+                "tactics_input"
+              ],
+              "keywords": [],
+              "line": 394,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 398,
+              "is_method_call": true
+            },
+            {
+              "function_name": "execute_tactics",
+              "args": [
+                "tactics_input"
+              ],
+              "keywords": [],
+              "line": 412,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 416,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 422,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_sr_context",
+              "args": [
+                "invalid_data",
+                "98.0"
+              ],
+              "keywords": [],
+              "line": 432,
+              "is_method_call": true
+            },
+            {
+              "function_name": "cleanup",
+              "args": [],
+              "keywords": [],
+              "line": 438,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randint",
+              "args": [
+                "1000",
+                "10000",
+                "periods"
+              ],
+              "keywords": [],
+              "line": 75,
+              "is_method_call": true
+            },
+            {
+              "function_name": "execute_tactics",
+              "args": [
+                "tactics_input"
+              ],
+              "keywords": [],
+              "line": 297,
+              "is_method_call": true
+            },
+            {
+              "function_name": "execute_tactics",
+              "args": [
+                "tactics_input"
+              ],
+              "keywords": [],
+              "line": 354,
+              "is_method_call": true
+            },
+            {
+              "function_name": "fail",
+              "args": [
+                "<ast.JoinedStr object at 0x7fd66b33cd50>"
+              ],
+              "keywords": [],
+              "line": 362,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "periods"
+              ],
+              "keywords": [],
+              "line": 67,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "periods"
+              ],
+              "keywords": [],
+              "line": 71,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "periods"
+              ],
+              "keywords": [],
+              "line": 72,
+              "is_method_call": true
+            },
+            {
+              "function_name": "randn",
+              "args": [
+                "periods"
+              ],
+              "keywords": [],
+              "line": 73,
+              "is_method_call": true
+            }
+          ],
+          "tests/integration/supervisor/test_supervisor_data_flow.py": [
+            {
+              "function_name": "main",
+              "args": [
+                "<ast.List object at 0x7fd66b3172d0>"
+              ],
+              "keywords": [],
+              "line": 321,
+              "is_method_call": true
+            },
+            {
+              "function_name": "_wire_component_queues",
+              "args": [],
+              "keywords": [],
+              "line": 123,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register",
+              "args": [
+                "sentinel",
+                "<ast.Call object at 0x7fd6690ec690>"
+              ],
+              "keywords": [],
+              "line": 220,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register",
+              "args": [
+                "analyst",
+                "<ast.Call object at 0x7fd6690ee410>"
+              ],
+              "keywords": [],
+              "line": 224,
+              "is_method_call": true
+            },
+            {
+              "function_name": "has",
+              "args": [
+                "sentinel"
+              ],
+              "keywords": [],
+              "line": 232,
+              "is_method_call": true
+            },
+            {
+              "function_name": "has",
+              "args": [
+                "analyst"
+              ],
+              "keywords": [],
+              "line": 233,
+              "is_method_call": true
+            },
+            {
+              "function_name": "full",
+              "args": [],
+              "keywords": [],
+              "line": 252,
+              "is_method_call": true
+            },
+            {
+              "function_name": "empty",
+              "args": [],
+              "keywords": [],
+              "line": 291,
+              "is_method_call": true
+            },
+            {
+              "function_name": "put",
+              "args": [
+                "market_data"
+              ],
+              "keywords": [],
+              "line": 152,
+              "is_method_call": true
+            },
+            {
+              "function_name": "put",
+              "args": [
+                "analysis_result"
+              ],
+              "keywords": [],
+              "line": 177,
+              "is_method_call": true
+            },
+            {
+              "function_name": "put",
+              "args": [
+                "signal"
+              ],
+              "keywords": [],
+              "line": 203,
+              "is_method_call": true
+            },
+            {
+              "function_name": "build_sentinel",
+              "args": [
+                "mock_exchange_client",
+                "mock_state_manager"
+              ],
+              "keywords": [],
+              "line": 222,
+              "is_method_call": true
+            },
+            {
+              "function_name": "build_analyst",
+              "args": [
+                "mock_exchange_client",
+                "mock_state_manager"
+              ],
+              "keywords": [],
+              "line": 226,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "<ast.Attribute object at 0x7fd6691c3dd0>"
+              ],
+              "keywords": [],
+              "line": 255,
+              "is_method_call": true
+            },
+            {
+              "function_name": "put_nowait",
+              "args": [
+                "<ast.Dict object at 0x7fd6691c2dd0>"
+              ],
+              "keywords": [],
+              "line": 256,
+              "is_method_call": true
+            },
+            {
+              "function_name": "gather",
+              "args": [
+                "<ast.Call object at 0x7fd6691a9f90>",
+                "<ast.Call object at 0x7fd6691a8e90>",
+                "<ast.Call object at 0x7fd6691aa8d0>"
+              ],
+              "keywords": [],
+              "line": 283,
+              "is_method_call": true
+            },
+            {
+              "function_name": "put",
+              "args": [
+                "<ast.Dict object at 0x7fd6691c0e50>"
+              ],
+              "keywords": [],
+              "line": 249,
+              "is_method_call": true
+            },
+            {
+              "function_name": "producer",
+              "args": [
+                "<ast.Attribute object at 0x7fd6691a8a90>",
+                "sentinel1",
+                "5"
+              ],
+              "keywords": [],
+              "line": 284,
+              "is_method_call": false
+            },
+            {
+              "function_name": "producer",
+              "args": [
+                "<ast.Attribute object at 0x7fd6691abad0>",
+                "sentinel2",
+                "5"
+              ],
+              "keywords": [],
+              "line": 285,
+              "is_method_call": false
+            },
+            {
+              "function_name": "consumer",
+              "args": [
+                "<ast.Attribute object at 0x7fd6691a8650>",
+                "10"
+              ],
+              "keywords": [],
+              "line": 286,
+              "is_method_call": false
+            },
+            {
+              "function_name": "put",
+              "args": [
+                "<ast.Dict object at 0x7fd6691a9890>"
+              ],
+              "keywords": [],
+              "line": 273,
+              "is_method_call": true
+            }
+          ],
+          "tests/integration/supervisor/test_system_coordinator.py": [
+            {
+              "function_name": "main",
+              "args": [
+                "<ast.List object at 0x7fd6691aeed0>"
+              ],
+              "keywords": [],
+              "line": 287,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_model_weights",
+              "args": [],
+              "keywords": [],
+              "line": 105,
+              "is_method_call": true
+            },
+            {
+              "function_name": "monitor_analyst_features",
+              "args": [
+                "mock_analyst"
+              ],
+              "keywords": [],
+              "line": 126,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_component_status",
+              "args": [
+                "analyst"
+              ],
+              "keywords": [],
+              "line": 134,
+              "is_method_call": true
+            },
+            {
+              "function_name": "get_recovery_status",
+              "args": [],
+              "keywords": [],
+              "line": 195,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register_component",
+              "args": [
+                "analyst",
+                "mock_analyst"
+              ],
+              "keywords": [],
+              "line": 230,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register_component",
+              "args": [
+                "strategist",
+                "mock_strategist"
+              ],
+              "keywords": [],
+              "line": 231,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register_component",
+              "args": [
+                "analyst",
+                "mock_analyst"
+              ],
+              "keywords": [],
+              "line": 247,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register_component",
+              "args": [
+                "analyst",
+                "mock_analyst"
+              ],
+              "keywords": [],
+              "line": 275,
+              "is_method_call": true
+            },
+            {
+              "function_name": "register_component",
+              "args": [
+                "strategist",
+                "mock_strategist"
+              ],
+              "keywords": [],
+              "line": 276,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 58,
+              "is_method_call": true
+            },
+            {
+              "function_name": "call",
+              "args": [
+                "success_func"
+              ],
+              "keywords": [],
+              "line": 71,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "Exception"
+              ],
+              "keywords": [],
+              "line": 86,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "Exception"
+              ],
+              "keywords": [
+                [
+                  "match",
+                  "Circuit breaker is OPEN"
+                ]
+              ],
+              "line": 91,
+              "is_method_call": true
+            },
+            {
+              "function_name": "update_model_performance",
+              "args": [
+                "model_a",
+                "0.8"
+              ],
+              "keywords": [],
+              "line": 100,
+              "is_method_call": true
+            },
+            {
+              "function_name": "update_model_performance",
+              "args": [
+                "model_b",
+                "0.6"
+              ],
+              "keywords": [],
+              "line": 101,
+              "is_method_call": true
+            },
+            {
+              "function_name": "update_model_performance",
+              "args": [
+                "model_c",
+                "0.4"
+              ],
+              "keywords": [],
+              "line": 102,
+              "is_method_call": true
+            },
+            {
+              "function_name": "approx",
+              "args": [
+                "1.0"
+              ],
+              "keywords": [],
+              "line": 107,
+              "is_method_call": true
+            },
+            {
+              "function_name": "handle_component_failure",
+              "args": [
+                "test_component",
+                "error_details"
+              ],
+              "keywords": [],
+              "line": 188,
+              "is_method_call": true
+            },
+            {
+              "function_name": "handle_component_failure",
+              "args": [
+                "failing_component",
+                "<ast.Dict object at 0x7fd66919f850>"
+              ],
+              "keywords": [],
+              "line": 213,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 224,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 241,
+              "is_method_call": true
+            },
+            {
+              "function_name": "_perform_supervision",
+              "args": [],
+              "keywords": [],
+              "line": 250,
+              "is_method_call": true
+            },
+            {
+              "function_name": "initialize",
+              "args": [],
+              "keywords": [],
+              "line": 264,
+              "is_method_call": true
+            },
+            {
+              "function_name": "_coordinate_analyst_strategist",
+              "args": [],
+              "keywords": [],
+              "line": 279,
+              "is_method_call": true
+            },
+            {
+              "function_name": "raises",
+              "args": [
+                "Exception"
+              ],
+              "keywords": [],
+              "line": 81,
+              "is_method_call": true
+            },
+            {
+              "function_name": "call",
+              "args": [
+                "failing_func"
+              ],
+              "keywords": [],
+              "line": 87,
+              "is_method_call": true
+            },
+            {
+              "function_name": "call",
+              "args": [
+                "success_func"
+              ],
+              "keywords": [],
+              "line": 92,
+              "is_method_call": true
+            },
+            {
+              "function_name": "check_system_health",
+              "args": [],
+              "keywords": [],
+              "line": 153,
+              "is_method_call": true
+            },
+            {
+              "function_name": "check_system_health",
+              "args": [],
+              "keywords": [],
+              "line": 174,
+              "is_method_call": true
+            },
+            {
+              "function_name": "handle_component_failure",
+              "args": [
+                "failing_component",
+                "<ast.Dict object at 0x7fd66919edd0>"
+              ],
+              "keywords": [],
+              "line": 207,
+              "is_method_call": true
+            },
+            {
+              "function_name": "call",
+              "args": [
+                "failing_func"
+              ],
+              "keywords": [],
+              "line": 82,
+              "is_method_call": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  "summary": {
+    "overall_status": "failed",
+    "step_statuses": {
+      "auto_fix": "success",
+      "linter_analysis": "success",
+      "syntax_validation": "error",
+      "import_analysis": "success",
+      "signature_analysis": "success"
+    },
+    "metrics": {
+      "files_processed": 5,
+      "auto_fix_successful_tools": 0,
+      "auto_fix_failed_tools": 0,
+      "linter_issues": 0,
+      "syntax_errors": 0,
+      "valid_files": 0,
+      "invalid_files": 0,
+      "import_issues": 1,
+      "signature_issues": 16,
+      "pre_commit_return_code": null
+    },
+    "recommendations": [
+      {
+        "priority": "high",
+        "category": "imports",
+        "message": "Resolve 1 import conflicts and circular dependencies"
+      },
+      {
+        "priority": "high",
+        "category": "compatibility",
+        "message": "Fix 16 function signature compatibility issues"
+      }
+    ]
+  }
+}

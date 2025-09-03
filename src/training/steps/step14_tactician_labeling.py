@@ -1,9 +1,11 @@
 # src/training/steps/step14_tactician_labeling.py
 
-from src.core.decorators import handles_errors
 
 """Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."
 
+from src.core.decorators import handles_errors
+from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+from src.utils.enhanced_mlflow_integration import (
 This step applies regime-aware triple barrier labeling for Tactician multi-outcome predictions
 with regime-specific barrier calculation, precision thresholds, and quality filters.
 
@@ -60,7 +62,6 @@ class RegimeAwareTacticianLabeler:
     def _load_enhanced_config(self) -> None:
         """Load enhanced configuration for regime-aware execution."""
         # Import dynamic barrier calculator
-        from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
         
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
@@ -618,6 +619,8 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
+        except Exception as e:
+            pass  # TODO: Handle exception
 from src.utils.logger import log_dataframe_overview, log_io_operation
 from src.training.enhanced_training_manager_optimized import (
 from src.utils.logger import log_dataframe_overview, log_io_operation
@@ -947,7 +950,6 @@ from src.core.domain import (
 )
 import copy
 
-from src.utils.enhanced_mlflow_integration import (
 
     with_enhanced_mlflow_logging,
     log_step_report,

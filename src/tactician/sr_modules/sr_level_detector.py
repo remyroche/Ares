@@ -1,10 +1,12 @@
 """Support/Resistance Level Detection Module."""
 
 from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-from src.utils.logger import system_logger
+
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 
 # DBSCAN clustering for S/R level analysis
 try:

@@ -1,17 +1,18 @@
 """Integration tests for Tactician components."""
 
-import pytest
 import asyncio
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
 
 from src.tactician import Tactician, setup_tactician
-from src.tactician.tactics_orchestrator import TacticsOrchestrator
-from src.tactician.position_sizer import PositionSizer
 from src.tactician.leverage_sizer import LeverageSizer
+from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor_refactored import SRBreakoutPredictor
+from src.tactician.tactics_orchestrator import TacticsOrchestrator
 
 
 class TestTacticianIntegration:

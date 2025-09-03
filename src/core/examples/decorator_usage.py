@@ -182,7 +182,8 @@ async def get_user_from_db(user_id: str) -> dict:
     await asyncio.sleep(0.05)
 
     # Add trace events
-    from src.core.decorators import span_attribute as span_attribute_src_core_decorators, span_event
+    from src.core.decorators import span_attribute as span_attribute_src_core_decorators
+    from src.core.decorators import span_event
 
     span_event("query_started", {"user_id": user_id})
 

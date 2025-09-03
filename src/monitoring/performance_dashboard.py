@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-# src/monitoring/performance_dashboard.py
-
 from src.core.decorators import cached, log_execution_time
 from src.core.domain import PerformanceLevel
+
+# src/monitoring/performance_dashboard.py
+
 
 """
 Performance Dashboard for Dual Model System

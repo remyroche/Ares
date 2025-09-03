@@ -20,7 +20,8 @@ import numpy as np
 from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.supervisor.performance_monitor import PerformanceMonitor as PerformanceMonitor_2
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error as error_src_utils_warning_symbols, failed, initialization_error
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols
+from src.utils.warning_symbols import failed, initialization_error
 
 
 class BehaviorMetricType(Enum):

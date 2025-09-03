@@ -23,9 +23,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.step01_5_data_converter import DataConverterStep
-from src.training.steps.step01_5_data_converter_validator import (
-    run_validator as validate_step1_5,
-)
+from src.training.steps.step01_5_data_converter_validator import run_validator as validate_step1_5
 
 # Import all step classes
 from src.training.steps.data_preparation.step01_data_collection import DataCollectionStep
@@ -52,15 +50,14 @@ from src.training.steps.feature_engineering.step06_feature_engineering import Fe
 from src.training.steps.step06_feature_engineering_validator import (
     run_validator as validate_step6,
 )
-from src.training.steps.step07_enhanced_matrix_operations import (
-    Step7EnhancedMatrixOperations,
+from src.training.steps.model_training.step07_enhanced_matrix_operations import (
+    EnhancedMatrixOperationsStep,
 )
-from src.training.steps.step07_enhanced_matrix_operations_validator import (
-    run_validator as validate_step7,
-)
+from src.training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
 from src.utils.enhanced_mlflow_integration import (
     log_step_report,
 )
+from src.utils.step_dependency_validator import validate_step_dependencies
 from src.utils.logger import system_logger
 
 
@@ -94,7 +91,7 @@ class Steps1To7ComprehensiveExecutor:
             "step04": RegimeDataSplittingStep(config),
             "step05": LabelingStep(config),
             "step06": FeatureEngineeringStep(config),
-            "step07": Step7EnhancedMatrixOperations(config),
+            "step07": EnhancedMatrixOperationsStep(config),
         }
 
         # Initialize validators
@@ -367,6 +364,18 @@ class Steps1To7ComprehensiveExecutor:
             quality_result["issues"].append(f"Quality assessment error: {str(e)}")
 
         return quality_result
+
+    async def _guard_step_dependencies(self, current_step: str) -> bool:
+        try:
+            state = self._build_pipeline_state(current_step)
+            ok = await validate_step_dependencies(current_step, state)
+            if not ok:
+                self.logger.error(f"❌ Dependency check failed for {current_step}")
+                return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Dependency validation error for {current_step}: {e}")
+            return True
 
     def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
         """Calculate consistency score for the data."""

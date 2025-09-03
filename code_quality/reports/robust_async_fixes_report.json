@@ -1,16 +1,5 @@
 {
-  "fixed": 29,
-  "failed": 452,
-  "fixed_files": [
-    "/workspace/src/trading/live_wavelet_demo.py",
-    "/workspace/src/training/wavelet_integration_demo.py",
-    "/workspace/src/training/probabilistic_model_integration.py",
-    "/workspace/src/training/steps_1_7_comprehensive_executor.py",
-    "/workspace/src/training/demo_pipeline_execution.py",
-    "/workspace/src/training/comprehensive_pipeline_executor.py",
-    "/workspace/src/training/data_quality_monitor.py",
-    "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py",
-    "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
-    "/workspace/src/training/steps/step2_5_sr_optimization_validator.py"
-  ]
+  "fixed": 0,
+  "failed": 481,
+  "fixed_files": []
 }

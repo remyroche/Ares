@@ -194,7 +194,9 @@ class PipelineConfig:
 
         # Validate global settings
         if self.environment not in ["development", "staging", "production"]:
-            issues.append("environment must be one of: development, staging, production")
+            issues.append(
+                "environment must be one of: development, staging, production"
+            )
 
         if self.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             issues.append("log_level must be a valid logging level")
@@ -255,13 +257,17 @@ class ConfigManager:
                 self.logger.info(f"Loaded configuration from {config_path}")
                 return config
             except Exception as e:
-                self.logger.warning(f"Error loading configuration from {config_path}: {e}")
+                self.logger.warning(
+                    f"Error loading configuration from {config_path}: {e}"
+                )
                 self.logger.info("Using default configuration")
 
         # Return default configuration
         return PipelineConfig()
 
-    def save_config(self, config: PipelineConfig, config_name: str = "pipeline_config.json"):
+    def save_config(
+        self, config: PipelineConfig, config_name: str = "pipeline_config.json"
+    ):
         """Save configuration to file."""
         config_path = self.config_dir / config_name
 
@@ -321,7 +327,8 @@ class ConfigManager:
     def load_environment_config(self, environment: str) -> PipelineConfig:
         """Load environment-specific configuration."""
         config_name = f"pipeline_config_{environment}.json"
-        config = self.await load_config(config_name)
+        # Synchronous usage: directly call load_config
+        config = self.load_config(config_name)
 
         if config.environment != environment:
             # Create new environment-specific config
@@ -353,7 +360,9 @@ def load_pipeline_config(environment: str = "development") -> PipelineConfig:
     return config_manager.load_environment_config(environment)
 
 
-def validate_and_save_config(config: PipelineConfig, config_name: str = "pipeline_config.json"):
+def validate_and_save_config(
+    config: PipelineConfig, config_name: str = "pipeline_config.json"
+):
     """Validate and save configuration."""
     config_manager = ConfigManager()
 
@@ -366,8 +375,18 @@ def validate_and_save_config(config: PipelineConfig, config_name: str = "pipelin
 
 # Environment-specific configuration presets
 DEVELOPMENT_CONFIG = {
-    "step01": {"max_memory_mb": 512, "chunk_size": 5000, "max_retries": 2, "log_level": "DEBUG"},
-    "step1_5": {"max_memory_mb": 512, "chunk_size": 5000, "max_retries": 2, "enable_incremental": True},
+    "step01": {
+        "max_memory_mb": 512,
+        "chunk_size": 5000,
+        "max_retries": 2,
+        "log_level": "DEBUG",
+    },
+    "step1_5": {
+        "max_memory_mb": 512,
+        "chunk_size": 5000,
+        "max_retries": 2,
+        "enable_incremental": True,
+    },
     "environment": "development",
     "log_level": "DEBUG",
     "enable_profiling": True,
@@ -375,14 +394,24 @@ DEVELOPMENT_CONFIG = {
 
 STAGING_CONFIG = {
     "step01": {"max_memory_mb": 2048, "chunk_size": 10000, "max_retries": 3},
-    "step1_5": {"max_memory_mb": 2048, "chunk_size": 10000, "max_retries": 3, "enable_incremental": True},
+    "step1_5": {
+        "max_memory_mb": 2048,
+        "chunk_size": 10000,
+        "max_retries": 3,
+        "enable_incremental": True,
+    },
     "environment": "staging",
     "log_level": "INFO",
     "enable_profiling": False,
 }
 
 PRODUCTION_CONFIG = {
-    "step01": {"max_memory_mb": 4096, "chunk_size": 20000, "max_retries": 5, "circuit_breaker_failure_threshold": 3},
+    "step01": {
+        "max_memory_mb": 4096,
+        "chunk_size": 20000,
+        "max_retries": 5,
+        "circuit_breaker_failure_threshold": 3,
+    },
     "step1_5": {
         "max_memory_mb": 4096,
         "chunk_size": 20000,

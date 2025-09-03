@@ -22,7 +22,7 @@ from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
 from scripts.safe_import_fixer import SafeImportFixer
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.enhanced_type_hints import TypeHintEnhancer
-from scripts.detect_circular_imports import CircularImportDetector
+from scripts.detect_circular_imports import ImportAnalyzer as CircularImportDetector
 from function_validator import FunctionValidator
 from comprehensive_code_review import CodeQualityReviewer
 from scripts.simple_interaction_mapper import extract_interactions, generate_report

@@ -8,9 +8,9 @@ import numpy as np
 import pandas as pd
 
 from src.config import CONFIG
-from src.utils.error_handler import (
 import logging
 import asyncio
+from src.utils.error_handler import (
     handle_errors,
 )
 from src.utils.logger import system_logger
@@ -71,7 +71,7 @@ class MetaLabelingSystem:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="meta labeling system initialization",
     )
     async def initialize(self) -> bool:
@@ -84,13 +84,13 @@ class MetaLabelingSystem:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.print(
-                initialization_error("❌ Error initializing meta-labeling system: {e}")
+                initialization_error(f"❌ Error initializing meta-labeling system: {e}")
             )
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, IndexError),
-        default_return={},
+            default_return={},
         context="pattern features calculation",
     )
     async def _calculate_pattern_features(
@@ -140,7 +140,7 @@ class MetaLabelingSystem:
                 features.update(self._calculate_technical_indicators(price_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-                self.logger.error("Error calculating technical indicators: {e}")
+                self.logger.error(f"Error calculating technical indicators: {e}")
 
 
             # Volume analysis with error handling
@@ -148,7 +148,7 @@ class MetaLabelingSystem:
                 features.update(self._calculate_volume_features(volume_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-                self.logger.error("Error calculating volume features: {e}")
+                self.logger.error(f"Error calculating volume features: {e}")
 
 
             # Price action patterns with error handling
@@ -156,7 +156,7 @@ class MetaLabelingSystem:
                 features.update(self._calculate_price_action_patterns(price_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-                self.logger.error("Error calculating price action patterns: {e}")
+                self.logger.error(f"Error calculating price action patterns: {e}")
 
 
             # Volatility patterns with error handling
@@ -164,7 +164,7 @@ class MetaLabelingSystem:
                 features.update(self._calculate_volatility_patterns(price_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-                self.logger.error("Error calculating volatility patterns: {e}")
+                self.logger.error(f"Error calculating volatility patterns: {e}")
 
 
             # Momentum patterns with error handling
@@ -172,7 +172,7 @@ class MetaLabelingSystem:
                 features.update(self._calculate_momentum_patterns(price_data))
             except (AttributeError, TypeError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-                self.logger.error("Error calculating momentum patterns: {e}")
+                self.logger.error(f"Error calculating momentum patterns: {e}")
 
 
             return features
@@ -352,7 +352,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating price action patterns: {e}")
+            self.logger.error(f"Error calculating price action patterns: {e}")
 
             return {}
 
@@ -394,7 +394,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating volatility patterns: {e}")
+            self.logger.error(f"Error calculating volatility patterns: {e}")
 
             return {}
 
@@ -423,7 +423,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating momentum patterns: {e}")
+            self.logger.error(f"Error calculating momentum patterns: {e}")
 
             return {}
 
@@ -457,7 +457,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting strong trend continuation: {e}")
+            self.logger.error(f"Error detecting strong trend continuation: {e}")
 
             return {"STRONG_TREND_CONTINUATION": 0, "strong_trend_confidence": 0}
 
@@ -490,7 +490,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting exhaustion reversal: {e}")
+            self.logger.error(f"Error detecting exhaustion reversal: {e}")
 
             return {"EXHAUSTION_REVERSAL": 0, "exhaustion_confidence": 0}
 
@@ -522,7 +522,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting range mean reversion: {e}")
+            self.logger.error(f"Error detecting range mean reversion: {e}")
 
             return {"RANGE_MEAN_REVERSION": 0, "range_reversion_confidence": 0}
 
@@ -562,7 +562,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting breakout patterns: {e}")
+            self.logger.error(f"Error detecting breakout patterns: {e}")
 
             return {
                 "BREAKOUT_SUCCESS": 0,
@@ -597,7 +597,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting volatility patterns: {e}")
+            self.logger.error(f"Error detecting volatility patterns: {e}")
 
             return {
                 "VOLATILITY_COMPRESSION": 0,
@@ -634,7 +634,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting chart patterns: {e}")
+            self.logger.error(f"Error detecting chart patterns: {e}")
 
             return {
                 "FLAG_FORMATION": 0,
@@ -675,7 +675,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting momentum patterns: {e}")
+            self.logger.error(f"Error detecting momentum patterns: {e}")
 
             return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
 
@@ -722,7 +722,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating entry features: {e}")
+            self.logger.error(f"Error calculating entry features: {e}")
 
             return {}
 
@@ -740,7 +740,7 @@ class MetaLabelingSystem:
             return 0
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error calculating order imbalance: {e}")
+            self.logger.error(f"Error calculating order imbalance: {e}")
 
             return 0
 
@@ -772,7 +772,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error predicting price extremes: {e}")
+            self.logger.error(f"Error predicting price extremes: {e}")
 
             return {
                 "LOWEST_PRICE_NEXT_1m": data["close"].iloc[-1],
@@ -806,7 +806,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error predicting order returns: {e}")
+            self.logger.error(f"Error predicting order returns: {e}")
 
             return {"LIMIT_ORDER_RETURN": 0.001, "limit_order_confidence": 0}
 
@@ -886,7 +886,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error detecting entry signals: {e}")
+            self.logger.error(f"Error detecting entry signals: {e}")
 
             return {
                 "VWAP_REVERSION_ENTRY": 0,
@@ -924,7 +924,7 @@ class MetaLabelingSystem:
 
         except (ValueError, TypeError, IndexError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error predicting adverse excursion: {e}")
+            self.logger.error(f"Error predicting adverse excursion: {e}")
 
             return {
                 "MAX_ADVERSE_EXCURSION_RETURN": 0.01,
@@ -957,13 +957,13 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating abort signal: {e}")
+            self.logger.error(f"Error generating abort signal: {e}")
 
             return {"ABORT_ENTRY_SIGNAL": 0, "abort_confidence": 0}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return={},
+            default_return={},
         context="analyst labels generation",
     )
     async def generate_analyst_labels(
@@ -1054,13 +1054,13 @@ class MetaLabelingSystem:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating analyst labels: {e}")
+            self.logger.error(f"Error generating analyst labels: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return={},
+            default_return={},
         context="tactician labels generation",
     )
     async def generate_tactician_labels(
@@ -1148,13 +1148,13 @@ class MetaLabelingSystem:
 
         except (ValueError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating tactician labels: {e}")
+            self.logger.error(f"Error generating tactician labels: {e}")
 
             return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return={},
+            default_return={},
         context="combined labels generation",
     )
     async def generate_combined_labels(
@@ -1212,7 +1212,7 @@ class MetaLabelingSystem:
 
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error generating combined labels: {e}")
+            self.logger.error(f"Error generating combined labels: {e}")
 
             return {}
 
@@ -1232,7 +1232,7 @@ class MetaLabelingSystem:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="meta labeling system cleanup",
     )
     async def stop(self) -> None:
@@ -1243,5 +1243,5 @@ class MetaLabelingSystem:
             self.logger.info("✅ Meta-Labeling System stopped successfully")
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.logger.error("Error stopping meta-labeling system: {e}")
+            self.logger.error(f"Error stopping meta-labeling system: {e}")
 

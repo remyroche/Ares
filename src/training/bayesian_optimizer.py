@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/training/bayesian_optimizer.py
 
 import datetime as datetime
 from collections.abc import Callable
@@ -11,6 +10,8 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+# src/training/bayesian_optimizer.py
 
 
 class AdvancedHyperparameterOptimizer:
@@ -216,7 +217,9 @@ class AdvancedHyperparameterOptimizer:
             msg = "Feature selection threshold too high"
             raise optuna.TrialPruned(msg)
 
-    def _add_model_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]) -> None:
+    def _add_model_constraints(
+        self, trial: optuna.trial.Trial, params: dict[str, Any]
+    ) -> None:
         """Add constraints for model parameters."""
         # Model-specific constraints
         if params["model_type"] == "random_forest":

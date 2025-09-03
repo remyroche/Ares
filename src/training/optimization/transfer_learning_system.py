@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Transfer Learning System for Surrogate Optimization
 
@@ -11,8 +12,6 @@ This module provides transfer learning capabilities for surrogate optimization:
 - Warm-start strategies
 """
 
-from src.core.decorators import handles_errors
-from typing import Dict
 import json
 import os
 import os.path
@@ -20,7 +19,7 @@ import pickle
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict
 
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
@@ -28,14 +27,16 @@ from sklearn.ensemble import RandomForestRegressor
 # ML libraries
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 
+from src.core.decorators import handles_errors
+
 # Utilities
 from src.utils.logger import system_logger
 
-import os.path
 
 @dataclass
 class ProblemSignature:
     """Signature of an optimization problem for similarity detection."""
+
     problem_id: str
     dimensionality: int
     parameter_bounds: list[tuple[float, float]]
@@ -46,9 +47,11 @@ class ProblemSignature:
     feature_vector: np.ndarray
     metadata: dict[str, Any]
 
+
 @dataclass
 class TransferKnowledge:
     """Knowledge transferred from previous optimization problems."""
+
     source_problem_id: str
     target_problem_id: str
     similarity_score: float
@@ -59,9 +62,11 @@ class TransferKnowledge:
     transfer_timestamp: float
     transfer_effectiveness: float
 
+
 @dataclass
 class OptimizationHistory:
     """Complete history of an optimization problem."""
+
     problem_id: str
     problem_signature: ProblemSignature
     parameter_space: dict[str, Any]
@@ -73,6 +78,7 @@ class OptimizationHistory:
     convergence_history: list[float]
     training_time: float
     completion_timestamp: float
+
 
 class ProblemSimilarityDetector:
     """Detects similarity between optimization problems."""
@@ -90,28 +96,33 @@ class ProblemSimilarityDetector:
 
         # Feature-based similarity
         feature_similarity = self._calculate_feature_similarity(
-            problem1.feature_vector, problem2.feature_vector,
+            problem1.feature_vector,
+            problem2.feature_vector,
         )
 
         # Structural similarity
-        structural_similarity = self._calculate_structural_similarity(problem1, problem2)
+        structural_similarity = self._calculate_structural_similarity(
+            problem1, problem2
+        )
 
         # Domain similarity
         domain_similarity = self._calculate_domain_similarity(problem1, problem2)
 
         # Weighted combination
-        weights = self.config.get("similarity_weights", {
-            "feature": 0.4,
-            "structural": 0.4,
-            "domain": 0.2,
-        })
-
-        return (
-            weights["feature"] * feature_similarity +
-            weights["structural"] * structural_similarity +
-            weights["domain"] * domain_similarity
+        weights = self.config.get(
+            "similarity_weights",
+            {
+                "feature": 0.4,
+                "structural": 0.4,
+                "domain": 0.2,
+            },
         )
 
+        return (
+            weights["feature"] * feature_similarity
+            + weights["structural"] * structural_similarity
+            + weights["domain"] * domain_similarity
+        )
 
     def _calculate_feature_similarity(
         self,
@@ -152,23 +163,35 @@ class ProblemSimilarityDetector:
         similarities = []
 
         # Dimensionality similarity
-        dim_similarity = 1.0 - abs(problem1.dimensionality - problem2.dimensionality) / max(
-            problem1.dimensionality, problem2.dimensionality, 1,
+        dim_similarity = 1.0 - abs(
+            problem1.dimensionality - problem2.dimensionality
+        ) / max(
+            problem1.dimensionality,
+            problem2.dimensionality,
+            1,
         )
         similarities.append(dim_similarity)
 
         # Constraint similarity
-        constraint_similarity = 1.0 - abs(problem1.constraint_count - problem2.constraint_count) / max(
-            problem1.constraint_count, problem2.constraint_count, 1,
+        constraint_similarity = 1.0 - abs(
+            problem1.constraint_count - problem2.constraint_count
+        ) / max(
+            problem1.constraint_count,
+            problem2.constraint_count,
+            1,
         )
         similarities.append(constraint_similarity)
 
         # Complexity similarity
-        complexity_similarity = 1.0 - abs(problem1.complexity_score - problem2.complexity_score)
+        complexity_similarity = 1.0 - abs(
+            problem1.complexity_score - problem2.complexity_score
+        )
         similarities.append(complexity_similarity)
 
         # Objective type similarity
-        objective_similarity = 1.0 if problem1.objective_type == problem2.objective_type else 0.0
+        objective_similarity = (
+            1.0 if problem1.objective_type == problem2.objective_type else 0.0
+        )
         similarities.append(objective_similarity)
 
         return np.mean(similarities)
@@ -188,6 +211,7 @@ class ProblemSimilarityDetector:
         if domain1 in ["unknown", "general"] or domain2 in ["unknown", "general"]:
             return 0.5
         return 0.0
+
 
 class KnowledgeTransferManager:
     """Manages knowledge transfer between optimization problems."""
@@ -216,12 +240,16 @@ class KnowledgeTransferManager:
             if os.path.exists(self.history_file):
                 with open(self.history_file, "rb") as f:
                     self.optimization_history = pickle.load(f)
-                self.logger.info(f"Loaded {len(self.optimization_history)} optimization histories")
+                self.logger.info(
+                    f"Loaded {len(self.optimization_history)} optimization histories"
+                )
 
             if os.path.exists(self.transfer_file):
                 with open(self.transfer_file, "rb") as f:
                     self.transfer_knowledge = pickle.load(f)
-                self.logger.info(f"Loaded {len(self.transfer_knowledge)} transfer knowledge records")
+                self.logger.info(
+                    f"Loaded {len(self.transfer_knowledge)} transfer knowledge records"
+                )
 
         except Exception as e:
             self.logger.warning(f"Error loading history: {e}")
@@ -255,7 +283,8 @@ class KnowledgeTransferManager:
 
         for history in self.optimization_history:
             similarity = self.similarity_detector.calculate_similarity(
-                target_problem, history.problem_signature,
+                target_problem,
+                history.problem_signature,
             )
 
             if similarity >= similarity_threshold:
@@ -281,7 +310,9 @@ class KnowledgeTransferManager:
 
         total_weight = sum(similarity_scores)
 
-        for i, (source_problem, similarity) in enumerate(zip(source_problems, similarity_scores, strict=False)):
+        for i, (source_problem, similarity) in enumerate(
+            zip(source_problems, similarity_scores, strict=False)
+        ):
             weight = similarity / total_weight
 
             # Transfer surrogate models
@@ -291,13 +322,18 @@ class KnowledgeTransferManager:
                 transferred_models[model_name].append((model, weight))
 
             # Transfer hyperparameters
-            for param_name, param_value in source_problem.optimization_results.get("hyperparameters", {}).items():
+            for param_name, param_value in source_problem.optimization_results.get(
+                "hyperparameters", {}
+            ).items():
                 if param_name not in transferred_hyperparameters:
                     transferred_hyperparameters[param_name] = []
                 transferred_hyperparameters[param_name].append((param_value, weight))
 
             # Transfer strategies
-            for strategy_name, strategy_value in source_problem.optimization_results.get("strategies", {}).items():
+            for (
+                strategy_name,
+                strategy_value,
+            ) in source_problem.optimization_results.get("strategies", {}).items():
                 if strategy_name not in transferred_strategies:
                     transferred_strategies[strategy_name] = []
                 transferred_strategies[strategy_name].append((strategy_value, weight))
@@ -334,7 +370,10 @@ class KnowledgeTransferManager:
 
         # Adapt hyperparameters
         adapted_hyperparameters = {}
-        for param_name, weighted_values in transfer_knowledge.transferred_hyperparameters.items():
+        for (
+            param_name,
+            weighted_values,
+        ) in transfer_knowledge.transferred_hyperparameters.items():
             # Weighted average of hyperparameters
             adapted_value = sum(value * weight for value, weight in weighted_values)
             adapted_hyperparameters[param_name] = adapted_value
@@ -343,7 +382,10 @@ class KnowledgeTransferManager:
 
         # Adapt strategies
         adapted_strategies = {}
-        for strategy_name, weighted_values in transfer_knowledge.transferred_strategies.items():
+        for (
+            strategy_name,
+            weighted_values,
+        ) in transfer_knowledge.transferred_strategies.items():
             # For categorical strategies, use weighted voting
             if isinstance(weighted_values[0][0], str):
                 # Count weighted votes
@@ -352,7 +394,9 @@ class KnowledgeTransferManager:
                     votes[value] = votes.get(value, 0) + weight
 
                 # Select strategy with highest weighted vote
-                adapted_strategies[strategy_name] = max(votes.items(), key=lambda x: x[1])[0]
+                adapted_strategies[strategy_name] = max(
+                    votes.items(), key=lambda x: x[1]
+                )[0]
             else:
                 # For numerical strategies, use weighted average
                 adapted_value = sum(value * weight for value, weight in weighted_values)
@@ -362,7 +406,10 @@ class KnowledgeTransferManager:
 
         # Adapt surrogate models
         adapted_models = {}
-        for model_name, weighted_models in transfer_knowledge.transferred_models.items():
+        for (
+            model_name,
+            weighted_models,
+        ) in transfer_knowledge.transferred_models.items():
             # For now, use the model with highest weight
             best_model, best_weight = max(weighted_models, key=lambda x: x[1])
             adapted_models[model_name] = best_model
@@ -383,7 +430,9 @@ class KnowledgeTransferManager:
         transfer_performance = optimization_performance.get("transfer_performance", 0.0)
 
         if baseline_performance > 0:
-            effectiveness = (transfer_performance - baseline_performance) / baseline_performance
+            effectiveness = (
+                transfer_performance - baseline_performance
+            ) / baseline_performance
         else:
             effectiveness = 0.0
 
@@ -393,6 +442,7 @@ class KnowledgeTransferManager:
         self._save_history()
         self.logger.info(f"Updated transfer effectiveness: {effectiveness:.3f}")
 
+
 class MetaLearner:
     """Meta-learning system for optimization strategy selection."""
 
@@ -401,15 +451,23 @@ class MetaLearner:
         self.logger = system_logger.getChild("MetaLearner")
 
         # Meta-models for different aspects
-        self.strategy_selector = RandomForestRegressor(n_estimators=100, random_state=42)
-        self.hyperparameter_predictor = RandomForestRegressor(n_estimators=100, random_state=42)
-        self.performance_predictor = RandomForestRegressor(n_estimators=100, random_state=42)
+        self.strategy_selector = RandomForestRegressor(
+            n_estimators=100, random_state=42
+        )
+        self.hyperparameter_predictor = RandomForestRegressor(
+            n_estimators=100, random_state=42
+        )
+        self.performance_predictor = RandomForestRegressor(
+            n_estimators=100, random_state=42
+        )
 
         # Training data
         self.training_data = []
         self.is_trained = False
 
-    def extract_problem_features(self, problem_signature: ProblemSignature) -> np.ndarray:
+    def extract_problem_features(
+        self, problem_signature: ProblemSignature
+    ) -> np.ndarray:
         """Extract features for meta-learning."""
         features = [
             problem_signature.dimensionality,
@@ -457,10 +515,16 @@ class MetaLearner:
         strategy_labels = [example["strategy"] for example in self.training_data]
         unique_strategies = list(set(strategy_labels))
         strategy_mapping = {strategy: i for i, strategy in enumerate(unique_strategies)}
-        y_strategy = np.array([strategy_mapping[strategy] for strategy in strategy_labels])
+        y_strategy = np.array(
+            [strategy_mapping[strategy] for strategy in strategy_labels]
+        )
 
         # Hyperparameter targets (use key hyperparameters)
-        key_hyperparams = ["learning_rate", "exploration_balance", "uncertainty_threshold"]
+        key_hyperparams = [
+            "learning_rate",
+            "exploration_balance",
+            "uncertainty_threshold",
+        ]
         y_hyperparams = []
 
         for example in self.training_data:
@@ -473,7 +537,9 @@ class MetaLearner:
         y_hyperparams = np.array(y_hyperparams)
 
         # Performance targets
-        y_performance = np.array([example["performance"] for example in self.training_data])
+        y_performance = np.array(
+            [example["performance"] for example in self.training_data]
+        )
 
         # Train models
         try:
@@ -500,17 +566,24 @@ class MetaLearner:
 
         # Predict strategy
         strategy_idx = self.strategy_selector.predict(features)[0]
-        strategy = list({example["strategy"] for example in self.training_data})[strategy_idx]
+        strategy = list({example["strategy"] for example in self.training_data})[
+            strategy_idx
+        ]
 
         # Predict hyperparameters
         hyperparam_vector = self.hyperparameter_predictor.predict(features)[0]
-        key_hyperparams = ["learning_rate", "exploration_balance", "uncertainty_threshold"]
+        key_hyperparams = [
+            "learning_rate",
+            "exploration_balance",
+            "uncertainty_threshold",
+        ]
         hyperparameters = dict(zip(key_hyperparams, hyperparam_vector, strict=False))
 
         # Predict expected performance
         expected_performance = self.performance_predictor.predict(features)[0]
 
         return strategy, hyperparameters, expected_performance
+
 
 class TransferLearningOptimizer:
     """Main transfer learning optimizer that combines all components."""
@@ -538,7 +611,9 @@ class TransferLearningOptimizer:
 
         # Create problem signature
         problem_signature = self._create_problem_signature(
-            objective_function, parameter_space, problem_metadata,
+            objective_function,
+            parameter_space,
+            problem_metadata,
         )
 
         # Find similar problems
@@ -551,7 +626,9 @@ class TransferLearningOptimizer:
             )
 
             if similar_problems_with_scores:
-                similar_problems, similarity_scores = zip(*similar_problems_with_scores, strict=False)
+                similar_problems, similarity_scores = zip(
+                    *similar_problems_with_scores, strict=False
+                )
                 similar_problems = list(similar_problems)
                 similarity_scores = list(similarity_scores)
 
@@ -559,33 +636,46 @@ class TransferLearningOptimizer:
 
                 # Transfer knowledge
                 transfer_knowledge = self.knowledge_manager.transfer_knowledge(
-                    problem_signature, similar_problems, similarity_scores,
+                    problem_signature,
+                    similar_problems,
+                    similarity_scores,
                 )
 
                 # Adapt transferred knowledge
                 adapted_knowledge = self.knowledge_manager.adapt_transferred_knowledge(
-                    transfer_knowledge, parameter_space,
+                    transfer_knowledge,
+                    parameter_space,
                 )
 
                 # Use transferred knowledge for warm start
                 optimization_config = self._create_optimization_config_with_transfer(
-                    adapted_knowledge, problem_signature,
+                    adapted_knowledge,
+                    problem_signature,
                 )
             else:
-                self.logger.info("No similar problems found, using default configuration")
-                optimization_config = self._create_default_optimization_config(problem_signature)
+                self.logger.info(
+                    "No similar problems found, using default configuration"
+                )
+                optimization_config = self._create_default_optimization_config(
+                    problem_signature
+                )
         else:
-            optimization_config = self._create_default_optimization_config(problem_signature)
+            optimization_config = self._create_default_optimization_config(
+                problem_signature
+            )
 
         # Run optimization
         optimization_results = self._run_optimization(
-            objective_function, parameter_space, optimization_config,
+            objective_function,
+            parameter_space,
+            optimization_config,
         )
 
         # Update transfer effectiveness if transfer was used
         if similar_problems and self.enable_transfer:
             self.knowledge_manager.update_transfer_effectiveness(
-                transfer_knowledge, optimization_results,
+                transfer_knowledge,
+                optimization_results,
             )
 
         # Add to training data for meta-learning
@@ -663,7 +753,9 @@ class TransferLearningOptimizer:
         combined_str = function_str + param_str
         return hashlib.md5(combined_str.encode()).hexdigest()[:8]
 
-    def _extract_bounds(self, parameter_space: dict[str, Any]) -> list[tuple[float, float]]:
+    def _extract_bounds(
+        self, parameter_space: dict[str, Any]
+    ) -> list[tuple[float, float]]:
         """Extract parameter bounds."""
         bounds = []
         for param_config in parameter_space.values():
@@ -691,25 +783,31 @@ class TransferLearningOptimizer:
             if isinstance(param_config, dict):
                 if "min" in param_config and "max" in param_config:
                     # Continuous parameter
-                    features.extend([
-                        param_config["min"],
-                        param_config["max"],
-                        param_config["max"] - param_config["min"],
-                    ])
+                    features.extend(
+                        [
+                            param_config["min"],
+                            param_config["max"],
+                            param_config["max"] - param_config["min"],
+                        ]
+                    )
                 elif "choices" in param_config:
                     # Discrete parameter
-                    features.extend([
-                        len(param_config["choices"]),
-                        min(param_config["choices"]),
-                        max(param_config["choices"]),
-                    ])
+                    features.extend(
+                        [
+                            len(param_config["choices"]),
+                            min(param_config["choices"]),
+                            max(param_config["choices"]),
+                        ]
+                    )
             elif isinstance(param_config, list | tuple) and len(param_config) == 2:
                 # Simple bounds
-                features.extend([
-                    param_config[0],
-                    param_config[1],
-                    param_config[1] - param_config[0],
-                ])
+                features.extend(
+                    [
+                        param_config[0],
+                        param_config[1],
+                        param_config[1] - param_config[0],
+                    ]
+                )
 
         return np.array(features)
 
@@ -736,13 +834,14 @@ class TransferLearningOptimizer:
     ) -> dict[str, Any]:
         """Create optimization configuration using transferred knowledge."""
         return {
-            "strategy": adapted_knowledge.get("strategies", {}).get("strategy", "default"),
+            "strategy": adapted_knowledge.get("strategies", {}).get(
+                "strategy", "default"
+            ),
             "hyperparameters": adapted_knowledge.get("hyperparameters", {}),
             "surrogate_models": adapted_knowledge.get("models", {}),
             "warm_start": True,
             "transfer_learning": True,
         }
-
 
     def _create_default_optimization_config(
         self,
@@ -759,7 +858,6 @@ class TransferLearningOptimizer:
             "warm_start": False,
             "transfer_learning": False,
         }
-
 
     def _run_optimization(
         self,

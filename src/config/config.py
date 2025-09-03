@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config.py
 
 """
@@ -13,6 +14,7 @@ from typing import Any
 @dataclass
 class DatabaseConfig:
     """Database configuration settings."""
+
     host: str = "localhost"
     port: int = 5432
     database: str = "ares_trading"
@@ -25,6 +27,7 @@ class DatabaseConfig:
 @dataclass
 class ExchangeConfig:
     """Exchange configuration settings."""
+
     name: str = "binance"
     api_key: str = ""
     api_secret: str = ""
@@ -36,6 +39,7 @@ class ExchangeConfig:
 @dataclass
 class SystemConfig:
     """System-level configuration settings."""
+
     # Checkpointing
     checkpoint_dir: str = "checkpoints"
     save_interval: int = 1000
@@ -61,6 +65,7 @@ class SystemConfig:
 @dataclass
 class EnvironmentConfig:
     """Environment-specific configuration."""
+
     trading_environment: str = "paper"  # paper, live, backtest
     exchange_name: str = "binance"
     trade_symbol: str = "ETHUSDT"
@@ -83,6 +88,7 @@ class EnvironmentConfig:
 @dataclass
 class TradingConfig:
     """Trading-specific configuration (non-optimizable)."""
+
     # Basic trading parameters
     taker_fee: float = 0.0004
     maker_fee: float = 0.0002
@@ -115,6 +121,7 @@ class TradingConfig:
 @dataclass
 class TrainingConfig:
     """Training-specific configuration (non-optimizable)."""
+
     # Data configuration
     train_split: float = 0.7
     val_split: float = 0.15

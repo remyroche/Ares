@@ -12,7 +12,7 @@ from src.transition.path_targets import PathTargetEngineer
 from src.transition.state_sequence_builder import StateSequenceBuilder
 from src.utils.logger import system_logger
 
-FEATURE_POOL_COLUMNS , [
+FEATURE_POOL_COLUMNS, [
     "log_returns",
     "volatility_20",
     "volume_ratio",
@@ -68,7 +68,8 @@ class RollingWindowDatasetBuilder:
             max_samples=int(rcfg.get("max_samples", 0)) or None,
         )
         self.state_builder = StateSequenceBuilder(
-            config, exchange=exchange,
+            config,
+            exchange=exchange,
             symbol=symbol,
         )
         self.path_target = PathTargetEngineer(config)
@@ -155,10 +156,14 @@ class RollingWindowDatasetBuilder:
             # Assemble sample (onset/end filled in second pass)
             samples.append(
                 {
-                    "t_index": t , "t0_time": klines_df.index[t],
-                    "path_class": pc , "X_pre_states": X_states,
-                    "Y_post_states": Y_states , "Y_post_returns": y_rets.copy(),
-                    "rf_features": rf_feats, **dir_targets,
+                    "t_index": t,
+                    "t0_time": klines_df.index[t],
+                    "path_class": pc,
+                    "X_pre_states": X_states,
+                    "Y_post_states": Y_states,
+                    "Y_post_returns": y_rets.copy(),
+                    "rf_features": rf_feats,
+                    **dir_targets,
                 },
             )
             # No break; recent windowing handled by loop_start
@@ -172,15 +177,15 @@ class RollingWindowDatasetBuilder:
             s["onset_beginning"] = int(
                 any(
                     pc == "beginning_of_trend"
-                    for pc in path_classes[t : min(N = t + K + 1)]
+                    for pc in path_classes[t : min(N=t + K + 1)]
                 ),
             )
             # End of trend (end_of_trend or reversal within J bars)
             s["end_trend"] = int(
                 any(
                     pc in ("end_of_trend", "reversal")
-                    for pc in path_classes[t : min(N = t + J + 1)]
+                    for pc in path_classes[t : min(N=t + J + 1)]
                 ),
             )
 
-        return {"samples": samples , "numeric_feature_names": numeric_cols}
+        return {"samples": samples, "numeric_feature_names": numeric_cols}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Enhanced Error Handling and Recovery Strategies for Ares Trading Bot.
 
@@ -48,11 +49,9 @@ try:
 except Exception:  # Minimal fallback for environments without pandas
 
     class _PD:
-        class DataFrame:
-            ...
+        class DataFrame: ...
 
-        class Series:
-            ...
+        class Series: ...
 
     pd = _PD()  # type: ignore
 
@@ -128,17 +127,23 @@ def call_method_robust(
             method = getattr(obj, fallback_method)
             if callable(method):
                 if logger:
-                    logger.debug(f"Primary method '{method_name}' not available, using fallback '{fallback_method}'")
+                    logger.debug(
+                        f"Primary method '{method_name}' not available, using fallback '{fallback_method}'"
+                    )
                 return method(*args, **kwargs)
 
         # Return default if no methods available
         if logger:
-            logger.warning(f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}")
+            logger.warning(
+                f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}"
+            )
         return default_return
 
     except Exception as e:
         if logger:
-            logger.exception(f"Error calling method '{method_name}' on {type(obj).__name__}: {e}")
+            logger.exception(
+                f"Error calling method '{method_name}' on {type(obj).__name__}: {e}"
+            )
         return default_return
 
 
@@ -456,6 +461,7 @@ class ErrorHandler:
                                 try:
                                     # For sync functions, handle recovery differently
                                     error_obj = e  # Capture exception for closure
+
                                     async def run_recovery() -> Any | None:
                                         return await strategy.execute(
                                             {
@@ -546,6 +552,7 @@ class ErrorHandler:
                                 if strategy.can_handle(e):
                                     try:
                                         error_obj = e  # Capture exception for closure
+
                                         async def run_recovery() -> Any | None:
                                             return await strategy.execute(
                                                 {
@@ -1576,7 +1583,9 @@ def handle_nan_issues(func: Callable) -> Callable:
                         result[col] = result[col].fillna(0)
                     else:
                         # For other types, use forward fill then backward fill
-                        result[col] = result[col].fillna(method="ffill").fillna(method="bfill")
+                        result[col] = (
+                            result[col].fillna(method="ffill").fillna(method="bfill")
+                        )
 
                 # Log any remaining NaN issues
                 nan_counts = result.isnull().sum()
@@ -1666,7 +1675,11 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
                     else np.full_like(numerator, default)
                 )
             result = numerator / denominator
-            return result.fillna(default) if isinstance(result, pd.Series) else np.nan_to_num(result, nan=default)
+            return (
+                result.fillna(default)
+                if isinstance(result, pd.Series)
+                else np.nan_to_num(result, nan=default)
+            )
         # Handle scalar division
         if denominator == 0:
             return default

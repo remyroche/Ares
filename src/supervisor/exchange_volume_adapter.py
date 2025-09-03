@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Exchange Volume Adapter for Model Transfer Learning
 
 This module handles the adaptation of models trained on high-volume exchanges
 (Binance) to work effectively on lower-volume exchanges (MEXC = Gate.io).
 """
-from src.core.decorators import handles_errors
-
-from src.core.domain import handle_specific_errors
-
 from datetime import datetime
 from typing import Any
 
+from src.core.decorators import handles_errors
+from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -32,6 +31,7 @@ class ExchangeVolumeAdapter:
     - Market impact considerations
     - Data quality adjustments
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ExchangeVolumeAdapter")
@@ -69,8 +69,12 @@ class ExchangeVolumeAdapter:
             "exchange_volume_adapter",
             {},
         )
-        self.enable_volume_adaptation: bool = self.adapter_config.get("enable_volume_adaptation", True)
-        self.enable_dynamic_adjustment: bool = self.adapter_config.get("enable_dynamic_adjustment", True)
+        self.enable_volume_adaptation: bool = self.adapter_config.get(
+            "enable_volume_adaptation", True
+        )
+        self.enable_dynamic_adjustment: bool = self.adapter_config.get(
+            "enable_dynamic_adjustment", True
+        )
         self.volume_history_window: int = self.adapter_config.get(
             "volume_history_window",
             24,
@@ -268,7 +272,9 @@ class ExchangeVolumeAdapter:
             self.print(error("Error calculating spread adjustment: {e}"))
             return base_spread * 2.0  # Conservative fallback
 
-    def calculate_slippage_adjustment(self, exchange: str, base_slippage: float = None) -> float:
+    def calculate_slippage_adjustment(
+        self, exchange: str, base_slippage: float = None
+    ) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
         try:
             profile = self.get_volume_profile(exchange)
@@ -391,12 +397,17 @@ class ExchangeVolumeAdapter:
             base_factor = profile["position_size_multiplier"]
 
             # Apply dynamic adjustments if enabled
-            if self.enable_dynamic_adjustment and exchange_upper in self.current_volume_metrics:
+            if (
+                self.enable_dynamic_adjustment
+                and exchange_upper in self.current_volume_metrics
+            ):
                 metrics = self.current_volume_metrics[exchange_upper]
 
                 # Adjust based on current volume vs average
                 if metrics.get("current_volume") and profile.get("avg_daily_volume"):
-                    volume_ratio = metrics["current_volume"] / profile["avg_daily_volume"]
+                    volume_ratio = (
+                        metrics["current_volume"] / profile["avg_daily_volume"]
+                    )
                     volume_adjustment = min(1.5, max(0.5, volume_ratio))
                     base_factor *= volume_adjustment
 
@@ -408,7 +419,9 @@ class ExchangeVolumeAdapter:
             return max(0.1, min(2.0, base_factor))  # Clamp between 0.1 and 2.0
 
         except Exception as e:
-            self.logger.exception(f"Error getting adaptation factor for {exchange}: {e}")
+            self.logger.exception(
+                f"Error getting adaptation factor for {exchange}: {e}"
+            )
             return 1.0
 
     def get_adaptation_summary(self) -> dict[str, Any]:

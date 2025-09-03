@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/database/sqlite_manager.py
 
 import asyncio
 import json
@@ -21,6 +20,8 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
+
+# src/database/sqlite_manager.py
 
 
 class ConnectionPool:
@@ -103,13 +104,18 @@ class ConnectionPool:
     def get_pool_stats(self) -> dict[str, Any]:
         """Get connection pool statistics."""
         return {
-            "max_connections": self.max_connections, "active_connections": self.active_connections,
+            "max_connections": self.max_connections,
+            "active_connections": self.active_connections,
             "pool_size": self.connection_pool.qsize() if self.connection_pool else 0,
-            "total_connections_created": self.total_connections_created, "connection_errors": self.connection_errors,
-            "utilization_rate": self.active_connections / self.max_connections
-            if self.max_connections > 0
-            else 0,
+            "total_connections_created": self.total_connections_created,
+            "connection_errors": self.connection_errors,
+            "utilization_rate": (
+                self.active_connections / self.max_connections
+                if self.max_connections > 0
+                else 0
+            ),
         }
+
 
 class SQLiteManager:
     """
@@ -310,7 +316,8 @@ class SQLiteManager:
         """Initialize connection pool."""
         try:
             self.connection_pool = ConnectionPool(
-                max_connections=self.max_connections, database_path=self.db_path,
+                max_connections=self.max_connections,
+                database_path=self.db_path,
             )
             await self.connection_pool.initialize()
 
@@ -404,7 +411,8 @@ class SQLiteManager:
         """Create database tables with enhanced error handling."""
         try:
             # Create trades table
-            connection.execute("""
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     symbol TEXT NOT NULL,
@@ -415,10 +423,12 @@ class SQLiteManager:
                     status TEXT DEFAULT 'open',
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             # Create positions table
-            connection.execute("""
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS positions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     symbol TEXT NOT NULL,
@@ -429,10 +439,12 @@ class SQLiteManager:
                     status TEXT DEFAULT 'open',
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             # Create performance table
-            connection.execute("""
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS performance (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     total_pnl REAL NOT NULL,
@@ -441,19 +453,23 @@ class SQLiteManager:
                     max_drawdown REAL NOT NULL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             # Create settings table
-            connection.execute("""
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             # Create documents table
-            connection.execute("""
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS documents (
                     collection TEXT NOT NULL,
                     key TEXT NOT NULL,
@@ -462,7 +478,8 @@ class SQLiteManager:
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (collection, key)
                 )
-            """)
+            """
+            )
 
             self.logger.info("Database tables created successfully")
 
@@ -620,7 +637,9 @@ class SQLiteManager:
 
     @handles_errors(fallback=None)
     async def get_trades(
-        self, symbol: str | None = None, limit: int | None = None,
+        self,
+        symbol: str | None = None,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Get trades with enhanced error handling and connection pooling.
@@ -924,7 +943,10 @@ class SQLiteManager:
 
     @handles_errors(fallback=None)
     async def set_document(
-        self, collection: str, key: str, data: dict[str, Any],
+        self,
+        collection: str,
+        key: str,
+        data: dict[str, Any],
     ) -> bool:
         """
         Set document with enhanced error handling and connection pooling.
@@ -1088,10 +1110,14 @@ class SQLiteManager:
         """
         try:
             status = {
-                "is_connected": self.is_connected, "database_path": self.database_path,
-                "auto_backup": self.auto_backup, "backup_interval": self.backup_interval,
-                "max_connections": self.max_connections, "recovery_attempts": self.recovery_attempts,
-                "max_recovery_attempts": self.max_recovery_attempts, "uptime": time.time() - self.start_time,
+                "is_connected": self.is_connected,
+                "database_path": self.database_path,
+                "auto_backup": self.auto_backup,
+                "backup_interval": self.backup_interval,
+                "max_connections": self.max_connections,
+                "recovery_attempts": self.recovery_attempts,
+                "max_recovery_attempts": self.max_recovery_attempts,
+                "uptime": time.time() - self.start_time,
                 "operation_stats": dict(self.operation_stats),
                 "error_stats": dict(self.error_stats),
             }
@@ -1124,8 +1150,10 @@ class SQLiteManager:
         except Exception:
             self.print(error("Error stopping SQLite manager: {e}"))
 
+
 # Global SQLite manager instance
 sqlite_manager: SQLiteManager | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_sqlite_manager(
@@ -1147,9 +1175,11 @@ async def setup_sqlite_manager(
             config = {
                 "sqlite_manager": {
                     "database_path": "data/ares.db",
-                    "auto_backup": True, "backup_interval": 3600,
+                    "auto_backup": True,
+                    "backup_interval": 3600,
                     "max_connections": 10,
-                    "enable_foreign_keys": True, "journal_mode": "WAL",
+                    "enable_foreign_keys": True,
+                    "journal_mode": "WAL",
                     "max_recovery_attempts": 3,
                     "recovery_cooldown": 60,
                 },

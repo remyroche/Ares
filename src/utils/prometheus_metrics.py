@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Prometheus metrics collection utility for training step validators.
 """
@@ -148,7 +149,9 @@ class PrometheusMetrics:
             sock.close()
             if result == 0:
                 # Port is already in use, don't start another server
-                logger.info(f"Prometheus metrics server already running on port {self.port}")
+                logger.info(
+                    f"Prometheus metrics server already running on port {self.port}"
+                )
                 self.metrics_initialized = True
                 return
         except Exception:

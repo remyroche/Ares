@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Standardized Error Handler
 
@@ -66,7 +67,12 @@ class ErrorContext:
 class ErrorRecord:
     """Error record with full context."""
 
-    def __init__(self, error: Exception, context: ErrorContext, severity: ErrorSeverity = ErrorSeverity.ERROR):
+    def __init__(
+        self,
+        error: Exception,
+        context: ErrorContext,
+        severity: ErrorSeverity = ErrorSeverity.ERROR,
+    ):
         self.error = error
         self.context = context
         self.severity = severity
@@ -80,31 +86,52 @@ class ErrorRecord:
         error_message = str(error).lower()
 
         # Data quality errors
-        if any(keyword in error_message for keyword in ["data", "dataframe", "nan", "null", "missing"]):
+        if any(
+            keyword in error_message
+            for keyword in ["data", "dataframe", "nan", "null", "missing"]
+        ):
             return ErrorCategory.DATA_QUALITY
 
         # Model training errors
-        if any(keyword in error_message for keyword in ["model", "training", "fit", "predict", "loss"]):
+        if any(
+            keyword in error_message
+            for keyword in ["model", "training", "fit", "predict", "loss"]
+        ):
             return ErrorCategory.MODEL_TRAINING
 
         # Configuration errors
-        if any(keyword in error_message for keyword in ["config", "parameter", "setting", "option"]):
+        if any(
+            keyword in error_message
+            for keyword in ["config", "parameter", "setting", "option"]
+        ):
             return ErrorCategory.CONFIGURATION
 
         # Dependency errors
-        if any(keyword in error_message for keyword in ["import", "module", "package", "dependency"]):
+        if any(
+            keyword in error_message
+            for keyword in ["import", "module", "package", "dependency"]
+        ):
             return ErrorCategory.DEPENDENCY
 
         # Resource errors
-        if any(keyword in error_message for keyword in ["memory", "disk", "cpu", "gpu", "resource"]):
+        if any(
+            keyword in error_message
+            for keyword in ["memory", "disk", "cpu", "gpu", "resource"]
+        ):
             return ErrorCategory.RESOURCE
 
         # Network errors
-        if any(keyword in error_message for keyword in ["network", "connection", "timeout", "http"]):
+        if any(
+            keyword in error_message
+            for keyword in ["network", "connection", "timeout", "http"]
+        ):
             return ErrorCategory.NETWORK
 
         # Validation errors
-        if any(keyword in error_message for keyword in ["validation", "schema", "format", "type"]):
+        if any(
+            keyword in error_message
+            for keyword in ["validation", "schema", "format", "type"]
+        ):
             return ErrorCategory.VALIDATION
 
         return ErrorCategory.UNKNOWN
@@ -237,7 +264,9 @@ class StandardizedErrorHandler:
         error_record = ErrorRecord(error, ErrorContext("unknown", "unknown"))
         return error_record.category
 
-    def get_recovery_strategy(self, error_type: Exception | ErrorCategory) -> dict[str, Any]:
+    def get_recovery_strategy(
+        self, error_type: Exception | ErrorCategory
+    ) -> dict[str, Any]:
         """Get recovery strategy for an error type.
 
         Args:
@@ -250,13 +279,18 @@ class StandardizedErrorHandler:
             error_record = ErrorRecord(error_type, ErrorContext("unknown", "unknown"))
             return error_record.recovery_strategy
         # Direct category lookup
-        error_record = ErrorRecord(Exception("dummy"), ErrorContext("unknown", "unknown"))
+        error_record = ErrorRecord(
+            Exception("dummy"), ErrorContext("unknown", "unknown")
+        )
         error_record.category = error_type
         error_record.recovery_strategy = error_record._get_recovery_strategy()
         return error_record.recovery_strategy
 
     def log_error_with_context(
-        self, error: Exception, step_name: str, data_context: dict[str, Any] | None = None,
+        self,
+        error: Exception,
+        step_name: str,
+        data_context: dict[str, Any] | None = None,
     ) -> None:
         """Log an error with context information.
 
@@ -309,7 +343,9 @@ Error in {error_record.context.step_name}:
             Dict: Error summary statistics
         """
         if step_name:
-            filtered_errors = [e for e in self.error_history if e.context.step_name == step_name]
+            filtered_errors = [
+                e for e in self.error_history if e.context.step_name == step_name
+            ]
         else:
             filtered_errors = self.error_history
 
@@ -324,11 +360,15 @@ Error in {error_record.context.step_name}:
         for error in filtered_errors:
             # Count by severity
             severity = error.severity.value
-            summary["by_severity"][severity] = summary["by_severity"].get(severity, 0) + 1
+            summary["by_severity"][severity] = (
+                summary["by_severity"].get(severity, 0) + 1
+            )
 
             # Count by category
             category = error.category.value
-            summary["by_category"][category] = summary["by_category"].get(category, 0) + 1
+            summary["by_category"][category] = (
+                summary["by_category"].get(category, 0) + 1
+            )
 
             # Count by step
             step = error.context.step_name
@@ -356,7 +396,9 @@ Error in {error_record.context.step_name}:
             import json
 
             with open(file_path, "w") as f:
-                json.dump([error.to_dict() for error in self.error_history], f, indent=2)
+                json.dump(
+                    [error.to_dict() for error in self.error_history], f, indent=2
+                )
             return True
         except Exception as e:
             self.logger.exception(f"Failed to export errors: {e}")

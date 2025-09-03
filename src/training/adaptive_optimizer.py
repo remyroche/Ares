@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/training/adaptive_optimizer.py
 
 import datetime as datetime
 from typing import Any
@@ -10,6 +9,8 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+# src/training/adaptive_optimizer.py
 
 
 class MarketRegime:
@@ -29,6 +30,7 @@ class MarketRegime:
         self.regime_type = regime_type
         self.optimal_params = optimal_params
         self.confidence = 0.0
+
 
 class AdaptiveOptimizer:
     """Adaptive hyperparameter optimizer that adjusts parameters based on market regime detection."""
@@ -235,7 +237,9 @@ class AdaptiveOptimizer:
 
         return results
 
-    def _update_regime_performance(self, regime_name: str, results: dict[str, Any]) -> None:
+    def _update_regime_performance(
+        self, regime_name: str, results: dict[str, Any]
+    ) -> None:
         """Update performance tracking for regime."""
         if regime_name not in self.regime_performance:
             self.regime_performance[regime_name] = []
@@ -271,6 +275,7 @@ class AdaptiveOptimizer:
             insights["optimal_regime_params"][regime_name] = regime.optimal_params
 
         return insights
+
 
 class RegimeSpecificOptimizer:
     """Optimizer specialized for a specific market regime."""

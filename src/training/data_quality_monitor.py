@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Data Quality Monitor for Enhanced Training Pipeline.
 
@@ -28,17 +29,21 @@ from src.utils.enhanced_mlflow_integration import (
 )
 from src.utils.logger import system_logger
 
+
 class QualityLevel(Enum):
     """Quality level enumeration."""
+
     EXCELLENT = "excellent"
     GOOD = "good"
     ACCEPTABLE = "acceptable"
     POOR = "poor"
     CRITICAL = "critical"
 
+
 @dataclass
 class DataQualityMetrics:
     """Data quality metrics container."""
+
     completeness: float
     consistency: float
     validity: float
@@ -52,9 +57,11 @@ class DataQualityMetrics:
     recommendations: list[str]
     timestamp: datetime
 
+
 @dataclass
 class CompatibilityMetrics:
     """Data compatibility metrics container."""
+
     format_compatible: bool
     schema_compatible: bool
     type_compatible: bool
@@ -66,9 +73,11 @@ class CompatibilityMetrics:
     conversions_applied: list[str]
     timestamp: datetime
 
+
 @dataclass
 class FormatMetrics:
     """Data format metrics container."""
+
     expected_format: str
     actual_format: str
     format_match: bool
@@ -79,9 +88,11 @@ class FormatMetrics:
     warnings: list[str]
     timestamp: datetime
 
+
 @dataclass
 class IndexMetrics:
     """Data indexing metrics container."""
+
     has_temporal_index: bool
     index_sorted: bool
     no_duplicates: bool
@@ -92,6 +103,7 @@ class IndexMetrics:
     issues: list[str]
     warnings: list[str]
     timestamp: datetime
+
 
 class DataQualityMonitor:
     """
@@ -125,13 +137,17 @@ class DataQualityMonitor:
 
         # Monitoring configuration
         self.monitor_config = config.get("data_quality_monitor", {})
-        self.enable_real_time_monitoring = self.monitor_config.get("enable_real_time_monitoring", True)
+        self.enable_real_time_monitoring = self.monitor_config.get(
+            "enable_real_time_monitoring", True
+        )
         self.alert_threshold = self.monitor_config.get("alert_threshold", 0.8)
         self.auto_fix_enabled = self.monitor_config.get("auto_fix_enabled", False)
 
         self.logger.info("🔍 Data Quality Monitor initialized")
 
-    async def monitor_data_quality(self, data: Any, step_name: str, context: dict[str, Any] = None) -> DataQualityMetrics:
+    async def monitor_data_quality(
+        self, data: Any, step_name: str, context: dict[str, Any] = None
+    ) -> DataQualityMetrics:
         """Monitor data quality for a specific step."""
         self.logger.info(f"🔍 Monitoring data quality for {step_name}")
 
@@ -140,7 +156,9 @@ class DataQualityMonitor:
 
         try:
             if isinstance(data, pd.DataFrame):
-                metrics = await self._analyze_dataframe_quality(data, step_name, context)
+                metrics = await self._analyze_dataframe_quality(
+                    data, step_name, context
+                )
             elif isinstance(data, dict):
                 metrics = await self._analyze_dict_quality(data, step_name, context)
             else:
@@ -159,7 +177,9 @@ class DataQualityMonitor:
             return metrics
 
         except Exception as e:
-            self.logger.exception(f"❌ Error monitoring data quality for {step_name}: {e}")
+            self.logger.exception(
+                f"❌ Error monitoring data quality for {step_name}: {e}"
+            )
             # Return critical quality metrics
             return DataQualityMetrics(
                 completeness=0.0,
@@ -176,7 +196,9 @@ class DataQualityMonitor:
                 timestamp=datetime.now(),
             )
 
-    async def _analyze_dataframe_quality(self, data: pd.DataFrame, step_name: str, context: dict[str, Any]) -> DataQualityMetrics:
+    async def _analyze_dataframe_quality(
+        self, data: pd.DataFrame, step_name: str, context: dict[str, Any]
+    ) -> DataQualityMetrics:
         """Analyze quality of DataFrame data."""
         issues = []
         warnings = []
@@ -217,7 +239,9 @@ class DataQualityMonitor:
             warnings.append(f"Accuracy concern: {accuracy:.3f}")
 
         # Overall score
-        overall_score = np.mean([completeness, consistency, validity, timeliness, uniqueness, accuracy])
+        overall_score = np.mean(
+            [completeness, consistency, validity, timeliness, uniqueness, accuracy]
+        )
 
         # Determine quality level
         quality_level = self._determine_quality_level(overall_score)
@@ -258,11 +282,11 @@ class DataQualityMonitor:
             # Check price relationships if OHLC data
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
                 price_consistency = (
-                    (data["high"] >= data["low"]) &
-                    (data["high"] >= data["open"]) &
-                    (data["high"] >= data["close"]) &
-                    (data["low"] <= data["open"]) &
-                    (data["low"] <= data["close"])
+                    (data["high"] >= data["low"])
+                    & (data["high"] >= data["open"])
+                    & (data["high"] >= data["close"])
+                    & (data["low"] <= data["open"])
+                    & (data["low"] <= data["close"])
                 ).mean()
                 consistency_checks.append(price_consistency)
 
@@ -288,7 +312,9 @@ class DataQualityMonitor:
 
             # Check for negative prices
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
-                price_validity = (data[["open", "high", "low", "close"]] > 0).all(axis=1).mean()
+                price_validity = (
+                    (data[["open", "high", "low", "close"]] > 0).all(axis=1).mean()
+                )
                 validity_checks.append(price_validity)
 
             # Check for reasonable price ranges
@@ -310,7 +336,9 @@ class DataQualityMonitor:
         except Exception:
             return 0.5
 
-    def _calculate_timeliness(self, data: pd.DataFrame, context: dict[str, Any]) -> float:
+    def _calculate_timeliness(
+        self, data: pd.DataFrame, context: dict[str, Any]
+    ) -> float:
         """Calculate data timeliness score."""
         try:
             if "timestamp" not in data.columns:
@@ -359,8 +387,7 @@ class DataQualityMonitor:
                 q3 = data["close"].quantile(0.75)
                 iqr = q3 - q1
                 outlier_ratio = (
-                    (data["close"] < q1 - 1.5 * iqr) |
-                    (data["close"] > q3 + 1.5 * iqr)
+                    (data["close"] < q1 - 1.5 * iqr) | (data["close"] > q3 + 1.5 * iqr)
                 ).mean()
                 accuracy_checks.append(1.0 - outlier_ratio)
 
@@ -387,7 +414,9 @@ class DataQualityMonitor:
             return QualityLevel.POOR
         return QualityLevel.CRITICAL
 
-    async def _analyze_dict_quality(self, data: dict[str, Any], step_name: str, context: dict[str, Any]) -> DataQualityMetrics:
+    async def _analyze_dict_quality(
+        self, data: dict[str, Any], step_name: str, context: dict[str, Any]
+    ) -> DataQualityMetrics:
         """Analyze quality of dictionary data."""
         issues = []
         warnings = []
@@ -402,7 +431,9 @@ class DataQualityMonitor:
             recommendations.append("Ensure all required keys are present")
 
         # Calculate completeness based on key presence
-        completeness = 1.0 - (len(missing_keys) / len(required_keys)) if required_keys else 1.0
+        completeness = (
+            1.0 - (len(missing_keys) / len(required_keys)) if required_keys else 1.0
+        )
 
         # Other metrics for dict data
         consistency = 1.0
@@ -411,7 +442,9 @@ class DataQualityMonitor:
         uniqueness = 1.0
         accuracy = 1.0
 
-        overall_score = np.mean([completeness, consistency, validity, timeliness, uniqueness, accuracy])
+        overall_score = np.mean(
+            [completeness, consistency, validity, timeliness, uniqueness, accuracy]
+        )
         quality_level = self._determine_quality_level(overall_score)
 
         return DataQualityMetrics(
@@ -429,7 +462,9 @@ class DataQualityMonitor:
             timestamp=datetime.now(),
         )
 
-    async def _analyze_generic_quality(self, data: Any, step_name: str, context: dict[str, Any]) -> DataQualityMetrics:
+    async def _analyze_generic_quality(
+        self, data: Any, step_name: str, context: dict[str, Any]
+    ) -> DataQualityMetrics:
         """Analyze quality of generic data."""
         issues = []
         warnings = []
@@ -447,7 +482,9 @@ class DataQualityMonitor:
             issues.append("Data is None")
             recommendations.append("Ensure data is properly loaded")
 
-        overall_score = np.mean([completeness, consistency, validity, timeliness, uniqueness, accuracy])
+        overall_score = np.mean(
+            [completeness, consistency, validity, timeliness, uniqueness, accuracy]
+        )
         quality_level = self._determine_quality_level(overall_score)
 
         return DataQualityMetrics(
@@ -479,17 +516,25 @@ class DataQualityMonitor:
         }
         return key_requirements.get(step_name, [])
 
-    async def monitor_compatibility(self, data: Any, step_name: str, expected_format: str = None) -> CompatibilityMetrics:
+    async def monitor_compatibility(
+        self, data: Any, step_name: str, expected_format: str = None
+    ) -> CompatibilityMetrics:
         """Monitor data compatibility for a specific step."""
         self.logger.info(f"🔍 Monitoring data compatibility for {step_name}")
 
         try:
             if isinstance(data, pd.DataFrame):
-                metrics = self._analyze_dataframe_compatibility(data, step_name, expected_format)
+                metrics = self._analyze_dataframe_compatibility(
+                    data, step_name, expected_format
+                )
             elif isinstance(data, dict):
-                metrics = self._analyze_dict_compatibility(data, step_name, expected_format)
+                metrics = self._analyze_dict_compatibility(
+                    data, step_name, expected_format
+                )
             else:
-                metrics = self._analyze_generic_compatibility(data, step_name, expected_format)
+                metrics = self._analyze_generic_compatibility(
+                    data, step_name, expected_format
+                )
 
             # Store in history
             self.compatibility_history.append(metrics)
@@ -497,7 +542,9 @@ class DataQualityMonitor:
             return metrics
 
         except Exception as e:
-            self.logger.exception(f"❌ Error monitoring compatibility for {step_name}: {e}")
+            self.logger.exception(
+                f"❌ Error monitoring compatibility for {step_name}: {e}"
+            )
             return CompatibilityMetrics(
                 format_compatible=False,
                 schema_compatible=False,
@@ -511,7 +558,9 @@ class DataQualityMonitor:
                 timestamp=datetime.now(),
             )
 
-    def _analyze_dataframe_compatibility(self, data: pd.DataFrame, step_name: str, expected_format: str) -> CompatibilityMetrics:
+    def _analyze_dataframe_compatibility(
+        self, data: pd.DataFrame, step_name: str, expected_format: str
+    ) -> CompatibilityMetrics:
         """Analyze DataFrame compatibility."""
         issues = []
         warnings = []
@@ -547,13 +596,15 @@ class DataQualityMonitor:
         # Check format compatibility
         format_compatible = True  # Default for DataFrame
 
-        overall_compatible = all([
-            schema_compatible,
-            type_compatible,
-            index_compatible,
-            temporal_aligned,
-            format_compatible,
-        ])
+        overall_compatible = all(
+            [
+                schema_compatible,
+                type_compatible,
+                index_compatible,
+                temporal_aligned,
+                format_compatible,
+            ]
+        )
 
         return CompatibilityMetrics(
             format_compatible=format_compatible,
@@ -575,10 +626,42 @@ class DataQualityMonitor:
             "step1_5": ["timestamp", "open", "high", "low", "close", "volume"],
             "step02": ["timestamp", "open", "high", "low", "close", "volume"],
             "step03": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step04": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step05": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step06": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step07": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step04": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "composite_cluster_id",
+            ],
+            "step05": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "composite_cluster_id",
+            ],
+            "step06": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "composite_cluster_id",
+            ],
+            "step07": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "composite_cluster_id",
+            ],
         }
         return column_requirements.get(step_name, [])
 
@@ -599,7 +682,9 @@ class DataQualityMonitor:
             if column in data.columns:
                 actual_type = str(data[column].dtype)
                 if actual_type != expected_type:
-                    issues.append(f"Column {column}: expected {expected_type}, got {actual_type}")
+                    issues.append(
+                        f"Column {column}: expected {expected_type}, got {actual_type}"
+                    )
 
         return issues
 
@@ -630,7 +715,9 @@ class DataQualityMonitor:
         except Exception:
             return False
 
-    def _analyze_dict_compatibility(self, data: dict[str, Any], step_name: str, expected_format: str) -> CompatibilityMetrics:
+    def _analyze_dict_compatibility(
+        self, data: dict[str, Any], step_name: str, expected_format: str
+    ) -> CompatibilityMetrics:
         """Analyze dictionary compatibility."""
         issues = []
         warnings = []
@@ -650,13 +737,15 @@ class DataQualityMonitor:
         temporal_aligned = True
         format_compatible = True
 
-        overall_compatible = all([
-            schema_compatible,
-            type_compatible,
-            index_compatible,
-            temporal_aligned,
-            format_compatible,
-        ])
+        overall_compatible = all(
+            [
+                schema_compatible,
+                type_compatible,
+                index_compatible,
+                temporal_aligned,
+                format_compatible,
+            ]
+        )
 
         return CompatibilityMetrics(
             format_compatible=format_compatible,
@@ -671,7 +760,9 @@ class DataQualityMonitor:
             timestamp=datetime.now(),
         )
 
-    def _analyze_generic_compatibility(self, data: Any, step_name: str, expected_format: str) -> CompatibilityMetrics:
+    def _analyze_generic_compatibility(
+        self, data: Any, step_name: str, expected_format: str
+    ) -> CompatibilityMetrics:
         """Analyze generic data compatibility."""
         issues = []
         warnings = []
@@ -687,13 +778,15 @@ class DataQualityMonitor:
         if data is None:
             issues.append("Data is None")
 
-        overall_compatible = all([
-            schema_compatible,
-            type_compatible,
-            index_compatible,
-            temporal_aligned,
-            format_compatible,
-        ])
+        overall_compatible = all(
+            [
+                schema_compatible,
+                type_compatible,
+                index_compatible,
+                temporal_aligned,
+                format_compatible,
+            ]
+        )
 
         return CompatibilityMetrics(
             format_compatible=format_compatible,
@@ -708,7 +801,9 @@ class DataQualityMonitor:
             timestamp=datetime.now(),
         )
 
-    async def monitor_format(self, data: Any, step_name: str, expected_format: str = "parquet") -> FormatMetrics:
+    async def monitor_format(
+        self, data: Any, step_name: str, expected_format: str = "parquet"
+    ) -> FormatMetrics:
         """Monitor data format compatibility."""
         self.logger.info(f"🔍 Monitoring data format for {step_name}")
 
@@ -737,7 +832,9 @@ class DataQualityMonitor:
                 timestamp=datetime.now(),
             )
 
-    def _analyze_dataframe_format(self, data: pd.DataFrame, expected_format: str) -> FormatMetrics:
+    def _analyze_dataframe_format(
+        self, data: pd.DataFrame, expected_format: str
+    ) -> FormatMetrics:
         """Analyze DataFrame format."""
         issues = []
         warnings = []
@@ -828,7 +925,9 @@ class DataQualityMonitor:
         warnings = []
 
         # Check for temporal index
-        has_temporal_index = "timestamp" in data.columns or data.index.name == "timestamp"
+        has_temporal_index = (
+            "timestamp" in data.columns or data.index.name == "timestamp"
+        )
 
         # Check if sorted
         index_sorted = True
@@ -865,14 +964,16 @@ class DataQualityMonitor:
         if "timestamp" in data.columns and data["timestamp"].dt.tz is not None:
             timezone_consistent = data["timestamp"].dt.tz == data["timestamp"].dt.tz
 
-        overall_valid = all([
-            has_temporal_index,
-            index_sorted,
-            no_duplicates,
-            no_gaps,
-            frequency_consistent,
-            timezone_consistent,
-        ])
+        overall_valid = all(
+            [
+                has_temporal_index,
+                index_sorted,
+                no_duplicates,
+                no_gaps,
+                frequency_consistent,
+                timezone_consistent,
+            ]
+        )
 
         return IndexMetrics(
             has_temporal_index=has_temporal_index,
@@ -919,7 +1020,9 @@ class DataQualityMonitor:
             timestamp=datetime.now(),
         )
 
-    async def _log_quality_metrics(self, step_name: str, metrics: DataQualityMetrics) -> None:
+    async def _log_quality_metrics(
+        self, step_name: str, metrics: DataQualityMetrics
+    ) -> None:
         """Log quality metrics to MLflow."""
         try:
             # Convert metrics to dict for logging
@@ -952,9 +1055,13 @@ class DataQualityMonitor:
         except Exception as e:
             self.logger.exception(f"❌ Failed to log quality metrics: {e}")
 
-    async def _trigger_quality_alert(self, step_name: str, metrics: DataQualityMetrics) -> None:
+    async def _trigger_quality_alert(
+        self, step_name: str, metrics: DataQualityMetrics
+    ) -> None:
         """Trigger quality alert for low quality data."""
-        self.logger.warning(f"⚠️ QUALITY ALERT for {step_name}: Score {metrics.overall_score:.3f}")
+        self.logger.warning(
+            f"⚠️ QUALITY ALERT for {step_name}: Score {metrics.overall_score:.3f}"
+        )
         self.logger.warning(f"   Issues: {metrics.issues}")
         self.logger.warning(f"   Warnings: {metrics.warnings}")
         self.logger.warning(f"   Recommendations: {metrics.recommendations}")
@@ -966,19 +1073,30 @@ class DataQualityMonitor:
 
         # Calculate summary statistics
         scores = [metrics.overall_score for metrics in self.quality_history]
-        quality_levels = [metrics.quality_level.value for metrics in self.quality_history]
+        quality_levels = [
+            metrics.quality_level.value for metrics in self.quality_history
+        ]
 
         return {
             "total_checks": len(self.quality_history),
             "average_quality_score": np.mean(scores),
             "min_quality_score": np.min(scores),
             "max_quality_score": np.max(scores),
-            "quality_level_distribution": pd.Series(quality_levels).value_counts().to_dict(),
+            "quality_level_distribution": pd.Series(quality_levels)
+            .value_counts()
+            .to_dict(),
             "recent_quality_trend": scores[-10:] if len(scores) >= 10 else scores,
-            "critical_issues_count": sum(1 for metrics in self.quality_history if metrics.quality_level == QualityLevel.CRITICAL),
-            "poor_quality_count": sum(1 for metrics in self.quality_history if metrics.quality_level in [QualityLevel.CRITICAL, QualityLevel.POOR]),
+            "critical_issues_count": sum(
+                1
+                for metrics in self.quality_history
+                if metrics.quality_level == QualityLevel.CRITICAL
+            ),
+            "poor_quality_count": sum(
+                1
+                for metrics in self.quality_history
+                if metrics.quality_level in [QualityLevel.CRITICAL, QualityLevel.POOR]
+            ),
         }
-
 
     async def generate_quality_report(self) -> dict[str, Any]:
         """Generate comprehensive quality report."""
@@ -989,18 +1107,30 @@ class DataQualityMonitor:
             "quality_summary": quality_summary,
             "compatibility_summary": {
                 "total_checks": len(self.compatibility_history),
-                "compatible_count": sum(1 for m in self.compatibility_history if m.overall_compatible),
-                "incompatible_count": sum(1 for m in self.compatibility_history if not m.overall_compatible),
+                "compatible_count": sum(
+                    1 for m in self.compatibility_history if m.overall_compatible
+                ),
+                "incompatible_count": sum(
+                    1 for m in self.compatibility_history if not m.overall_compatible
+                ),
             },
             "format_summary": {
                 "total_checks": len(self.format_history),
-                "format_match_count": sum(1 for m in self.format_history if m.format_match),
-                "format_mismatch_count": sum(1 for m in self.format_history if not m.format_match),
+                "format_match_count": sum(
+                    1 for m in self.format_history if m.format_match
+                ),
+                "format_mismatch_count": sum(
+                    1 for m in self.format_history if not m.format_match
+                ),
             },
             "index_summary": {
                 "total_checks": len(self.index_history),
-                "valid_index_count": sum(1 for m in self.index_history if m.overall_valid),
-                "invalid_index_count": sum(1 for m in self.index_history if not m.overall_valid),
+                "valid_index_count": sum(
+                    1 for m in self.index_history if m.overall_valid
+                ),
+                "invalid_index_count": sum(
+                    1 for m in self.index_history if not m.overall_valid
+                ),
             },
             "recent_issues": [
                 {
@@ -1033,14 +1163,16 @@ async def main():
     monitor = DataQualityMonitor(config)
 
     # Create sample data for testing
-    sample_data = pd.DataFrame({
-        "timestamp": pd.date_range("2024-01-01", periods=1000, freq="1min"),
-        "open": np.random.uniform(100, 200, 1000),
-        "high": np.random.uniform(100, 200, 1000),
-        "low": np.random.uniform(100, 200, 1000),
-        "close": np.random.uniform(100, 200, 1000),
-        "volume": np.random.uniform(1000, 10000, 1000),
-    })
+    sample_data = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-01", periods=1000, freq="1min"),
+            "open": np.random.uniform(100, 200, 1000),
+            "high": np.random.uniform(100, 200, 1000),
+            "low": np.random.uniform(100, 200, 1000),
+            "close": np.random.uniform(100, 200, 1000),
+            "volume": np.random.uniform(1000, 10000, 1000),
+        }
+    )
 
     # Monitor data quality
     quality_metrics = await monitor.monitor_data_quality(sample_data, "step01")
@@ -1052,16 +1184,21 @@ async def main():
     report = await monitor.generate_quality_report()
 
     # Print results
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("DATA QUALITY MONITORING RESULTS")
-    print("="*80)
-    print(f"Quality Score: {quality_metrics.overall_score:.3f} ({quality_metrics.quality_level.value})")
-    print(f"Compatibility: {'✅' if compatibility_metrics.overall_compatible else '❌'}")
+    print("=" * 80)
+    print(
+        f"Quality Score: {quality_metrics.overall_score:.3f} ({quality_metrics.quality_level.value})"
+    )
+    print(
+        f"Compatibility: {'✅' if compatibility_metrics.overall_compatible else '❌'}"
+    )
     print(f"Format Match: {'✅' if format_metrics.format_match else '❌'}")
     print(f"Index Valid: {'✅' if index_metrics.overall_valid else '❌'}")
 
     print("\nQuality Summary:")
     print(json.dumps(report["quality_summary"], indent=2))
 
+
 if __name__ == "__main__":
-    asyncio.run( main())
+    asyncio.run(main())

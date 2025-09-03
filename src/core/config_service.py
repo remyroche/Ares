@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/core/config_service.py
 
 import asyncio
 import importlib
@@ -18,6 +17,9 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, warning
 
+# src/core/config_service.py
+
+
 # Try to import watchdog for file watching using dynamic import to avoid linter warnings
 try:
     _watchdog_events = importlib.import_module("watchdog.events")
@@ -32,6 +34,7 @@ except Exception:
     Observer = None
     FileSystemEventHandler = None
 
+
 @dataclass
 class DatabaseConfig:
     """Database configuration dataclass."""
@@ -44,6 +47,7 @@ class DatabaseConfig:
     journal_mode: str = "WAL"
     max_recovery_attempts: int = 3
     recovery_cooldown: int = 60
+
 
 @dataclass
 class ExchangeConfig:
@@ -58,6 +62,7 @@ class ExchangeConfig:
     retry_attempts: int = 3
     retry_delay: int = 1
 
+
 @dataclass
 class ModelTrainingConfig:
     """Model training configuration dataclass."""
@@ -71,6 +76,7 @@ class ModelTrainingConfig:
     lookback_days: int = 730
     min_data_points: int = 100000
 
+
 @dataclass
 class RiskConfig:
     """Risk management configuration dataclass."""
@@ -81,6 +87,7 @@ class RiskConfig:
     take_profit_percentage: float = 0.15
     max_drawdown: float = 0.20
     risk_free_rate: float = 0.02
+
 
 if WATCHDOG_AVAILABLE:
     # TODO: Add proper implementation
@@ -107,6 +114,7 @@ if WATCHDOG_AVAILABLE:
                         asyncio.run(self.config_service._reload_configuration())
                 except Exception:
                     self.logger.exception("Failed to schedule configuration reload")
+
 else:
 
     class ConfigurationWatcher:
@@ -119,6 +127,7 @@ else:
         def on_modified(self, event):
             """Handle file modification events."""
             # No-op when watchdog is not available
+
 
 class ConfigurationService:
     """
@@ -170,6 +179,7 @@ class ConfigurationService:
         the merged config_data.
         """
         try:
+
             def _get(dct: dict, path: list[str]) -> Any:
                 cur = dct
                 for part in path:
@@ -303,7 +313,9 @@ class ConfigurationService:
                 elif config_file.endswith(".json"):
                     file_config = json.load(f)
                 else:
-                    self.logger.warning(f"Unsupported config file format: {config_file}")
+                    self.logger.warning(
+                        f"Unsupported config file format: {config_file}"
+                    )
                     return
 
             if file_config:
@@ -354,11 +366,16 @@ class ConfigurationService:
     def _merge_configuration(self, new_config: dict[str, Any]) -> None:
         """Merge new configuration with existing configuration."""
         try:
+
             def deep_merge(base: dict, update: dict) -> dict:
                 """Deep merge two dictionaries."""
                 result = base.copy()
                 for key, value in update.items():
-                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    if (
+                        key in result
+                        and isinstance(result[key], dict)
+                        and isinstance(value, dict)
+                    ):
                         result[key] = deep_merge(result[key], value)
                     else:
                         result[key] = value
@@ -367,14 +384,16 @@ class ConfigurationService:
             self.config_data = deep_merge(self.config_data, new_config)
 
             # Add to history
-            self.config_history.append({
-                "timestamp": datetime.now().isoformat(),
-                "config": new_config.copy(),
-            })
+            self.config_history.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "config": new_config.copy(),
+                }
+            )
 
             # Keep history size manageable
             if len(self.config_history) > self.max_history:
-                self.config_history = self.config_history[-self.max_history:]
+                self.config_history = self.config_history[-self.max_history :]
 
         except Exception as e:
             self.logger.exception(f"Error merging configuration: {e}")
@@ -388,7 +407,9 @@ class ConfigurationService:
             required_keys = ["database", "exchange", "risk"]
             for key in required_keys:
                 if key not in self.config_data:
-                    self.validation_errors.append(f"Missing required configuration section: {key}")
+                    self.validation_errors.append(
+                        f"Missing required configuration section: {key}"
+                    )
 
             # Validate database configuration
             if "database" in self.config_data:
@@ -426,7 +447,9 @@ class ConfigurationService:
 
             # Setup model training configuration
             training_config_data = self.config_data.get("training", {})
-            self.config_sections["training"] = ModelTrainingConfig(**training_config_data)
+            self.config_sections["training"] = ModelTrainingConfig(
+                **training_config_data
+            )
 
             # Setup risk configuration
             risk_config_data = self.config_data.get("risk", {})
@@ -575,8 +598,10 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f"Error during shutdown: {e}")
 
+
 # Global configuration service instance
 config_service: ConfigurationService | None = None
+
 
 def get_config_service() -> ConfigurationService:
     """Get the global configuration service instance."""

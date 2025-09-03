@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Common Operations Utility Module
 
@@ -43,7 +44,9 @@ def format_datetime(dt: datetime.datetime, fmt: str = "%Y-%m-%d %H:%M:%S") -> st
     return dt.strftime(fmt)
 
 
-def parse_datetime(date_string: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> datetime.datetime:
+def parse_datetime(
+    date_string: str, fmt: str = "%Y-%m-%d %H:%M:%S"
+) -> datetime.datetime:
     """Parse string to datetime."""
     return datetime.datetime.strptime(date_string, fmt)
 
@@ -59,7 +62,9 @@ def safe_fillna(df: pd.DataFrame, value: Any = 0) -> pd.DataFrame:
     return df.fillna(value)
 
 
-def safe_rolling(df: pd.DataFrame, window: int, min_periods: int = 1) -> pd.core.window.Rolling:
+def safe_rolling(
+    df: pd.DataFrame, window: int, min_periods: int = 1
+) -> pd.core.window.Rolling:
     """Create a rolling window object safely."""
     return df.rolling(window=window, min_periods=min_periods)
 
@@ -203,17 +208,19 @@ def create_argument_parser(description: str) -> argparse.ArgumentParser:
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to parser."""
-    parser.add_argument("--verbose", "-v", action="store_true",
-                       help="Enable verbose output")
-    parser.add_argument("--config", type=str, default="config.json",
-                       help="Configuration file path")
-    parser.add_argument("--output", "-o", type=str,
-                       help="Output file path")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose output"
+    )
+    parser.add_argument(
+        "--config", type=str, default="config.json", help="Configuration file path"
+    )
+    parser.add_argument("--output", "-o", type=str, help="Output file path")
 
 
 # Exception handling utilities
 def safe_exception_handler(func: Callable) -> Callable:
     """Decorator for safe exception handling."""
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
@@ -221,6 +228,7 @@ def safe_exception_handler(func: Callable) -> Callable:
             logger = get_logger(func.__module__)
             logger.exception(f"Error in {func.__name__}: {e}")
             return None
+
     return wrapper
 
 
@@ -248,6 +256,7 @@ def suggest_float_uniform(trial: Any, name: str, low: float, high: float) -> flo
         return trial.suggest_float(name, low, high)
     # Fallback for non-Optuna contexts
     import random
+
     return random.uniform(low, high)
 
 
@@ -257,6 +266,7 @@ def suggest_int_uniform(trial: Any, name: str, low: int, high: int) -> int:
         return trial.suggest_int(name, low, high)
     # Fallback for non-Optuna contexts
     import random
+
     return random.randint(low, high)
 
 
@@ -290,14 +300,21 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                     df[col] = df[col].astype(np.int16)
                 elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
                     df[col] = df[col].astype(np.int32)
-            elif c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max or c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+            elif (
+                c_min > np.finfo(np.float16).min
+                and c_max < np.finfo(np.float16).max
+                or c_min > np.finfo(np.float32).min
+                and c_max < np.finfo(np.float32).max
+            ):
                 df[col] = df[col].astype(np.float32)
 
     return df
 
 
 # Parquet operations
-def safe_read_parquet(file_path: str | Path, columns: list[str] | None = None) -> pd.DataFrame:
+def safe_read_parquet(
+    file_path: str | Path, columns: list[str] | None = None
+) -> pd.DataFrame:
     """Safely read parquet file with error handling."""
     try:
         return pd.read_parquet(file_path, columns=columns)
@@ -377,8 +394,9 @@ def safe_glob(pattern: str, recursive: bool = False) -> list[Path]:
         return []
 
 
-def list_files(directory: str | Path, pattern: str = "*",
-              suffix: str | None = None) -> list[Path]:
+def list_files(
+    directory: str | Path, pattern: str = "*", suffix: str | None = None
+) -> list[Path]:
     """List files in directory with optional pattern/suffix filter."""
     directory = Path(directory)
     if not directory.exists():
@@ -399,9 +417,11 @@ def get_latest_file(directory: str | Path, pattern: str = "*") -> Path | None:
 
 
 # Enhanced data validation
-def validate_dataframe_schema(df: pd.DataFrame,
-                            required_columns: list[str],
-                            column_types: dict[str, type] | None = None) -> tuple[bool, list[str]]:
+def validate_dataframe_schema(
+    df: pd.DataFrame,
+    required_columns: list[str],
+    column_types: dict[str, type] | None = None,
+) -> tuple[bool, list[str]]:
     """Validate DataFrame schema including column types."""
     errors = []
 
@@ -416,14 +436,16 @@ def validate_dataframe_schema(df: pd.DataFrame,
             if col in df.columns:
                 actual_type = df[col].dtype
                 if not np.issubdtype(actual_type, expected_type):
-                    errors.append(f"Column {col} has type {actual_type}, expected {expected_type}")
+                    errors.append(
+                        f"Column {col} has type {actual_type}, expected {expected_type}"
+                    )
 
     return len(errors) == 0, errors
 
 
-def validate_data_quality(df: pd.DataFrame,
-                        max_nan_ratio: float = 0.1,
-                        check_duplicates: bool = True) -> dict[str, Any]:
+def validate_data_quality(
+    df: pd.DataFrame, max_nan_ratio: float = 0.1, check_duplicates: bool = True
+) -> dict[str, Any]:
     """Comprehensive data quality validation."""
     quality_report = {
         "total_rows": len(df),
@@ -436,27 +458,32 @@ def validate_data_quality(df: pd.DataFrame,
     nan_ratios = df.isna().sum() / len(df)
     high_nan_cols = nan_ratios[nan_ratios > max_nan_ratio]
     if not high_nan_cols.empty:
-        quality_report["issues"].append({
-            "type": "high_nan_ratio",
-            "columns": high_nan_cols.to_dict(),
-        })
+        quality_report["issues"].append(
+            {
+                "type": "high_nan_ratio",
+                "columns": high_nan_cols.to_dict(),
+            }
+        )
 
     # Check duplicates
     if check_duplicates:
         duplicates = df.duplicated().sum()
         if duplicates > 0:
-            quality_report["issues"].append({
-                "type": "duplicates",
-                "count": duplicates,
-            })
+            quality_report["issues"].append(
+                {
+                    "type": "duplicates",
+                    "count": duplicates,
+                }
+            )
 
     quality_report["is_valid"] = len(quality_report["issues"]) == 0
     return quality_report
 
 
 # Time series operations
-def safe_resample(df: pd.DataFrame, rule: str,
-                 agg_dict: dict[str, str] | None = None) -> pd.DataFrame:
+def safe_resample(
+    df: pd.DataFrame, rule: str, agg_dict: dict[str, str] | None = None
+) -> pd.DataFrame:
     """Safely resample time series data."""
     if not isinstance(df.index, pd.DatetimeIndex):
         msg = "DataFrame must have DatetimeIndex"
@@ -512,6 +539,7 @@ def safe_deque(items: list[Any] | None = None, maxlen: int | None = None) -> deq
 # Progress and timing utilities
 def timed_operation(operation_name: str):
     """Decorator to time operations."""
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             start = time.time()
@@ -526,7 +554,9 @@ def timed_operation(operation_name: str):
                 elapsed = time.time() - start
                 logger.exception(f"Failed {operation_name} after {elapsed:.2f}s: {e}")
                 raise
+
         return wrapper
+
     return decorator
 
 
@@ -544,12 +574,13 @@ def chunked_iterable(iterable: list[Any], chunk_size: int) -> list[list[Any]]:
     """Split an iterable into chunks."""
     chunks = []
     for i in range(0, len(iterable), chunk_size):
-        chunks.append(iterable[i:i + chunk_size])
+        chunks.append(iterable[i : i + chunk_size])
     return chunks
 
 
-def parallel_map(func: Callable, items: list[Any],
-                max_workers: int | None = None) -> list[Any]:
+def parallel_map(
+    func: Callable, items: list[Any], max_workers: int | None = None
+) -> list[Any]:
     """Apply function to items in parallel."""
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -561,6 +592,7 @@ def safe_log_metric(key: str, value: float, step: int | None = None) -> None:
     """Safely log metric to MLflow if available."""
     try:
         import mlflow
+
         if mlflow.active_run():
             mlflow.log_metric(key, value, step)
     except Exception:
@@ -571,6 +603,7 @@ def safe_log_params(params: dict[str, Any]) -> None:
     """Safely log parameters to MLflow if available."""
     try:
         import mlflow
+
         if mlflow.active_run():
             mlflow.log_params(params)
     except Exception:
@@ -581,6 +614,7 @@ def safe_log_artifact(file_path: str | Path) -> None:
     """Safely log artifact to MLflow if available."""
     try:
         import mlflow
+
         if mlflow.active_run():
             mlflow.log_artifact(str(file_path))
     except Exception:
@@ -590,63 +624,81 @@ def safe_log_artifact(file_path: str | Path) -> None:
 # Export commonly used items for easier imports
 __all__ = [
     # DateTime utilities
-    "get_current_datetime", "get_today", "format_datetime", "parse_datetime",
-
+    "get_current_datetime",
+    "get_today",
+    "format_datetime",
+    "parse_datetime",
     # DataFrame operations
-    "create_empty_dataframe", "safe_fillna", "safe_rolling", "safe_copy",
-    "safe_deepcopy", "safe_resample", "align_dataframes",
-
+    "create_empty_dataframe",
+    "safe_fillna",
+    "safe_rolling",
+    "safe_copy",
+    "safe_deepcopy",
+    "safe_resample",
+    "align_dataframes",
     # Numeric operations
-    "safe_mean", "safe_std",
-
+    "safe_mean",
+    "safe_std",
     # File operations
-    "ensure_directory", "safe_file_exists", "safe_json_dump", "safe_json_load",
-    "safe_glob", "list_files", "get_latest_file",
-
+    "ensure_directory",
+    "safe_file_exists",
+    "safe_json_dump",
+    "safe_json_load",
+    "safe_glob",
+    "list_files",
+    "get_latest_file",
     # Parquet operations
-    "safe_read_parquet", "safe_to_parquet", "list_parquet_files",
-
+    "safe_read_parquet",
+    "safe_to_parquet",
+    "list_parquet_files",
     # Hashing and cache operations
-    "generate_hash", "generate_cache_key",
-
+    "generate_hash",
+    "generate_cache_key",
     # Async utilities
-    "safe_sleep", "safe_gather", "create_async_task",
-
+    "safe_sleep",
+    "safe_gather",
+    "create_async_task",
     # Collection utilities
-    "safe_append", "safe_extend", "safe_dict_get", "safe_dict_items",
-    "safe_defaultdict", "safe_counter", "safe_deque",
-
+    "safe_append",
+    "safe_extend",
+    "safe_dict_get",
+    "safe_dict_items",
+    "safe_defaultdict",
+    "safe_counter",
+    "safe_deque",
     # String operations
-    "safe_lower", "safe_upper", "safe_join",
-
+    "safe_lower",
+    "safe_upper",
+    "safe_join",
     # Logging utilities
-    "get_logger", "setup_basic_logging",
-
+    "get_logger",
+    "setup_basic_logging",
     # Argument parsing utilities
-    "create_argument_parser", "add_common_arguments",
-
+    "create_argument_parser",
+    "add_common_arguments",
     # Exception handling utilities
     "safe_exception_handler",
-
     # Type conversion utilities
-    "safe_float", "safe_int",
-
+    "safe_float",
+    "safe_int",
     # Optuna utilities
-    "suggest_float_uniform", "suggest_int_uniform",
-
+    "suggest_float_uniform",
+    "suggest_int_uniform",
     # Validation utilities
-    "validate_dataframe", "validate_numeric_range", "validate_dataframe_schema",
+    "validate_dataframe",
+    "validate_numeric_range",
+    "validate_dataframe_schema",
     "validate_data_quality",
-
     # Memory optimization utilities
     "optimize_dataframe_dtypes",
-
     # Progress and timing utilities
-    "timed_operation", "format_bytes",
-
+    "timed_operation",
+    "format_bytes",
     # Batch processing utilities
-    "chunked_iterable", "parallel_map",
-
+    "chunked_iterable",
+    "parallel_map",
     # MLflow integration helpers
-    "safe_log_metric", "safe_log_params", "safe_log_artifact",
+    "safe_log_metric",
+    "safe_log_params",
+    "safe_log_artifact",
 ]

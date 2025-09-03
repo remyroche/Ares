@@ -103,7 +103,9 @@ def validate_dataframe_for_ml(
         df_clean = df.copy()
         numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) == 0:
-            logger.warning("No numeric columns found in DataFrame for context: %s", context)
+            logger.warning(
+                "No numeric columns found in DataFrame for context: %s", context
+            )
             return df_clean
 
         # Replace infinities
@@ -114,7 +116,9 @@ def validate_dataframe_for_ml(
                 int(inf_count),
                 context,
             )
-            df_clean[numeric_cols] = df_clean[numeric_cols].replace([np.inf, -np.inf], 0)
+            df_clean[numeric_cols] = df_clean[numeric_cols].replace(
+                [np.inf, -np.inf], 0
+            )
 
         # Clip extremes
         if clip_extreme_values:
@@ -126,12 +130,16 @@ def validate_dataframe_for_ml(
                     max_abs_value,
                     context,
                 )
-                df_clean[numeric_cols] = np.clip(df_clean[numeric_cols], -max_abs_value, max_abs_value)
+                df_clean[numeric_cols] = np.clip(
+                    df_clean[numeric_cols], -max_abs_value, max_abs_value
+                )
 
         # Fill NaNs
         nan_count = df_clean[numeric_cols].isna().sum().sum()
         if int(nan_count) > 0:
-            logger.warning("Found %d NaN values in %s - filling with 0", int(nan_count), context)
+            logger.warning(
+                "Found %d NaN values in %s - filling with 0", int(nan_count), context
+            )
             df_clean[numeric_cols] = df_clean[numeric_cols].fillna(0)
 
         final_inf_count = np.isinf(df_clean[numeric_cols]).sum().sum()
@@ -192,7 +200,12 @@ def safe_division(
             out = np.full_like(num_arr, fill_value, dtype=float)
             with np.errstate(divide="ignore", invalid="ignore"):
                 out[safe_mask] = num_arr[safe_mask] / den_arr[safe_mask]
-            return out if isinstance(numerator, np.ndarray) or isinstance(denominator, np.ndarray) else float(out)
+            return (
+                out
+                if isinstance(numerator, np.ndarray)
+                or isinstance(denominator, np.ndarray)
+                else float(out)
+            )
 
         # Mixed types -> coerce to numpy and compute
         num_arr = np.asarray(numerator)

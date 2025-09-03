@@ -1,0 +1,37 @@
+{
+  "status": "success",
+  "results": {
+    "total_issues": 0,
+    "total_files_with_issues": 0,
+    "total_errors": 0,
+    "total_warnings": 0,
+    "by_file": {},
+    "by_directory": {},
+    "by_linter": {},
+    "by_error_type": {}
+  },
+  "full_results": {
+    "total_issues": 0,
+    "total_files_with_issues": 0,
+    "total_errors": 0,
+    "total_warnings": 0,
+    "by_file": {},
+    "by_directory": {},
+    "by_linter": {},
+    "by_error_type": {},
+    "linter_status": {
+      "flake8": {
+        "status": "parse_error"
+      },
+      "pylint": {
+        "status": "failed",
+        "error": ""
+      },
+      "mypy": {
+        "status": "failed",
+        "error": "usage: mypy [-h] [-v] [-V] [more options; see below]\n            [-m MODULE] [-p PACKAGE] [-c PROGRAM_TEXT] [files ...]\nmypy: error: unrecognized arguments: --json-report\n"
+      }
+    },
+    "raw_results": []
+  }
+}

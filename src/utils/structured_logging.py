@@ -66,7 +66,9 @@ def correlation_context(correlation_id: str | None = None):
 class CorrelationIdFilter(logging.Filter):
     """Logging filter that injects correlation_id and session_id into records."""
 
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - filter is required API
+    def filter(
+        self, record: logging.LogRecord
+    ) -> bool:  # noqa: A003 - filter is required API
         try:
             record.correlation_id = get_correlation_id()
             record.session_id = session_id_var.get()

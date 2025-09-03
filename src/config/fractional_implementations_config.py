@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/fractional_implementations_config.py
 
 """Configuration for fractional labeling and fractional differentiation implementations."""
@@ -30,26 +31,28 @@ class FractionalLabelingConfig:
     enable_regime_scaling: bool = False
 
     # Regime-specific configurations
-    regime_specific_configs: dict[str, dict[str, Any]] = field(default_factory=lambda: {
-        "trending": {
-            "distance_weight": 0.5,
-            "time_weight": 0.3,
-            "volatility_weight": 0.2,
-            "min_confidence_threshold": 0.15,
-        },
-        "ranging": {
-            "distance_weight": 0.3,
-            "time_weight": 0.4,
-            "volatility_weight": 0.3,
-            "min_confidence_threshold": 0.1,
-        },
-        "volatile": {
-            "distance_weight": 0.2,
-            "time_weight": 0.2,
-            "volatility_weight": 0.6,
-            "min_confidence_threshold": 0.2,
-        },
-    })
+    regime_specific_configs: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "trending": {
+                "distance_weight": 0.5,
+                "time_weight": 0.3,
+                "volatility_weight": 0.2,
+                "min_confidence_threshold": 0.15,
+            },
+            "ranging": {
+                "distance_weight": 0.3,
+                "time_weight": 0.4,
+                "volatility_weight": 0.3,
+                "min_confidence_threshold": 0.1,
+            },
+            "volatile": {
+                "distance_weight": 0.2,
+                "time_weight": 0.2,
+                "volatility_weight": 0.6,
+                "min_confidence_threshold": 0.2,
+            },
+        }
+    )
 
 
 @dataclass
@@ -73,9 +76,13 @@ class FractionalDifferentiationConfig:
     threshold: float = 1e-5
 
     # Column configurations
-    price_columns: list[str] = field(default_factory=lambda: ["close", "high", "low", "open"])
+    price_columns: list[str] = field(
+        default_factory=lambda: ["close", "high", "low", "open"]
+    )
     volume_columns: list[str] = field(default_factory=lambda: ["volume"])
-    exclude_columns: list[str] = field(default_factory=lambda: ["timestamp", "datetime", "date"])
+    exclude_columns: list[str] = field(
+        default_factory=lambda: ["timestamp", "datetime", "date"]
+    )
 
     # Performance settings
     enable_batch_processing: bool = True
@@ -115,15 +122,21 @@ class FractionalImplementationsConfig:
     validation_split: float = 0.2
 
     # Sub-configurations
-    fractional_labeling: FractionalLabelingConfig = field(default_factory=FractionalLabelingConfig)
-    fractional_differentiation: FractionalDifferentiationConfig = field(default_factory=FractionalDifferentiationConfig)
+    fractional_labeling: FractionalLabelingConfig = field(
+        default_factory=FractionalLabelingConfig
+    )
+    fractional_differentiation: FractionalDifferentiationConfig = field(
+        default_factory=FractionalDifferentiationConfig
+    )
 
 
 # Default configuration instance
 DEFAULT_FRACTIONAL_CONFIG = FractionalImplementationsConfig()
 
 
-def get_fractional_config(config_dict: dict[str, Any] = None) -> FractionalImplementationsConfig:
+def get_fractional_config(
+    config_dict: dict[str, Any] = None,
+) -> FractionalImplementationsConfig:
     """Get fractional implementations configuration.
 
     Args:
@@ -177,22 +190,34 @@ def validate_fractional_config(config: FractionalImplementationsConfig) -> list[
         if not (0 <= config.fractional_labeling.volatility_weight <= 1):
             errors.append("volatility_weight must be between 0 and 1")
 
-        total_weight = (config.fractional_labeling.distance_weight +
-                       config.fractional_labeling.time_weight +
-                       config.fractional_labeling.volatility_weight)
+        total_weight = (
+            config.fractional_labeling.distance_weight
+            + config.fractional_labeling.time_weight
+            + config.fractional_labeling.volatility_weight
+        )
         if abs(total_weight - 1.0) > 1e-6:
             errors.append("Component weights must sum to 1.0")
 
-        if not (0 <= config.fractional_labeling.min_confidence_threshold <=
-                config.fractional_labeling.max_confidence_threshold <= 1):
-            errors.append("Confidence thresholds must be between 0 and 1, with min <= max")
+        if not (
+            0
+            <= config.fractional_labeling.min_confidence_threshold
+            <= config.fractional_labeling.max_confidence_threshold
+            <= 1
+        ):
+            errors.append(
+                "Confidence thresholds must be between 0 and 1, with min <= max"
+            )
 
     # Validate fractional differentiation config
     if config.fractional_differentiation.enable_fractional_diff:
         if not (0 < config.fractional_differentiation.default_d < 1):
             errors.append("default_d must be between 0 and 1")
-        if not (0 < config.fractional_differentiation.min_d <
-                config.fractional_differentiation.max_d < 1):
+        if not (
+            0
+            < config.fractional_differentiation.min_d
+            < config.fractional_differentiation.max_d
+            < 1
+        ):
             errors.append("min_d must be < max_d, both between 0 and 1")
         if config.fractional_differentiation.window <= 0:
             errors.append("window must be positive")

@@ -1,10 +1,11 @@
 from __future__ import annotations
-# src/config/training.py
 
 from typing import Any
 
 from src.config.constants import DEFAULT_LOOKBACK_DAYS
 from src.config.environment import get_environment_settings
+
+# src/config/training.py
 
 
 def get_training_config() -> dict[str, Any]:

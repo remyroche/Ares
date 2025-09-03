@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 HTTP error handler middleware.
 
@@ -29,6 +30,7 @@ def create_flask_error_handler():
         error_handler = create_flask_error_handler()
         app.register_error_handler(AppError, error_handler)
     """
+
     def handle_app_error(error: AppError):
         from flask import jsonify
 
@@ -51,6 +53,7 @@ def create_fastapi_exception_handler():
         exception_handler = create_fastapi_exception_handler()
         app.add_exception_handler(AppError, exception_handler)
     """
+
     async def handle_app_error(request, error: AppError):
         from fastapi.responses import JSONResponse
 
@@ -119,6 +122,7 @@ def create_aiohttp_middleware():
         app = web.Application(middlewares=[create_aiohttp_middleware()])
     """
     from aiohttp import web
+
     @web.middleware
     async def error_middleware(request, handler):
         try:
@@ -162,6 +166,7 @@ def create_generic_wsgi_middleware(app: Callable):
     Returns:
         Wrapped WSGI application
     """
+
     def middleware(environ: dict[str, Any], start_response: Callable):
         try:
             return app(environ, start_response)
@@ -188,7 +193,9 @@ def create_generic_wsgi_middleware(app: Callable):
                 exc_info=exc,
             )
 
-            status = f"{app_error.status_code} {_get_status_text(app_error.status_code)}"
+            status = (
+                f"{app_error.status_code} {_get_status_text(app_error.status_code)}"
+            )
             headers = [
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(response_body))),

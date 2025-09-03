@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Refactored Step16ConfidenceCalibration with reduced complexity and type hints.
 This version breaks down the massive execute method into smaller, focused methods.
@@ -18,6 +19,7 @@ import pandas as pd
 
 class CalibrationStage(Enum):
     """Stages of confidence calibration"""
+
     LOAD_MODELS = "load_models"
     LOAD_ENSEMBLES = "load_ensembles"
     LOAD_VALIDATION = "load_validation"
@@ -29,6 +31,7 @@ class CalibrationStage(Enum):
 @dataclass
 class CalibrationConfig:
     """Configuration for confidence calibration"""
+
     regime_config: dict[str, Any]
     min_confidence_threshold: float = 0.5
     calibration_method: str = "isotonic"
@@ -41,6 +44,7 @@ class CalibrationConfig:
 @dataclass
 class ModelData:
     """Container for model data"""
+
     analyst_models: dict[str, dict[str, Any]]
     tactician_models: dict[str, Any]
     analyst_ensembles: dict[str, Any]
@@ -50,6 +54,7 @@ class ModelData:
 @dataclass
 class CalibrationResult:
     """Result of a calibration operation"""
+
     stage: CalibrationStage
     success: bool
     data: Any
@@ -78,6 +83,7 @@ class Step16ConfidenceCalibrationRefactored:
         # Import joblib if available
         try:
             import joblib
+
             self.joblib = joblib
         except ImportError:
             self.joblib = None
@@ -133,13 +139,17 @@ class Step16ConfidenceCalibrationRefactored:
 
             # Stage 3: Calibrate analyst models
             analyst_results = await self._execute_analyst_calibration_stage(
-                model_data, validation_data, params,
+                model_data,
+                validation_data,
+                params,
             )
             results["analyst_models"] = analyst_results
 
             # Stage 4: Calibrate tactician models
             tactician_results = await self._execute_tactician_calibration_stage(
-                model_data, validation_data, params,
+                model_data,
+                validation_data,
+                params,
             )
             results["tactician_models"] = tactician_results
 
@@ -176,7 +186,9 @@ class Step16ConfidenceCalibrationRefactored:
                 self._load_analyst_models(params["data_dir"]),
                 self._load_tactician_models(params["data_dir"]),
                 self._load_analyst_ensembles(params["data_dir"]),
-                self._load_tactician_ensembles(params["data_dir"], params["exchange"], params["symbol"]),
+                self._load_tactician_ensembles(
+                    params["data_dir"], params["exchange"], params["symbol"]
+                ),
             ]
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -261,7 +273,9 @@ class Step16ConfidenceCalibrationRefactored:
                 with open(model_file, "rb") as f:
                     tactician_models[model_name] = pickle.load(f)
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to load tactician model {model_file}: {e}")
+                self.logger.warning(
+                    f"⚠️ Failed to load tactician model {model_file}: {e}"
+                )
 
         self.logger.info(f"✅ Loaded {len(tactician_models)} tactician models")
         return tactician_models
@@ -281,7 +295,9 @@ class Step16ConfidenceCalibrationRefactored:
                 with open(ensemble_file, "rb") as f:
                     analyst_ensembles[regime_name] = pickle.load(f)
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to load analyst ensemble {ensemble_file}: {e}")
+                self.logger.warning(
+                    f"⚠️ Failed to load analyst ensemble {ensemble_file}: {e}"
+                )
 
         self.logger.info(f"✅ Loaded {len(analyst_ensembles)} analyst ensembles")
         return analyst_ensembles
@@ -314,9 +330,13 @@ class Step16ConfidenceCalibrationRefactored:
             if ensemble_file != primary_path:
                 try:
                     with open(ensemble_file, "rb") as f:
-                        tactician_ensembles[ensemble_file.stem] = {"ensemble": pickle.load(f)}
+                        tactician_ensembles[ensemble_file.stem] = {
+                            "ensemble": pickle.load(f)
+                        }
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to load tactician ensemble {ensemble_file}: {e}")
+                    self.logger.warning(
+                        f"⚠️ Failed to load tactician ensemble {ensemble_file}: {e}"
+                    )
 
         self.logger.info(f"✅ Loaded {len(tactician_ensembles)} tactician ensembles")
         return tactician_ensembles
@@ -341,7 +361,8 @@ class Step16ConfidenceCalibrationRefactored:
 
             # Augment with additional features if available
             augmented_data = await self._augment_validation_data(
-                validation_data, params,
+                validation_data,
+                params,
             )
 
             self.logger.info(f"✅ Loaded validation data: shape={augmented_data.shape}")
@@ -388,7 +409,10 @@ class Step16ConfidenceCalibrationRefactored:
         """Augment validation data with additional features"""
         try:
             # Try to add 1m meta-labels if available
-            train_file = Path(params["data_dir"]) / f"{params['exchange']}_{params['symbol']}_labeled_train.pkl"
+            train_file = (
+                Path(params["data_dir"])
+                / f"{params['exchange']}_{params['symbol']}_labeled_train.pkl"
+            )
 
             if train_file.exists():
                 with open(train_file, "rb") as f:
@@ -396,17 +420,24 @@ class Step16ConfidenceCalibrationRefactored:
 
                 # Find 1m columns
                 one_m_cols = [
-                    col for col in train_data.columns
+                    col
+                    for col in train_data.columns
                     if isinstance(col, str) and col.startswith("1m_")
                 ]
 
-                if one_m_cols and "timestamp" in train_data.columns and "timestamp" in validation_data.columns:
+                if (
+                    one_m_cols
+                    and "timestamp" in train_data.columns
+                    and "timestamp" in validation_data.columns
+                ):
                     validation_data = validation_data.merge(
                         train_data[["timestamp", *one_m_cols]],
                         on="timestamp",
                         how="left",
                     )
-                    self.logger.info(f"✅ Added {len(one_m_cols)} 1m meta-label columns")
+                    self.logger.info(
+                        f"✅ Added {len(one_m_cols)} 1m meta-label columns"
+                    )
 
         except Exception as e:
             self.logger.warning(f"⚠️ Could not augment validation data: {e}")
@@ -465,7 +496,9 @@ class Step16ConfidenceCalibrationRefactored:
         for model_name, model in models.items():
             try:
                 calibration_score = await self._calibrate_single_model(
-                    model, validation_data, f"{regime}_{model_name}",
+                    model,
+                    validation_data,
+                    f"{regime}_{model_name}",
                 )
                 results["calibration_scores"][model_name] = calibration_score
                 results["models_calibrated"] += 1
@@ -476,7 +509,9 @@ class Step16ConfidenceCalibrationRefactored:
         if ensemble is not None:
             try:
                 ensemble_score = await self._calibrate_single_model(
-                    ensemble, validation_data, f"{regime}_ensemble",
+                    ensemble,
+                    validation_data,
+                    f"{regime}_ensemble",
                 )
                 results["ensemble_score"] = ensemble_score
                 results["ensemble_calibrated"] = True
@@ -504,7 +539,6 @@ class Step16ConfidenceCalibrationRefactored:
         # Simulate calibration score
         return np.random.uniform(0.7, 0.95)
 
-
     async def _execute_tactician_calibration_stage(
         self,
         model_data: ModelData,
@@ -521,14 +555,18 @@ class Step16ConfidenceCalibrationRefactored:
             for model_name, model in model_data.tactician_models.items():
                 try:
                     score = await self._calibrate_single_model(
-                        model, validation_data, f"tactician_{model_name}",
+                        model,
+                        validation_data,
+                        f"tactician_{model_name}",
                     )
                     calibration_results[model_name] = {
                         "calibration_score": score,
                         "model_type": "individual",
                     }
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to calibrate tactician {model_name}: {e}")
+                    self.logger.warning(
+                        f"⚠️ Failed to calibrate tactician {model_name}: {e}"
+                    )
 
             # Calibrate ensembles
             for ensemble_name, ensemble_data in model_data.tactician_ensembles.items():
@@ -543,7 +581,9 @@ class Step16ConfidenceCalibrationRefactored:
                         "model_type": "ensemble",
                     }
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to calibrate tactician ensemble {ensemble_name}: {e}")
+                    self.logger.warning(
+                        f"⚠️ Failed to calibrate tactician ensemble {ensemble_name}: {e}"
+                    )
 
             return calibration_results
 
@@ -562,12 +602,18 @@ class Step16ConfidenceCalibrationRefactored:
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # Save analyst calibration results
-            analyst_file = output_dir / f"{params['exchange']}_{params['symbol']}_analyst_calibration.pkl"
+            analyst_file = (
+                output_dir
+                / f"{params['exchange']}_{params['symbol']}_analyst_calibration.pkl"
+            )
             with open(analyst_file, "wb") as f:
                 pickle.dump(results.get("analyst_models", {}), f)
 
             # Save tactician calibration results
-            tactician_file = output_dir / f"{params['exchange']}_{params['symbol']}_tactician_calibration.pkl"
+            tactician_file = (
+                output_dir
+                / f"{params['exchange']}_{params['symbol']}_tactician_calibration.pkl"
+            )
             with open(tactician_file, "wb") as f:
                 pickle.dump(results.get("tactician_models", {}), f)
 

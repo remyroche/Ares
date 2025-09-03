@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Fully Migrated Tactician
 
@@ -21,16 +22,20 @@ from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
 # Simple logger setup
 logger = logging.getLogger(__name__)
 
+
 # Simple error handling decorator
 def handle_errors(func):
     """Simple error handling decorator."""
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
             logger.exception(f"Error in {func.__name__}: {e}")
             return None
+
     return wrapper
+
 
 class FullyMigratedTactician:
     """
@@ -62,14 +67,24 @@ class FullyMigratedTactician:
 
         # Decision thresholds (configurable for step17)
         self.decision_thresholds = {
-            "entry_profit_threshold": tactician_config.get("entry_profit_threshold", 0.6),
+            "entry_profit_threshold": tactician_config.get(
+                "entry_profit_threshold", 0.6
+            ),
             "entry_risk_threshold": tactician_config.get("entry_risk_threshold", 0.2),
-            "entry_confidence_threshold": tactician_config.get("entry_confidence_threshold", 0.7),
-            "entry_profit_risk_ratio": tactician_config.get("entry_profit_risk_ratio", 2.0),
-            "entry_scenario_dominance": tactician_config.get("entry_scenario_dominance", 0.4),
+            "entry_confidence_threshold": tactician_config.get(
+                "entry_confidence_threshold", 0.7
+            ),
+            "entry_profit_risk_ratio": tactician_config.get(
+                "entry_profit_risk_ratio", 2.0
+            ),
+            "entry_scenario_dominance": tactician_config.get(
+                "entry_scenario_dominance", 0.4
+            ),
             "exit_risk_threshold": tactician_config.get("exit_risk_threshold", 0.5),
             "exit_confidence_drop": tactician_config.get("exit_confidence_drop", 0.2),
-            "position_size_multiplier": tactician_config.get("position_size_multiplier", 1.0),
+            "position_size_multiplier": tactician_config.get(
+                "position_size_multiplier", 1.0
+            ),
             "leverage_multiplier": tactician_config.get("leverage_multiplier", 1.0),
         }
 
@@ -78,7 +93,9 @@ class FullyMigratedTactician:
             "max_position_size": tactician_config.get("max_position_size", 0.1),
             "max_leverage": tactician_config.get("max_leverage", 3.0),
             "stop_loss_multiplier": tactician_config.get("stop_loss_multiplier", 1.0),
-            "take_profit_multiplier": tactician_config.get("take_profit_multiplier", 1.0),
+            "take_profit_multiplier": tactician_config.get(
+                "take_profit_multiplier", 1.0
+            ),
             "max_drawdown": tactician_config.get("max_drawdown", 0.05),
             "correlation_threshold": tactician_config.get("correlation_threshold", 0.8),
         }
@@ -128,7 +145,9 @@ class FullyMigratedTactician:
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Fully Migrated Tactician initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Fully Migrated Tactician initialization failed: {e}"
+            )
             return False
 
     def _validate_configuration(self) -> bool:
@@ -188,22 +207,29 @@ class FullyMigratedTactician:
                 return self._generate_error_predictions(symbol, timeframe)
 
             # Extract comprehensive features
-            features = self.scenario_predictor.extract_comprehensive_features(market_data)
+            features = self.scenario_predictor.extract_comprehensive_features(
+                market_data
+            )
             features = features.reshape(1, -1)  # Reshape for single prediction
 
             # Generate scenario predictions
             scenario_predictions = await self.scenario_predictor.predict_scenarios(
-                features, market_data,
+                features,
+                market_data,
             )
 
             # Make trading decisions
             trading_decisions = self._make_trading_decisions(
-                scenario_predictions, analyst_confidence, market_data,
+                scenario_predictions,
+                analyst_confidence,
+                market_data,
             )
 
             # Calculate position sizing and leverage
             position_management = self._calculate_position_management(
-                scenario_predictions, trading_decisions, analyst_barriers,
+                scenario_predictions,
+                trading_decisions,
+                analyst_barriers,
             )
 
             result = {
@@ -261,7 +287,8 @@ class FullyMigratedTactician:
                 risk_zone_prob < self.decision_thresholds["entry_risk_threshold"],
                 confidence > self.decision_thresholds["entry_confidence_threshold"],
                 risk_reward_ratio > self.decision_thresholds["entry_profit_risk_ratio"],
-                scenario_dominance > self.decision_thresholds["entry_scenario_dominance"],
+                scenario_dominance
+                > self.decision_thresholds["entry_scenario_dominance"],
                 dominant_zone == "profit",
                 analyst_confidence > 0.5,  # Require some analyst confidence
             ]
@@ -273,24 +300,36 @@ class FullyMigratedTactician:
             if self.current_position:
                 exit_conditions = [
                     risk_zone_prob > self.decision_thresholds["exit_risk_threshold"],
-                    confidence < (self.current_position.get("entry_confidence", 0.0) - self.decision_thresholds["exit_confidence_drop"]),
+                    confidence
+                    < (
+                        self.current_position.get("entry_confidence", 0.0)
+                        - self.decision_thresholds["exit_confidence_drop"]
+                    ),
                     dominant_zone == "risk",
                 ]
                 exit_signal = any(exit_conditions)
 
             # Direction decision
-            direction = "LONG" if entry_signal and dominant_zone == "profit" else "NEUTRAL"
+            direction = (
+                "LONG" if entry_signal and dominant_zone == "profit" else "NEUTRAL"
+            )
             if exit_signal:
                 direction = "EXIT"
 
             # Confidence scoring
             decision_confidence = self._calculate_decision_confidence(
-                scenario_analysis, confidence, analyst_confidence,
+                scenario_analysis,
+                confidence,
+                analyst_confidence,
             )
 
             # Reasoning
             reasoning = self._generate_decision_reasoning(
-                entry_signal, exit_signal, scenario_analysis, confidence, analyst_confidence,
+                entry_signal,
+                exit_signal,
+                scenario_analysis,
+                confidence,
+                analyst_confidence,
             )
 
             return {
@@ -305,8 +344,12 @@ class FullyMigratedTactician:
                     "risk_reward_ratio": risk_reward_ratio,
                     "scenario_dominance": scenario_dominance,
                     "dominant_zone": dominant_zone,
-                    "predicted_scenario": scenario_predictions.get("predicted_scenario", 16),
-                    "scenario_name": scenario_predictions.get("scenario_name", "Neutral"),
+                    "predicted_scenario": scenario_predictions.get(
+                        "predicted_scenario", 16
+                    ),
+                    "scenario_name": scenario_predictions.get(
+                        "scenario_name", "Neutral"
+                    ),
                 },
             }
 
@@ -355,7 +398,9 @@ class FullyMigratedTactician:
 
             # Final position size
             position_size = base_position_size * dominance_multiplier * ratio_multiplier
-            position_size = min(position_size, self.risk_management["max_position_size"])
+            position_size = min(
+                position_size, self.risk_management["max_position_size"]
+            )
 
             # Leverage calculation
             base_leverage = 1.0 + (confidence - 0.5) * 2.0
@@ -375,7 +420,9 @@ class FullyMigratedTactician:
                 "take_profit": take_profit,
                 "risk_metrics": {
                     "max_drawdown": self.risk_management["max_drawdown"],
-                    "correlation_threshold": self.risk_management["correlation_threshold"],
+                    "correlation_threshold": self.risk_management[
+                        "correlation_threshold"
+                    ],
                     "dominance_multiplier": dominance_multiplier,
                     "ratio_multiplier": ratio_multiplier,
                 },
@@ -424,7 +471,9 @@ class FullyMigratedTactician:
             analyst_boost = analyst_confidence * 0.1
 
             # Final confidence
-            final_confidence = base_confidence + dominance_boost + ratio_boost + analyst_boost
+            final_confidence = (
+                base_confidence + dominance_boost + ratio_boost + analyst_boost
+            )
 
             return np.clip(final_confidence, 0.0, 1.0)
 
@@ -457,7 +506,9 @@ class FullyMigratedTactician:
             reasoning_parts = []
 
             if entry_signal:
-                reasoning_parts.append("ENTRY SIGNAL: Strong scenario analysis indicates favorable conditions")
+                reasoning_parts.append(
+                    "ENTRY SIGNAL: Strong scenario analysis indicates favorable conditions"
+                )
 
                 profit_prob = scenario_analysis.get("profit_zone_probability", 0.0)
                 risk_prob = scenario_analysis.get("risk_zone_probability", 0.0)
@@ -487,7 +538,9 @@ class FullyMigratedTactician:
             self.logger.exception(f"❌ Decision reasoning generation failed: {e}")
             return f"Error generating reasoning: {e}"
 
-    def _generate_error_predictions(self, symbol: str, timeframe: str) -> dict[str, Any]:
+    def _generate_error_predictions(
+        self, symbol: str, timeframe: str
+    ) -> dict[str, Any]:
         """
         Generate error predictions when something goes wrong.
 
@@ -552,10 +605,12 @@ class FullyMigratedTactician:
         """
         try:
             self.current_position = position_data
-            self.position_history.append({
-                **position_data,
-                "timestamp": datetime.now().isoformat(),
-            })
+            self.position_history.append(
+                {
+                    **position_data,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
             # Keep only last 100 positions
             if len(self.position_history) > 100:
@@ -579,11 +634,17 @@ class FullyMigratedTactician:
                 self.performance_metrics["total_profit"] += trade_result["profit"]
             else:
                 self.performance_metrics["losing_trades"] += 1
-                self.performance_metrics["total_loss"] += abs(trade_result.get("profit", 0))
+                self.performance_metrics["total_loss"] += abs(
+                    trade_result.get("profit", 0)
+                )
 
             # Calculate derived metrics
-            win_rate = self.performance_metrics["winning_trades"] / max(self.performance_metrics["total_trades"], 1)
-            profit_factor = self.performance_metrics["total_profit"] / max(self.performance_metrics["total_loss"], 0.001)
+            win_rate = self.performance_metrics["winning_trades"] / max(
+                self.performance_metrics["total_trades"], 1
+            )
+            profit_factor = self.performance_metrics["total_profit"] / max(
+                self.performance_metrics["total_loss"], 0.001
+            )
 
             self.performance_metrics["win_rate"] = win_rate
             self.performance_metrics["profit_factor"] = profit_factor
@@ -604,9 +665,22 @@ class FullyMigratedTactician:
             "position_history_count": len(self.position_history),
             "is_initialized": self.is_initialized,
             "scenario_predictor_status": {
-                "is_trained": self.scenario_predictor.is_trained if self.scenario_predictor else False,
-                "n_scenarios": len(self.scenario_predictor.scenarios) if self.scenario_predictor else 0,
-                "last_training_time": self.scenario_predictor.last_training_time.isoformat() if self.scenario_predictor and self.scenario_predictor.last_training_time else None,
+                "is_trained": (
+                    self.scenario_predictor.is_trained
+                    if self.scenario_predictor
+                    else False
+                ),
+                "n_scenarios": (
+                    len(self.scenario_predictor.scenarios)
+                    if self.scenario_predictor
+                    else 0
+                ),
+                "last_training_time": (
+                    self.scenario_predictor.last_training_time.isoformat()
+                    if self.scenario_predictor
+                    and self.scenario_predictor.last_training_time
+                    else None
+                ),
             },
         }
 
@@ -620,6 +694,10 @@ class FullyMigratedTactician:
         return {
             "decision_thresholds": self.decision_thresholds,
             "risk_management": self.risk_management,
-            "scenario_predictor_config": self.scenario_predictor.get_enhanced_configuration_summary() if self.scenario_predictor else {},
+            "scenario_predictor_config": (
+                self.scenario_predictor.get_enhanced_configuration_summary()
+                if self.scenario_predictor
+                else {}
+            ),
             "is_initialized": self.is_initialized,
         }

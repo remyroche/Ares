@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -19,6 +20,7 @@ class OrderBookAnalyzer:
     - Input snapshots as DataFrame with columns: ['bid_price','bid_size','ask_price','ask_size'] or aggregated ladders
     - For correlation, S/R zones provided as DataFrame or dict with centers and scores
     """
+
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config or {}
@@ -78,7 +80,8 @@ class OrderBookAnalyzer:
                     ]
                     features["nearest_bid_wall_size"] = float(nearest_bid["size"])
                     features["nearest_bid_wall_dist_pct"] = float(
-                        (mid_price - nearest_bid["price"]) / mid_price)
+                        (mid_price - nearest_bid["price"]) / mid_price
+                    )
             if ask_walls is not None and not ask_walls.empty:
                 above = ask_walls[ask_walls["price"] >= mid_price]
                 if not above.empty:
@@ -87,7 +90,8 @@ class OrderBookAnalyzer:
                     ]
                     features["nearest_ask_wall_size"] = float(nearest_ask["size"])
                     features["nearest_ask_wall_dist_pct"] = float(
-                        (nearest_ask["price"] - mid_price) / mid_price)
+                        (nearest_ask["price"] - mid_price) / mid_price
+                    )
 
             total_bid = (
                 float(bid_walls["size"].sum())

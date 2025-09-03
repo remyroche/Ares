@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/training/feature_selection_manager.py
 
 import json
 from datetime import datetime
@@ -13,6 +12,8 @@ from sklearn.feature_selection import RFE, mutual_info_classif
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
+# src/training/feature_selection_manager.py
+
 
 class FeatureSelectionManager:
     """Feature Selection Manager for Step 2 - Reduces features from ~220 to 100
@@ -24,10 +25,18 @@ class FeatureSelectionManager:
         self.logger = system_logger.getChild("FeatureSelectionManager")
 
         # Feature selection configuration
-        self.target_features = config.get("feature_reduction", {}).get("step2_target_features", 100)
-        self.variance_threshold = config.get("feature_reduction", {}).get("variance_threshold", 0.01)
-        self.correlation_threshold = config.get("feature_reduction", {}).get("correlation_threshold", 0.95)
-        self.mutual_info_threshold = config.get("feature_reduction", {}).get("mutual_info_threshold", 0.01)
+        self.target_features = config.get("feature_reduction", {}).get(
+            "step2_target_features", 100
+        )
+        self.variance_threshold = config.get("feature_reduction", {}).get(
+            "variance_threshold", 0.01
+        )
+        self.correlation_threshold = config.get("feature_reduction", {}).get(
+            "correlation_threshold", 0.95
+        )
+        self.mutual_info_threshold = config.get("feature_reduction", {}).get(
+            "mutual_info_threshold", 0.01
+        )
 
         # Feature importance cache
         self.feature_importance_cache = {}
@@ -60,37 +69,53 @@ class FeatureSelectionManager:
 
         """
         try:
-            self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
+            self.logger.info(
+                f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features"
+            )
 
             # Stage 0: Add autoencoder features if enabled
             if use_autoencoder_features:
-                features_df, stage0_metadata = self._stage0_autoencoder_features(features_df, target)
+                features_df, stage0_metadata = self._stage0_autoencoder_features(
+                    features_df, target
+                )
             else:
                 stage0_metadata = {"autoencoder_features_added": 0}
 
             # Stage 1: Data quality filtering
-            features_df, stage1_metadata = self._stage1_data_quality_filtering(features_df)
+            features_df, stage1_metadata = self._stage1_data_quality_filtering(
+                features_df
+            )
 
             # Stage 2: Variance-based filtering
             features_df, stage2_metadata = self._stage2_variance_filtering(features_df)
 
             # Stage 3: Correlation-based filtering
-            features_df, stage3_metadata = self._stage3_correlation_filtering(features_df)
+            features_df, stage3_metadata = self._stage3_correlation_filtering(
+                features_df
+            )
 
             # Stage 4: Mutual information ranking
-            features_df, stage4_metadata = self._stage4_mutual_info_ranking(features_df, target)
+            features_df, stage4_metadata = self._stage4_mutual_info_ranking(
+                features_df, target
+            )
 
             # Stage 5: Domain-specific selection
-            features_df, stage5_metadata = self._stage5_domain_specific_selection(features_df, target)
+            features_df, stage5_metadata = self._stage5_domain_specific_selection(
+                features_df, target
+            )
 
             # Stage 6: Regularization-aware selection (if enabled)
             if use_regularization:
-                features_df, stage6_metadata = self._stage6_regularization_aware_selection(features_df, target)
+                features_df, stage6_metadata = (
+                    self._stage6_regularization_aware_selection(features_df, target)
+                )
             else:
                 stage6_metadata = {"regularization_applied": False}
 
             # Stage 7: Final ranking and selection
-            features_df, stage7_metadata = self._stage7_final_selection(features_df, target)
+            features_df, stage7_metadata = self._stage7_final_selection(
+                features_df, target
+            )
 
             # Compile metadata
             selection_metadata = {
@@ -114,16 +139,22 @@ class FeatureSelectionManager:
             }
 
             # Save selection metadata
-            self._save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
+            self._save_selection_metadata(
+                selection_metadata, symbol, exchange, data_dir
+            )
 
-            self.logger.info(f"✅ Feature selection completed: {len(features_df.columns)} features selected")
+            self.logger.info(
+                f"✅ Feature selection completed: {len(features_df.columns)} features selected"
+            )
             return features_df, selection_metadata
 
         except Exception as e:
             self.logger.exception(f"❌ Feature selection failed: {e}")
             raise
 
-    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage1_data_quality_filtering(
+        self, features_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 1: Remove features with poor data quality."""
         original_count = len(features_df.columns)
 
@@ -140,7 +171,9 @@ class FeatureSelectionManager:
         features_df = features_df.drop(columns=inf_features)
 
         # Fill remaining NaN values with forward fill then backward fill
-        features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
+        features_df = (
+            features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
+        )
 
         metadata = {
             "removed_high_nan": len(high_nan_features),
@@ -148,10 +181,14 @@ class FeatureSelectionManager:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
+        self.logger.info(
+            f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features"
+        )
         return features_df, metadata
 
-    def _stage2_variance_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage2_variance_filtering(
+        self, features_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 2: Remove low-variance features."""
         len(features_df.columns)
 
@@ -159,7 +196,9 @@ class FeatureSelectionManager:
         variances = features_df.var()
 
         # Remove features with variance below threshold
-        low_variance_features = variances[variances < self.variance_threshold].index.tolist()
+        low_variance_features = variances[
+            variances < self.variance_threshold
+        ].index.tolist()
         features_df = features_df.drop(columns=low_variance_features)
 
         metadata = {
@@ -168,10 +207,14 @@ class FeatureSelectionManager:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 2: Removed {len(low_variance_features)} low-variance features")
+        self.logger.info(
+            f"Stage 2: Removed {len(low_variance_features)} low-variance features"
+        )
         return features_df, metadata
 
-    def _stage3_correlation_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage3_correlation_filtering(
+        self, features_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 3: Remove highly correlated features."""
         len(features_df.columns)
 
@@ -179,11 +222,15 @@ class FeatureSelectionManager:
         corr_matrix = features_df.corr().abs()
 
         # Find highly correlated feature pairs
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        upper_tri = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        )
         high_corr_pairs = []
 
         for col in upper_tri.columns:
-            high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold].index.tolist()
+            high_corr_features = upper_tri[col][
+                upper_tri[col] > self.correlation_threshold
+            ].index.tolist()
             for feature in high_corr_features:
                 high_corr_pairs.append((col, feature))
 
@@ -207,14 +254,20 @@ class FeatureSelectionManager:
             "features_after_stage": len(features_df.columns),
         }
 
-        self.logger.info(f"Stage 3: Removed {len(features_to_remove)} highly correlated features")
+        self.logger.info(
+            f"Stage 3: Removed {len(features_to_remove)} highly correlated features"
+        )
         return features_df, metadata
 
-    def _stage4_mutual_info_ranking(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage4_mutual_info_ranking(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 4: Rank features by mutual information."""
         # Calculate mutual information scores
         mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(ascending=False)
+        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(
+            ascending=False
+        )
 
         # Store ranking for later use
         self.feature_importance_cache["mutual_info"] = mi_ranking
@@ -228,79 +281,201 @@ class FeatureSelectionManager:
         self.logger.info("Stage 4: Ranked features by mutual information")
         return features_df, metadata
 
-    def _stage5_domain_specific_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage5_domain_specific_selection(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 5: Domain-specific feature selection for financial data."""
         # Define feature categories and their importance weights
         # Note: Removed non-semantic categories (regime, lagged, normalized)
         feature_categories = {
             # Momentum/Trend indicators
             "momentum": [
-                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
-                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
-                "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
-                "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend",
+                "momentum",
+                "mom",
+                "rsi",
+                "macd",
+                "cci",
+                "roc",
+                "willr",
+                "stoch",
+                "adx",
+                "dmi",
+                "kama",
+                "tema",
+                "dema",
+                "hma",
+                "wma",
+                "vwma",
+                "zlema",
+                "ichimoku",
+                "psar",
+                "trix",
+                "cmo",
+                "tsi",
+                "ppo",
+                "pmo",
+                "uo",
+                "linreg",
+                "lin_reg",
+                "sma",
+                "ema",
+                "ma_",
+                "moving_avg",
+                "trend",
             ],
             # Volatility/range measures
             "volatility": [
-                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
-                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
-                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
-                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
-                "choppiness", "park_vol",
+                "volatility",
+                "atr",
+                "true_range",
+                "truerange",
+                "natr",
+                "parkinson",
+                "garman",
+                "gk_vol",
+                "garman_klass",
+                "roll",
+                "rvol",
+                "realized_vol",
+                "hv",
+                "hist_vol",
+                "historical_vol",
+                "variance",
+                "std",
+                "bbands",
+                "boll",
+                "bollinger",
+                "donch",
+                "donchian",
+                "keltner",
+                "chop",
+                "choppiness",
+                "park_vol",
             ],
             # Liquidity/volume features
             "liquidity": [
-                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
-                "pvi", "nvi", "efi", "delta_volume",
+                "liquidity",
+                "volume",
+                "tick_volume",
+                "obv",
+                "cmf",
+                "mfi",
+                "vwap",
+                "pvi",
+                "nvi",
+                "efi",
+                "delta_volume",
             ],
             # Microstructure/order book features
             "microstructure": [
-                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
-                "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
-                "microprice", "trade_count", "trade_frequency",
+                "microstructure",
+                "order_flow",
+                "orderflow",
+                "ofi",
+                "imbalance",
+                "quote_imbalance",
+                "spread",
+                "bid_ask",
+                "depth",
+                "orderbook",
+                "book",
+                "microprice",
+                "trade_count",
+                "trade_frequency",
             ],
             # Wavelet/transform domain features
             "wavelet": ["wavelet", "dwt", "cwt", "wt_"],
             # Support/Resistance contextual features (sr_ prefix and related terms)
             "sr_distance": [
-                "sr_", "sr_distance", "support", "resistance", "proximity",
-                "breakout_probability", "rebounce_probability", "consolidation_probability",
-                "sr_confidence", "multi_timeframe_sr_score",
+                "sr_",
+                "sr_distance",
+                "support",
+                "resistance",
+                "proximity",
+                "breakout_probability",
+                "rebounce_probability",
+                "consolidation_probability",
+                "sr_confidence",
+                "multi_timeframe_sr_score",
             ],
             # Statistical descriptors
             "statistical": [
-                "autocorr", "autocorrelation", "correl", "correlation", "entropy",
-                "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
-                "skewness", "zscore", "z_score",
+                "autocorr",
+                "autocorrelation",
+                "correl",
+                "correlation",
+                "entropy",
+                "fractal",
+                "hurst",
+                "hjorth",
+                "hj_",
+                "kurtosis",
+                "kurt",
+                "skew",
+                "skewness",
+                "zscore",
+                "z_score",
             ],
             # Candlestick pattern features
             "candlestick": [
-                "cdl", "candlestick", "doji", "hammer", "engulf", "harami",
-                "marubozu", "piercing", "shooting_star", "hanging_man",
-                "three_black_crows", "three_white_soldiers", "morning_star", "evening_star",
+                "cdl",
+                "candlestick",
+                "doji",
+                "hammer",
+                "engulf",
+                "harami",
+                "marubozu",
+                "piercing",
+                "shooting_star",
+                "hanging_man",
+                "three_black_crows",
+                "three_white_soldiers",
+                "morning_star",
+                "evening_star",
                 "dark_cloud",
             ],
             # Explicit interaction/composite features
-            "interaction": ["_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"],
+            "interaction": [
+                "_x_",
+                "_div_",
+                "_ratio_",
+                "_over_",
+                "_cross_",
+                "interaction",
+            ],
         }
 
         # Calculate category importance scores
         category_scores = {}
         for category, keywords in feature_categories.items():
-            category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in keywords)]
+            category_features = [
+                col
+                for col in features_df.columns
+                if any(keyword in col.lower() for keyword in keywords)
+            ]
             if category_features:
-                mi_scores = self.feature_importance_cache["mutual_info"][category_features]
+                mi_scores = self.feature_importance_cache["mutual_info"][
+                    category_features
+                ]
                 category_scores[category] = mi_scores.mean()
 
         # Prioritize features from important categories
         prioritized_features = []
-        for category, _score in sorted(category_scores.items(), key=lambda x: x[1], reverse=True):
-            category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in feature_categories[category])]
+        for category, _score in sorted(
+            category_scores.items(), key=lambda x: x[1], reverse=True
+        ):
+            category_features = [
+                col
+                for col in features_df.columns
+                if any(
+                    keyword in col.lower() for keyword in feature_categories[category]
+                )
+            ]
             prioritized_features.extend(category_features)
 
         # Ensure we don't exceed target features
         if len(prioritized_features) > self.target_features:
-            prioritized_features = prioritized_features[:self.target_features]
+            prioritized_features = prioritized_features[: self.target_features]
 
         features_df = features_df[prioritized_features]
 
@@ -313,15 +488,22 @@ class FeatureSelectionManager:
         self.logger.info("Stage 5: Applied domain-specific selection")
         return features_df, metadata
 
-    def _stage6_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage6_final_selection(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 6: Final feature selection using multiple methods (original method)."""
         if len(features_df.columns) <= self.target_features:
             # Already at or below target, return as is
-            return features_df, {"final_selection": "no_change", "features_after_stage": len(features_df.columns)}
+            return features_df, {
+                "final_selection": "no_change",
+                "features_after_stage": len(features_df.columns),
+            }
 
         # Use Recursive Feature Elimination with LightGBM
         estimator = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
-        rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
+        rfe = RFE(
+            estimator=estimator, n_features_to_select=self.target_features, step=1
+        )
 
         # Fit RFE
         rfe.fit(features_df, target)
@@ -359,60 +541,200 @@ class FeatureSelectionManager:
             feature_lower = feature.lower()
             categorized = False
 
-            if any(keyword in feature_lower for keyword in [
-                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
-                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
-                "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
-                "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend",
-            ]):
+            if any(
+                keyword in feature_lower
+                for keyword in [
+                    "momentum",
+                    "mom",
+                    "rsi",
+                    "macd",
+                    "cci",
+                    "roc",
+                    "willr",
+                    "stoch",
+                    "adx",
+                    "dmi",
+                    "kama",
+                    "tema",
+                    "dema",
+                    "hma",
+                    "wma",
+                    "vwma",
+                    "zlema",
+                    "ichimoku",
+                    "psar",
+                    "trix",
+                    "cmo",
+                    "tsi",
+                    "ppo",
+                    "pmo",
+                    "uo",
+                    "linreg",
+                    "lin_reg",
+                    "sma",
+                    "ema",
+                    "ma_",
+                    "moving_avg",
+                    "trend",
+                ]
+            ):
                 categories["momentum"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in [
-                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
-                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
-                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
-                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
-                "choppiness", "park_vol",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "volatility",
+                    "atr",
+                    "true_range",
+                    "truerange",
+                    "natr",
+                    "parkinson",
+                    "garman",
+                    "gk_vol",
+                    "garman_klass",
+                    "roll",
+                    "rvol",
+                    "realized_vol",
+                    "hv",
+                    "hist_vol",
+                    "historical_vol",
+                    "variance",
+                    "std",
+                    "bbands",
+                    "boll",
+                    "bollinger",
+                    "donch",
+                    "donchian",
+                    "keltner",
+                    "chop",
+                    "choppiness",
+                    "park_vol",
+                ]
+            ):
                 categories["volatility"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in [
-                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
-                "pvi", "nvi", "efi", "delta_volume",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "liquidity",
+                    "volume",
+                    "tick_volume",
+                    "obv",
+                    "cmf",
+                    "mfi",
+                    "vwap",
+                    "pvi",
+                    "nvi",
+                    "efi",
+                    "delta_volume",
+                ]
+            ):
                 categories["liquidity"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in [
-                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
-                "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
-                "microprice", "trade_count", "trade_frequency",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "microstructure",
+                    "order_flow",
+                    "orderflow",
+                    "ofi",
+                    "imbalance",
+                    "quote_imbalance",
+                    "spread",
+                    "bid_ask",
+                    "depth",
+                    "orderbook",
+                    "book",
+                    "microprice",
+                    "trade_count",
+                    "trade_frequency",
+                ]
+            ):
                 categories["microstructure"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]):
+            elif any(
+                keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]
+            ):
                 categories["wavelet"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in [
-                "sr_", "sr_distance", "support", "resistance", "proximity",
-                "breakout_probability", "rebounce_probability", "consolidation_probability",
-                "sr_confidence", "multi_timeframe_sr_score",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "sr_",
+                    "sr_distance",
+                    "support",
+                    "resistance",
+                    "proximity",
+                    "breakout_probability",
+                    "rebounce_probability",
+                    "consolidation_probability",
+                    "sr_confidence",
+                    "multi_timeframe_sr_score",
+                ]
+            ):
                 categories["sr_distance"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["cdl", "candlestick", "doji", "hammer", "engulf", "harami", "marubozu", "piercing", "shooting_star", "hanging_man", "three_black_crows", "three_white_soldiers", "morning_star", "evening_star", "dark_cloud"]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "cdl",
+                    "candlestick",
+                    "doji",
+                    "hammer",
+                    "engulf",
+                    "harami",
+                    "marubozu",
+                    "piercing",
+                    "shooting_star",
+                    "hanging_man",
+                    "three_black_crows",
+                    "three_white_soldiers",
+                    "morning_star",
+                    "evening_star",
+                    "dark_cloud",
+                ]
+            ):
                 categories["candlestick"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in [
-                "autocorr", "autocorrelation", "correl", "correlation", "entropy",
-                "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
-                "skewness", "zscore", "z_score",
-            ]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "autocorr",
+                    "autocorrelation",
+                    "correl",
+                    "correlation",
+                    "entropy",
+                    "fractal",
+                    "hurst",
+                    "hjorth",
+                    "hj_",
+                    "kurtosis",
+                    "kurt",
+                    "skew",
+                    "skewness",
+                    "zscore",
+                    "z_score",
+                ]
+            ):
                 categories["statistical"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"]):
+            elif any(
+                keyword in feature_lower
+                for keyword in [
+                    "_x_",
+                    "_div_",
+                    "_ratio_",
+                    "_over_",
+                    "_cross_",
+                    "interaction",
+                ]
+            ):
                 categories["interaction"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["fft", "fourier", "dct", "cosine", "sine", "transform_"]):
+            elif any(
+                keyword in feature_lower
+                for keyword in ["fft", "fourier", "dct", "cosine", "sine", "transform_"]
+            ):
                 categories["transform"].append(feature)
                 categorized = True
 
@@ -421,17 +743,23 @@ class FeatureSelectionManager:
 
         return categories
 
-    def _save_selection_metadata(self, metadata: dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:
+    def _save_selection_metadata(
+        self, metadata: dict[str, Any], symbol: str, exchange: str, data_dir: str
+    ) -> None:
         """Save feature selection metadata."""
         try:
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
+            metadata_file = (
+                f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
+            )
             with open(metadata_file, "w") as f:
                 json.dump(metadata, f, indent=2)
             self.logger.info(f"💾 Feature selection metadata saved: {metadata_file}")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
-    def _stage0_autoencoder_features(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage0_autoencoder_features(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 0: Add autoencoder features from the autoencoder feature generator."""
         try:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
@@ -458,13 +786,17 @@ class FeatureSelectionManager:
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
                 features_df = pd.concat([features_df, autoencoder_features], axis=1)
 
-                self.logger.info(f"✅ Added {len(autoencoder_features.columns)} autoencoder features")
+                self.logger.info(
+                    f"✅ Added {len(autoencoder_features.columns)} autoencoder features"
+                )
                 stage_metadata = {
                     "autoencoder_features_added": len(autoencoder_features.columns),
                     "total_features_after_ae": len(features_df.columns),
                 }
             else:
-                self.logger.info("📊 No autoencoder features generated, continuing with base features")
+                self.logger.info(
+                    "📊 No autoencoder features generated, continuing with base features"
+                )
                 stage_metadata = {"autoencoder_features_added": 0}
 
         except Exception as e:
@@ -474,13 +806,18 @@ class FeatureSelectionManager:
 
         return features_df, stage_metadata
 
-    def _stage6_regularization_aware_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage6_regularization_aware_selection(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 6: Regularization-aware feature selection using pipeline regularization."""
         try:
-            self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
+            self.logger.info(
+                "🔧 Stage 6: Applying regularization-aware feature selection..."
+            )
 
             # Load regularization configuration from pipeline
             from src.training.regularization import RegularizationManager
+
             reg_manager = RegularizationManager()
             regularization_config = reg_manager.regularization_config
 
@@ -502,7 +839,9 @@ class FeatureSelectionManager:
                     adjusted_scores = mi_scores * regularization_penalty
 
                     # Select top features based on adjusted scores
-                    top_features = adjusted_scores.nlargest(self.target_features).index.tolist()
+                    top_features = adjusted_scores.nlargest(
+                        self.target_features
+                    ).index.tolist()
                     features_df = features_df[top_features]
 
                     stage_metadata = {
@@ -513,9 +852,15 @@ class FeatureSelectionManager:
                         "features_after_stage": len(features_df.columns),
                     }
                 else:
-                    stage_metadata = {"regularization_applied": False, "reason": "No mutual info scores available"}
+                    stage_metadata = {
+                        "regularization_applied": False,
+                        "reason": "No mutual info scores available",
+                    }
             else:
-                stage_metadata = {"regularization_applied": False, "reason": "No regularization config available"}
+                stage_metadata = {
+                    "regularization_applied": False,
+                    "reason": "No regularization config available",
+                }
 
         except Exception as e:
             self.logger.warning(f"⚠️ Regularization-aware selection failed: {e}")
@@ -523,12 +868,16 @@ class FeatureSelectionManager:
 
         return features_df, stage_metadata
 
-    def _stage7_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage7_final_selection(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 7: Final ranking and selection (renamed from stage6)."""
         # Use existing RFE-LightGBM selection logic
         return self._stage6_final_selection(features_df, target)
 
-    def _calculate_feature_stability(self, features_df: pd.DataFrame, target: pd.Series) -> dict[str, float]:
+    def _calculate_feature_stability(
+        self, features_df: pd.DataFrame, target: pd.Series
+    ) -> dict[str, float]:
         """Calculate feature stability scores using cross-validation."""
         stability_scores = {}
 

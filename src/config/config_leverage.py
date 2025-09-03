@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_leverage.py
 
 """
@@ -49,16 +50,16 @@ class LeverageConfig:
     def __post_init__(self):
         if self.leverage_risk_levels is None:
             self.leverage_risk_levels = {
-                10: 0.1,   # 10x leverage: can handle 10% adverse movement
+                10: 0.1,  # 10x leverage: can handle 10% adverse movement
                 15: 0.08,  # 15x leverage: can handle 8% adverse movement
                 20: 0.07,  # 20x leverage: can handle 7% adverse movement
                 25: 0.06,  # 25x leverage: can handle 6% adverse movement
                 30: 0.05,  # 30x leverage: can handle 5% adverse movement
                 40: 0.04,  # 40x leverage: can handle 4% adverse movement
-                50: 0.035, # 50x leverage: can handle 3.5% adverse movement
+                50: 0.035,  # 50x leverage: can handle 3.5% adverse movement
                 60: 0.03,  # 60x leverage: can handle 3% adverse movement
-                75: 0.025, # 75x leverage: can handle 2.5% adverse movement
-                100: 0.02, # 100x leverage: can handle 2% adverse movement
+                75: 0.025,  # 75x leverage: can handle 2.5% adverse movement
+                100: 0.02,  # 100x leverage: can handle 2% adverse movement
             }
 
         if self.confidence_leverage_thresholds is None:
@@ -97,8 +98,24 @@ def get_leverage_search_space() -> dict[str, dict[str, Any]]:
         "leverage_decay_rate": {"min": 0.05, "max": 0.2, "type": "float"},
         "leverage_decay_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         # Confidence leverage multipliers
-        "confidence_leverage_multipliers.low_confidence": {"min": 0.3, "max": 0.7, "type": "float"},
-        "confidence_leverage_multipliers.medium_confidence": {"min": 0.6, "max": 1.0, "type": "float"},
-        "confidence_leverage_multipliers.high_confidence": {"min": 0.8, "max": 1.2, "type": "float"},
-        "confidence_leverage_multipliers.very_high_confidence": {"min": 1.0, "max": 1.5, "type": "float"},
+        "confidence_leverage_multipliers.low_confidence": {
+            "min": 0.3,
+            "max": 0.7,
+            "type": "float",
+        },
+        "confidence_leverage_multipliers.medium_confidence": {
+            "min": 0.6,
+            "max": 1.0,
+            "type": "float",
+        },
+        "confidence_leverage_multipliers.high_confidence": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "confidence_leverage_multipliers.very_high_confidence": {
+            "min": 1.0,
+            "max": 1.5,
+            "type": "float",
+        },
     }

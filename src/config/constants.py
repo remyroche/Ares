@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Constants for the Ares trading system.
 
 This module contains all the constants used throughout the system

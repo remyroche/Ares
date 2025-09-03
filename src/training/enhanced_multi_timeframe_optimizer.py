@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Enhanced Multi-Timeframe Optimizer
 
@@ -20,6 +21,7 @@ import pandas as pd
 @dataclass
 class OptimizedTimeframeConfig:
     """Configuration for optimized timeframe features."""
+
     base_timeframes: list[str] = None
     optimized_periods: dict[str, list[int]] = None
     cross_timeframe_enabled: bool = True
@@ -37,13 +39,18 @@ class OptimizedTimeframeConfig:
                 "min_diversity_score": 0.2,
             }
 
+
 class EnhancedMultiTimeframeOptimizer:
     """
     Enhanced Multi-Timeframe Optimizer that uses optimized lookback periods
     from the matrix optimization system instead of fixed periods.
     """
 
-    def __init__(self, config: OptimizedTimeframeConfig, matrix_optimization_results: dict[str, Any] = None):
+    def __init__(
+        self,
+        config: OptimizedTimeframeConfig,
+        matrix_optimization_results: dict[str, Any] = None,
+    ):
         self.config = config
         self.matrix_results = matrix_optimization_results or {}
         self.logger = logging.getLogger(__name__)
@@ -56,18 +63,24 @@ class EnhancedMultiTimeframeOptimizer:
         optimized_periods = {}
 
         if not self.matrix_results:
-            self.logger.warning("⚠️ No matrix optimization results provided, using default periods")
+            self.logger.warning(
+                "⚠️ No matrix optimization results provided, using default periods"
+            )
             return self._get_default_periods()
 
         # Extract periods from matrix optimization results
         if "diverse_lookback_periods" in self.matrix_results:
-            for feature_name, result in self.matrix_results["diverse_lookback_periods"].items():
+            for feature_name, result in self.matrix_results[
+                "diverse_lookback_periods"
+            ].items():
                 if "selected_periods" in result:
                     optimized_periods[feature_name] = result["selected_periods"]
 
         # Also check for regime-specific periods
         if "regime_specific_periods" in self.matrix_results:
-            for regime, regime_results in self.matrix_results["regime_specific_periods"].items():
+            for regime, regime_results in self.matrix_results[
+                "regime_specific_periods"
+            ].items():
                 for feature_name, result in regime_results.items():
                     if "selected_periods" in result:
                         key = f"{regime}_{feature_name}"
@@ -129,22 +142,32 @@ class EnhancedMultiTimeframeOptimizer:
 
             # 2. Generate cross-timeframe features with optimized periods
             if self.config.cross_timeframe_enabled:
-                cross_features = await self._generate_optimized_cross_timeframe_features(data, target)
+                cross_features = (
+                    await self._generate_optimized_cross_timeframe_features(
+                        data, target
+                    )
+                )
                 features.update(cross_features)
 
             # 3. Generate regime-specific features if regimes are available
             if regime_labels is not None and self.config.regime_specific:
-                regime_features = await self._generate_regime_specific_features(data, target, regime_labels)
+                regime_features = await self._generate_regime_specific_features(
+                    data, target, regime_labels
+                )
                 features.update(regime_features)
 
             # 4. Quality validation and filtering
             features = await self._validate_and_filter_features(features, target)
 
-            self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features")
+            self.logger.info(
+                f"✅ Generated {len(features)} optimized multi-timeframe features"
+            )
             return features
 
         except Exception as e:
-            self.logger.exception(f"❌ Error generating optimized multi-timeframe features: {e}")
+            self.logger.exception(
+                f"❌ Error generating optimized multi-timeframe features: {e}"
+            )
             return {}
 
     async def _generate_base_timeframe_features(
@@ -156,7 +179,9 @@ class EnhancedMultiTimeframeOptimizer:
         features = {}
 
         for timeframe in self.config.base_timeframes:
-            self.logger.info(f"🔍 Generating {timeframe} timeframe features with optimized periods...")
+            self.logger.info(
+                f"🔍 Generating {timeframe} timeframe features with optimized periods..."
+            )
 
             # Resample data to timeframe
             resampled_data = self._resample_data(data, timeframe)
@@ -171,13 +196,20 @@ class EnhancedMultiTimeframeOptimizer:
                     try:
                         # Calculate indicator with optimized period
                         indicator_value = self._calculate_indicator(
-                            resampled_data, indicator_name, period,
+                            resampled_data,
+                            indicator_name,
+                            period,
                         )
 
-                        if indicator_value is not None and not indicator_value.isna().all():
+                        if (
+                            indicator_value is not None
+                            and not indicator_value.isna().all()
+                        ):
                             # Align back to original timeframe
                             aligned_value = self._align_to_base_timeframe(
-                                indicator_value, data.index, timeframe,
+                                indicator_value,
+                                data.index,
+                                timeframe,
                             )
 
                             if aligned_value is not None:
@@ -200,7 +232,9 @@ class EnhancedMultiTimeframeOptimizer:
         # Get optimized periods for cross-timeframe analysis
         cross_periods = self._get_cross_timeframe_periods()
 
-        self.logger.info(f"🔍 Generating cross-timeframe features with {len(cross_periods)} optimized period pairs...")
+        self.logger.info(
+            f"🔍 Generating cross-timeframe features with {len(cross_periods)} optimized period pairs..."
+        )
 
         for _i, (period1, period2) in enumerate(cross_periods):
             if period1 >= period2:
@@ -208,24 +242,34 @@ class EnhancedMultiTimeframeOptimizer:
 
             try:
                 # 1. Cross-timeframe momentum features
-                momentum_features = self._calculate_cross_momentum_features(data, period1, period2)
+                momentum_features = self._calculate_cross_momentum_features(
+                    data, period1, period2
+                )
                 features.update(momentum_features)
 
                 # 2. Cross-timeframe volatility features
-                volatility_features = self._calculate_cross_volatility_features(data, period1, period2)
+                volatility_features = self._calculate_cross_volatility_features(
+                    data, period1, period2
+                )
                 features.update(volatility_features)
 
                 # 3. Cross-timeframe volume features
                 if "volume" in data.columns:
-                    volume_features = self._calculate_cross_volume_features(data, period1, period2)
+                    volume_features = self._calculate_cross_volume_features(
+                        data, period1, period2
+                    )
                     features.update(volume_features)
 
                 # 4. Cross-timeframe price range features
-                range_features = self._calculate_cross_range_features(data, period1, period2)
+                range_features = self._calculate_cross_range_features(
+                    data, period1, period2
+                )
                 features.update(range_features)
 
             except Exception as e:
-                self.logger.debug(f"⚠️ Failed to calculate cross-timeframe features for {period1}-{period2}: {e}")
+                self.logger.debug(
+                    f"⚠️ Failed to calculate cross-timeframe features for {period1}-{period2}: {e}"
+                )
                 continue
 
         return features
@@ -244,7 +288,7 @@ class EnhancedMultiTimeframeOptimizer:
 
         # Create diverse period pairs (avoid too similar periods)
         for i, period1 in enumerate(sorted_periods):
-            for period2 in sorted_periods[i+1:]:
+            for period2 in sorted_periods[i + 1 :]:
                 # Only include pairs with sufficient difference
                 if period2 >= period1 * 1.5:  # At least 50% difference
                     cross_periods.append((period1, period2))
@@ -252,8 +296,9 @@ class EnhancedMultiTimeframeOptimizer:
         # Limit to top pairs based on diversity
         return self._select_diverse_period_pairs(cross_periods)
 
-
-    def _select_diverse_period_pairs(self, period_pairs: list[tuple[int, int]], max_pairs: int = 20) -> list[tuple[int, int]]:
+    def _select_diverse_period_pairs(
+        self, period_pairs: list[tuple[int, int]], max_pairs: int = 20
+    ) -> list[tuple[int, int]]:
         """Select diverse period pairs to avoid redundancy."""
         if len(period_pairs) <= max_pairs:
             return period_pairs
@@ -306,8 +351,12 @@ class EnhancedMultiTimeframeOptimizer:
             high = data["high"]
             low = data["low"]
 
-            hl_momentum1 = (high.rolling(period1).max() - low.rolling(period1).min()) / (close.rolling(period1).mean() + 1e-8)
-            hl_momentum2 = (high.rolling(period2).max() - low.rolling(period2).min()) / (close.rolling(period2).mean() + 1e-8)
+            hl_momentum1 = (
+                high.rolling(period1).max() - low.rolling(period1).min()
+            ) / (close.rolling(period1).mean() + 1e-8)
+            hl_momentum2 = (
+                high.rolling(period2).max() - low.rolling(period2).min()
+            ) / (close.rolling(period2).mean() + 1e-8)
 
             hl_diff = hl_momentum1 - hl_momentum2
             if hl_diff.var() > 1e-12:
@@ -395,8 +444,12 @@ class EnhancedMultiTimeframeOptimizer:
         low = data["low"]
 
         # Price ranges
-        range1 = (high.rolling(period1).max() - low.rolling(period1).min()) / (close.rolling(period1).mean() + 1e-8)
-        range2 = (high.rolling(period2).max() - low.rolling(period2).min()) / (close.rolling(period2).mean() + 1e-8)
+        range1 = (high.rolling(period1).max() - low.rolling(period1).min()) / (
+            close.rolling(period1).mean() + 1e-8
+        )
+        range2 = (high.rolling(period2).max() - low.rolling(period2).min()) / (
+            close.rolling(period2).mean() + 1e-8
+        )
 
         # Range ratio
         range_ratio = range1 / (range2 + 1e-8)
@@ -420,7 +473,9 @@ class EnhancedMultiTimeframeOptimizer:
         features = {}
 
         unique_regimes = regime_labels.unique()
-        self.logger.info(f"🔍 Generating regime-specific features for {len(unique_regimes)} regimes...")
+        self.logger.info(
+            f"🔍 Generating regime-specific features for {len(unique_regimes)} regimes..."
+        )
 
         for regime in unique_regimes:
             if pd.isna(regime):
@@ -443,7 +498,9 @@ class EnhancedMultiTimeframeOptimizer:
 
                     try:
                         indicator_value = self._calculate_indicator(
-                            regime_data, indicator_name, period,
+                            regime_data,
+                            indicator_name,
+                            period,
                         )
 
                         if indicator_value is not None:
@@ -511,7 +568,9 @@ class EnhancedMultiTimeframeOptimizer:
 
             filtered_features[feature_name] = feature_series
 
-        self.logger.info(f"✅ Filtered {len(features)} features to {len(filtered_features)} high-quality features")
+        self.logger.info(
+            f"✅ Filtered {len(features)} features to {len(filtered_features)} high-quality features"
+        )
         return filtered_features
 
     def _resample_data(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame | None:
@@ -533,13 +592,15 @@ class EnhancedMultiTimeframeOptimizer:
                 return None
 
             # Resample OHLCV data
-            resampled = data.resample(offset).agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-            })
+            resampled = data.resample(offset).agg(
+                {
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                }
+            )
 
             return resampled.dropna()
 
@@ -547,7 +608,9 @@ class EnhancedMultiTimeframeOptimizer:
             self.logger.debug(f"⚠️ Failed to resample to {timeframe}: {e}")
             return None
 
-    def _calculate_indicator(self, data: pd.DataFrame, indicator_name: str, period: int) -> pd.Series | None:
+    def _calculate_indicator(
+        self, data: pd.DataFrame, indicator_name: str, period: int
+    ) -> pd.Series | None:
         """Calculate technical indicator with specified period."""
         try:
             if indicator_name == "RSI":
@@ -598,9 +661,13 @@ class EnhancedMultiTimeframeOptimizer:
     def _calculate_vwap(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate VWAP with specified period."""
         typical_price = (data["high"] + data["low"] + data["close"]) / 3
-        return (typical_price * data["volume"]).rolling(window=period).sum() / data["volume"].rolling(window=period).sum()
+        return (typical_price * data["volume"]).rolling(window=period).sum() / data[
+            "volume"
+        ].rolling(window=period).sum()
 
-    def _align_to_base_timeframe(self, series: pd.Series, target_index: pd.DatetimeIndex, timeframe: str) -> pd.Series | None:
+    def _align_to_base_timeframe(
+        self, series: pd.Series, target_index: pd.DatetimeIndex, timeframe: str
+    ) -> pd.Series | None:
         """Align series to base timeframe (1m)."""
         try:
             if timeframe == "1m":
@@ -627,15 +694,21 @@ class EnhancedMultiTimeframeOptimizer:
                 },
                 "matrix_results_summary": {
                     "total_features": len(self.optimized_periods),
-                    "total_periods": sum(len(periods) for periods in self.optimized_periods.values()),
+                    "total_periods": sum(
+                        len(periods) for periods in self.optimized_periods.values()
+                    ),
                 },
             }
 
-            output_file = Path(output_path) / "enhanced_multi_timeframe_optimization_results.json"
+            output_file = (
+                Path(output_path) / "enhanced_multi_timeframe_optimization_results.json"
+            )
             with open(output_file, "w") as f:
                 json.dump(results, f, indent=2, default=str)
 
-            self.logger.info(f"✅ Saved enhanced multi-timeframe optimization results to: {output_file}")
+            self.logger.info(
+                f"✅ Saved enhanced multi-timeframe optimization results to: {output_file}"
+            )
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to save optimization results: {e}")

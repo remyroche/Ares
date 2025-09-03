@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_tpsl.py
 
 """
@@ -117,7 +118,11 @@ def get_tpsl_search_space() -> dict[str, dict[str, Any]]:
         "sl_volatility_multiplier": {"min": 1.0, "max": 3.0, "type": "float"},
         "max_sl": {"min": 0.05, "max": 0.15, "type": "float"},
         "volatility_lookback_period": {"min": 10, "max": 50, "type": "int"},
-        "trailing_stop_activation_threshold": {"min": 0.005, "max": 0.02, "type": "float"},
+        "trailing_stop_activation_threshold": {
+            "min": 0.005,
+            "max": 0.02,
+            "type": "float",
+        },
         "trailing_stop_distance": {"min": 0.002, "max": 0.01, "type": "float"},
         "lock_profit_threshold": {"min": 0.02, "max": 0.05, "type": "float"},
         "max_holding_time_hours": {"min": 12, "max": 48, "type": "int"},
@@ -127,25 +132,93 @@ def get_tpsl_search_space() -> dict[str, dict[str, Any]]:
         "target_risk_reward_ratio": {"min": 1.5, "max": 3.0, "type": "float"},
         "max_risk_reward_ratio": {"min": 3.0, "max": 8.0, "type": "float"},
         # Volatility thresholds
-        "volatility_thresholds.low_volatility": {"min": 0.01, "max": 0.03, "type": "float"},
-        "volatility_thresholds.medium_volatility": {"min": 0.03, "max": 0.07, "type": "float"},
-        "volatility_thresholds.high_volatility": {"min": 0.07, "max": 0.15, "type": "float"},
+        "volatility_thresholds.low_volatility": {
+            "min": 0.01,
+            "max": 0.03,
+            "type": "float",
+        },
+        "volatility_thresholds.medium_volatility": {
+            "min": 0.03,
+            "max": 0.07,
+            "type": "float",
+        },
+        "volatility_thresholds.high_volatility": {
+            "min": 0.07,
+            "max": 0.15,
+            "type": "float",
+        },
         # Volatility TP multipliers
-        "volatility_tp_multipliers.low_volatility": {"min": 0.6, "max": 1.0, "type": "float"},
-        "volatility_tp_multipliers.medium_volatility": {"min": 0.8, "max": 1.2, "type": "float"},
-        "volatility_tp_multipliers.high_volatility": {"min": 1.2, "max": 2.0, "type": "float"},
+        "volatility_tp_multipliers.low_volatility": {
+            "min": 0.6,
+            "max": 1.0,
+            "type": "float",
+        },
+        "volatility_tp_multipliers.medium_volatility": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "volatility_tp_multipliers.high_volatility": {
+            "min": 1.2,
+            "max": 2.0,
+            "type": "float",
+        },
         # Volatility SL multipliers
-        "volatility_sl_multipliers.low_volatility": {"min": 1.0, "max": 1.5, "type": "float"},
-        "volatility_sl_multipliers.medium_volatility": {"min": 0.8, "max": 1.2, "type": "float"},
-        "volatility_sl_multipliers.high_volatility": {"min": 0.6, "max": 1.0, "type": "float"},
+        "volatility_sl_multipliers.low_volatility": {
+            "min": 1.0,
+            "max": 1.5,
+            "type": "float",
+        },
+        "volatility_sl_multipliers.medium_volatility": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "volatility_sl_multipliers.high_volatility": {
+            "min": 0.6,
+            "max": 1.0,
+            "type": "float",
+        },
         # Confidence TP multipliers
-        "confidence_tp_multipliers.low_confidence": {"min": 0.6, "max": 1.0, "type": "float"},
-        "confidence_tp_multipliers.medium_confidence": {"min": 0.8, "max": 1.2, "type": "float"},
-        "confidence_tp_multipliers.high_confidence": {"min": 1.0, "max": 1.4, "type": "float"},
-        "confidence_tp_multipliers.very_high_confidence": {"min": 1.2, "max": 2.0, "type": "float"},
+        "confidence_tp_multipliers.low_confidence": {
+            "min": 0.6,
+            "max": 1.0,
+            "type": "float",
+        },
+        "confidence_tp_multipliers.medium_confidence": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "confidence_tp_multipliers.high_confidence": {
+            "min": 1.0,
+            "max": 1.4,
+            "type": "float",
+        },
+        "confidence_tp_multipliers.very_high_confidence": {
+            "min": 1.2,
+            "max": 2.0,
+            "type": "float",
+        },
         # Confidence SL multipliers
-        "confidence_sl_multipliers.low_confidence": {"min": 1.0, "max": 1.5, "type": "float"},
-        "confidence_sl_multipliers.medium_confidence": {"min": 0.8, "max": 1.2, "type": "float"},
-        "confidence_sl_multipliers.high_confidence": {"min": 0.6, "max": 1.0, "type": "float"},
-        "confidence_sl_multipliers.very_high_confidence": {"min": 0.4, "max": 0.8, "type": "float"},
+        "confidence_sl_multipliers.low_confidence": {
+            "min": 1.0,
+            "max": 1.5,
+            "type": "float",
+        },
+        "confidence_sl_multipliers.medium_confidence": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "confidence_sl_multipliers.high_confidence": {
+            "min": 0.6,
+            "max": 1.0,
+            "type": "float",
+        },
+        "confidence_sl_multipliers.very_high_confidence": {
+            "min": 0.4,
+            "max": 0.8,
+            "type": "float",
+        },
     }

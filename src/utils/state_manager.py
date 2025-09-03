@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 State manager for managing application state and persistence.
 
@@ -235,8 +236,10 @@ class StateManager:
         """Print message to console."""
         print(message)
 
+
 # Global state manager instance
 state_manager: StateManager | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_state_manager(

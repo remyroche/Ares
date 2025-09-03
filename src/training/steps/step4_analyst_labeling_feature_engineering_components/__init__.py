@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py
 
 """Step 4 Analyst Labeling and Feature Engineering Components.
@@ -26,4 +27,6 @@ __all__ = [
 # Version information
 __version__ = "1.0.0"
 __author__ = "Ares Trading System"
-__description__ = "Optimized triple barrier labeling and feature engineering components for step 4"
+__description__ = (
+    "Optimized triple barrier labeling and feature engineering components for step 4"
+)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -65,13 +66,21 @@ def regularize_timestamps(
         # Calculate expected interval if not provided
         if expected_interval is None:
             # Fallback implementation for expected_interval
-            expected_interval = (time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median())
+            expected_interval = (
+                time_diffs.mode().iloc[0]
+                if len(time_diffs.mode()) > 0
+                else time_diffs.median()
+            )
 
         # Identify irregular intervals
-        irregular_mask = abs(time_diffs - expected_interval) > timedelta(seconds=tolerance_seconds)
+        irregular_mask = abs(time_diffs - expected_interval) > timedelta(
+            seconds=tolerance_seconds
+        )
         irregular_ratio = irregular_mask.sum() / len(time_diffs)
 
-        if irregular_ratio > 0.0001:  # If more than 0.01% irregular intervals (more sensitive)
+        if (
+            irregular_ratio > 0.0001
+        ):  # If more than 0.01% irregular intervals (more sensitive)
             logger.info(
                 f"🔄 Regularizing timestamps (irregular ratio: {irregular_ratio:.3f})",
             )
@@ -150,8 +159,14 @@ def preprocess_data_for_multi_timeframe(
     try:
         # Regularize timestamps for all data
         processed_price = regularize_timestamps(price_data)
-        processed_volume = regularize_timestamps(volume_data) if volume_data is not None else None
-        processed_order_flow = regularize_timestamps(order_flow_data) if order_flow_data is not None else None
+        processed_volume = (
+            regularize_timestamps(volume_data) if volume_data is not None else None
+        )
+        processed_order_flow = (
+            regularize_timestamps(order_flow_data)
+            if order_flow_data is not None
+            else None
+        )
 
         logger.info("✅ Data preprocessed for multi-timeframe feature engineering")
 
@@ -226,13 +241,17 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
         # High should be >= max of open, close
         high_violations = data["high"] < data[["open", "close"]].max(axis=1)
         if high_violations.any():
-            data.loc[high_violations, "high"] = data.loc[high_violations, ["open", "close"]].max(axis=1)
+            data.loc[high_violations, "high"] = data.loc[
+                high_violations, ["open", "close"]
+            ].max(axis=1)
             issues.append(f"Fixed {high_violations.sum()} high price violations")
 
         # Low should be <= min of open, close
         low_violations = data["low"] > data[["open", "close"]].min(axis=1)
         if low_violations.any():
-            data.loc[low_violations, "low"] = data.loc[low_violations, ["open", "close"]].min(axis=1)
+            data.loc[low_violations, "low"] = data.loc[
+                low_violations, ["open", "close"]
+            ].min(axis=1)
             issues.append(f"Fixed {low_violations.sum()} low price violations")
 
     # Fix zero volume

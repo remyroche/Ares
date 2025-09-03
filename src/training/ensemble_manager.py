@@ -1,18 +1,17 @@
 from __future__ import annotations
-# src/training/ensemble_manager.py
+
+import asyncio
+from datetime import datetime
+from typing import Any
 
 from src.core.decorators import (
     handles_errors,
-    retry,
     log_execution_time,
+    retry,
     traced,
 )
-
-from datetime import datetime
-from typing import Any
-import asyncio
-
 from src.utils.logger import system_logger
+
 # Removed trading_decorators imports - using core decorators instead
 from src.utils.warning_symbols import (
     error,
@@ -21,10 +20,14 @@ from src.utils.warning_symbols import (
     warning,
 )
 
+# src/training/ensemble_manager.py
+
+
 class EnsembleManager:
     """Ensemble manager responsible for creating and managing model ensembles."
     This module handles ensemble creation, optimization, and management.
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize ensemble manager."
 
@@ -131,7 +134,7 @@ class EnsembleManager:
         try:
             # Initialize ensemble creator
             from src.training.ensemble_creator import EnsembleCreator
-            
+
             self.ensemble_creator = EnsembleCreator(self.config)
             await self.ensemble_creator.initialize()
 
@@ -688,6 +691,7 @@ class EnsembleManager:
             error_msg = f"Failed to stop Ensemble Manager: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
+
 
 @handles_errors(
     exceptions=(Exception,),

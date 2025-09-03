@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/components/modular_strategist.py
 
 from datetime import datetime, timedelta
 from typing import Any
@@ -9,6 +8,8 @@ import numpy as np
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, invalid, missing
+
+# src/components/modular_strategist.py
 
 
 class ModularStrategist:
@@ -162,7 +163,9 @@ class ModularStrategist:
             self.logger.info("Strategy modules initialized successfully")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing strategy modules: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing strategy modules: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_position_sizing(self) -> None:
@@ -179,7 +182,9 @@ class ModularStrategist:
             self.logger.info("Position sizing module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing position sizing: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing position sizing: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_risk_management(self) -> None:
@@ -196,7 +201,9 @@ class ModularStrategist:
             self.logger.info("Risk management module initialized")
 
         except Exception as e:
-            self.logger.exception(initialization_error(f"Error initializing risk management: {e}"))
+            self.logger.exception(
+                initialization_error(f"Error initializing risk management: {e}")
+            )
 
     @handles_errors(fallback=None)
     async def _initialize_portfolio_optimization(self) -> None:
@@ -332,14 +339,18 @@ class ModularStrategist:
             required_market_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_market_fields:
                 if field not in market_data:
-                    self.logger.error(missing(f"Missing required market data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required market data field: {field}")
+                    )
                     return False
 
             # Check required analysis data fields
             required_analysis_fields = ["signal", "confidence"]
             for field in required_analysis_fields:
                 if field not in analysis_data:
-                    self.logger.error(missing(f"Missing required analysis data field: {field}"))
+                    self.logger.error(
+                        missing(f"Missing required analysis data field: {field}")
+                    )
                     return False
 
             # Validate data types
@@ -516,7 +527,9 @@ class ModularStrategist:
             return results
 
         except Exception as e:
-            self.logger.exception(error(f"Error performing portfolio optimization: {e}"))
+            self.logger.exception(
+                error(f"Error performing portfolio optimization: {e}")
+            )
             return {}
 
     @handles_errors(fallback=None)
@@ -766,7 +779,9 @@ class ModularStrategist:
                 "diversification_ratio": 1.2,
             }
         except Exception as e:
-            self.logger.exception(error(f"Error calculating Portfolio Risk Parity: {e}"))
+            self.logger.exception(
+                error(f"Error calculating Portfolio Risk Parity: {e}")
+            )
             return {
                 "risk_contribution": 0.0,
                 "volatility": 0.0,
@@ -811,7 +826,9 @@ class ModularStrategist:
 
             return drift > threshold
         except Exception as e:
-            self.logger.exception(error(f"Error calculating Threshold Rebalancing: {e}"))
+            self.logger.exception(
+                error(f"Error calculating Threshold Rebalancing: {e}")
+            )
             return False
 
     def _calculate_calendar_rebalancing(
@@ -861,7 +878,9 @@ class ModularStrategist:
 
             return abs(current_volatility - target_volatility) > threshold
         except Exception as e:
-            self.logger.exception(error(f"Error calculating Volatility Rebalancing: {e}"))
+            self.logger.exception(
+                error(f"Error calculating Volatility Rebalancing: {e}")
+            )
             return False
 
     @handles_errors(fallback=None)
@@ -973,8 +992,10 @@ class ModularStrategist:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular strategist: {e}"))
 
+
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_modular_strategist(

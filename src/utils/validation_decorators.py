@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Validation Decorators for Continuous File Validation
 
@@ -54,7 +55,12 @@ def validate_file_operation(
                 for file_path in input_files:
                     if file_path and os.path.exists(file_path):
                         await _validate_file_operation(
-                            file_path, step_name, expected_schema, "input", logger, log_level,
+                            file_path,
+                            step_name,
+                            expected_schema,
+                            "input",
+                            logger,
+                            log_level,
                         )
 
             # Execute the function
@@ -66,7 +72,12 @@ def validate_file_operation(
                 for file_path in output_files:
                     if file_path and os.path.exists(file_path):
                         await _validate_file_operation(
-                            file_path, step_name, expected_schema, "output", logger, log_level,
+                            file_path,
+                            step_name,
+                            expected_schema,
+                            "output",
+                            logger,
+                            log_level,
                         )
 
             return result
@@ -80,7 +91,14 @@ def validate_file_operation(
                 input_files = _extract_file_paths_from_args(args, kwargs, "input")
                 for file_path in input_files:
                     if file_path and os.path.exists(file_path):
-                        _validate_file_operation_sync(file_path, step_name, expected_schema, "input", logger, log_level)
+                        _validate_file_operation_sync(
+                            file_path,
+                            step_name,
+                            expected_schema,
+                            "input",
+                            logger,
+                            log_level,
+                        )
 
             # Execute the function
             result = func(*args, **kwargs)
@@ -91,7 +109,12 @@ def validate_file_operation(
                 for file_path in output_files:
                     if file_path and os.path.exists(file_path):
                         _validate_file_operation_sync(
-                            file_path, step_name, expected_schema, "output", logger, log_level,
+                            file_path,
+                            step_name,
+                            expected_schema,
+                            "output",
+                            logger,
+                            log_level,
                         )
 
             return result
@@ -105,7 +128,10 @@ def validate_file_operation(
 
 
 def validate_dataframe_operation(
-    step_name: str, validate_before: bool = True, validate_after: bool = True, log_level: str = "INFO",
+    step_name: str,
+    validate_before: bool = True,
+    validate_after: bool = True,
+    log_level: str = "INFO",
 ):
     """
     Decorator to validate DataFrames at every operation.
@@ -127,7 +153,9 @@ def validate_dataframe_operation(
                 dataframes = _extract_dataframes_from_args(args, kwargs)
                 for i, df in enumerate(dataframes):
                     if df is not None:
-                        await _validate_dataframe_operation(df, step_name, f"input_{i}", logger, log_level)
+                        await _validate_dataframe_operation(
+                            df, step_name, f"input_{i}", logger, log_level
+                        )
 
             # Execute the function
             result = await func(*args, **kwargs)
@@ -137,9 +165,13 @@ def validate_dataframe_operation(
                 if isinstance(result, dict):
                     for key, value in result.items():
                         if hasattr(value, "shape"):  # Likely a DataFrame
-                            await _validate_dataframe_operation(value, step_name, f"output_{key}", logger, log_level)
+                            await _validate_dataframe_operation(
+                                value, step_name, f"output_{key}", logger, log_level
+                            )
                 elif hasattr(result, "shape"):  # Single DataFrame result
-                    await _validate_dataframe_operation(result, step_name, "output", logger, log_level)
+                    await _validate_dataframe_operation(
+                        result, step_name, "output", logger, log_level
+                    )
 
             return result
 
@@ -152,7 +184,9 @@ def validate_dataframe_operation(
                 dataframes = _extract_dataframes_from_args(args, kwargs)
                 for i, df in enumerate(dataframes):
                     if df is not None:
-                        _validate_dataframe_operation_sync(df, step_name, f"input_{i}", logger, log_level)
+                        _validate_dataframe_operation_sync(
+                            df, step_name, f"input_{i}", logger, log_level
+                        )
 
             # Execute the function
             result = func(*args, **kwargs)
@@ -162,9 +196,13 @@ def validate_dataframe_operation(
                 if isinstance(result, dict):
                     for key, value in result.items():
                         if hasattr(value, "shape"):  # Likely a DataFrame
-                            _validate_dataframe_operation_sync(value, step_name, f"output_{key}", logger, log_level)
+                            _validate_dataframe_operation_sync(
+                                value, step_name, f"output_{key}", logger, log_level
+                            )
                 elif hasattr(result, "shape"):  # Single DataFrame result
-                    _validate_dataframe_operation_sync(result, step_name, "output", logger, log_level)
+                    _validate_dataframe_operation_sync(
+                        result, step_name, "output", logger, log_level
+                    )
 
             return result
 
@@ -177,7 +215,10 @@ def validate_dataframe_operation(
 
 
 def validate_step_operation(
-    step_name: str, validate_files: bool = True, validate_dataframes: bool = True, log_level: str = "INFO",
+    step_name: str,
+    validate_files: bool = True,
+    validate_dataframes: bool = True,
+    log_level: str = "INFO",
 ):
     """
     Comprehensive decorator for step operations that validates both files and DataFrames.
@@ -233,7 +274,9 @@ def validate_step_operation(
 # Helper functions for validation decorators
 
 
-def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str) -> list[str]:
+def _extract_file_paths_from_args(
+    args: tuple, kwargs: dict, operation_type: str
+) -> list[str]:
     """Extract file paths from function arguments."""
     file_paths = []
 
@@ -247,7 +290,15 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
                     file_paths.append(item)
 
     # Look for file paths in keyword arguments
-    file_keywords = ["file_path", "filepath", "path", "file", "filename", "data_dir", "output_dir"]
+    file_keywords = [
+        "file_path",
+        "filepath",
+        "path",
+        "file",
+        "filename",
+        "data_dir",
+        "output_dir",
+    ]
     for key, value in kwargs.items():
         if any(file_key in key.lower() for file_key in file_keywords):
             if isinstance(value, str) and _looks_like_file_path(value):
@@ -308,11 +359,20 @@ def _looks_like_file_path(path: str) -> bool:
 
     # Check for common file extensions
     file_extensions = [".parquet", ".csv", ".json", ".pkl", ".pickle", ".h5", ".hdf5"]
-    return any(path.lower().endswith(ext) for ext in file_extensions) or "/" in path or "\\" in path
+    return (
+        any(path.lower().endswith(ext) for ext in file_extensions)
+        or "/" in path
+        or "\\" in path
+    )
 
 
 async def _validate_file_operation(
-    file_path: str, step_name: str, expected_schema: str | None, operation_type: str, logger: Any, log_level: str,
+    file_path: str,
+    step_name: str,
+    expected_schema: str | None,
+    operation_type: str,
+    logger: Any,
+    log_level: str,
 ) -> None:
     """Validate a file operation."""
     try:
@@ -321,18 +381,29 @@ async def _validate_file_operation(
 
         if result.is_valid:
             if log_level.upper() == "DEBUG":
-                logger.debug(f"✅ {operation_type.capitalize()} file validation passed: {file_path}")
+                logger.debug(
+                    f"✅ {operation_type.capitalize()} file validation passed: {file_path}"
+                )
         elif log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
-            logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
+            logger.warning(
+                f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}"
+            )
             for issue in result.issues:
-                logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                logger.warning(
+                    f"   - {issue.severity.value.upper()}: {issue.description}"
+                )
 
     except Exception as e:
         logger.exception(f"❌ Error validating {operation_type} file {file_path}: {e}")
 
 
 def _validate_file_operation_sync(
-    file_path: str, step_name: str, expected_schema: str | None, operation_type: str, logger: Any, log_level: str,
+    file_path: str,
+    step_name: str,
+    expected_schema: str | None,
+    operation_type: str,
+    logger: Any,
+    log_level: str,
 ) -> None:
     """Validate a file operation (synchronous version)."""
     try:
@@ -341,24 +412,36 @@ def _validate_file_operation_sync(
 
         if result.is_valid:
             if log_level.upper() == "DEBUG":
-                logger.debug(f"✅ {operation_type.capitalize()} file validation passed: {file_path}")
+                logger.debug(
+                    f"✅ {operation_type.capitalize()} file validation passed: {file_path}"
+                )
         elif log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
-            logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
+            logger.warning(
+                f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}"
+            )
             for issue in result.issues:
-                logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                logger.warning(
+                    f"   - {issue.severity.value.upper()}: {issue.description}"
+                )
 
     except Exception as e:
         logger.exception(f"❌ Error validating {operation_type} file {file_path}: {e}")
 
 
 async def _validate_dataframe_operation(
-    df: Any, step_name: str, operation_type: str, logger: Any, log_level: str,
+    df: Any,
+    step_name: str,
+    operation_type: str,
+    logger: Any,
+    log_level: str,
 ) -> None:
     """Validate a DataFrame operation."""
     try:
         # Basic DataFrame validation
         if df is None or df.empty:
-            logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame is None or empty")
+            logger.warning(
+                f"⚠️ {operation_type.capitalize()} DataFrame is None or empty"
+            )
             return
 
         # Check for common DataFrame issues
@@ -368,7 +451,9 @@ async def _validate_dataframe_operation(
         null_counts = df.isnull().sum()
         high_null_columns = null_counts[null_counts > len(df) * 0.5]
         if not high_null_columns.empty:
-            issues.append(f"High null ratio in columns: {list(high_null_columns.index)}")
+            issues.append(
+                f"High null ratio in columns: {list(high_null_columns.index)}"
+            )
 
         # Check for duplicate rows
         duplicate_count = df.duplicated().sum()
@@ -382,28 +467,40 @@ async def _validate_dataframe_operation(
                 if hasattr(df[col], "isin"):
                     infinite_count = df[col].isin([float("inf"), float("-inf")]).sum()
                     if infinite_count > 0:
-                        issues.append(f"Column '{col}' has {infinite_count} infinite values")
+                        issues.append(
+                            f"Column '{col}' has {infinite_count} infinite values"
+                        )
 
         if issues:
             if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
-                logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame validation issues:")
+                logger.warning(
+                    f"⚠️ {operation_type.capitalize()} DataFrame validation issues:"
+                )
                 for issue in issues:
                     logger.warning(f"   - {issue}")
         elif log_level.upper() == "DEBUG":
-            logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
+            logger.debug(
+                f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}"
+            )
 
     except Exception as e:
         logger.exception(f"❌ Error validating {operation_type} DataFrame: {e}")
 
 
 def _validate_dataframe_operation_sync(
-    df: Any, step_name: str, operation_type: str, logger: Any, log_level: str,
+    df: Any,
+    step_name: str,
+    operation_type: str,
+    logger: Any,
+    log_level: str,
 ) -> None:
     """Validate a DataFrame operation (synchronous version)."""
     try:
         # Basic DataFrame validation
         if df is None or df.empty:
-            logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame is None or empty")
+            logger.warning(
+                f"⚠️ {operation_type.capitalize()} DataFrame is None or empty"
+            )
             return
 
         # Check for common DataFrame issues
@@ -413,7 +510,9 @@ def _validate_dataframe_operation_sync(
         null_counts = df.isnull().sum()
         high_null_columns = null_counts[null_counts > len(df) * 0.5]
         if not high_null_columns.empty:
-            issues.append(f"High null ratio in columns: {list(high_null_columns.index)}")
+            issues.append(
+                f"High null ratio in columns: {list(high_null_columns.index)}"
+            )
 
         # Check for duplicate rows
         duplicate_count = df.duplicated().sum()
@@ -427,36 +526,50 @@ def _validate_dataframe_operation_sync(
                 if hasattr(df[col], "isin"):
                     infinite_count = df[col].isin([float("inf"), float("-inf")]).sum()
                     if infinite_count > 0:
-                        issues.append(f"Column '{col}' has {infinite_count} infinite values")
+                        issues.append(
+                            f"Column '{col}' has {infinite_count} infinite values"
+                        )
 
         if issues:
             if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
-                logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame validation issues:")
+                logger.warning(
+                    f"⚠️ {operation_type.capitalize()} DataFrame validation issues:"
+                )
                 for issue in issues:
                     logger.warning(f"   - {issue}")
         elif log_level.upper() == "DEBUG":
-            logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
+            logger.debug(
+                f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}"
+            )
 
     except Exception as e:
         logger.exception(f"❌ Error validating {operation_type} DataFrame: {e}")
 
 
-async def _validate_step_files(step_name: str, result: Any, logger: Any, log_level: str) -> None:
+async def _validate_step_files(
+    step_name: str, result: Any, logger: Any, log_level: str
+) -> None:
     """Validate files after step execution."""
     # This would implement step-specific file validation logic
 
 
-def _validate_step_files_sync(step_name: str, result: Any, logger: Any, log_level: str) -> None:
+def _validate_step_files_sync(
+    step_name: str, result: Any, logger: Any, log_level: str
+) -> None:
     """Validate files after step execution (synchronous version)."""
     # This would implement step-specific file validation logic
 
 
-async def _validate_step_dataframes(step_name: str, result: Any, logger: Any, log_level: str) -> None:
+async def _validate_step_dataframes(
+    step_name: str, result: Any, logger: Any, log_level: str
+) -> None:
     """Validate DataFrames after step execution."""
     # This would implement step-specific DataFrame validation logic
 
 
-def _validate_step_dataframes_sync(step_name: str, result: Any, logger: Any, log_level: str) -> None:
+def _validate_step_dataframes_sync(
+    step_name: str, result: Any, logger: Any, log_level: str
+) -> None:
     """Validate DataFrames after step execution (synchronous version)."""
     # This would implement step-specific DataFrame validation logic
 
@@ -466,19 +579,27 @@ def _validate_step_dataframes_sync(step_name: str, result: Any, logger: Any, log
 
 def validate_step1_operation(func: Callable) -> Callable:
     """Decorator for step 1 operations."""
-    return validate_step_operation("step01", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation(
+        "step01", validate_files=True, validate_dataframes=True
+    )(func)
 
 
 def validate_step1_5_operation(func: Callable) -> Callable:
     """Decorator for step 1.5 operations."""
-    return validate_step_operation("step1_5", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation(
+        "step1_5", validate_files=True, validate_dataframes=True
+    )(func)
 
 
 def validate_step2_operation(func: Callable) -> Callable:
     """Decorator for step 2 operations."""
-    return validate_step_operation("step02", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation(
+        "step02", validate_files=True, validate_dataframes=True
+    )(func)
 
 
 def validate_step4_operation(func: Callable) -> Callable:
     """Decorator for step 4 operations."""
-    return validate_step_operation("step04", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation(
+        "step04", validate_files=True, validate_dataframes=True
+    )(func)

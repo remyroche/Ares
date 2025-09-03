@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Early Stage Optimization Module
 
@@ -28,6 +29,7 @@ warnings.filterwarnings("ignore")
 # Import MLflow for experiment tracking
 try:
     import mlflow
+
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
@@ -35,6 +37,7 @@ except ImportError:
 # Import Optuna for optimization
 try:
     import optuna
+
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -45,11 +48,13 @@ try:
         RegimeSpecificTripleBarrierOptimizer,
         create_regime_specific_triple_barrier_optimizer,
     )
+
     REGIME_OPTIMIZER_AVAILABLE = True
 except ImportError:
     REGIME_OPTIMIZER_AVAILABLE = False
     RegimeSpecificTripleBarrierOptimizer = None
     create_regime_specific_triple_barrier_optimizer = None
+
 
 class EarlyStageOptimizer:
     """
@@ -76,10 +81,14 @@ class EarlyStageOptimizer:
         # Initialize regime-specific triple barrier optimizer if available
         self.regime_optimizer = None
         if REGIME_OPTIMIZER_AVAILABLE:
-            self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config, training_manager)
+            self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(
+                config, training_manager
+            )
             self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
         else:
-            self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
+            self.logger.warning(
+                "⚠️ Regime-specific triple barrier optimizer not available"
+            )
 
     async def optimize_sr_parameters(
         self,
@@ -139,7 +148,9 @@ class EarlyStageOptimizer:
                 "best_value": best_value,
                 "best_trial": best_trial.number,
                 "total_trials": len(study.trials),
-                "optimization_history": [trial.value for trial in study.trials if trial.value is not None],
+                "optimization_history": [
+                    trial.value for trial in study.trials if trial.value is not None
+                ],
                 "optimization_timestamp": datetime.now().isoformat(),
             }
 
@@ -167,12 +178,16 @@ class EarlyStageOptimizer:
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-            self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
+            self.logger.info(
+                "🚀 Starting regime-specific triple barrier optimization..."
+            )
 
             # Run optimization for all regimes
-            optimization_results = await self.regime_optimizer.optimize_regime_specific_parameters(
-                regime_data,
-                optimization_config,
+            optimization_results = (
+                await self.regime_optimizer.optimize_regime_specific_parameters(
+                    regime_data,
+                    optimization_config,
+                )
             )
 
             # Store regime optimization results
@@ -198,7 +213,9 @@ class EarlyStageOptimizer:
         except Exception as e:
             return {"error": f"Failed to get regime optimization status: {e}"}
 
-    async def apply_regime_specific_parameters(self, regime_name: str) -> dict[str, Any]:
+    async def apply_regime_specific_parameters(
+        self, regime_name: str
+    ) -> dict[str, Any]:
         """Apply optimized parameters for a specific regime."""
 
         if not self.regime_optimizer:
@@ -242,8 +259,12 @@ class EarlyStageOptimizer:
                 "window_size": trial.suggest_int("window_size", 10, 200),
                 "min_periods": trial.suggest_int("min_periods", 5, 100),
                 "threshold": trial.suggest_float("threshold", 0.001, 0.1, log=True),
-                "adf_significance": trial.suggest_float("adf_significance", 0.01, 0.1, log=True),
-                "kpss_significance": trial.suggest_float("kpss_significance", 0.01, 0.1, log=True),
+                "adf_significance": trial.suggest_float(
+                    "adf_significance", 0.01, 0.1, log=True
+                ),
+                "kpss_significance": trial.suggest_float(
+                    "kpss_significance", 0.01, 0.1, log=True
+                ),
             }
 
             # Evaluate the parameters on data
@@ -255,7 +276,9 @@ class EarlyStageOptimizer:
 
         return objective
 
-    def _evaluate_sr_parameters(self, data: pd.DataFrame, params: dict[str, Any]) -> float:
+    def _evaluate_sr_parameters(
+        self, data: pd.DataFrame, params: dict[str, Any]
+    ) -> float:
         """Evaluate SR parameters on data."""
 
         try:
@@ -317,10 +340,14 @@ class EarlyStageOptimizer:
             optimization_results = {}
 
             for regime_name, regime_df in regime_data.items():
-                self.logger.info(f"🔧 Optimizing triple barrier parameters for {regime_name} regime...")
+                self.logger.info(
+                    f"🔧 Optimizing triple barrier parameters for {regime_name} regime..."
+                )
 
                 # Create regime-specific study
-                study = await self._create_regime_barrier_study(regime_name, optimization_config)
+                study = await self._create_regime_barrier_study(
+                    regime_name, optimization_config
+                )
 
                 # Run optimization for this regime
                 regime_result = await self._optimize_single_regime_barrier(
@@ -341,7 +368,9 @@ class EarlyStageOptimizer:
             if MLFLOW_AVAILABLE:
                 await self._log_regime_optimization_to_mlflow(optimization_results)
 
-            self.logger.info("✅ Regime-specific triple barrier optimization completed!")
+            self.logger.info(
+                "✅ Regime-specific triple barrier optimization completed!"
+            )
 
             return optimization_results
 
@@ -376,7 +405,6 @@ class EarlyStageOptimizer:
                 interval_steps=3,
             ),
         )
-
 
     async def _optimize_single_regime_barrier(
         self,
@@ -423,7 +451,9 @@ class EarlyStageOptimizer:
             "best_value": best_value,
             "best_trial": best_trial.number,
             "total_trials": len(study.trials),
-            "optimization_history": [trial.value for trial in study.trials if trial.value is not None],
+            "optimization_history": [
+                trial.value for trial in study.trials if trial.value is not None
+            ],
             "regime_params": regime_params,
         }
 
@@ -496,7 +526,9 @@ class EarlyStageOptimizer:
                             )
                 elif isinstance(param_config, list):
                     # Categorical parameter
-                    params[param_name] = trial.suggest_categorical(param_name, param_config)
+                    params[param_name] = trial.suggest_categorical(
+                        param_name, param_config
+                    )
                 else:
                     # Single value parameter
                     params[param_name] = param_config
@@ -509,7 +541,9 @@ class EarlyStageOptimizer:
                     params,
                 )
             except Exception as e:
-                self.logger.warning(f"Regime barrier trial failed for {regime_name}: {e}")
+                self.logger.warning(
+                    f"Regime barrier trial failed for {regime_name}: {e}"
+                )
                 return float("-inf")
 
         return objective
@@ -543,9 +577,10 @@ class EarlyStageOptimizer:
                 risk_per_trade,
             )
 
-
         except Exception as e:
-            self.logger.exception(f"Failed to evaluate regime barrier parameters for {regime_name}: {e}")
+            self.logger.exception(
+                f"Failed to evaluate regime barrier parameters for {regime_name}: {e}"
+            )
             return float("-inf")
 
     def _calculate_regime_barrier_performance_score(
@@ -594,7 +629,9 @@ class EarlyStageOptimizer:
         # Ensure score is positive
         return max(0.0, final_score)
 
-    async def _log_sr_optimization_to_mlflow(self, optimization_results: dict[str, Any]):
+    async def _log_sr_optimization_to_mlflow(
+        self, optimization_results: dict[str, Any]
+    ):
         """Log SR optimization results to MLflow."""
 
         try:
@@ -604,9 +641,16 @@ class EarlyStageOptimizer:
             # Start a run for SR optimization
             with mlflow.start_run(run_name="sr_parameter_optimization"):
                 # Log results
-                mlflow.log_param("optimization_timestamp", optimization_results.get("optimization_timestamp", ""))
-                mlflow.log_metric("best_value", optimization_results.get("best_value", 0))
-                mlflow.log_metric("total_trials", optimization_results.get("total_trials", 0))
+                mlflow.log_param(
+                    "optimization_timestamp",
+                    optimization_results.get("optimization_timestamp", ""),
+                )
+                mlflow.log_metric(
+                    "best_value", optimization_results.get("best_value", 0)
+                )
+                mlflow.log_metric(
+                    "total_trials", optimization_results.get("total_trials", 0)
+                )
 
                 # Log best parameters
                 best_params = optimization_results.get("best_params", {})
@@ -623,7 +667,9 @@ class EarlyStageOptimizer:
         except Exception as e:
             self.logger.exception(f"Failed to log SR optimization to MLflow: {e}")
 
-    async def _log_regime_optimization_to_mlflow(self, optimization_results: dict[str, Any]):
+    async def _log_regime_optimization_to_mlflow(
+        self, optimization_results: dict[str, Any]
+    ):
         """Log regime-specific optimization results to MLflow."""
 
         try:
@@ -640,8 +686,14 @@ class EarlyStageOptimizer:
                 for regime_name, regime_result in optimization_results.items():
                     if "error" not in regime_result:
                         # Log regime parameters
-                        mlflow.log_param(f"{regime_name}_best_value", regime_result.get("best_value", 0))
-                        mlflow.log_param(f"{regime_name}_total_trials", regime_result.get("total_trials", 0))
+                        mlflow.log_param(
+                            f"{regime_name}_best_value",
+                            regime_result.get("best_value", 0),
+                        )
+                        mlflow.log_param(
+                            f"{regime_name}_total_trials",
+                            regime_result.get("total_trials", 0),
+                        )
 
                         # Log best parameters for this regime
                         best_params = regime_result.get("best_params", {})
@@ -651,7 +703,9 @@ class EarlyStageOptimizer:
                 # Log results as JSON artifact
                 with open("regime_optimization_results.json", "w") as f:
                     json.dump(optimization_results, f, indent=2, default=str)
-                mlflow.log_artifact("regime_optimization_results.json", "regime_optimization")
+                mlflow.log_artifact(
+                    "regime_optimization_results.json", "regime_optimization"
+                )
 
                 self.logger.info("✅ Regime optimization results logged to MLflow")
 
@@ -663,8 +717,12 @@ class EarlyStageOptimizer:
 
         return {
             "sr_optimization_completed": bool(self.sr_optimization_results),
-            "regime_optimization_completed": bool(self.regime_barrier_optimization_results),
-            "sr_optimization_timestamp": self.sr_optimization_results.get("optimization_timestamp", ""),
+            "regime_optimization_completed": bool(
+                self.regime_barrier_optimization_results
+            ),
+            "sr_optimization_timestamp": self.sr_optimization_results.get(
+                "optimization_timestamp", ""
+            ),
             "total_regimes_optimized": len(self.regime_barrier_optimization_results),
             "optimization_summary": self._create_optimization_summary(),
         }
@@ -706,11 +764,13 @@ class EarlyStageOptimizer:
 
         return summary
 
+
 # Factory function for creating early stage optimizer
 def create_early_stage_optimizer(config: dict[str, Any], training_manager=None):
     """Create early stage optimizer instance."""
 
     return EarlyStageOptimizer(config, training_manager)
+
 
 if __name__ == "__main__":
     # Example usage

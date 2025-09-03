@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """Progress Manager for Training Steps.
 
 This module handles saving and loading progress for each training step,
@@ -22,7 +23,9 @@ from src.utils.warning_symbols import (
 class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
+    def __init__(
+        self, symbol: str, exchange: str, data_dir: str = "data/training"
+    ) -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir

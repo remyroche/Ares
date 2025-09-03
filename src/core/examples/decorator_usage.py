@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Examples of using the core decorator system.
 
@@ -73,6 +74,7 @@ async def fetch_external_data(api_endpoint: str) -> dict:
 
     # Simulate occasional failures
     import random
+
     if random.random() < 0.1:
         msg = "API unavailable"
         raise ConnectionError(msg)
@@ -95,6 +97,7 @@ def delete_content(content_id: str) -> bool:
 # Example 5: Complex data validation with custom schema
 class UserCreateSchema:
     """Simple schema for user creation."""
+
     def __init__(self, username: str, email: str, age: int):
         if not username or len(username) < 3:
             msg = "Username must be at least 3 characters"
@@ -142,6 +145,7 @@ try:
             "mean_value": df["value"].mean(),
             "categories": df["category"].unique().tolist(),
         }
+
 except ImportError:
     # pandas not available
     pass
@@ -179,6 +183,7 @@ async def get_user_from_db(user_id: str) -> dict:
 
     # Add trace events
     from src.core.decorators import span_attribute, span_event
+
     span_event("query_started", {"user_id": user_id})
 
     result = {"id": user_id, "name": f"User {user_id}"}
@@ -211,9 +216,9 @@ class UserService:
 
 # Example 10: Decorator stacking order matters
 @authenticated()  # First: Check authentication
-@validates()      # Second: Validate inputs
+@validates()  # Second: Validate inputs
 @cached(policy=CachePolicy.PER_REQUEST)  # Third: Check cache
-@traced()         # Fourth: Create trace span
+@traced()  # Fourth: Create trace span
 @handles_errors(fallback=None)  # Fifth: Handle errors
 def complex_operation(user_id: str, action: str) -> dict:
     """
@@ -263,11 +268,13 @@ async def main():
 
     # Example 5: Schema validation
     try:
-        user = create_user({
-            "username": "johndoe",
-            "email": "john@example.com",
-            "age": 25,
-        })
+        user = create_user(
+            {
+                "username": "johndoe",
+                "email": "john@example.com",
+                "age": 25,
+            }
+        )
         print(f"5. Created user: {user}")
     except ValidationError as e:
         print(f"5. Validation failed: {e}")
@@ -290,14 +297,17 @@ async def main():
 
     # Show cache stats
     from src.core.decorators import cache_stats
+
     stats = cache_stats()
     print(f"\nCache statistics: {stats}")
 
     # Show trace summary (if any traces were created)
     from src.core.decorators import get_current_trace
+
     trace = get_current_trace()
     if trace:
         from src.core.decorators import get_trace_summary
+
         summary = get_trace_summary(trace.trace_id)
         print(f"\nTrace summary: {summary}")
 

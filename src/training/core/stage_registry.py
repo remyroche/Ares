@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Any
 
 from src.core.decorators import handles_errors

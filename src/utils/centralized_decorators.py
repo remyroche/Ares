@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Centralized Decorators Module with Standardized Import Management
 This module centralizes all decorators used throughout the codebase for easy import and management.
@@ -34,7 +35,9 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(
+    REQUIRED_MODULES
+)
 
 # Safe imports with fallbacks
 numpy = PipelineStandards.safe_import("numpy", None)
@@ -164,6 +167,7 @@ def validate_data_quality(
         context: Context for logging
         fail_on_issues: Whether to fail on quality issues
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -400,7 +404,9 @@ def _validate_single_dataframe(
     if required_columns:
         missing_columns = set(required_columns) - set(df.columns)
         if missing_columns:
-            issues.append(f"{df_name}: Missing required columns: {list(missing_columns)}")
+            issues.append(
+                f"{df_name}: Missing required columns: {list(missing_columns)}"
+            )
 
     # Check for NaN values
     if check_nan:
@@ -408,9 +414,15 @@ def _validate_single_dataframe(
         nan_features = nan_counts[nan_counts > 0].index.tolist()
         if nan_features:
             nan_ratios = nan_counts[nan_features] / len(df)
-            high_nan_features = [f for f, ratio in zip(nan_features, nan_ratios, strict=False) if ratio > max_null_ratio]
+            high_nan_features = [
+                f
+                for f, ratio in zip(nan_features, nan_ratios, strict=False)
+                if ratio > max_null_ratio
+            ]
             if high_nan_features:
-                issues.append(f"{df_name}: Features with high NaN ratio: {high_nan_features}")
+                issues.append(
+                    f"{df_name}: Features with high NaN ratio: {high_nan_features}"
+                )
 
     # Check for infinite values
     if check_infinite and NUMPY_AVAILABLE:
@@ -419,7 +431,9 @@ def _validate_single_dataframe(
             if np.isinf(df[col]).any():
                 infinite_features.append(col)
         if infinite_features:
-            issues.append(f"{df_name}: Features with infinite values: {infinite_features}")
+            issues.append(
+                f"{df_name}: Features with infinite values: {infinite_features}"
+            )
 
     # Check for constant features
     if check_constant:
@@ -442,11 +456,19 @@ def _validate_single_dataframe(
         time_diffs = df.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
             # Check for irregular intervals
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            expected_interval = (
+                time_diffs.mode().iloc[0]
+                if len(time_diffs.mode()) > 0
+                else time_diffs.median()
+            )
             tolerance = expected_interval * 0.1  # 10% tolerance
-            irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > tolerance]
+            irregular_intervals = time_diffs[
+                abs(time_diffs - expected_interval) > tolerance
+            ]
             if len(irregular_intervals) > 0:
-                issues.append(f"{df_name}: {len(irregular_intervals)} irregular time intervals detected")
+                issues.append(
+                    f"{df_name}: {len(irregular_intervals)} irregular time intervals detected"
+                )
 
     # Check for high correlations
     if check_correlation and NUMPY_AVAILABLE:
@@ -457,9 +479,13 @@ def _validate_single_dataframe(
             for i in range(len(corr_matrix.columns)):
                 for j in range(i + 1, len(corr_matrix.columns)):
                     if corr_matrix.iloc[i, j] > max_correlation_threshold:
-                        high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+                        high_corr_pairs.append(
+                            (corr_matrix.columns[i], corr_matrix.columns[j])
+                        )
             if high_corr_pairs:
-                issues.append(f"{df_name}: Highly correlated feature pairs: {high_corr_pairs}")
+                issues.append(
+                    f"{df_name}: Highly correlated feature pairs: {high_corr_pairs}"
+                )
 
     return issues
 
@@ -517,6 +543,7 @@ def quality_gate(
         alert_config: Configuration for alert system
         validation_level: Validation level ("basic", "comprehensive", "strict")
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -538,15 +565,24 @@ def quality_gate(
 
             # Check quality gates
             quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation, max_drift_psi, required_grade,
+                quality_score,
+                grade,
+                min_quality_score,
+                max_correlation,
+                max_drift_psi,
+                required_grade,
             )
 
             if not quality_gate_passed:
-                error_msg = f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
+                error_msg = (
+                    f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
+                )
                 logger.error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
 
-            logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
+            logger.info(
+                f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}"
+            )
             return result
 
         @functools.wraps(func)
@@ -569,15 +605,24 @@ def quality_gate(
 
             # Check quality gates
             quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation, max_drift_psi, required_grade,
+                quality_score,
+                grade,
+                min_quality_score,
+                max_correlation,
+                max_drift_psi,
+                required_grade,
             )
 
             if not quality_gate_passed:
-                error_msg = f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
+                error_msg = (
+                    f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
+                )
                 logger.error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
 
-            logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
+            logger.info(
+                f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}"
+            )
             return result
 
         # Return appropriate wrapper
@@ -629,7 +674,9 @@ def _calculate_quality_score(df: Any, validation_level: str) -> tuple[float, str
     # Consistency score (no infinite values)
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     if len(numeric_cols) > 0:
-        infinite_ratio = np.isinf(df[numeric_cols]).sum().sum() / (len(df) * len(numeric_cols))
+        infinite_ratio = np.isinf(df[numeric_cols]).sum().sum() / (
+            len(df) * len(numeric_cols)
+        )
         consistency = 1.0 - infinite_ratio
         scores.append(consistency)
     else:
@@ -691,11 +738,31 @@ def step_specific_ml_validation(step_name: str, **kwargs):
     """
     # Step-specific configurations
     step_configs = {
-        "step01": {"min_quality_score": 0.7, "required_grade": "C", "validation_level": "basic"},
-        "step1_5": {"min_quality_score": 0.75, "required_grade": "C", "validation_level": "basic"},
-        "step02": {"min_quality_score": 0.8, "required_grade": "B", "validation_level": "comprehensive"},
-        "step03": {"min_quality_score": 0.7, "required_grade": "C", "validation_level": "comprehensive"},
-        "step04": {"min_quality_score": 0.85, "required_grade": "B", "validation_level": "comprehensive"},
+        "step01": {
+            "min_quality_score": 0.7,
+            "required_grade": "C",
+            "validation_level": "basic",
+        },
+        "step1_5": {
+            "min_quality_score": 0.75,
+            "required_grade": "C",
+            "validation_level": "basic",
+        },
+        "step02": {
+            "min_quality_score": 0.8,
+            "required_grade": "B",
+            "validation_level": "comprehensive",
+        },
+        "step03": {
+            "min_quality_score": 0.7,
+            "required_grade": "C",
+            "validation_level": "comprehensive",
+        },
+        "step04": {
+            "min_quality_score": 0.85,
+            "required_grade": "B",
+            "validation_level": "comprehensive",
+        },
     }
 
     # Get step configuration
@@ -883,6 +950,7 @@ def auto_fix_data_quality_issues(
         fix_irregular_intervals: Whether to fix irregular time intervals
         context: Context for logging
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -890,7 +958,13 @@ def auto_fix_data_quality_issues(
 
             # Extract and fix data
             fixed_args, fixed_kwargs = _auto_fix_data_quality(
-                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
+                args,
+                kwargs,
+                logger,
+                fix_nan,
+                fix_infinite,
+                fix_duplicates,
+                fix_irregular_intervals,
             )
 
             # Execute function with fixed data
@@ -902,7 +976,13 @@ def auto_fix_data_quality_issues(
 
             # Extract and fix data
             fixed_args, fixed_kwargs = _auto_fix_data_quality(
-                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
+                args,
+                kwargs,
+                logger,
+                fix_nan,
+                fix_infinite,
+                fix_duplicates,
+                fix_irregular_intervals,
             )
 
             # Execute function with fixed data
@@ -935,7 +1015,12 @@ def _auto_fix_data_quality(
     for i, arg in enumerate(args):
         if isinstance(arg, pd.DataFrame):
             fixed_df = _fix_dataframe_quality(
-                arg, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
+                arg,
+                logger,
+                fix_nan,
+                fix_infinite,
+                fix_duplicates,
+                fix_irregular_intervals,
             )
             fixed_args[i] = fixed_df
 
@@ -943,7 +1028,12 @@ def _auto_fix_data_quality(
     for key, value in kwargs.items():
         if isinstance(value, pd.DataFrame):
             fixed_df = _fix_dataframe_quality(
-                value, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
+                value,
+                logger,
+                fix_nan,
+                fix_infinite,
+                fix_duplicates,
+                fix_irregular_intervals,
             )
             fixed_kwargs[key] = fixed_df
 
@@ -999,12 +1089,20 @@ def _fix_dataframe_quality(
         # Resample to regular intervals if needed
         time_diffs = fixed_df.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            expected_interval = (
+                time_diffs.mode().iloc[0]
+                if len(time_diffs.mode()) > 0
+                else time_diffs.median()
+            )
             tolerance = expected_interval * 0.1
-            irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > tolerance]
+            irregular_intervals = time_diffs[
+                abs(time_diffs - expected_interval) > tolerance
+            ]
 
             if len(irregular_intervals) > 0:
-                logger.info(f"🔧 Detected {len(irregular_intervals)} irregular intervals, resampling...")
+                logger.info(
+                    f"🔧 Detected {len(irregular_intervals)} irregular intervals, resampling..."
+                )
                 # Resample to regular intervals
                 freq = pd.infer_freq(fixed_df.index)
                 if freq:

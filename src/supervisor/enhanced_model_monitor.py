@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Enhanced Model Monitor
 
@@ -22,6 +23,7 @@ from src.utils.logger import system_logger
 if TYPE_CHECKING:
     import asyncio
 
+
 class ModelDriftType(Enum):
     """Model drift types."""
 
@@ -29,6 +31,7 @@ class ModelDriftType(Enum):
     DATA_DRIFT = "data_drift"
     LABEL_DRIFT = "label_drift"
     FEATURE_DRIFT = "feature_drift"
+
 
 @dataclass_json
 @dataclass
@@ -45,6 +48,7 @@ class ModelDriftAlert:
     severity: str  # "low", "medium", "high", "critical"
     description: str
 
+
 @dataclass_json
 @dataclass
 class FeatureDriftMetrics:
@@ -57,6 +61,7 @@ class FeatureDriftMetrics:
     ks_statistic: float
     p_value: float
     is_drifted: bool
+
 
 @dataclass_json
 @dataclass
@@ -76,6 +81,7 @@ class ModelPerformanceSnapshot:
     concept_drift_score: float
     data_drift_score: float
 
+
 @dataclass_json
 @dataclass
 class EnsemblePerformanceMetrics:
@@ -89,6 +95,7 @@ class EnsemblePerformanceMetrics:
     diversity_score: float
     agreement_score: float
     meta_learner_performance: float | None = None
+
 
 class EnhancedModelMonitor:
     """

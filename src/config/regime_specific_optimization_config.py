@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Regime-Specific Optimization Configuration
 
@@ -45,8 +46,12 @@ class RegimeSpecificConstraints:
     position_size_range: list[float] = field(default_factory=lambda: [0.05, 0.25])
 
     # Triple barrier specific constraints
-    profit_take_multiplier_range: list[float] = field(default_factory=lambda: [0.01, 0.05])
-    stop_loss_multiplier_range: list[float] = field(default_factory=lambda: [0.005, 0.03])
+    profit_take_multiplier_range: list[float] = field(
+        default_factory=lambda: [0.01, 0.05]
+    )
+    stop_loss_multiplier_range: list[float] = field(
+        default_factory=lambda: [0.005, 0.03]
+    )
     time_barrier_minutes_range: list[int] = field(default_factory=lambda: [15, 120])
     max_lookahead_range: list[int] = field(default_factory=lambda: [50, 200])
 
@@ -59,7 +64,9 @@ class RegimeSpecificConstraints:
     tp_atr_multiplier_range: list[float] = field(default_factory=lambda: [1.0, 4.0])
     sl_atr_multiplier_range: list[float] = field(default_factory=lambda: [0.5, 2.0])
     trailing_stop_range: list[float] = field(default_factory=lambda: [0.0, 0.02])
-    break_even_threshold_range: list[float] = field(default_factory=lambda: [0.005, 0.02])
+    break_even_threshold_range: list[float] = field(
+        default_factory=lambda: [0.005, 0.02]
+    )
 
 
 @dataclass
@@ -74,82 +81,91 @@ class RegimeSpecificOptimizationConfig:
     cv_folds: int = 5
 
     # Objectives and weights
-    objectives: list[str] = field(default_factory=lambda: [
-        "sharpe_ratio", "win_rate", "profit_factor", "regime_accuracy",
-    ])
-    objective_weights: dict[str, float] = field(default_factory=lambda: {
-        "sharpe_ratio": 0.3,
-        "win_rate": 0.25,
-        "profit_factor": 0.25,
-        "regime_accuracy": 0.2,
-    })
+    objectives: list[str] = field(
+        default_factory=lambda: [
+            "sharpe_ratio",
+            "win_rate",
+            "profit_factor",
+            "regime_accuracy",
+        ]
+    )
+    objective_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "sharpe_ratio": 0.3,
+            "win_rate": 0.25,
+            "profit_factor": 0.25,
+            "regime_accuracy": 0.2,
+        }
+    )
 
     # Regime-specific constraints
-    regime_constraints: dict[str, RegimeSpecificConstraints] = field(default_factory=lambda: {
-        "BULL_TREND": RegimeSpecificConstraints(
-            tp_multiplier_range=[2.5, 5.0],
-            sl_multiplier_range=[1.2, 2.5],
-            position_size_range=[0.10, 0.25],
-            profit_take_multiplier_range=[0.02, 0.04],
-            stop_loss_multiplier_range=[0.01, 0.02],
-        ),
-        "BEAR_TREND": RegimeSpecificConstraints(
-            tp_multiplier_range=[2.0, 4.5],
-            sl_multiplier_range=[1.0, 2.2],
-            position_size_range=[0.08, 0.20],
-            profit_take_multiplier_range=[0.015, 0.035],
-            stop_loss_multiplier_range=[0.008, 0.018],
-        ),
-        "SIDEWAYS_RANGE": RegimeSpecificConstraints(
-            tp_multiplier_range=[1.5, 3.0],
-            sl_multiplier_range=[0.8, 1.8],
-            position_size_range=[0.06, 0.15],
-            profit_take_multiplier_range=[0.01, 0.025],
-            stop_loss_multiplier_range=[0.005, 0.015],
-        ),
-        "HIGH_IMPACT_CANDLE": RegimeSpecificConstraints(
-            tp_multiplier_range=[1.8, 3.5],
-            sl_multiplier_range=[0.9, 2.0],
-            position_size_range=[0.05, 0.12],
-            profit_take_multiplier_range=[0.025, 0.045],
-            stop_loss_multiplier_range=[0.012, 0.025],
-        ),
-        "SR_ZONE_ACTION": RegimeSpecificConstraints(
-            tp_multiplier_range=[2.0, 4.0],
-            sl_multiplier_range=[1.0, 2.2],
-            position_size_range=[0.08, 0.18],
-            profit_take_multiplier_range=[0.018, 0.035],
-            stop_loss_multiplier_range=[0.009, 0.020],
-        ),
-        "VOLATILE_MARKET": RegimeSpecificConstraints(
-            tp_multiplier_range=[2.2, 4.2],
-            sl_multiplier_range=[1.1, 2.3],
-            position_size_range=[0.06, 0.14],
-            profit_take_multiplier_range=[0.025, 0.045],
-            stop_loss_multiplier_range=[0.012, 0.025],
-        ),
-        "LOW_VOLATILITY": RegimeSpecificConstraints(
-            tp_multiplier_range=[1.8, 3.2],
-            sl_multiplier_range=[0.9, 1.9],
-            position_size_range=[0.08, 0.20],
-            profit_take_multiplier_range=[0.015, 0.030],
-            stop_loss_multiplier_range=[0.007, 0.016],
-        ),
-        "TRENDING_MARKET": RegimeSpecificConstraints(
-            tp_multiplier_range=[2.3, 4.5],
-            sl_multiplier_range=[1.1, 2.4],
-            position_size_range=[0.09, 0.22],
-            profit_take_multiplier_range=[0.020, 0.040],
-            stop_loss_multiplier_range=[0.010, 0.020],
-        ),
-        "MEAN_REVERSION": RegimeSpecificConstraints(
-            tp_multiplier_range=[1.6, 3.2],
-            sl_multiplier_range=[0.8, 1.8],
-            position_size_range=[0.07, 0.16],
-            profit_take_multiplier_range=[0.012, 0.028],
-            stop_loss_multiplier_range=[0.006, 0.015],
-        ),
-    })
+    regime_constraints: dict[str, RegimeSpecificConstraints] = field(
+        default_factory=lambda: {
+            "BULL_TREND": RegimeSpecificConstraints(
+                tp_multiplier_range=[2.5, 5.0],
+                sl_multiplier_range=[1.2, 2.5],
+                position_size_range=[0.10, 0.25],
+                profit_take_multiplier_range=[0.02, 0.04],
+                stop_loss_multiplier_range=[0.01, 0.02],
+            ),
+            "BEAR_TREND": RegimeSpecificConstraints(
+                tp_multiplier_range=[2.0, 4.5],
+                sl_multiplier_range=[1.0, 2.2],
+                position_size_range=[0.08, 0.20],
+                profit_take_multiplier_range=[0.015, 0.035],
+                stop_loss_multiplier_range=[0.008, 0.018],
+            ),
+            "SIDEWAYS_RANGE": RegimeSpecificConstraints(
+                tp_multiplier_range=[1.5, 3.0],
+                sl_multiplier_range=[0.8, 1.8],
+                position_size_range=[0.06, 0.15],
+                profit_take_multiplier_range=[0.01, 0.025],
+                stop_loss_multiplier_range=[0.005, 0.015],
+            ),
+            "HIGH_IMPACT_CANDLE": RegimeSpecificConstraints(
+                tp_multiplier_range=[1.8, 3.5],
+                sl_multiplier_range=[0.9, 2.0],
+                position_size_range=[0.05, 0.12],
+                profit_take_multiplier_range=[0.025, 0.045],
+                stop_loss_multiplier_range=[0.012, 0.025],
+            ),
+            "SR_ZONE_ACTION": RegimeSpecificConstraints(
+                tp_multiplier_range=[2.0, 4.0],
+                sl_multiplier_range=[1.0, 2.2],
+                position_size_range=[0.08, 0.18],
+                profit_take_multiplier_range=[0.018, 0.035],
+                stop_loss_multiplier_range=[0.009, 0.020],
+            ),
+            "VOLATILE_MARKET": RegimeSpecificConstraints(
+                tp_multiplier_range=[2.2, 4.2],
+                sl_multiplier_range=[1.1, 2.3],
+                position_size_range=[0.06, 0.14],
+                profit_take_multiplier_range=[0.025, 0.045],
+                stop_loss_multiplier_range=[0.012, 0.025],
+            ),
+            "LOW_VOLATILITY": RegimeSpecificConstraints(
+                tp_multiplier_range=[1.8, 3.2],
+                sl_multiplier_range=[0.9, 1.9],
+                position_size_range=[0.08, 0.20],
+                profit_take_multiplier_range=[0.015, 0.030],
+                stop_loss_multiplier_range=[0.007, 0.016],
+            ),
+            "TRENDING_MARKET": RegimeSpecificConstraints(
+                tp_multiplier_range=[2.3, 4.5],
+                sl_multiplier_range=[1.1, 2.4],
+                position_size_range=[0.09, 0.22],
+                profit_take_multiplier_range=[0.020, 0.040],
+                stop_loss_multiplier_range=[0.010, 0.020],
+            ),
+            "MEAN_REVERSION": RegimeSpecificConstraints(
+                tp_multiplier_range=[1.6, 3.2],
+                sl_multiplier_range=[0.8, 1.8],
+                position_size_range=[0.07, 0.16],
+                profit_take_multiplier_range=[0.012, 0.028],
+                stop_loss_multiplier_range=[0.006, 0.015],
+            ),
+        }
+    )
 
     # Early stopping
     early_stopping_patience: int = 20
@@ -189,7 +205,9 @@ class RegimeSpecificOptimizationConfig:
             self.regime_id_to_name[i] = regime_name
             self.regime_name_to_id[regime_name] = i
 
-    def get_regime_constraints(self, regime_name: str) -> RegimeSpecificConstraints | None:
+    def get_regime_constraints(
+        self, regime_name: str
+    ) -> RegimeSpecificConstraints | None:
         """Get constraints for a specific regime."""
         return self.regime_constraints.get(regime_name)
 
@@ -201,12 +219,16 @@ class RegimeSpecificOptimizationConfig:
         """Get regime name for a regime ID."""
         return self.regime_id_to_name.get(regime_id)
 
-    def add_regime_constraints(self, regime_name: str, constraints: RegimeSpecificConstraints):
+    def add_regime_constraints(
+        self, regime_name: str, constraints: RegimeSpecificConstraints
+    ):
         """Add constraints for a new regime."""
         self.regime_constraints[regime_name] = constraints
         self._initialize_regime_mapping()
 
-    def update_regime_constraints(self, regime_name: str, constraints: RegimeSpecificConstraints):
+    def update_regime_constraints(
+        self, regime_name: str, constraints: RegimeSpecificConstraints
+    ):
         """Update constraints for an existing regime."""
         if regime_name in self.regime_constraints:
             self.regime_constraints[regime_name] = constraints
@@ -218,28 +240,34 @@ class RegimeSpecificOptimizationConfig:
 REGIME_SPECIFIC_PARAMETER_SEARCH_SPACES = {
     "regime_triple_barrier_parameters": {
         # Base triple barrier parameters
-        "profit_take_multiplier": {"min": 0.01, "max": 0.05, "type": "float", "log": True},
-        "stop_loss_multiplier": {"min": 0.005, "max": 0.03, "type": "float", "log": True},
+        "profit_take_multiplier": {
+            "min": 0.01,
+            "max": 0.05,
+            "type": "float",
+            "log": True,
+        },
+        "stop_loss_multiplier": {
+            "min": 0.005,
+            "max": 0.03,
+            "type": "float",
+            "log": True,
+        },
         "time_barrier_minutes": {"min": 15, "max": 120, "type": "int"},
         "max_lookahead": {"min": 50, "max": 200, "type": "int"},
-
         # Regime-specific multipliers
         "regime_volatility_multiplier": {"min": 0.5, "max": 2.0, "type": "float"},
         "regime_trend_multiplier": {"min": 0.5, "max": 2.0, "type": "float"},
         "regime_volume_multiplier": {"min": 0.5, "max": 2.0, "type": "float"},
-
         # TPSL parameters
         "tp_multiplier": {"min": 1.5, "max": 4.0, "type": "float"},
         "sl_multiplier": {"min": 0.8, "max": 2.0, "type": "float"},
         "position_size": {"min": 0.05, "max": 0.25, "type": "float"},
-
         # Advanced TPSL parameters
         "tp_atr_multiplier": {"min": 1.0, "max": 4.0, "type": "float"},
         "sl_atr_multiplier": {"min": 0.5, "max": 2.0, "type": "float"},
         "trailing_stop": {"min": 0.0, "max": 0.02, "type": "float"},
         "break_even_threshold": {"min": 0.005, "max": 0.02, "type": "float"},
     },
-
     "regime_performance_metrics": {
         "sharpe_ratio": {"min": -2.0, "max": 3.0, "type": "float"},
         "win_rate": {"min": 0.0, "max": 1.0, "type": "float"},
@@ -265,7 +293,9 @@ def get_regime_specific_optimization_config() -> RegimeSpecificOptimizationConfi
     return DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG
 
 
-def create_regime_specific_config_from_dict(config_dict: dict[str, Any]) -> RegimeSpecificOptimizationConfig:
+def create_regime_specific_config_from_dict(
+    config_dict: dict[str, Any],
+) -> RegimeSpecificOptimizationConfig:
     """Create regime-specific optimization configuration from dictionary."""
 
     config = RegimeSpecificOptimizationConfig()
@@ -287,7 +317,9 @@ def create_regime_specific_config_from_dict(config_dict: dict[str, Any]) -> Regi
     return config
 
 
-def get_regime_specific_parameter_search_space(param_category: str) -> dict[str, dict[str, Any]]:
+def get_regime_specific_parameter_search_space(
+    param_category: str,
+) -> dict[str, dict[str, Any]]:
     """Get parameter search space for regime-specific optimization."""
     return REGIME_SPECIFIC_PARAMETER_SEARCH_SPACES.get(param_category, {})
 
@@ -313,7 +345,6 @@ def merge_optuna_configs(
         "enable_multi_objective": base_config.enable_multi_objective,
         "objectives": base_config.objectives,
         "objective_weights": base_config.objective_weights,
-
         # Regime-specific settings
         "regime_specific_optimization": {
             "enable_regime_optimization": regime_config.enable_regime_optimization,
@@ -355,7 +386,9 @@ def merge_optuna_configs(
             "break_even_threshold_range": constraints.break_even_threshold_range,
         }
 
-    merged_config["regime_specific_optimization"]["regime_constraints"] = regime_constraints_dict
+    merged_config["regime_specific_optimization"][
+        "regime_constraints"
+    ] = regime_constraints_dict
 
     return merged_config
 
@@ -393,7 +426,9 @@ def get_regime_optimization_config_for_regime(
     }
 
 
-def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig) -> bool:
+def validate_regime_optimization_config(
+    config: RegimeSpecificOptimizationConfig,
+) -> bool:
     """Validate regime-specific optimization configuration."""
 
     try:

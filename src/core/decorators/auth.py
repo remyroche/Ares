@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Authentication and authorization decorators.
 
@@ -19,11 +20,14 @@ from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
 
 # Context variable for current user
-current_user_var: ContextVar[Optional["User"]] = ContextVar("current_user", default=None)
+current_user_var: ContextVar[Optional["User"]] = ContextVar(
+    "current_user", default=None
+)
 
 
 class PermissionType(Enum):
     """Types of permissions."""
+
     READ = "read"
     WRITE = "write"
     DELETE = "delete"
@@ -34,6 +38,7 @@ class PermissionType(Enum):
 @dataclass
 class User:
     """User model for authentication/authorization."""
+
     id: str
     username: str
     email: str | None = None
@@ -144,6 +149,7 @@ def authenticated(
                 return {"data": "private_data"}
             return {"data": "public_data"}
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         user = get_current_user()
 
@@ -159,7 +165,9 @@ def authenticated(
 
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         user = get_current_user()
 
         if not user and not optional:
@@ -197,6 +205,7 @@ def requires_role(
         def edit_content(content_id: str) -> dict:
             return database.update_content(content_id)
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         user = get_current_user()
 
@@ -205,7 +214,8 @@ def requires_role(
             raise AuthenticationError(msg)
 
         has_required_roles = (
-            user.has_all_roles(list(roles)) if require_all
+            user.has_all_roles(list(roles))
+            if require_all
             else user.has_any_role(list(roles))
         )
 
@@ -223,7 +233,9 @@ def requires_role(
 
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         user = get_current_user()
 
         if not user:
@@ -231,7 +243,8 @@ def requires_role(
             raise AuthenticationError(msg)
 
         has_required_roles = (
-            user.has_all_roles(list(roles)) if require_all
+            user.has_all_roles(list(roles))
+            if require_all
             else user.has_any_role(list(roles))
         )
 
@@ -277,6 +290,7 @@ def requires_permission(
         def update_content(content_id: str, data: dict) -> dict:
             return database.update_content(content_id, data)
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         user = get_current_user()
 
@@ -285,7 +299,8 @@ def requires_permission(
             raise AuthenticationError(msg)
 
         has_required_perms = (
-            user.has_all_permissions(list(permissions)) if require_all
+            user.has_all_permissions(list(permissions))
+            if require_all
             else user.has_any_permission(list(permissions))
         )
 
@@ -303,7 +318,9 @@ def requires_permission(
 
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         user = get_current_user()
 
         if not user:
@@ -311,7 +328,8 @@ def requires_permission(
             raise AuthenticationError(msg)
 
         has_required_perms = (
-            user.has_all_permissions(list(permissions)) if require_all
+            user.has_all_permissions(list(permissions))
+            if require_all
             else user.has_any_permission(list(permissions))
         )
 
@@ -359,6 +377,7 @@ def owner_only(
             # Will check document["owner_id"] == current_user.id
             return database.update_document(doc_id, document)
     """
+
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         user = get_current_user()
 
@@ -368,6 +387,7 @@ def owner_only(
 
         # Get the resource to check
         import inspect
+
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
 
@@ -404,7 +424,9 @@ def owner_only(
 
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         user = get_current_user()
 
         if not user:
@@ -413,6 +435,7 @@ def owner_only(
 
         # Get the resource to check
         import inspect
+
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
 
@@ -499,10 +522,7 @@ def rate_limit(
         current_time = time()
 
         # Clean old entries
-        call_times[key] = [
-            t for t in call_times[key]
-            if current_time - t < period
-        ]
+        call_times[key] = [t for t in call_times[key] if current_time - t < period]
 
         # Check rate limit
         if len(call_times[key]) >= calls:
@@ -510,6 +530,7 @@ def rate_limit(
             retry_after = int(period - (current_time - oldest_call))
 
             from src.core.errors.base import RateLimitError
+
             msg = f"Rate limit exceeded: {calls} calls per {period}s"
             raise RateLimitError(
                 msg,
@@ -526,15 +547,14 @@ def rate_limit(
 
         return func(*args, **kwargs)
 
-    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    async def async_handler(
+        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         key = get_rate_limit_key()
         current_time = time()
 
         # Clean old entries
-        call_times[key] = [
-            t for t in call_times[key]
-            if current_time - t < period
-        ]
+        call_times[key] = [t for t in call_times[key] if current_time - t < period]
 
         # Check rate limit
         if len(call_times[key]) >= calls:
@@ -542,6 +562,7 @@ def rate_limit(
             retry_after = int(period - (current_time - oldest_call))
 
             from src.core.errors.base import RateLimitError
+
             msg = f"Rate limit exceeded: {calls} calls per {period}s"
             raise RateLimitError(
                 msg,

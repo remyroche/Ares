@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Wavelet Feature Selection Workflow."
 
 This module implements a comprehensive workflow using the two-model strategy:
@@ -14,8 +15,6 @@ The workflow:
 6. Train Production Model on lean dataset
 7. Create optimized live trading configurations
 """
-from src.core.decorators import handles_errors
-
 import pickle
 import time
 from dataclasses import dataclass
@@ -30,17 +29,18 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import classification_report
 from sklearn.model_selection import cross_val_score
 
+from src.core.decorators import handles_errors
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
-
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
+
 
 @dataclass
 class FeatureImportanceResult:
@@ -52,6 +52,7 @@ class FeatureImportanceResult:
     combined_score: float
     feature_type: str  # 'wavelet', 'technical', 'other'
     computation_cost: float  # Estimated computation time in ms
+
 
 class WaveletFeatureSelectionWorkflow:
     """Comprehensive workflow for wavelet feature selection using two-model strategy."
@@ -65,6 +66,7 @@ class WaveletFeatureSelectionWorkflow:
     6. Trains Production Model on lean dataset
     7. Creates optimized live trading configurations
     """
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeatureSelectionWorkflow")

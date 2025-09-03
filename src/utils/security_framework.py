@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Comprehensive Security Framework
 
@@ -38,6 +39,7 @@ class SecurityLevel(Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
 
 class SecurityViolation(Exception):
     """Custom exception for security violations."""
@@ -96,7 +98,11 @@ class CredentialManager:
             self.logger.exception(f"Could not save credentials: {e}")
 
     def store_credential(
-        self, service: str, key: str, value: str, security_level: SecurityLevel = SecurityLevel.HIGH,
+        self,
+        service: str,
+        key: str,
+        value: str,
+        security_level: SecurityLevel = SecurityLevel.HIGH,
     ) -> None:
         """Store a credential securely.
 
@@ -183,10 +189,17 @@ class CredentialManager:
                 if "history" not in self.credentials[service]:
                     self.credentials[service]["history"] = {}
 
-                self.credentials[service]["history"][f"{key}_rotated_{int(time.time())}"] = old_credential
+                self.credentials[service]["history"][
+                    f"{key}_rotated_{int(time.time())}"
+                ] = old_credential
 
                 # Update with new credential
-                self.store_credential(service, key, new_value, SecurityLevel(old_credential["security_level"]))
+                self.store_credential(
+                    service,
+                    key,
+                    new_value,
+                    SecurityLevel(old_credential["security_level"]),
+                )
 
                 self.logger.info(f"Rotated credential for {service}:{key}")
                 return True
@@ -194,6 +207,7 @@ class CredentialManager:
         except Exception as e:
             self.logger.exception(f"Error rotating credential {service}:{key}: {e}")
             return False
+
 
 class DataEncryption:
     """Handles data encryption and decryption."""
@@ -331,6 +345,7 @@ class DataEncryption:
             msg = f"File decryption failed: {e}"
             raise SecurityViolation(msg)
 
+
 class AccessControl:
     """Manages access control and authentication."""
 
@@ -345,7 +360,9 @@ class AccessControl:
             "api": ["read", "write"],
         }
 
-    def generate_access_token(self, user_id: str, permissions: list[str], expires_in: int = 3600) -> str:
+    def generate_access_token(
+        self, user_id: str, permissions: list[str], expires_in: int = 3600
+    ) -> str:
         """Generate an access token.
 
         Args:
@@ -421,6 +438,7 @@ class AccessControl:
             return True
         return False
 
+
 class AuditLogger:
     """Handles security audit logging."""
 
@@ -437,7 +455,9 @@ class AuditLogger:
         # Set up file handler for audit logs
         self.audit_handler = logging.FileHandler(self.log_file)
         self.audit_handler.setLevel(logging.INFO)
-        self.audit_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        self.audit_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         self.audit_handler.setFormatter(self.audit_formatter)
 
         # Add handler to audit logger
@@ -496,6 +516,7 @@ class AuditLogger:
         """Get user agent (placeholder for web applications)."""
         return "unknown"
 
+
 class SecurityFramework:
     """Comprehensive security framework."""
 
@@ -533,7 +554,11 @@ class SecurityFramework:
         """
         try:
             # Check for required security settings
-            required_settings = ["encryption_required", "audit_logging", "password_min_length"]
+            required_settings = [
+                "encryption_required",
+                "audit_logging",
+                "password_min_length",
+            ]
 
             for setting in required_settings:
                 if setting not in self.security_policies:
@@ -556,7 +581,11 @@ class SecurityFramework:
             return False
 
     def secure_api_call(
-        self, service: str, endpoint: str, data: dict[str, Any], security_level: SecurityLevel = SecurityLevel.HIGH,
+        self,
+        service: str,
+        endpoint: str,
+        data: dict[str, Any],
+        security_level: SecurityLevel = SecurityLevel.HIGH,
     ) -> dict[str, Any]:
         """Make a secure API call.
 
@@ -583,7 +612,11 @@ class SecurityFramework:
                 "api_call",
                 "system",
                 f"API call to {service}:{endpoint}",
-                {"service": service, "endpoint": endpoint, "data_keys": list(data.keys())},
+                {
+                    "service": service,
+                    "endpoint": endpoint,
+                    "data_keys": list(data.keys()),
+                },
                 security_level,
             )
 
@@ -596,7 +629,9 @@ class SecurityFramework:
             msg = f"API call failed: {e}"
             raise SecurityViolation(msg)
 
-    def encrypt_sensitive_data(self, data: dict[str, Any], fields_to_encrypt: list[str]) -> dict[str, Any]:
+    def encrypt_sensitive_data(
+        self, data: dict[str, Any], fields_to_encrypt: list[str]
+    ) -> dict[str, Any]:
         """Encrypt sensitive data fields.
 
         Args:
@@ -610,11 +645,15 @@ class SecurityFramework:
 
         for field in fields_to_encrypt:
             if field in encrypted_data:
-                encrypted_data[field] = self.data_encryption.encrypt_data(str(encrypted_data[field]))
+                encrypted_data[field] = self.data_encryption.encrypt_data(
+                    str(encrypted_data[field])
+                )
 
         return encrypted_data
 
-    def decrypt_sensitive_data(self, data: dict[str, Any], fields_to_decrypt: list[str]) -> dict[str, Any]:
+    def decrypt_sensitive_data(
+        self, data: dict[str, Any], fields_to_decrypt: list[str]
+    ) -> dict[str, Any]:
         """Decrypt sensitive data fields.
 
         Args:
@@ -628,7 +667,9 @@ class SecurityFramework:
 
         for field in fields_to_decrypt:
             if field in decrypted_data:
-                decrypted_data[field] = self.data_encryption.decrypt_data(decrypted_data[field])
+                decrypted_data[field] = self.data_encryption.decrypt_data(
+                    decrypted_data[field]
+                )
 
         return decrypted_data
 
@@ -643,7 +684,11 @@ class SecurityFramework:
             "security_configuration": self.security_policies,
             "credential_count": len(self.credential_manager.credentials),
             "active_tokens": len(self.access_control.access_tokens),
-            "audit_log_size": self.audit_logger.log_file.stat().st_size if self.audit_logger.log_file.exists() else 0,
+            "audit_log_size": (
+                self.audit_logger.log_file.stat().st_size
+                if self.audit_logger.log_file.exists()
+                else 0
+            ),
             "security_validation": self.validate_security_configuration(),
         }
 

@@ -5,17 +5,13 @@ Monitoring Integration Manager (minimal scaffold)
 Coordinates monitoring components.
 """
 
-from src.core.decorators import log_execution_time
-
-from src.core.domain import PerformanceLevel
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from src.core.decorators import handles_errors
-
+from src.core.decorators import handles_errors, log_execution_time
+from src.core.domain import PerformanceLevel
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
@@ -30,6 +26,7 @@ class MonitoringComponents:
     ml_monitor: MLMonitor | None = None
     report_scheduler: ReportScheduler | None = None
     tracking_system: TrackingSystem | None = None
+
 
 class MonitoringIntegrationManager:
     """Unified monitoring integration manager."""

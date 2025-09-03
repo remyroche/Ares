@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/m1_gpu_config.py
 
 """

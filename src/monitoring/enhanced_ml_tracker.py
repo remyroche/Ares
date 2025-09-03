@@ -25,10 +25,12 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
 
+
 class PredictionType(Enum):
     REGRESSION = "regression"
     CLASSIFICATION = "classification"
     PROBABILITY = "probability"
+
 
 class EnhancedMLTracker:
     """Minimal Enhanced ML Tracker placeholder."""

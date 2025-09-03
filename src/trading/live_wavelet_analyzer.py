@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Live Trading Wavelet Analyzer - Computationally Aware Implementation
 
@@ -32,6 +33,7 @@ class WaveletSignal:
     energy_level: float
     entropy_level: float
     computation_time: float
+
 
 class LiveWaveletAnalyzer:
     """
@@ -132,15 +134,18 @@ class LiveWaveletAnalyzer:
         try:
             # Create a dummy signal for coefficient computation
             dummy_signal = np.random.randn(self.sliding_window_size).astype(
-                np.float32, copy=False,
+                np.float32,
+                copy=False,
             )
 
             # Pre-compute DWT coefficients structure
             self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
             level = self._get_decomposition_level(len(dummy_signal))
             self.dwt_coeffs_structure = pywt.wavedec(
-                dummy_signal, self.wavelet_obj,
-                level=level, mode=self.padding_mode,
+                dummy_signal,
+                self.wavelet_obj,
+                level=level,
+                mode=self.padding_mode,
             )
 
             self.logger.info("✅ Pre-computed wavelet coefficients")
@@ -159,7 +164,8 @@ class LiveWaveletAnalyzer:
 
     @handles_errors(fallback=None)
     async def generate_signal(
-        self, price_data: pd.DataFrame,
+        self,
+        price_data: pd.DataFrame,
         volume_data: pd.DataFrame | None = None,
     ) -> WaveletSignal | None:
         """
@@ -217,7 +223,8 @@ class LiveWaveletAnalyzer:
             return None
 
     def _update_sliding_windows(
-        self, price_data: pd.DataFrame,
+        self,
+        price_data: pd.DataFrame,
         volume_data: pd.DataFrame | None = None,
     ) -> None:
         """Update sliding windows with new data."""
@@ -249,7 +256,8 @@ class LiveWaveletAnalyzer:
             # Use asyncio to enforce timeout
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
-                None, self._compute_wavelet_features,
+                None,
+                self._compute_wavelet_features,
                 price_array,
             )
 
@@ -267,7 +275,8 @@ class LiveWaveletAnalyzer:
             return None
 
     def _compute_wavelet_features(
-        self, price_array: np.ndarray,
+        self,
+        price_array: np.ndarray,
     ) -> dict[str, float] | None:
         """Compute wavelet features with performance constraints."""
         try:
@@ -286,8 +295,10 @@ class LiveWaveletAnalyzer:
                 self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
             level = self._get_decomposition_level(len(price_array))
             coeffs = pywt.wavedec(
-                price_array, self.wavelet_obj,
-                level=level, mode=self.padding_mode,
+                price_array,
+                self.wavelet_obj,
+                level=level,
+                mode=self.padding_mode,
             )
 
             # Extract key features efficiently

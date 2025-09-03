@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_position_sizing.py
 
 """
@@ -140,21 +141,77 @@ def get_position_sizing_search_space() -> dict[str, dict[str, Any]]:
         "kelly_multiplier": {"min": 0.3, "max": 0.8, "type": "float"},
         "kelly_max_fraction": {"min": 0.15, "max": 0.4, "type": "float"},
         # Confidence thresholds
-        "confidence_thresholds.low_confidence": {"min": 0.5, "max": 0.7, "type": "float"},
-        "confidence_thresholds.medium_confidence": {"min": 0.7, "max": 0.8, "type": "float"},
-        "confidence_thresholds.high_confidence": {"min": 0.8, "max": 0.9, "type": "float"},
-        "confidence_thresholds.very_high_confidence": {"min": 0.9, "max": 0.98, "type": "float"},
+        "confidence_thresholds.low_confidence": {
+            "min": 0.5,
+            "max": 0.7,
+            "type": "float",
+        },
+        "confidence_thresholds.medium_confidence": {
+            "min": 0.7,
+            "max": 0.8,
+            "type": "float",
+        },
+        "confidence_thresholds.high_confidence": {
+            "min": 0.8,
+            "max": 0.9,
+            "type": "float",
+        },
+        "confidence_thresholds.very_high_confidence": {
+            "min": 0.9,
+            "max": 0.98,
+            "type": "float",
+        },
         # Position size multipliers
-        "position_size_multipliers.low_confidence": {"min": 0.3, "max": 0.7, "type": "float"},
-        "position_size_multipliers.medium_confidence": {"min": 0.8, "max": 1.2, "type": "float"},
-        "position_size_multipliers.high_confidence": {"min": 1.2, "max": 2.0, "type": "float"},
-        "position_size_multipliers.very_high_confidence": {"min": 1.5, "max": 3.0, "type": "float"},
+        "position_size_multipliers.low_confidence": {
+            "min": 0.3,
+            "max": 0.7,
+            "type": "float",
+        },
+        "position_size_multipliers.medium_confidence": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "position_size_multipliers.high_confidence": {
+            "min": 1.2,
+            "max": 2.0,
+            "type": "float",
+        },
+        "position_size_multipliers.very_high_confidence": {
+            "min": 1.5,
+            "max": 3.0,
+            "type": "float",
+        },
         # Volatility thresholds
-        "volatility_thresholds.low_volatility": {"min": 0.01, "max": 0.03, "type": "float"},
-        "volatility_thresholds.medium_volatility": {"min": 0.03, "max": 0.07, "type": "float"},
-        "volatility_thresholds.high_volatility": {"min": 0.07, "max": 0.15, "type": "float"},
+        "volatility_thresholds.low_volatility": {
+            "min": 0.01,
+            "max": 0.03,
+            "type": "float",
+        },
+        "volatility_thresholds.medium_volatility": {
+            "min": 0.03,
+            "max": 0.07,
+            "type": "float",
+        },
+        "volatility_thresholds.high_volatility": {
+            "min": 0.07,
+            "max": 0.15,
+            "type": "float",
+        },
         # Volatility multipliers
-        "volatility_multipliers.low_volatility": {"min": 1.0, "max": 1.5, "type": "float"},
-        "volatility_multipliers.medium_volatility": {"min": 0.8, "max": 1.2, "type": "float"},
-        "volatility_multipliers.high_volatility": {"min": 0.5, "max": 0.9, "type": "float"},
+        "volatility_multipliers.low_volatility": {
+            "min": 1.0,
+            "max": 1.5,
+            "type": "float",
+        },
+        "volatility_multipliers.medium_volatility": {
+            "min": 0.8,
+            "max": 1.2,
+            "type": "float",
+        },
+        "volatility_multipliers.high_volatility": {
+            "min": 0.5,
+            "max": 0.9,
+            "type": "float",
+        },
     }

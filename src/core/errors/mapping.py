@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Exception mapping to transport-specific responses.
 
@@ -16,10 +17,10 @@ from .base import (
     NotFoundError,
     RateLimitError,
     ServiceUnavailableError,
-    ValidationError,
 )
+from .base import TimeoutError as AppTimeoutError
 from .base import (
-    TimeoutError as AppTimeoutError,
+    ValidationError,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,10 +36,10 @@ class ErrorMapper:
             KeyError: lambda e: NotFoundError(f"Key not found: {e}"),
             TypeError: lambda e: ValidationError(f"Type error: {e}"),
             AttributeError: lambda e: ValidationError(f"Attribute error: {e}"),
-
             # Network/IO exceptions
             ConnectionError: lambda e: ServiceUnavailableError(
-                "Connection failed", service_name="external",
+                "Connection failed",
+                service_name="external",
             ),
             TimeoutError: lambda e: AppTimeoutError(str(e)),
             OSError: lambda e: AppError(
@@ -51,19 +52,31 @@ class ErrorMapper:
         # Add pandas exceptions if available
         try:
             import pandas as pd
-            self._exception_map.update({
-                pd.errors.EmptyDataError: lambda e: ValidationError("Empty data provided"),
-                pd.errors.ParserError: lambda e: ValidationError(f"Data parsing error: {e}"),
-            })
+
+            self._exception_map.update(
+                {
+                    pd.errors.EmptyDataError: lambda e: ValidationError(
+                        "Empty data provided"
+                    ),
+                    pd.errors.ParserError: lambda e: ValidationError(
+                        f"Data parsing error: {e}"
+                    ),
+                }
+            )
         except ImportError:
             pass
 
         # Add numpy exceptions if available
         try:
             import numpy as np
-            self._exception_map.update({
-                np.linalg.LinAlgError: lambda e: ValidationError(f"Linear algebra error: {e}"),
-            })
+
+            self._exception_map.update(
+                {
+                    np.linalg.LinAlgError: lambda e: ValidationError(
+                        f"Linear algebra error: {e}"
+                    ),
+                }
+            )
         except ImportError:
             pass
 
@@ -121,15 +134,15 @@ class ErrorMapper:
         """Convert AppError to gRPC status format."""
         # Map HTTP status codes to gRPC codes
         grpc_code_map = {
-            400: 3,   # INVALID_ARGUMENT
+            400: 3,  # INVALID_ARGUMENT
             401: 16,  # UNAUTHENTICATED
-            403: 7,   # PERMISSION_DENIED
-            404: 5,   # NOT_FOUND
+            403: 7,  # PERMISSION_DENIED
+            404: 5,  # NOT_FOUND
             409: 10,  # ABORTED
-            429: 8,   # RESOURCE_EXHAUSTED
+            429: 8,  # RESOURCE_EXHAUSTED
             500: 13,  # INTERNAL
             503: 14,  # UNAVAILABLE
-            504: 4,   # DEADLINE_EXCEEDED
+            504: 4,  # DEADLINE_EXCEEDED
         }
 
         grpc_code = grpc_code_map.get(error.status_code, 2)  # Default to UNKNOWN

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Advanced Decorators Module
 Provides enhanced decorators for performance monitoring, model validation, data pipeline management, caching, adaptive resource allocation, and comprehensive validation.
 """
@@ -104,7 +105,9 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
             start_cpu = _get_cpu_usage()
             gc_collections_before = gc.get_count() if GC_AVAILABLE else [0, 0, 0]
 
-            logger.info(f"📊 [PERF] Starting performance monitoring for {func.__name__}")
+            logger.info(
+                f"📊 [PERF] Starting performance monitoring for {func.__name__}"
+            )
 
             try:
                 result = await func(*args, **kwargs)
@@ -119,8 +122,12 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
                 gc_diff = sum(gc_collections_after) - sum(gc_collections_before)
 
                 if level in [PerformanceLevel.DETAILED, PerformanceLevel.PROFILING]:
-                    logger.info(f"✅ [PERF] {func.__name__} completed in {elapsed:.2f}s")
-                    logger.info(f"   Memory: {memory_diff:+.2f} MB (Total: {end_memory:.2f} MB)")
+                    logger.info(
+                        f"✅ [PERF] {func.__name__} completed in {elapsed:.2f}s"
+                    )
+                    logger.info(
+                        f"   Memory: {memory_diff:+.2f} MB (Total: {end_memory:.2f} MB)"
+                    )
                     logger.info(f"   CPU: {cpu_diff:+.1f}% (Current: {end_cpu:.1f}%)")
                     logger.info(f"   GC Collections: {gc_diff}")
 
@@ -128,7 +135,9 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
 
             except Exception as e:
                 elapsed = time.time() - start_time
-                logger.exception(f"❌ [PERF] {func.__name__} failed after {elapsed:.2f}s: {e}")
+                logger.exception(
+                    f"❌ [PERF] {func.__name__} failed after {elapsed:.2f}s: {e}"
+                )
                 raise
 
         @functools.wraps(func)
@@ -139,7 +148,9 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
             start_cpu = _get_cpu_usage()
             gc_collections_before = gc.get_count() if GC_AVAILABLE else [0, 0, 0]
 
-            logger.info(f"📊 [PERF] Starting performance monitoring for {func.__name__}")
+            logger.info(
+                f"📊 [PERF] Starting performance monitoring for {func.__name__}"
+            )
 
             try:
                 result = func(*args, **kwargs)
@@ -154,8 +165,12 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
                 gc_diff = sum(gc_collections_after) - sum(gc_collections_before)
 
                 if level in [PerformanceLevel.DETAILED, PerformanceLevel.PROFILING]:
-                    logger.info(f"✅ [PERF] {func.__name__} completed in {elapsed:.2f}s")
-                    logger.info(f"   Memory: {memory_diff:+.2f} MB (Total: {end_memory:.2f} MB)")
+                    logger.info(
+                        f"✅ [PERF] {func.__name__} completed in {elapsed:.2f}s"
+                    )
+                    logger.info(
+                        f"   Memory: {memory_diff:+.2f} MB (Total: {end_memory:.2f} MB)"
+                    )
                     logger.info(f"   CPU: {cpu_diff:+.1f}% (Current: {end_cpu:.1f}%)")
                     logger.info(f"   GC Collections: {gc_diff}")
 
@@ -163,7 +178,9 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
 
             except Exception as e:
                 elapsed = time.time() - start_time
-                logger.exception(f"❌ [PERF] {func.__name__} failed after {elapsed:.2f}s: {e}")
+                logger.exception(
+                    f"❌ [PERF] {func.__name__} failed after {elapsed:.2f}s: {e}"
+                )
                 raise
 
         # Return appropriate wrapper based on function type
@@ -192,14 +209,20 @@ def model_validation(validation_level: ValidationLevel = ValidationLevel.MEDIUM)
 
                 # Basic model validation
                 if hasattr(result, "predict"):
-                    logger.info(f"✅ [MODEL] Model validation completed for {func.__name__}")
+                    logger.info(
+                        f"✅ [MODEL] Model validation completed for {func.__name__}"
+                    )
                 else:
-                    logger.warning(f"⚠️ [MODEL] Result from {func.__name__} may not be a valid model")
+                    logger.warning(
+                        f"⚠️ [MODEL] Result from {func.__name__} may not be a valid model"
+                    )
 
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [MODEL] Model validation failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [MODEL] Model validation failed for {func.__name__}: {e}"
+                )
                 raise
 
         @functools.wraps(func)
@@ -212,14 +235,20 @@ def model_validation(validation_level: ValidationLevel = ValidationLevel.MEDIUM)
 
                 # Basic model validation
                 if hasattr(result, "predict"):
-                    logger.info(f"✅ [MODEL] Model validation completed for {func.__name__}")
+                    logger.info(
+                        f"✅ [MODEL] Model validation completed for {func.__name__}"
+                    )
                 else:
-                    logger.warning(f"⚠️ [MODEL] Result from {func.__name__} may not be a valid model")
+                    logger.warning(
+                        f"⚠️ [MODEL] Result from {func.__name__} may not be a valid model"
+                    )
 
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [MODEL] Model validation failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [MODEL] Model validation failed for {func.__name__}: {e}"
+                )
                 raise
 
         # Return appropriate wrapper based on function type
@@ -243,7 +272,9 @@ def pipeline_checkpoint(checkpoint_name: str | None = None):
             logger = system_logger.getChild("PipelineCheckpoint")
             checkpoint_id = checkpoint_name or f"{func.__name__}_{int(time.time())}"
 
-            logger.info(f"💾 [PIPELINE] Creating checkpoint '{checkpoint_id}' for {func.__name__}")
+            logger.info(
+                f"💾 [PIPELINE] Creating checkpoint '{checkpoint_id}' for {func.__name__}"
+            )
 
             try:
                 result = await func(*args, **kwargs)
@@ -256,11 +287,15 @@ def pipeline_checkpoint(checkpoint_name: str | None = None):
                     "status": "completed",
                 }
 
-                logger.info(f"✅ [PIPELINE] Checkpoint '{checkpoint_id}' completed for {func.__name__}")
+                logger.info(
+                    f"✅ [PIPELINE] Checkpoint '{checkpoint_id}' completed for {func.__name__}"
+                )
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [PIPELINE] Checkpoint '{checkpoint_id}' failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [PIPELINE] Checkpoint '{checkpoint_id}' failed for {func.__name__}: {e}"
+                )
                 raise
 
         @functools.wraps(func)
@@ -268,7 +303,9 @@ def pipeline_checkpoint(checkpoint_name: str | None = None):
             logger = system_logger.getChild("PipelineCheckpoint")
             checkpoint_id = checkpoint_name or f"{func.__name__}_{int(time.time())}"
 
-            logger.info(f"💾 [PIPELINE] Creating checkpoint '{checkpoint_id}' for {func.__name__}")
+            logger.info(
+                f"💾 [PIPELINE] Creating checkpoint '{checkpoint_id}' for {func.__name__}"
+            )
 
             try:
                 result = func(*args, **kwargs)
@@ -281,11 +318,15 @@ def pipeline_checkpoint(checkpoint_name: str | None = None):
                     "status": "completed",
                 }
 
-                logger.info(f"✅ [PIPELINE] Checkpoint '{checkpoint_id}' completed for {func.__name__}")
+                logger.info(
+                    f"✅ [PIPELINE] Checkpoint '{checkpoint_id}' completed for {func.__name__}"
+                )
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [PIPELINE] Checkpoint '{checkpoint_id}' failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [PIPELINE] Checkpoint '{checkpoint_id}' failed for {func.__name__}: {e}"
+                )
                 raise
 
         # Return appropriate wrapper based on function type
@@ -321,7 +362,9 @@ def intelligent_caching(cache_key: str | None = None, ttl: int = 3600):
                 logger.info(f"🧠 [CACHE] Cache expired for {func.__name__}")
                 del _cache[key]
 
-            logger.info(f"🧠 [CACHE] Cache miss for {func.__name__}, executing function")
+            logger.info(
+                f"🧠 [CACHE] Cache miss for {func.__name__}, executing function"
+            )
 
             try:
                 result = await func(*args, **kwargs)
@@ -350,7 +393,9 @@ def intelligent_caching(cache_key: str | None = None, ttl: int = 3600):
                 logger.info(f"🧠 [CACHE] Cache expired for {func.__name__}")
                 del _cache[key]
 
-            logger.info(f"🧠 [CACHE] Cache miss for {func.__name__}, executing function")
+            logger.info(
+                f"🧠 [CACHE] Cache miss for {func.__name__}, executing function"
+            )
 
             try:
                 result = func(*args, **kwargs)
@@ -373,7 +418,9 @@ def intelligent_caching(cache_key: str | None = None, ttl: int = 3600):
     return decorator
 
 
-def adaptive_resource_allocation(max_memory_mb: float = 1024, max_cpu_percent: float = 80):
+def adaptive_resource_allocation(
+    max_memory_mb: float = 1024, max_cpu_percent: float = 80
+):
     """Decorator for adaptive resource allocation.
 
     Args:
@@ -391,22 +438,32 @@ def adaptive_resource_allocation(max_memory_mb: float = 1024, max_cpu_percent: f
             current_cpu = _get_cpu_usage()
 
             logger.info(f"⚡ [RESOURCE] Checking resources for {func.__name__}")
-            logger.info(f"   Current Memory: {current_memory:.2f} MB / {max_memory_mb:.2f} MB")
+            logger.info(
+                f"   Current Memory: {current_memory:.2f} MB / {max_memory_mb:.2f} MB"
+            )
             logger.info(f"   Current CPU: {current_cpu:.1f}% / {max_cpu_percent:.1f}%")
 
             if current_memory > max_memory_mb:
-                logger.warning(f"⚠️ [RESOURCE] High memory usage detected for {func.__name__}")
+                logger.warning(
+                    f"⚠️ [RESOURCE] High memory usage detected for {func.__name__}"
+                )
 
             if current_cpu > max_cpu_percent:
-                logger.warning(f"⚠️ [RESOURCE] High CPU usage detected for {func.__name__}")
+                logger.warning(
+                    f"⚠️ [RESOURCE] High CPU usage detected for {func.__name__}"
+                )
 
             try:
                 result = await func(*args, **kwargs)
-                logger.info(f"✅ [RESOURCE] Resource allocation completed for {func.__name__}")
+                logger.info(
+                    f"✅ [RESOURCE] Resource allocation completed for {func.__name__}"
+                )
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [RESOURCE] Resource allocation failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [RESOURCE] Resource allocation failed for {func.__name__}: {e}"
+                )
                 raise
 
         @functools.wraps(func)
@@ -418,22 +475,32 @@ def adaptive_resource_allocation(max_memory_mb: float = 1024, max_cpu_percent: f
             current_cpu = _get_cpu_usage()
 
             logger.info(f"⚡ [RESOURCE] Checking resources for {func.__name__}")
-            logger.info(f"   Current Memory: {current_memory:.2f} MB / {max_memory_mb:.2f} MB")
+            logger.info(
+                f"   Current Memory: {current_memory:.2f} MB / {max_memory_mb:.2f} MB"
+            )
             logger.info(f"   Current CPU: {current_cpu:.1f}% / {max_cpu_percent:.1f}%")
 
             if current_memory > max_memory_mb:
-                logger.warning(f"⚠️ [RESOURCE] High memory usage detected for {func.__name__}")
+                logger.warning(
+                    f"⚠️ [RESOURCE] High memory usage detected for {func.__name__}"
+                )
 
             if current_cpu > max_cpu_percent:
-                logger.warning(f"⚠️ [RESOURCE] High CPU usage detected for {func.__name__}")
+                logger.warning(
+                    f"⚠️ [RESOURCE] High CPU usage detected for {func.__name__}"
+                )
 
             try:
                 result = func(*args, **kwargs)
-                logger.info(f"✅ [RESOURCE] Resource allocation completed for {func.__name__}")
+                logger.info(
+                    f"✅ [RESOURCE] Resource allocation completed for {func.__name__}"
+                )
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [RESOURCE] Resource allocation failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [RESOURCE] Resource allocation failed for {func.__name__}: {e}"
+                )
                 raise
 
         # Return appropriate wrapper based on function type
@@ -455,49 +522,65 @@ def comprehensive_validation(validation_rules: dict[str, Any] | None = None):
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild("ComprehensiveValidator")
-            logger.info(f"🔍 [VALID] Starting comprehensive validation for {func.__name__}")
+            logger.info(
+                f"🔍 [VALID] Starting comprehensive validation for {func.__name__}"
+            )
 
             try:
                 # Pre-validation checks
                 if validation_rules:
-                    logger.info(f"🔍 [VALID] Applying {len(validation_rules)} validation rules")
+                    logger.info(
+                        f"🔍 [VALID] Applying {len(validation_rules)} validation rules"
+                    )
 
                 result = await func(*args, **kwargs)
 
                 # Post-validation checks
                 if result is not None:
-                    logger.info(f"✅ [VALID] Comprehensive validation completed for {func.__name__}")
+                    logger.info(
+                        f"✅ [VALID] Comprehensive validation completed for {func.__name__}"
+                    )
                 else:
                     logger.warning(f"⚠️ [VALID] {func.__name__} returned None")
 
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [VALID] Comprehensive validation failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [VALID] Comprehensive validation failed for {func.__name__}: {e}"
+                )
                 raise
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild("ComprehensiveValidator")
-            logger.info(f"🔍 [VALID] Starting comprehensive validation for {func.__name__}")
+            logger.info(
+                f"🔍 [VALID] Starting comprehensive validation for {func.__name__}"
+            )
 
             try:
                 # Pre-validation checks
                 if validation_rules:
-                    logger.info(f"🔍 [VALID] Applying {len(validation_rules)} validation rules")
+                    logger.info(
+                        f"🔍 [VALID] Applying {len(validation_rules)} validation rules"
+                    )
 
                 result = func(*args, **kwargs)
 
                 # Post-validation checks
                 if result is not None:
-                    logger.info(f"✅ [VALID] Comprehensive validation completed for {func.__name__}")
+                    logger.info(
+                        f"✅ [VALID] Comprehensive validation completed for {func.__name__}"
+                    )
                 else:
                     logger.warning(f"⚠️ [VALID] {func.__name__} returned None")
 
                 return result
 
             except Exception as e:
-                logger.exception(f"❌ [VALID] Comprehensive validation failed for {func.__name__}: {e}")
+                logger.exception(
+                    f"❌ [VALID] Comprehensive validation failed for {func.__name__}: {e}"
+                )
                 raise
 
         # Return appropriate wrapper based on function type

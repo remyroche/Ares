@@ -1,7 +1,9 @@
 from __future__ import annotations
-# src/training/vectorized_training_pipeline.py
 
 from src.core.decorators import handles_errors
+
+# src/training/vectorized_training_pipeline.py
+
 
 """Vectorized Training Pipeline for enhanced ML training processes."
 Integrates matrix enhancements with existing training workflows to improve
@@ -18,8 +20,8 @@ from src.training.matrix_enhancement_manager import MatrixEnhancementManager
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
-
 from src.utils.logger import system_logger
+
 
 @dataclass
 class VectorizedTrainingConfig:
@@ -42,6 +44,7 @@ class VectorizedTrainingConfig:
     # Integration settings
     integrate_with_existing_pipeline: bool = True
     preserve_original_features: bool = True
+
 
 class VectorizedTrainingPipeline:
     """Vectorized training pipeline with matrix enhancements."""
@@ -80,12 +83,15 @@ class VectorizedTrainingPipeline:
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to initialize vectorized training pipeline: {e}")
+            self.logger.exception(
+                f"❌ Failed to initialize vectorized training pipeline: {e}"
+            )
             return False
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def enhance_training_data(
-        self, training_data: dict[str, Any],
+        self,
+        training_data: dict[str, Any],
         step_name: str = "vectorized_enhancement",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Enhance training data with vectorized and matrix operations."
@@ -111,7 +117,9 @@ class VectorizedTrainingPipeline:
                 if "features" in training_data:
                     features_df = training_data["features"]
 
-                    enhanced_features, feature_metadata = await self._apply_vectorized_features(features_df)
+                    enhanced_features, feature_metadata = (
+                        await self._apply_vectorized_features(features_df)
+                    )
                     enhanced_data["features"] = enhanced_features
                     enhancement_metadata["vectorized_features"] = feature_metadata
 
@@ -140,7 +148,9 @@ class VectorizedTrainingPipeline:
             enhancement_metadata["processing_time"] = total_time
             enhancement_metadata["step_name"] = step_name
 
-            self.logger.info(f"✅ Vectorized enhancement completed in {total_time:.2f}s")
+            self.logger.info(
+                f"✅ Vectorized enhancement completed in {total_time:.2f}s"
+            )
             return enhanced_data, enhancement_metadata
 
         except Exception as e:
@@ -151,14 +161,20 @@ class VectorizedTrainingPipeline:
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def _apply_vectorized_features(
-        self, features_df: pd.DataFrame,
+        self,
+        features_df: pd.DataFrame,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Apply vectorized feature engineering."""
         try:
             if not self.vectorized_features:
-                return features_df, {"status": "skipped", "reason": "vectorized_features_disabled"}
+                return features_df, {
+                    "status": "skipped",
+                    "reason": "vectorized_features_disabled",
+                }
 
-            enhanced_features, metadata = await self.vectorized_features.enhance_features(features_df)
+            enhanced_features, metadata = (
+                await self.vectorized_features.enhance_features(features_df)
+            )
             return enhanced_features, metadata
 
         except Exception as e:
@@ -198,7 +214,8 @@ class VectorizedTrainingPipeline:
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def optimize_for_performance(
-        self, training_data: dict[str, Any],
+        self,
+        training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Optimize for performance using vectorized operations."""
         try:
@@ -227,7 +244,8 @@ class VectorizedTrainingPipeline:
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def optimize_for_memory(
-        self, training_data: dict[str, Any],
+        self,
+        training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Optimize for memory usage."""
         try:
@@ -244,7 +262,9 @@ class VectorizedTrainingPipeline:
                     features_df[col] = pd.to_numeric(features_df[col], downcast="float")
 
                 for col in features_df.select_dtypes(include=["int64"]).columns:
-                    features_df[col] = pd.to_numeric(features_df[col], downcast="integer")
+                    features_df[col] = pd.to_numeric(
+                        features_df[col], downcast="integer"
+                    )
 
                 optimized_data["features"] = features_df
                 metadata["memory_reduction"] = "data_type_optimization"
@@ -258,7 +278,8 @@ class VectorizedTrainingPipeline:
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
     async def optimize_for_accuracy(
-        self, training_data: dict[str, Any],
+        self,
+        training_data: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Optimize for accuracy using advanced matrix operations."""
         try:
@@ -272,25 +293,38 @@ class VectorizedTrainingPipeline:
                 features_df = optimized_data["features"]
 
                 # Apply SVD enhancement
-                svd_enhanced, svd_metadata = self.matrix_enhancement.apply_svd_enhancement(features_df)
+                svd_enhanced, svd_metadata = (
+                    self.matrix_enhancement.apply_svd_enhancement(features_df)
+                )
 
                 # Apply NMF enhancement
-                nmf_enhanced, nmf_metadata = self.matrix_enhancement.apply_nmf_enhancement(features_df)
+                nmf_enhanced, nmf_metadata = (
+                    self.matrix_enhancement.apply_nmf_enhancement(features_df)
+                )
 
                 # Apply spectral enhancement
-                spectral_enhanced, spectral_metadata = self.matrix_enhancement.apply_spectral_enhancement(features_df)
+                spectral_enhanced, spectral_metadata = (
+                    self.matrix_enhancement.apply_spectral_enhancement(features_df)
+                )
 
                 # Combine enhancements
-                combined_features = pd.concat([
-                    svd_enhanced, nmf_enhanced, spectral_enhanced,
-                ], axis=1)
+                combined_features = pd.concat(
+                    [
+                        svd_enhanced,
+                        nmf_enhanced,
+                        spectral_enhanced,
+                    ],
+                    axis=1,
+                )
 
                 optimized_data["features"] = combined_features
-                metadata.update({
-                    "svd_enhancement": svd_metadata,
-                    "nmf_enhancement": nmf_metadata,
-                    "spectral_enhancement": spectral_metadata,
-                })
+                metadata.update(
+                    {
+                        "svd_enhancement": svd_metadata,
+                        "nmf_enhancement": nmf_metadata,
+                        "spectral_enhancement": spectral_metadata,
+                    }
+                )
 
             self.logger.info("✅ Accuracy optimization completed")
             return optimized_data, metadata

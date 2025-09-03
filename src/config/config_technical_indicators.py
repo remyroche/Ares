@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # src/config/config_technical_indicators.py
 
 """
@@ -112,30 +113,25 @@ def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
         "rsi_overbought_threshold": {"min": 65.0, "max": 80.0, "type": "float"},
         "rsi_oversold_threshold": {"min": 20.0, "max": 35.0, "type": "float"},
         "rsi_signal_threshold": {"min": 45.0, "max": 55.0, "type": "float"},
-
         # MACD parameters
         "macd_fast_period": {"min": 8, "max": 16, "type": "int"},
         "macd_slow_period": {"min": 20, "max": 30, "type": "int"},
         "macd_signal_period": {"min": 7, "max": 12, "type": "int"},
         "macd_threshold": {"min": -0.1, "max": 0.1, "type": "float"},
-
         # ADX parameters
         "adx_period": {"min": 10, "max": 20, "type": "int"},
         "adx_trend_threshold": {"min": 20.0, "max": 30.0, "type": "float"},
         "adx_sideways_threshold": {"min": 15.0, "max": 25.0, "type": "float"},
-
         # Moving averages
         "sma_short_period": {"min": 5, "max": 15, "type": "int"},
         "sma_medium_period": {"min": 15, "max": 30, "type": "int"},
         "sma_long_period": {"min": 40, "max": 60, "type": "int"},
         "ema_short_period": {"min": 8, "max": 16, "type": "int"},
         "ema_long_period": {"min": 20, "max": 30, "type": "int"},
-
         # Bollinger Bands
         "bb_period": {"min": 15, "max": 25, "type": "int"},
         "bb_std_dev": {"min": 1.5, "max": 2.5, "type": "float"},
         "bb_squeeze_threshold": {"min": 0.3, "max": 0.7, "type": "float"},
-
         # Volatility indicators
         "atr_period": {"min": 10, "max": 20, "type": "int"},
         "volatility_period": {"min": 15, "max": 25, "type": "int"},
@@ -143,16 +139,13 @@ def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
         "volatility_percentile_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "atr_normalized_threshold": {"min": 0.015, "max": 0.025, "type": "float"},
         "bb_width_volatility_threshold": {"min": 0.02, "max": 0.04, "type": "float"},
-
         # Volume indicators
         "volume_sma_period": {"min": 15, "max": 25, "type": "int"},
         "volume_threshold": {"min": 1.2, "max": 2.0, "type": "float"},
         "volume_price_divergence_threshold": {"min": 0.2, "max": 0.4, "type": "float"},
-
         # Divergence detection
         "divergence_lookback_period": {"min": 5, "max": 15, "type": "int"},
         "divergence_threshold": {"min": 0.1, "max": 0.3, "type": "float"},
-
         # Regime detection
         "regime_lookback_period": {"min": 30, "max": 100, "type": "int"},
         "regime_volatility_threshold": {"min": 0.01, "max": 0.05, "type": "float"},
@@ -160,22 +153,18 @@ def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
         "regime_stability_threshold": {"min": 0.6, "max": 0.8, "type": "float"},
         "regime_transition_threshold": {"min": 0.5, "max": 0.7, "type": "float"},
         "regime_confirmation_periods": {"min": 2, "max": 5, "type": "int"},
-
         # Regime classification parameters
         "ema_fast_period": {"min": 15, "max": 30, "type": "int"},
         "ema_slow_period": {"min": 40, "max": 70, "type": "int"},
         "ema_sep_min_ratio": {"min": 0.0, "max": 0.1, "type": "float"},
-
         # Unified regime classifier parameters
         "volatility_period": {"min": 5, "max": 20, "type": "int"},
         "atr_normalized_threshold": {"min": 0.02, "max": 0.05, "type": "float"},
         "bb_width_volatility_threshold": {"min": 0.03, "max": 0.06, "type": "float"},
-
         # Transition regime handler parameters
         "transition_intensity_threshold": {"min": 0.2, "max": 0.5, "type": "float"},
         "min_combined_intensity": {"min": 0.5, "max": 0.8, "type": "float"},
         "max_regimes_to_consider": {"min": 2, "max": 5, "type": "int"},
-
         # Data quality thresholds
         "correlation_threshold": {"min": 0.9, "max": 0.98, "type": "float"},
         "nan_threshold": {"min": 0.05, "max": 0.2, "type": "float"},

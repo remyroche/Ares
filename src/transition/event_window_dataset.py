@@ -60,7 +60,8 @@ class EventWindowDatasetBuilder:
             ),
         )
         self.state_builder = StateSequenceBuilder(
-            config, exchange=exchange,
+            config,
+            exchange=exchange,
             symbol=symbol,
         )
         self.cache_dir = str(

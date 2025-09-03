@@ -1,5 +1,4 @@
 from __future__ import annotations
-# src/interfaces/event_bus.py
 
 import asyncio
 from collections import defaultdict
@@ -18,6 +17,8 @@ from src.utils.warning_symbols import (
     invalid,
 )
 
+# src/interfaces/event_bus.py
+
 
 class EventType(Enum):
     """Event types for the trading system"""
@@ -34,6 +35,7 @@ class EventType(Enum):
     COMPONENT_STARTED = "component_started"
     COMPONENT_STOPPED = "component_stopped"
 
+
 @dataclass
 class Event:
     """Event structure"""
@@ -43,6 +45,7 @@ class Event:
     timestamp: datetime
     source: str
     correlation_id: str | None = None
+
 
 class EventBus:
     """
@@ -221,7 +224,9 @@ class EventBus:
         """Subscribe to an event type."""
         try:
             event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
+                event_type.value
+                if isinstance(event_type, EventType)
+                else str(event_type)
             )
             self.subscribers[event_key].append(callback)
             self.logger.info(f"Subscriber added for event type: {event_key}")
@@ -237,7 +242,9 @@ class EventBus:
         """Unsubscribe from an event type."""
         try:
             event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
+                event_type.value
+                if isinstance(event_type, EventType)
+                else str(event_type)
             )
             if event_key in self.subscribers:
                 self.subscribers[event_key] = [
@@ -252,7 +259,9 @@ class EventBus:
         """Publish an event to the bus."""
         try:
             event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
+                event_type.value
+                if isinstance(event_type, EventType)
+                else str(event_type)
             )
             event = {
                 "type": event_key,
@@ -282,8 +291,10 @@ class EventBus:
     def get_subscribers(self) -> dict[str, list[Callable]]:
         return dict(self.subscribers)
 
+
 # Global instance
 event_bus: EventBus | None = None
+
 
 @handles_errors(fallback=None)
 async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:

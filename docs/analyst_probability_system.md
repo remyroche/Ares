@@ -34,15 +34,16 @@ For each target, the system outputs:
 2. Models output probability using `predict_proba()` for classification
 3. Probabilities are normalized to [0, 1] range
 
-#### Fallback Predictions (No Models):
-1. Uses exponential decay for price targets:
-   - Smaller targets (0.1-0.5%) have higher probabilities
-   - Larger targets (1.5-2.0%) have lower probabilities
-   - Formula: `confidence = base * exp(-decay_rate * target_level)`
+#### No Models Available:
+**IMPORTANT**: The system will NOT provide fallback predictions when models are unavailable. This is a critical safety feature to prevent trading with unreliable data.
 
-2. Adversarial risks increase gradually with target size:
-   - Base risk starts at 30%
-   - Increases by 2% per target level
+When no trained models are available:
+1. The system returns an error response with `error: "NO_MODELS_AVAILABLE"`
+2. All probabilities are set to 0.0 or empty
+3. The `can_trade` flag is set to `false`
+4. Trading is completely disabled until models are trained
+
+This ensures that the system never trades based on guessed or statistically generated probabilities.
 
 ### 4. Directional Analysis
 
@@ -124,10 +125,49 @@ The probability system helps with risk management by:
 - Assessing overall market volatility
 - Enabling position sizing based on confidence levels
 
+## Safety Features
+
+### 1. Model Requirement
+
+The system includes several safety features to prevent risky trading:
+
+- **No Fallback Predictions**: System will not generate fake probabilities without models
+- **Model Validation**: Checks if models are properly trained before allowing predictions
+- **Error Responses**: Clear error messages when models are unavailable
+- **Trading Lock**: `can_trade` flag prevents any trading without valid models
+- **is_ready_to_trade()**: Method to verify system readiness before trading
+
+### 2. Error Response Format
+
+When models are not available, the system returns:
+```json
+{
+    "error": "NO_MODELS_AVAILABLE",
+    "message": "Cannot generate predictions without trained models",
+    "price_target_confidences": {},
+    "adversarial_confidences": {},
+    "model_status": "ERROR_NO_MODELS",
+    "can_trade": false
+}
+```
+
 ## Best Practices
 
-### 1. Probability Interpretation
+### 1. Pre-Trading Checks
 
+Always verify the system is ready before trading:
+```python
+if ml_confidence_predictor.is_ready_to_trade():
+    # Safe to proceed with predictions
+    predictions = await ml_confidence_predictor.predict_confidence_table(...)
+else:
+    # Do not trade - train models first
+    logger.error("System not ready - models required")
+```
+
+### 2. Probability Interpretation
+
+When models ARE available:
 - **High Confidence (>70%)**: Strong signal for price movement
 - **Medium Confidence (50-70%)**: Moderate signal, consider other factors
 - **Low Confidence (<50%)**: Weak or neutral signal

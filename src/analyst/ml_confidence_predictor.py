@@ -251,13 +251,14 @@ class MLConfidencePredictor:
 
             # Check model availability and prepare for prediction
             if not await self._prepare_for_prediction():
+                self.logger.error("Models not available - cannot generate predictions")
                 return self._generate_fallback_predictions(current_price)
 
             # Prepare features for prediction
             features = await self._prepare_prediction_features(market_data)
             if features is None or features.empty:
-                self.logger.warning(
-                    "Could not prepare features for prediction, using fallback",
+                self.logger.error(
+                    "Could not prepare features for prediction - cannot proceed without proper data",
                 )
                 return self._generate_fallback_predictions(current_price)
 
@@ -443,46 +444,39 @@ class MLConfidencePredictor:
 
     def _get_fallback_confidence(self, target_level: float) -> float:
         """
-        Generate fallback confidence for price target based on target level.
+        Return zero confidence when no model is available.
         
-        Uses exponential decay - smaller targets have higher probability.
+        IMPORTANT: We don't generate fake probabilities as it's too risky.
         
         Args:
             target_level: Price target level as percentage
             
         Returns:
-            float: Fallback confidence value
+            float: Always returns 0.0 to indicate no confidence without models
         """
-        # Base confidence decreases exponentially with target size
-        # 0.5% target: ~0.45 confidence
-        # 1.0% target: ~0.35 confidence  
-        # 2.0% target: ~0.20 confidence
-        base = 0.5
-        decay_rate = 0.3
-        confidence = base * np.exp(-decay_rate * target_level)
-        return float(np.clip(confidence, 0.1, 0.9))
+        self.logger.warning(
+            f"Attempted to get fallback confidence for {target_level}% target. "
+            "Returning 0.0 - models required for predictions."
+        )
+        return 0.0
 
     def _get_fallback_decrease_probability(self, target_level: float) -> float:
         """
-        Generate fallback probability for adverse movement based on target level.
+        Return zero probability when no model is available.
         
-        Uses inverse relationship - larger targets have lower adverse probability.
+        IMPORTANT: We don't generate fake probabilities as it's too risky.
         
         Args:
             target_level: Adverse movement level as percentage
             
         Returns:
-            float: Fallback adverse probability
+            float: Always returns 0.0 to indicate no confidence without models
         """
-        # Adverse probability increases slightly with target size
-        # But stays relatively conservative
-        # 0.5% adverse: ~0.35 probability
-        # 1.0% adverse: ~0.40 probability
-        # 2.0% adverse: ~0.45 probability
-        base = 0.3
-        increase_rate = 0.08
-        probability = base + (increase_rate * target_level)
-        return float(np.clip(probability, 0.2, 0.6))
+        self.logger.warning(
+            f"Attempted to get fallback probability for {target_level}% adverse movement. "
+            "Returning 0.0 - models required for predictions."
+        )
+        return 0.0
 
     def _predict_single_target(
         self,
@@ -888,107 +882,94 @@ class MLConfidencePredictor:
 
     def _generate_fallback_predictions(self, current_price: float) -> dict[str, Any]:
         """
-        Generate fallback predictions when models are not available.
+        Return error response when models are not available.
         
-        This method provides reasonable default predictions with proper probability
-        distributions for price targets when ML models are not trained or available.
+        IMPORTANT: We do not provide fallback predictions as it's too risky to trade
+        without properly trained models. This method returns an error structure
+        indicating that models are required.
         
         Args:
             current_price: Current market price
             
         Returns:
-            dict: Fallback predictions with price target probabilities
+            dict: Error response indicating models are required
         """
-        try:
-            # Generate default price target confidences with decreasing probability
-            # for larger price movements (more conservative)
-            price_target_confidences = {}
-            adversarial_confidences = {}
-            
-            # Create a normal distribution-like pattern for price targets
-            # Higher confidence for smaller movements, lower for larger movements
-            base_confidence = 0.5  # Start with neutral confidence
-            decay_factor = 0.85  # How quickly confidence decreases with larger targets
-            
-            for i, target in enumerate(self.price_movement_levels):
-                # Calculate confidence based on target size with exponential decay
-                # Smaller targets have higher probability of being hit
-                confidence = base_confidence * (decay_factor ** i)
-                price_target_confidences[f"{target:.1f}%"] = float(np.clip(confidence, 0.1, 0.9))
-                
-                # Adversarial confidence (risk of opposite movement) increases slightly
-                # with larger targets
-                adversarial_confidence = 0.3 + (0.02 * i)  # Gradual increase
-                adversarial_confidences[f"{target:.1f}%"] = float(np.clip(adversarial_confidence, 0.1, 0.7))
-            
-            # Generate directional analysis with neutral bias
-            directional_analysis = {
-                "primary_direction": "NEUTRAL",
-                "direction_confidence": 0.5,
-                "bullish_probability": 0.5,
-                "bearish_probability": 0.5,
+        self.logger.error(
+            "CRITICAL: Attempted to generate predictions without trained models. "
+            "This is not allowed for safety reasons."
+        )
+        
+        # Return error structure - no predictions
+        return {
+            "error": "NO_MODELS_AVAILABLE",
+            "message": "Cannot generate predictions without trained models",
+            "price_target_confidences": {},
+            "adversarial_confidences": {},
+            "directional_analysis": {
+                "primary_direction": "ERROR",
+                "direction_confidence": 0.0,
+                "bullish_probability": 0.0,
+                "bearish_probability": 0.0,
                 "neutral_probability": 0.0,
-                "volatility_assessment": "MODERATE",
+                "volatility_assessment": "UNKNOWN",
                 "trend_strength": 0.0,
-                "momentum_score": 0.0
-            }
+                "momentum_score": 0.0,
+                "error": "No models available"
+            },
+            "ensemble_predictions": {},
+            "timestamp": datetime.now().isoformat(),
+            "current_price": current_price,
+            "model_status": "ERROR_NO_MODELS",
+            "model_info": {
+                "status": "ERROR: Models required for predictions",
+                "reason": "Trading without trained models is too risky",
+                "action_required": "Train models before attempting predictions"
+            },
+            "availability_status": {
+                "price_target_models": False,
+                "adversarial_models": False,
+                "ensemble_models": False,
+                "is_fallback": False,
+                "is_error": True
+            },
+            "confidence": 0.0,
+            "prediction": "error",
+            "can_trade": False
+        }
+
+    def is_ready_to_trade(self) -> bool:
+        """
+        Check if the system has trained models and is ready to make predictions.
+        
+        Returns:
+            bool: True if models are available and system can trade safely
+        """
+        if not self.is_trained:
+            self.logger.warning("System not ready to trade - no trained models")
+            return False
             
-            # Build the complete fallback result
-            result = {
-                "price_target_confidences": price_target_confidences,
-                "adversarial_confidences": adversarial_confidences,
-                "directional_analysis": directional_analysis,
-                "ensemble_predictions": {},
-                "timestamp": datetime.now().isoformat(),
-                "current_price": current_price,
-                "model_status": "fallback",
-                "model_info": {
-                    "status": "Models not available - using statistical fallback",
-                    "reason": "No trained models or enhanced training manager unavailable"
-                },
-                "availability_status": {
-                    "price_target_models": False,
-                    "adversarial_models": False,
-                    "ensemble_models": False,
-                    "is_fallback": True
-                },
-                # Add legacy format for backward compatibility
-                "increase_probabilities": {
-                    float(k.replace("%", "")): v 
-                    for k, v in price_target_confidences.items()
-                    if float(k.replace("%", "")) <= 2.0
-                },
-                "decrease_probabilities": {
-                    float(k.replace("%", "")): v 
-                    for k, v in adversarial_confidences.items()
-                    if float(k.replace("%", "")) <= 1.0
-                },
-                "confidence": 0.5,  # Overall neutral confidence
-                "prediction": "neutral"
-            }
+        # Check for essential models
+        has_price_target_models = bool(self.price_target_models)
+        has_adversarial_models = bool(self.adversarial_models)
+        has_any_models = (
+            has_price_target_models or 
+            has_adversarial_models or 
+            bool(self.ensemble_models) or
+            bool(self.regime_models) or
+            bool(self.multi_timeframe_models)
+        )
+        
+        if not has_any_models:
+            self.logger.warning("System not ready to trade - no models loaded")
+            return False
             
-            self.logger.info(
-                f"Generated fallback predictions for {len(price_target_confidences)} price targets"
-            )
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Error generating fallback predictions: {e}")
-            # Return minimal fallback if even fallback generation fails
-            return {
-                "price_target_confidences": {"0.5%": 0.5, "1.0%": 0.3, "1.5%": 0.2},
-                "adversarial_confidences": {"0.5%": 0.3, "1.0%": 0.4, "1.5%": 0.5},
-                "directional_analysis": {
-                    "primary_direction": "NEUTRAL",
-                    "direction_confidence": 0.5
-                },
-                "ensemble_predictions": {},
-                "timestamp": datetime.now().isoformat(),
-                "current_price": current_price,
-                "model_status": "minimal_fallback",
-                "confidence": 0.5,
-                "prediction": "neutral"
-            }
+        self.logger.info(
+            f"System ready to trade - Models available: "
+            f"price_targets={len(self.price_target_models)}, "
+            f"adversarial={len(self.adversarial_models)}, "
+            f"ensemble={len(self.ensemble_models)}"
+        )
+        return True
 
     def get_enhanced_training_model_info(self) -> dict[str, Any]:
         """Get information about models from enhanced training manager."""

@@ -451,7 +451,20 @@ class Analyst:
                         )
                     )
 
-            # 4. Make trading decision using dual model system
+            # 4. Check if system is ready to trade
+            if self.ml_confidence_predictor and hasattr(self.ml_confidence_predictor, 'is_ready_to_trade'):
+                if not self.ml_confidence_predictor.is_ready_to_trade():
+                    self.logger.error("System not ready to trade - no trained models available")
+                    self.analysis_results = {
+                        "timestamp": datetime.now().isoformat(),
+                        "error": "SYSTEM_NOT_READY",
+                        "message": "Cannot trade without trained models",
+                        "analysis_status": "error",
+                        "can_trade": False
+                    }
+                    return False
+            
+            # 5. Make trading decision using dual model system
             trading_decision = {}
             if self.dual_model_system:
                 self.logger.info("Making trading decision with dual model system...")
@@ -461,7 +474,7 @@ class Analyst:
                     current_position,
                 )
 
-            # 5. Get enhanced predictions from supervisor if available
+            # 6. Get enhanced predictions from supervisor if available
             enhanced_predictions = {}
             if self.enable_enhanced_predictions and hasattr(self, 'supervisor'):
                 # Extract required parameters from analysis_input
@@ -482,7 +495,7 @@ class Analyst:
                     features_df, regime_info, symbol, exchange, timeframe
                 )
 
-            # 6. Get ML predictions for price targets if not already included
+            # 7. Get ML predictions for price targets if not already included
             ml_predictions = {}
             if self.ml_confidence_predictor and not trading_decision.get("price_target_confidences"):
                 ml_predictions = await self._get_ml_predictions(
@@ -490,7 +503,7 @@ class Analyst:
                     current_price,
                 )
             
-            # 7. Compile comprehensive analysis results
+            # 8. Compile comprehensive analysis results
             self.analysis_results = {
                 "timestamp": datetime.now().isoformat(),
                 "market_health": market_health_results,
@@ -657,11 +670,14 @@ class Analyst:
                 features_df,
                 current_price,
             )
-        # Fallback predictions
+        # No fallback predictions - too risky without models
         return {
-            "confidence": 0.5,
-            "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
-            "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
+            "error": "NO_MODELS_AVAILABLE",
+            "message": "Cannot provide predictions without ML models",
+            "confidence": 0.0,
+            "increase_probabilities": {},
+            "decrease_probabilities": {},
+            "can_trade": False
         }
 
     @handles_errors(

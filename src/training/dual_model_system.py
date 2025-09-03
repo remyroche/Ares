@@ -751,6 +751,16 @@ class DualModelSystem:
                 )
 
                 if analyst_predictions:
+                    # Check if it's an error response
+                    if analyst_predictions.get("error") == "NO_MODELS_AVAILABLE":
+                        self.logger.error("Cannot make trading decisions without trained models")
+                        return {
+                            "should_trade": False,
+                            "direction": "HOLD",
+                            "strategy": "ERROR_NO_MODELS",
+                            "confidence": 0.0,
+                            "reason": "No trained models available - trading disabled for safety"
+                        }
                     return self._analyze_analyst_confidence(
                         analyst_predictions,
                         current_price,
@@ -764,6 +774,16 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
+                    # Check if it's an error response
+                    if confidence_predictions.get("error") == "NO_MODELS_AVAILABLE":
+                        self.logger.error("Cannot make trading decisions without trained models")
+                        return {
+                            "should_trade": False,
+                            "direction": "HOLD",
+                            "strategy": "ERROR_NO_MODELS",
+                            "confidence": 0.0,
+                            "reason": "No trained models available - trading disabled for safety"
+                        }
                     return self._analyze_analyst_confidence(
                         confidence_predictions,
                         current_price,

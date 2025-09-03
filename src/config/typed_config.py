@@ -1,8 +1,8 @@
 # src/config/typed_config.py
 
-"""
+""""
 Type-safe configuration management with runtime validation.
-"""
+""""
 
 from pathlib import Path
 from typing import Any
@@ -26,9 +26,9 @@ from src.custom_types import (
 logger = logging.getLogger(__name__)
 
 class TypedConfigManager:
-    """
+    """"
     Type-safe configuration manager with runtime validation.
-    """
+    """"
 
     def __init__(self, config_path: str | None = None):
         self._config_path = config_path
@@ -36,7 +36,7 @@ class TypedConfigManager:
         self._validator = TypeValidator()
 
     def load_config(self, config_path: str | None = None) -> ConfigDict:
-        """
+        """"
         Load and validate configuration from file.
 
         Args:
@@ -49,7 +49,7 @@ class TypedConfigManager:
             RuntimeTypeError: If configuration validation fails
             FileNotFoundError: If configuration file not found
             json.JSONDecodeError: If configuration file is invalid JSON
-        """
+        """"
         path = Path(config_path or self._config_path or "config.json")
 
         if not path.exists():
@@ -71,7 +71,7 @@ class TypedConfigManager:
         return validated_config
 
     def _validate_and_transform_config(self, raw_config: dict[str, Any]) -> ConfigDict:
-        """
+        """"
         Validate and transform raw configuration to typed configuration.
 
         Args:
@@ -82,7 +82,7 @@ class TypedConfigManager:
 
         Raises:
             RuntimeTypeError: If validation fails
-        """
+        """"
         try:
             # Validate main configuration structure
             config: ConfigDict = {}
@@ -165,7 +165,7 @@ class TypedConfigManager:
         return self._validator.validate_type(config, TrainingConfig, "training_config")
 
     def get_config(self) -> ConfigDict:
-        """
+        """"
         Get current validated configuration.
 
         Returns:
@@ -173,7 +173,7 @@ class TypedConfigManager:
 
         Raises:
             RuntimeError: If no configuration loaded
-        """
+        """"
         if self._config is None:
             msg = "No configuration loaded. Call load_config() first."
             raise RuntimeError(msg)
@@ -211,7 +211,7 @@ class TypedConfigManager:
         return config.get("system")
 
     def validate_runtime_config(self, config: dict[str, Any]) -> bool:
-        """
+        """"
         Validate configuration at runtime.
 
         Args:
@@ -219,7 +219,7 @@ class TypedConfigManager:
 
         Returns:
             True if valid, False otherwise
-        """
+        """"
         try:
             self._validate_and_transform_config(config)
             return True
@@ -227,13 +227,13 @@ class TypedConfigManager:
             return False
 
     def save_config(self, config: ConfigDict, path: str | None = None) -> None:
-        """
+        """"
         Save configuration to file.
 
         Args:
             config: Configuration to save
             path: Optional path to save to
-        """
+        """"
         save_path = Path(path or self._config_path or "config.json")
 
         # Validate before saving

@@ -1,6 +1,6 @@
 # src/training/performance_comparison.py
 
-"""Performance Comparison Module.
+"""Performance Comparison Module."
 
 This module provides comprehensive performance comparison capabilities for:
 1. Model performance across different optimization strategies
@@ -8,7 +8,7 @@ This module provides comprehensive performance comparison capabilities for:
 3. Ensemble method effectiveness
 4. Cross-validation stability
 5. Hyperparameter optimization impact
-"""
+""""
 
 import json
 from dataclasses import dataclass

@@ -1,4 +1,4 @@
-"""
+""""
 Reusable decorators for validation, vectorization, data hygiene, error normalization, and tracing.
 
 - Type/shape/schema validation: integrates with pydantic.validate_call if available,
@@ -14,7 +14,7 @@ ENHANCED FEATURES:
 - Intelligent caching for expensive operations
 - Performance monitoring and metrics
 - Centralized configuration support
-"""
+""""
 
 from __future__ import annotations
 
@@ -242,7 +242,7 @@ def _log_performance_metrics(metrics: Dict[str, Any], level: str):
     tags=["validation", "type-checking", "enhanced"],
 )
 def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F], F]:
-    """Enhanced decorator factory that prefers pydantic.validate_call if available.
+    """Enhanced decorator factory that prefers pydantic.validate_call if available."
 
     Falls back to beartype or typeguard if pydantic is unavailable.
     If none are available, acts as a no-op decorator.
@@ -251,7 +251,7 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
     - Automatic caching for expensive validation operations
     - Performance monitoring and metrics
     - Integration with enhanced configuration system
-    """
+    """"
 
     def decorator(func: F) -> F:
         # Apply the original validation logic
@@ -283,13 +283,13 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
 def pa_check_input(
     schema: Any, *, arg_name: str | None = None, arg_index: int = 0, strict: bool = True
 ) -> Callable[[F], F]:
-    """Enhanced compatibility wrapper for pandera.check_input.
+    """Enhanced compatibility wrapper for pandera.check_input."
 
     ENHANCED FEATURES:
     - Intelligent caching for schema validation results
     - Performance monitoring for validation operations
     - Better error handling and recovery
-    """
+    """"
 
     def decorator(func: F) -> F:
         if pa is not None and hasattr(pa, "check_input"):
@@ -321,13 +321,13 @@ def pa_check_input(
     tags=["validation", "pandera", "dataframe", "enhanced"],
 )
 def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
-    """Enhanced compatibility wrapper for pandera.check_output.
+    """Enhanced compatibility wrapper for pandera.check_output."
 
     ENHANCED FEATURES:
     - Intelligent caching for schema validation results
     - Performance monitoring for validation operations
     - Better error handling and recovery
-    """
+    """"
 
     def decorator(func: F) -> F:
         if pa is not None and hasattr(pa, "check_output"):
@@ -361,7 +361,7 @@ def pa_check_io(
     df_arg_index: int = 0,
     strict: bool = True,
 ) -> Callable[[F], F]:
-    """Enhanced validate DataFrame input/output with pandera if available.
+    """Enhanced validate DataFrame input/output with pandera if available."
 
     ENHANCED FEATURES:
     - Intelligent caching for validation results
@@ -373,7 +373,7 @@ def pa_check_io(
       argument identified by name or index and the returned DataFrame.
     - If pandera is not installed, performs a lightweight check that the
       argument/return is a pandas DataFrame when schemas are provided.
-    """
+    """"
 
     def decorator(func: F) -> F:
         def _resolve_df(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any | None:
@@ -482,7 +482,7 @@ def enforce_ndarray(
     forbid_lists: bool = False,
     require_vector: bool = False,
 ) -> Callable[[F], F]:
-    """Enhanced coerce the selected argument to numpy.ndarray and optionally forbid lists.
+    """Enhanced coerce the selected argument to numpy.ndarray and optionally forbid lists."
 
     ENHANCED FEATURES:
     - Performance monitoring for vectorization operations
@@ -491,7 +491,7 @@ def enforce_ndarray(
 
     - forbid_lists=True raises if a list is provided
     - require_vector=True requires at least 1-D input (no pure scalars)
-    """
+    """"
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
@@ -547,7 +547,7 @@ def enforce_ndarray(
     tags=["vectorization", "numpy", "enhanced"],
 )
 def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
-    """Enhanced wrap a scalar function so that it transparently handles numpy arrays.
+    """Enhanced wrap a scalar function so that it transparently handles numpy arrays."
 
     ENHANCED FEATURES:
     - Intelligent caching for vectorization results
@@ -557,7 +557,7 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
     - If the first positional argument is an ndarray with ndim>=1, applies
       numpy.vectorize to broadcast the scalar logic across elements.
     - Otherwise, calls the function directly.
-    """
+    """"
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
@@ -595,7 +595,7 @@ def guard_array_nan_inf(
     coerce_value: float = 0.0,
     arg_indices: Iterable[int] = (0,),
 ) -> Callable[[F], F]:
-    """Enhanced pre-check numpy arrays or pandas objects for NaN/Inf before executing.
+    """Enhanced pre-check numpy arrays or pandas objects for NaN/Inf before executing."
 
     ENHANCED FEATURES:
     - Intelligent caching for validation results
@@ -607,7 +607,7 @@ def guard_array_nan_inf(
       - "raise": raise DataValidationError on detection
       - "warn": log a warning and continue
       - "coerce": replace NaN/Inf with coerce_value before calling func
-    """
+    """"
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
@@ -708,7 +708,7 @@ def guard_dataframe_nulls(
     fill_value: float | int | str | None = 0,
     arg_index: int = 0,
 ) -> Callable[[F], F]:
-    """Enhanced check a pandas DataFrame argument for nulls/NaN/Inf.
+    """Enhanced check a pandas DataFrame argument for nulls/NaN/Inf."
 
     ENHANCED FEATURES:
     - Intelligent caching for validation results
@@ -718,7 +718,7 @@ def guard_dataframe_nulls(
 
     arg_index selects which positional argument is the DataFrame (0 for functions where df is first, 1 for instance methods).
     If columns is provided, restrict checks to those columns.
-    """
+    """"
 
     def decorator(func: F) -> F:
         def _check(df: pd.DataFrame) -> pd.DataFrame:
@@ -833,6 +833,8 @@ except Exception:  # pragma: no cover
 
 try:  # aiohttp
     import aiohttp  # type: ignore
+except Exception as e:
+    pass  # TODO: Handle exception properly
 import copy
 
     _EXCEPTION_MAP[aiohttp.ClientError] = ExternalServiceError  # type: ignore
@@ -852,7 +854,7 @@ def normalize_errors(
     default_error: type[DomainError] = DomainError,
     reraise: bool = False,
 ) -> Callable[[F], F]:
-    """Enhanced normalize heterogeneous exceptions into domain-specific errors.
+    """Enhanced normalize heterogeneous exceptions into domain-specific errors."
 
     ENHANCED FEATURES:
     - Intelligent error recovery strategies
@@ -864,7 +866,7 @@ def normalize_errors(
     - if reraise=True, re-raises the normalized DomainError after logging
     - otherwise returns None and logs; for functions that must return a value,
       consider using together with default returns in your wrapper logic.
-    """
+    """"
 
     exception_map = dict(_EXCEPTION_MAP)
     if map_exceptions:
@@ -941,10 +943,10 @@ _SENSITIVE_KEYS = {
 
 
 def _sanitize(value: Any) -> Any:
-    """Best-effort PII scrubbing for dict-like inputs and sequences.
+    """Best-effort PII scrubbing for dict-like inputs and sequences."
 
     Masks values of known sensitive keys. Keeps structure to aid debugging.
-    """
+    """"
     try:
         if isinstance(value, dict):
             redacted: dict[str, Any] = {}
@@ -973,7 +975,7 @@ def with_tracing_span(
     log_args: bool = False,
     log_result_len_only: bool = True,
 ) -> Callable[[F], F]:
-    """Enhanced add correlation-aware entry/exit logs around a function call.
+    """Enhanced add correlation-aware entry/exit logs around a function call."
 
     ENHANCED FEATURES:
     - Performance monitoring and metrics collection
@@ -984,11 +986,11 @@ def with_tracing_span(
     - Ensures a correlation ID is present
     - Optionally logs sanitized args/kwargs (avoid for heavy data)
     - Logs result size instead of full content by default
-    """
+    """"
 
     def decorator(func: F) -> F:
         resolved_span = span_name or func.__name__
-        # Base fallback logger on the wrapped function's module
+        # Base fallback logger on the wrapped function's module'
         module_logger = logging.getLogger(func.__module__)
 
         @functools.wraps(func)

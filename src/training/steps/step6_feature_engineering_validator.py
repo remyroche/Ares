@@ -28,7 +28,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
     async def validate_step6_feature_engineering(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:
-        """Validate Step 6: Feature Engineering.
+        """Validate Step 6: Feature Engineering."
 
         Args:
             symbol: Trading symbol
@@ -38,7 +38,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """
+        """"
         self.logger.info("🔍 Starting Step 6: Feature Engineering validation")
 
         try:
@@ -56,7 +56,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                 self.logger.warning("⚠️ No regime-specific feature directories found")
                 return False
 
-            # Validate each regime's features
+            # Validate each regime's features'
             for regime_dir in regime_dirs:
                 regime_name = regime_dir.name
                 self.logger.info(f"📊 Validating features for regime: {regime_name}")
@@ -96,7 +96,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         try:
             self.logger.info(f"📁 Validating feature file: {feature_file.name}")
 
-            # Use BaseValidator's file validation
+            # Use BaseValidator's file validation'
             file_exists, file_metrics = self.validate_file_exists(str(feature_file), "feature file")
             if not file_exists:
                 return False
@@ -104,7 +104,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             # Load and validate the feature file
             df = pd.read_parquet(feature_file)
 
-            # Use BaseValidator's DataFrame validation
+            # Use BaseValidator's DataFrame validation'
             df_valid, df_metrics = self.validate_dataframe_quality(
                 df=df,
                 min_rows=100,
@@ -214,7 +214,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             validation_result["details"]["regime_directories"] = [d.name for d in regime_dirs]
             validation_result["details"]["total_regimes"] = len(regime_dirs)
 
-            # Validate each regime's features
+            # Validate each regime's features'
             total_feature_files = 0
             for regime_dir in regime_dirs:
                 feature_files = list(regime_dir.glob("*.parquet"))
@@ -225,7 +225,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                     sample_file = feature_files[0]
                     try:
                         df = pd.read_parquet(sample_file)
-                        # Use BaseValidator's DataFrame validation
+                        # Use BaseValidator's DataFrame validation'
                         df_valid, df_metrics = self.validate_dataframe_quality(
                             df, min_rows=100, check_data_types=True
                         )
@@ -248,7 +248,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run validation for Step 6: Feature Engineering.
+    """Run validation for Step 6: Feature Engineering."
 
     Args:
         training_input: Training input parameters
@@ -256,7 +256,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """
+    """"
     logger.info("🔍 Validating Step 6: Feature Engineering")
     
     try:

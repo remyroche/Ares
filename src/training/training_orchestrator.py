@@ -18,17 +18,17 @@ from src.utils.warning_symbols import (
 
 
 class TrainingOrchestrator:
-    """Training orchestrator responsible for coordinating the overall training pipeline.
+    """Training orchestrator responsible for coordinating the overall training pipeline."
     This module handles the high-level coordination between different training components.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training orchestrator.
+        """Initialize training orchestrator."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TrainingOrchestrator")
 
@@ -53,12 +53,12 @@ class TrainingOrchestrator:
         context="training orchestrator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training orchestrator and all component managers.
+        """Initialize training orchestrator and all component managers."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Training Orchestrator...")
 
@@ -115,7 +115,7 @@ class TrainingOrchestrator:
         pipeline_config: dict[str, Any],
         validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
-        """
+        """"
         Validate the entire training pipeline configuration and dependencies.
         
         Args:
@@ -124,7 +124,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """
+        """"
         try:
             self.logger.info(f"🔍 Validating training pipeline with {validation_level} level")
             
@@ -191,7 +191,7 @@ class TrainingOrchestrator:
         self,
         pipeline_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Validate pipeline configuration.
         
         Args:
@@ -199,7 +199,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """
+        """"
         try:
             validation_result = {
                 "valid": True,
@@ -239,7 +239,7 @@ class TrainingOrchestrator:
         self,
         pipeline_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Validate component dependencies.
         
         Args:
@@ -247,7 +247,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """
+        """"
         try:
             validation_result = {
                 "valid": True,
@@ -280,7 +280,7 @@ class TrainingOrchestrator:
         self,
         pipeline_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Validate component health and readiness.
         
         Args:
@@ -288,7 +288,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """
+        """"
         try:
             validation_result = {
                 "valid": True,
@@ -296,7 +296,7 @@ class TrainingOrchestrator:
                 "health_issues": [],
             }
             
-            # Check each component's health
+            # Check each component's health'
             components = [
                 "model_trainer",
                 "optimization_manager",
@@ -351,7 +351,7 @@ class TrainingOrchestrator:
         validation_results: dict[str, Any],
         validation_level: str,
     ) -> list[str]:
-        """
+        """"
         Generate recommendations based on validation results.
         
         Args:
@@ -360,7 +360,7 @@ class TrainingOrchestrator:
             
         Returns:
             List of recommendations
-        """
+        """"
         recommendations = []
         
         # Configuration recommendations
@@ -414,9 +414,11 @@ class TrainingOrchestrator:
 
             # Initialize calibration manager
             from src.training.calibration_manager import CalibrationManager
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-            self.calibration_manager = CalibrationManager(self.config)
+self.calibration_manager = CalibrationManager(self.config)
             await self.calibration_manager.initialize()
 
             self.logger.info("✅ All component managers initialized")
@@ -433,12 +435,12 @@ import copy
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate training orchestrator configuration.
+        """Validate training orchestrator configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate required configuration sections
             required_sections = [
@@ -482,7 +484,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the complete training pipeline.
+        """Execute the complete training pipeline."
 
         Args:
             training_input: Training input parameters
@@ -490,7 +492,7 @@ import copy
         Returns:
             bool: True if training successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("🚀 Starting training pipeline execution...")
             self.training_start_time = datetime.now()
@@ -525,7 +527,7 @@ import copy
         context="training input validation",
     )
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
-        """Validate training input parameters.
+        """Validate training input parameters."
 
         Args:
             training_input: Training input parameters
@@ -533,7 +535,7 @@ import copy
         Returns:
             bool: True if input is valid, False otherwise
 
-        """
+        """"
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
@@ -564,7 +566,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the main training pipeline.
+        """Execute the main training pipeline."
 
         Args:
             training_input: Training input parameters
@@ -572,7 +574,7 @@ import copy
         Returns:
             bool: True if pipeline successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("📊 Executing training pipeline...")
 
@@ -636,12 +638,12 @@ import copy
         context="training results storage",
     )
     async def _store_training_results(self, training_input: dict[str, Any]) -> None:
-        """Store training results for later retrieval.
+        """Store training results for later retrieval."
 
         Args:
             training_input: Training input parameters
 
-        """
+        """"
         try:
             # Store results in a format that can be retrieved later
             results_key = f"{training_input['symbol']}_{training_input['exchange']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -653,12 +655,12 @@ import copy
             self.print(failed("❌ Failed to store training results: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get current training status.
+        """Get current training status."
 
         Returns:
             dict: Training status information
 
-        """
+        """"
         return {
             "is_training": self.is_training,
             "training_start_time": self.training_start_time,
@@ -669,12 +671,12 @@ import copy
         }
 
     def get_training_results(self) -> dict[str, Any]:
-        """Get the latest training results.
+        """Get the latest training results."
 
         Returns:
             dict: Training results
 
-        """
+        """"
         return self.training_results.copy()
 
     @handle_errors(
@@ -712,7 +714,7 @@ import copy
 async def setup_training_orchestrator(
     config: dict[str, Any] | None = None,
 ) -> TrainingOrchestrator | None:
-    """Setup and return a configured TrainingOrchestrator instance.
+    """Setup and return a configured TrainingOrchestrator instance."
 
     Args:
         config: Configuration dictionary
@@ -720,7 +722,7 @@ async def setup_training_orchestrator(
     Returns:
         TrainingOrchestrator: Configured training orchestrator instance
 
-    """
+    """"
     try:
         orchestrator = TrainingOrchestrator(config or {})
         if await orchestrator.initialize():

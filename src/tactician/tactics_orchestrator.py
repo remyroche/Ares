@@ -1,8 +1,8 @@
 # src/tactician/tactics_orchestrator.py
 
-"""
+""""
 Tactics Orchestrator for coordinating all tactical components.
-"""
+""""
 
 import asyncio
 from datetime import datetime
@@ -44,18 +44,18 @@ import copy
 )
 
 class DecisionPolicy:
-    """
+    """"
     Aggregates sizing, leverage, SR breakout, and ML signals into a unified TradeDecision.
     Provides audit-friendly metadata and metrics.
-    """
+    """"
 
     def __init__(self, config: Dict[str, Any]):
-        """
+        """"
         Initialize the decision policy.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config
         self.logger = system_logger.getChild("DecisionPolicy")
 
@@ -76,12 +76,12 @@ class DecisionPolicy:
         context="decision policy initialization"
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize the decision policy.
 
         Returns:
             bool: True if initialization successful
-        """
+        """"
         try:
             self.logger.info("Initializing Decision Policy...")
 
@@ -101,13 +101,13 @@ class DecisionPolicy:
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """
+        """"
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
         
         Args:
             step17_results: Step17 optimization results
-        """
+        """"
         try:
             # Update decision policy configuration
             if "decision_policy" in step17_results:
@@ -156,12 +156,12 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Component initialization failed: {e}"))
 
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate decision policy configuration.
 
         Returns:
             bool: True if configuration is valid
-        """
+        """"
         try:
             if not 0 <= self.confidence_threshold <= 1:
                 self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
@@ -189,7 +189,7 @@ class DecisionPolicy:
         tactician_confidence: float,
         position_data: Optional[Dict[str, Any]] = None
     ) -> Optional[TradeDecision]:
-        """
+        """"
         Generate a trade decision based on all available signals.
 
         Args:
@@ -200,7 +200,7 @@ class DecisionPolicy:
 
         Returns:
             TradeDecision: Generated trade decision or None if no decision
-        """
+        """"
         try:
             self.logger.info("Generating trade decision...")
 
@@ -234,7 +234,7 @@ class DecisionPolicy:
         analyst_confidence: float,
         tactician_confidence: float
     ) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Get position sizing decision.
 
         Args:
@@ -243,7 +243,7 @@ class DecisionPolicy:
 
         Returns:
             Dict: Sizing decision or None
-        """
+        """"
         try:
             if not self.position_sizer:
                 return None
@@ -273,7 +273,7 @@ class DecisionPolicy:
         analyst_confidence: float,
         tactician_confidence: float
     ) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Get leverage decision.
 
         Args:
@@ -282,7 +282,7 @@ class DecisionPolicy:
 
         Returns:
             Dict: Leverage decision or None
-        """
+        """"
         try:
             if not self.leverage_sizer:
                 return None
@@ -308,7 +308,7 @@ class DecisionPolicy:
             return None
 
     async def _get_sr_decision(self, market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Get SR breakout decision using centralized logic.
 
         Args:
@@ -316,7 +316,7 @@ class DecisionPolicy:
 
         Returns:
             Dict: SR decision or None
-        """
+        """"
         try:
             if not self.sr_predictor:
                 return None
@@ -346,7 +346,7 @@ class DecisionPolicy:
         analyst_confidence: float,
         tactician_confidence: float
     ) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Get ML tactics decision.
 
         Args:
@@ -356,7 +356,7 @@ class DecisionPolicy:
 
         Returns:
             Dict: ML decision or None
-        """
+        """"
         try:
             if not self.ml_tactics:
                 return None
@@ -383,7 +383,7 @@ class DecisionPolicy:
         analyst_confidence: float,
         tactician_confidence: float
     ) -> Optional[TradeDecision]:
-        """
+        """"
         Aggregate all component decisions into a unified trade decision.
 
         Args:
@@ -396,7 +396,7 @@ class DecisionPolicy:
 
         Returns:
             TradeDecision: Aggregated trade decision or None
-        """
+        """"
         try:
             # Calculate overall confidence
             combined_confidence = (analyst_confidence + tactician_confidence) / 2
@@ -443,7 +443,7 @@ class DecisionPolicy:
         sr_decision: Optional[Dict[str, Any]],
         ml_decision: Optional[Dict[str, Any]]
     ) -> Optional[str]:
-        """
+        """"
         Determine the final action based on all decisions.
 
         Args:
@@ -454,7 +454,7 @@ class DecisionPolicy:
 
         Returns:
             str: Action to take or None
-        """
+        """"
         try:
             # Check if we have enough information
             if not sizing_decision or not leverage_decision:
@@ -486,9 +486,9 @@ class DecisionPolicy:
             return None
 
     async def cleanup(self) -> None:
-        """
+        """"
         Cleanup resources.
-        """
+        """"
         try:
             self.logger.info("Cleaning up Decision Policy...")
 
@@ -511,17 +511,17 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Decision Policy cleanup failed: {e}"))
 
 class TacticsOrchestrator:
-    """
+    """"
     Main tactics orchestrator that coordinates all tactical components.
-    """
+    """"
 
     def __init__(self, config: Dict[str, Any]):
-        """
+        """"
         Initialize the tactics orchestrator.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config = config
         self.logger = system_logger.getChild("TacticsOrchestrator")
 
@@ -548,12 +548,12 @@ class TacticsOrchestrator:
         context="tactics orchestrator initialization"
     )
     async def initialize(self) -> bool:
-        """
+        """"
         Initialize the tactics orchestrator.
 
         Returns:
             bool: True if initialization successful
-        """
+        """"
         try:
             self.logger.info("Initializing Tactics Orchestrator...")
 
@@ -590,13 +590,13 @@ class TacticsOrchestrator:
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """
+        """"
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
         
         Args:
             step17_results: Step17 optimization results
-        """
+        """"
         try:
             self.logger.info("🔄 Refreshing tactics orchestrator configuration from step17 results...")
             
@@ -627,12 +627,12 @@ class TacticsOrchestrator:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate tactics orchestrator configuration.
 
         Returns:
             bool: True if configuration is valid
-        """
+        """"
         try:
             if self.decision_interval <= 0:
                 self.logger.error(invalid("Decision interval must be positive"))
@@ -650,12 +650,12 @@ class TacticsOrchestrator:
         context="tactics orchestration start"
     )
     async def start_orchestration(self) -> bool:
-        """
+        """"
         Start tactics orchestration.
 
         Returns:
             bool: True if orchestration started successfully
-        """
+        """"
         try:
             if self.is_running:
                 self.logger.warning(warning("Tactics orchestration already active"))
@@ -677,12 +677,12 @@ class TacticsOrchestrator:
         context="tactics orchestration stop"
     )
     async def stop_orchestration(self) -> bool:
-        """
+        """"
         Stop tactics orchestration.
 
         Returns:
             bool: True if orchestration stopped successfully
-        """
+        """"
         try:
             if not self.is_running:
                 self.logger.warning(warning("Tactics orchestration not active"))
@@ -705,9 +705,9 @@ class TacticsOrchestrator:
             return False
 
     async def _orchestration_loop(self) -> None:
-        """
+        """"
         Main orchestration loop that runs continuously.
-        """
+        """"
         try:
             while self.is_running:
                 # Monitor positions
@@ -728,9 +728,9 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Error in orchestration loop: {e}"))
 
     async def _monitor_positions(self) -> None:
-        """
+        """"
         Monitor all active positions.
-        """
+        """"
         try:
             if not self.position_monitor:
                 return
@@ -747,9 +747,9 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Error monitoring positions: {e}"))
 
     async def _generate_decisions(self) -> None:
-        """
+        """"
         Generate new trade decisions using multi-output predictions.
-        """
+        """"
         try:
             # Get market data and analyst predictions
             market_data = await self._get_market_data()
@@ -786,12 +786,12 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Error generating decisions: {e}"))
 
     async def _get_market_data(self) -> Optional[pd.DataFrame]:
-        """
+        """"
         Get current market data.
         
         Returns:
             pd.DataFrame: Market data or None
-        """
+        """"
         try:
             # This would get actual market data
             # For now, return None to indicate no data available
@@ -802,12 +802,12 @@ class TacticsOrchestrator:
             return None
 
     async def _get_analyst_predictions(self) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Get Analyst predictions.
         
         Returns:
             Dict: Analyst predictions or None
-        """
+        """"
         try:
             # This would get actual Analyst predictions
             # For now, return None to indicate no predictions available
@@ -822,7 +822,7 @@ class TacticsOrchestrator:
         market_data: pd.DataFrame,
         analyst_predictions: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """
+        """"
         Generate Tactician multi-output predictions.
         
         Args:
@@ -831,7 +831,7 @@ class TacticsOrchestrator:
             
         Returns:
             Dict: Tactician predictions or None
-        """
+        """"
         try:
             if not self.ml_tactics:
                 return None
@@ -858,7 +858,7 @@ class TacticsOrchestrator:
             return None
 
     def _extract_analyst_barriers(self, analyst_predictions: Dict[str, Any]) -> Dict[str, float]:
-        """
+        """"
         Extract barrier values from Analyst predictions.
         
         Args:
@@ -866,7 +866,7 @@ class TacticsOrchestrator:
             
         Returns:
             Dict: Barrier values
-        """
+        """"
         try:
             # Extract barriers from Analyst predictions
             # This is a simplified extraction - adjust based on actual Analyst output structure
@@ -887,7 +887,7 @@ class TacticsOrchestrator:
         analyst_predictions: Dict[str, Any],
         tactician_predictions: Dict[str, Any]
     ) -> Optional[TradeDecision]:
-        """
+        """"
         Create trade decision based on predictions.
         
         Args:
@@ -897,7 +897,7 @@ class TacticsOrchestrator:
             
         Returns:
             TradeDecision: Trade decision or None
-        """
+        """"
         try:
             # Get combined confidence
             combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
@@ -934,7 +934,7 @@ class TacticsOrchestrator:
             return None
 
     def _determine_action_from_predictions(self, tactician_predictions: Dict[str, Any]) -> Optional[str]:
-        """
+        """"
         Determine action from Tactician predictions.
         
         Args:
@@ -942,7 +942,7 @@ class TacticsOrchestrator:
             
         Returns:
             str: Action or None
-        """
+        """"
         try:
             # Check direction from 50% barrier prediction (more reliable)
             fifty_percent_pred = tactician_predictions.get("fifty_percent", {})
@@ -960,7 +960,7 @@ class TacticsOrchestrator:
             return None
 
     async def _calculate_position_size(self, tactician_predictions: Dict[str, Any]) -> float:
-        """
+        """"
         Calculate position size based on Tactician predictions.
         
         Args:
@@ -968,7 +968,7 @@ class TacticsOrchestrator:
             
         Returns:
             float: Position size
-        """
+        """"
         try:
             if not self.position_sizer:
                 return 0.0
@@ -990,7 +990,7 @@ class TacticsOrchestrator:
             return 0.0
 
     async def _calculate_leverage(self, tactician_predictions: Dict[str, Any]) -> float:
-        """
+        """"
         Calculate leverage based on Tactician predictions.
         
         Args:
@@ -998,7 +998,7 @@ class TacticsOrchestrator:
             
         Returns:
             float: Leverage
-        """
+        """"
         try:
             if not self.leverage_sizer:
                 return 1.0
@@ -1020,12 +1020,12 @@ class TacticsOrchestrator:
             return 1.0
 
     async def _check_exit_signals(self, tactician_predictions: Dict[str, Any]) -> None:
-        """
+        """"
         Check for exit signals on existing positions.
         
         Args:
             tactician_predictions: Tactician predictions
-        """
+        """"
         try:
             if not self.ml_tactics:
                 return
@@ -1048,9 +1048,9 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Error checking exit signals: {e}"))
 
     async def _execute_decisions(self) -> None:
-        """
+        """"
         Execute pending trade decisions.
-        """
+        """"
         try:
             # This would typically involve executing orders based on decisions
             # For now, this is a placeholder
@@ -1060,12 +1060,12 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Error executing decisions: {e}"))
 
     async def _close_position(self, assessment: PositionAssessment) -> None:
-        """
+        """"
         Close a position based on assessment.
 
         Args:
             assessment: Position assessment
-        """
+        """"
         try:
             if not self.position_closer or not self.order_manager:
                 return
@@ -1090,16 +1090,16 @@ class TacticsOrchestrator:
             self.logger.error(failed(f"❌ Error closing position: {e}"))
 
     def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
-        """
+        """"
         Get all active positions.
 
         Returns:
             Dict[str, Dict[str, Any]]: Active positions
-        """
+        """"
         return self.active_positions.copy()
 
     def get_decision_history(self, limit: Optional[int] = None) -> List[TradeDecision]:
-        """
+        """"
         Get decision history.
 
         Args:
@@ -1107,7 +1107,7 @@ class TacticsOrchestrator:
 
         Returns:
             List[TradeDecision]: Decision history
-        """
+        """"
         try:
             if limit:
                 return self.decision_history[-limit:]
@@ -1118,9 +1118,9 @@ class TacticsOrchestrator:
             return []
 
     async def cleanup(self) -> None:
-        """
+        """"
         Cleanup resources.
-        """
+        """"
         try:
             self.logger.info("Cleaning up Tactics Orchestrator...")
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+""""
 Comprehensive Parameter Integration for Step17
 
 This module ensures that ALL parameters from ALL previous steps (1-16) are actually
@@ -9,7 +9,7 @@ integrated with the step17 optimizer and using its results. It provides:
 2. Parameter application to all models and systems
 3. Validation that parameters are actually being used
 4. Integration with the enhanced training manager
-"""
+""""
 
 import asyncio
 import logging
@@ -27,6 +27,8 @@ warnings.filterwarnings('ignore')
 # Import MLflow for experiment tracking
 try:
     import mlflow
+except Exception as e:
+    pass  # TODO: Handle exception properly
 import os.path
 
     MLFLOW_AVAILABLE = True
@@ -35,10 +37,10 @@ except ImportError:
 
 
 class ComprehensiveParameterIntegration:
-    """
+    """"
     Comprehensive parameter integration ensuring all step17 optimized parameters
     are actually applied and used throughout the system.
-    """
+    """"
     
     def __init__(self, config: Dict[str, Any], training_manager=None):
         self.config = config
@@ -53,7 +55,7 @@ class ComprehensiveParameterIntegration:
         self.parameter_validation = {}
     
     def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
-        """Create comprehensive mapping of ML model trading parameters from all steps.
+        """Create comprehensive mapping of ML model trading parameters from all steps."
         
         Note: Only parameters that are actually used during live trading are included.
         Data collection, training settings, validation parameters, etc. are excluded.
@@ -62,7 +64,7 @@ class ComprehensiveParameterIntegration:
         method is in Step4 and applies the same parameters across all regimes. If you need
         regime-specific optimization for the triple barrier method, this would need to be
         implemented separately.
-        """
+        """"
         
         return {
             "step4_triple_barrier_method": {

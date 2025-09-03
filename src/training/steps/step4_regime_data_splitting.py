@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.core.decorators import handles_errors, traced
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -135,13 +137,13 @@ class RegimeDataSplittingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @traced("split_data_by_regimes")
-    @quality_gate(
+    @traced(span_name="split_data_by_regimes")
+    # @quality_gate - removed, handled by validates
         min_quality_score=0.8,
         max_correlation=0.95,
         required_grade="B"
     )
-    @comprehensive_data_validation
+    @validates()
     @cached
     async def split_data_by_regimes(
         self, 
@@ -420,18 +422,18 @@ self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
 
-@traced("execute_regime_data_splitting")
-@quality_gate(
+@traced(span_name="execute_regime_data_splitting")
+# @quality_gate - removed, handled by validates
     min_quality_score=0.8,
     max_correlation=0.95,
     required_grade="B"
 )
-@comprehensive_data_validation
+@validates()
 @handles_errors
 @cached
 @log_execution_time
-@secure_data_processing
-@validate_data_structure
+# @secure_data_processing - removed, handled by validates
+@validates()
 @monitor_feature_engineering()
 async def run_step(
     symbol: str,

@@ -536,7 +536,7 @@ class DataQualityDashboard:
 </html>
         """
 
-    @with_tracing_span("get_system_status")
+    @traced(span_name="get_system_status")
     async def _get_system_status(self) -> dict[str, Any]:
         """Get overall system status."""
         try:
@@ -572,7 +572,7 @@ class DataQualityDashboard:
                 "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
 
-    @with_tracing_span("get_quality_metrics")
+    @traced(span_name="get_quality_metrics")
     async def _get_quality_metrics(self) -> dict[str, Any]:
         """Get current quality metrics."""
         try:
@@ -598,7 +598,7 @@ class DataQualityDashboard:
                 "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
 
-    @with_tracing_span("get_alerts")
+    @traced(span_name="get_alerts")
     async def _get_alerts(
         self,
         symbol: str | None = None,
@@ -624,7 +624,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error getting alerts: {e}")
             return []
 
-    @with_tracing_span("acknowledge_alert")
+    @traced(span_name="acknowledge_alert")
     async def _acknowledge_alert(self, alert_id: int) -> dict[str, Any]:
         """Acknowledge an alert."""
         try:
@@ -641,7 +641,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error acknowledging alert: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @with_tracing_span("resolve_alert")
+    @traced(span_name="resolve_alert")
     async def _resolve_alert(self, alert_id: int) -> dict[str, Any]:
         """Resolve an alert."""
         try:
@@ -658,7 +658,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error resolving alert: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @with_tracing_span("run_quality_check")
+    @traced(span_name="run_quality_check")
     async def _run_quality_check(self, symbol: str, exchange: str, timeframe: str) -> dict[str, Any]:
         """Run a quality check for specific data."""
         try:
@@ -684,7 +684,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error running quality check: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @with_tracing_span("get_monitoring_status")
+    @traced(span_name="get_monitoring_status")
     async def _get_monitoring_status(self) -> dict[str, Any]:
         """Get monitoring status."""
         try:
@@ -701,7 +701,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error getting monitoring status: {e}")
             return {"active": False, "error": str(e)}
 
-    @with_tracing_span("start_monitoring")
+    @traced(span_name="start_monitoring")
     async def _start_monitoring(self, symbols: list[str], exchanges: list[str], timeframes: list[str]) -> dict[str, Any]:
         """Start monitoring."""
         try:
@@ -718,7 +718,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error starting monitoring: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @with_tracing_span("stop_monitoring")
+    @traced(span_name="stop_monitoring")
     async def _stop_monitoring(self) -> dict[str, Any]:
         """Stop monitoring."""
         try:
@@ -735,7 +735,7 @@ class DataQualityDashboard:
             logger.exception(f"❌ Error stopping monitoring: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @with_tracing_span("handle_websocket")
+    @traced(span_name="handle_websocket")
     async def _handle_websocket(self, websocket: WebSocket) -> None:
         """Handle WebSocket connections for real-time updates."""
         try:
@@ -773,7 +773,7 @@ class DataQualityDashboard:
         except Exception as e:
             logger.exception(f"❌ Error handling WebSocket: {e}")
 
-    @with_tracing_span("start_dashboard")
+    @traced(span_name="start_dashboard")
     async def start_dashboard(self) -> None:
         """Start the dashboard server."""
         if not FASTAPI_AVAILABLE:
@@ -806,7 +806,7 @@ class DataQualityDashboard:
         except Exception as e:
             logger.exception(f"❌ Error starting dashboard: {e}")
 
-    @with_tracing_span("stop_dashboard")
+    @traced(span_name="stop_dashboard")
     async def stop_dashboard(self) -> None:
         """Stop the dashboard server."""
         try:

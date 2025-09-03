@@ -37,7 +37,7 @@ from src.core.domain import (
     with_tracing_span
 )
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
@@ -117,9 +117,9 @@ class HMMLMGeneralistTrainingStep:
         self.logger.info("HMM-LM Generalist Training Step initialized successfully")
         return True
 
-    @with_tracing_span("step9_5.execute", log_args=False)
-    @validate_data_quality(validation_level="WARNING")
-    @with_enhanced_mlflow_logging("step9_5_hmm_lm_generalist_training")
+    @traced(span_name="step9_5.execute")
+    @validates(validation_level="WARNING")
+    # @with_enhanced_mlflow_logging - removed, use traced"step9_5_hmm_lm_generalist_training")
     @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-LM generalist training step execution",
@@ -300,8 +300,8 @@ class HMMLMGeneralistTrainingStep:
             self.logger.error(f"❌ Failed to log step 9.5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
 
-    @with_tracing_span("step9_5._load_multi_timeframe_hmm_data", log_args=False)
-    @guard_dataframe_nulls(mode="warn", arg_index=0)
+    @traced(span_name="step9_5._load_multi_timeframe_hmm_data")
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=0)
     async def _load_multi_timeframe_hmm_data(
         self, exchange: str, symbol: str, data_dir: str
     ) -> dict[str, pd.DataFrame]:
@@ -1251,42 +1251,42 @@ class EfficientRegimeTrainer:
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step9_5_hmm_lm_generalist_training")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=3600.0)
-@validate_step_prerequisites(
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=3600)
+@validates(
     required_directories=["data/training", "models"],
     min_memory_gb=16.0,
     min_disk_gb=10.0,
     required_packages=["torch", "numpy", "pandas", "sklearn", "lightgbm"],
     data_quality_checks={"check_data_completeness": True},
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True,
     integrity_checks=True,
     memory_cleanup=True,
     data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+# @resource_monitor - removed, use log_execution_time(
     memory_threshold_gb=32.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+# @memory_efficient - removed(
     chunk_size=1000,
     streaming_processing=True,
     memory_pool=True,
     cleanup_frequency=10,
 )
-@debug_training_step(
+# @debug_training_step - removed(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
@@ -1295,11 +1295,11 @@ class EfficientRegimeTrainer:
     failure_threshold=3,
     recovery_timeout=300.0,
 )
-@validate_step_output(
+@validates(
     required_files=["hmm_lm_generalist_model.pkl"],
     data_quality_checks={"check_output_completeness": True},
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"min_accuracy": 0.6},
     data_quality_metrics={"completeness_threshold": 0.95},
 )

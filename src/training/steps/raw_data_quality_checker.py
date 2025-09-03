@@ -257,7 +257,7 @@ class RawDataQualityChecker:
 
     @log_validation_progress
     @handle_validation_errors
-    @validate_data_structure
+    @validates()
     @ensure_data_types
     @ensure_datetime_index
     def validate_raw_data(

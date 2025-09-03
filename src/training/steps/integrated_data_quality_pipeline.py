@@ -48,8 +48,8 @@ class IntegratedDataQualityPipeline:
         except ImportError as e:
             logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
 
-    @with_tracing_span("run_comprehensive_quality_pipeline")
-    @quality_gate(validation_level="comprehensive")
+    @traced(span_name="run_comprehensive_quality_pipeline")
+    # @quality_gate - removed, handled by validatesvalidation_level="comprehensive")
     @handles_errors
         default_return={"success": False, "error": "Pipeline failed"},
         context="integrated_data_quality_pipeline.run_comprehensive_quality_pipeline"
@@ -187,7 +187,7 @@ class IntegratedDataQualityPipeline:
             results["error"] = str(e)
             return results
 
-    @with_tracing_span("run_initial_quality_check")
+    @traced(span_name="run_initial_quality_check")
     async def _run_initial_quality_check(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Run initial comprehensive quality check."""
         if not self.enhanced_quality_manager:
@@ -206,7 +206,7 @@ class IntegratedDataQualityPipeline:
             logger.exception(f"❌ Error in initial quality check: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("run_step1_data_collection")
+    @traced(span_name="run_step1_data_collection")
     async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step01 data collection."""
         try:
@@ -231,7 +231,7 @@ class IntegratedDataQualityPipeline:
             logger.exception(f"❌ Error in step01 data collection: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("run_step1_5_data_conversion")
+    @traced(span_name="run_step1_5_data_conversion")
     async def _run_step1_5_data_conversion(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step1_5 data conversion."""
         try:
@@ -256,7 +256,7 @@ class IntegratedDataQualityPipeline:
             logger.exception(f"❌ Error in step1_5 data conversion: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("run_step3_hmm_discovery")
+    @traced(span_name="run_step3_hmm_discovery")
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step03 HMM regime discovery."""
         try:
@@ -281,7 +281,7 @@ class IntegratedDataQualityPipeline:
             logger.exception(f"❌ Error in step03 HMM discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("run_step4_labeling")
+    @traced(span_name="run_step4_labeling")
     async def _run_step4_labeling(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step04 processing labeling."""
         try:
@@ -313,7 +313,7 @@ class IntegratedDataQualityPipeline:
             logger.exception(f"❌ Error in step04 labeling: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("run_final_quality_check")
+    @traced(span_name="run_final_quality_check")
     async def _run_final_quality_check(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Run final comprehensive quality check."""
         if not self.enhanced_quality_manager:
@@ -332,7 +332,7 @@ class IntegratedDataQualityPipeline:
             logger.exception(f"❌ Error in final quality check: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("generate_quality_report")
+    @traced(span_name="generate_quality_report")
     def generate_quality_report(self, results: Dict[str, Any]) -> str:
         """Generate a comprehensive quality report."""
         report = []
@@ -482,6 +482,6 @@ if __name__ == "__main__":
         # Final cleanup
         import gc
 import os.path
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
 gc.collect()

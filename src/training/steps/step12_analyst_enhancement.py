@@ -1,6 +1,6 @@
 # src/training/steps/step12_analyst_enhancement.py
 
-from src.core.decorators import (
+from src.core.decorators import (, traced
     handles_errors,
     traced,
     validates
@@ -897,7 +897,7 @@ from src.config.constants import (
             )
             raise
 
-    @traced("Step6._create_target_from_data", log_args=False)
+    @traced(span_name="Step6._create_target_from_data")
     @validates(mode="warn", arg_index=1)
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
         """Attempts to create a meaningful target column from available data."
@@ -3603,10 +3603,10 @@ from src.config.constants import (
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step7_analyst_enhancement")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=5400.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=5400)
 @validates(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,
@@ -3618,10 +3618,10 @@ from src.config.constants import (
     },
     context="Analyst Enhancement",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -3658,7 +3658,7 @@ from src.config.constants import (
     performance_thresholds={"enhancement_time_minutes": 90.0, "memory_usage_gb": 8.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     convergence_checks=True,

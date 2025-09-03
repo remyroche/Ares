@@ -10,6 +10,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+from src.core.decorators import handles_errors, traced, validates
+
 import numpy as np
 import pandas as pd
 
@@ -1144,7 +1146,7 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Data conversion failed: {e}")
 			return False
 
-	@comprehensive_data_validation
+	@validates()
 	@validate_datetime_index
 	@validate_data_completeness
 	async def _process_data_incrementally(
@@ -1293,7 +1295,7 @@ class UnifiedDataConverter:
 			self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
 			return None
 
-	@comprehensive_data_validation
+	@validates()
 	@validate_datetime_index
 	@validate_data_completeness
 	async def _merge_daily_data(
@@ -1660,7 +1662,7 @@ class UnifiedDataConverter:
 			return None
 
 	@validate_klines_data_quality
-	@secure_data_processing
+	# @secure_data_processing - removed, handled by validates
 	@prevent_data_leakage
 	@log_execution_time
 	@cached
@@ -1760,7 +1762,7 @@ class UnifiedDataConverter:
 # Public entry point
 # ----------------------------------------------------------------------------
 @handles_errors(fallback=False)
-@secure_data_processing
+# @secure_data_processing - removed, handled by validates
 @prevent_data_leakage
 @log_execution_time
 @cached

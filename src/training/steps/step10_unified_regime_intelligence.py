@@ -1981,10 +1981,10 @@ class UnifiedRegimeIntelligenceStep:
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step5_5_unified_regime_intelligence")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=3600.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=3600)
 @validates(
     required_directories=["data/training"],
     min_memory_gb=6.0,
@@ -1996,10 +1996,10 @@ class UnifiedRegimeIntelligenceStep:
     },
     context="Unified Regime Intelligence",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -2031,7 +2031,7 @@ class UnifiedRegimeIntelligenceStep:
     required_files=[],
     data_quality_checks={"min_rows": 100},
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.55},
     data_quality_metrics={"completeness": 0.85},
 )

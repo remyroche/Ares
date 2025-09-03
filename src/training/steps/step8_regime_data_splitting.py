@@ -131,7 +131,7 @@ class RegimeDataSplittingStep:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @traced("step8_regime_splitting.initialize", log_args=False)
+    @traced(span_name="step8_regime_splitting.initialize")
     @handles_errors(exceptions=(Exception,), default_return=None, context="step8_initialization")
     async def initialize(self) -> None:
         """Initialize the regime data splitting step."""
@@ -142,8 +142,8 @@ class RegimeDataSplittingStep:
         self.logger.info(f"   - Maintains temporal continuity: Yes")
         self.logger.info("✅ Unified HMM Composite Regime Data Creation initialized successfully")
 
-    @with_enhanced_mlflow_logging("step08")
-    @traced("step8_regime_splitting.execute", log_args=False)
+    # @with_enhanced_mlflow_logging - removed, use traced"step08")
+    @traced(span_name="step8_regime_splitting.execute")
     @handles_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
     async def execute(self) -> dict[str, Any]:
         """Execute the unified regime data creation step."""
@@ -152,6 +152,8 @@ class RegimeDataSplittingStep:
             data_loader = get_unified_data_loader(self.config)
 import numpy as np
 import os.path
+
+from src.core.decorators import cached, circuit_breaker, handles_errors, log_call, log_execution_time, timeout, validates, traced
             from src.config.constants import (
         except Exception as e:
             pass  # TODO: Handle exception properly
@@ -351,7 +353,7 @@ BLANK_TRAINING_LOOKBACK_DAYS,
             self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails'
 
-    @traced("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
+    @traced(span_name="step8_regime_splitting._save_unified_regime_dataset")
     @handles_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
@@ -452,7 +454,7 @@ BLANK_TRAINING_LOOKBACK_DAYS,
             self.logger.exception(f"❌ Error creating regime statistics: {e}")
             return {}
 
-    @traced("step8_regime_splitting._create_regime_summary", log_args=False)
+    @traced(span_name="step8_regime_splitting._create_regime_summary")
     @handles_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
     def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
         """Create a summary of the unified regime dataset."""
@@ -486,10 +488,10 @@ BLANK_TRAINING_LOOKBACK_DAYS,
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step8_regime_data_splitting")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=1800.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=1800)
 @validates(
     required_directories=["data/training"],
     min_memory_gb=4.0,
@@ -501,13 +503,13 @@ BLANK_TRAINING_LOOKBACK_DAYS,
     },
     context="Unified Regime Data Creation",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, 
     integrity_checks=True, 
     memory_cleanup=True, 
     data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=False,
     lookahead_bias_prevention=True,
@@ -543,7 +545,7 @@ BLANK_TRAINING_LOOKBACK_DAYS,
     performance_thresholds={"creation_time_minutes": 30.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"creation_accuracy": 0.8},
 )

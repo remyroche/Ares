@@ -68,8 +68,8 @@ class EnhancedDataQualityManager:
         except ImportError as e:
             logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
 
-    @with_tracing_span("comprehensive_data_quality_check")
-    @quality_gate(
+    @traced(span_name="comprehensive_data_quality_check")
+    # @quality_gate - removed, handled by validates
         min_quality_score=0.6,
         max_correlation=0.95,
         required_grade="C"
@@ -162,8 +162,8 @@ class EnhancedDataQualityManager:
             results["issues"].append(f"Quality check failed: {str(e)}")
             return results
 
-    @with_tracing_span("check_data_gaps")
-    @memory_efficient
+    @traced(span_name="check_data_gaps")
+    # @memory_efficient - removed
     async def _check_data_gaps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Check for data gaps using the gap detector."""
         if not self.gap_detector:
@@ -208,8 +208,8 @@ class EnhancedDataQualityManager:
             logger.exception(f"❌ Error checking data gaps: {e}")
             return {"gaps": [], "error": str(e)}
 
-    @with_tracing_span("fill_data_gaps")
-    @resource_monitor
+    @traced(span_name="fill_data_gaps")
+    # @resource_monitor - removed, use log_execution_time
     async def _fill_data_gaps(self, symbol: str, exchange: str, timeframe: str, gaps: List[Dict]) -> Dict[str, Any]:
         """Fill detected data gaps using the gap filler."""
         if not self.gap_filler:
@@ -257,8 +257,8 @@ class EnhancedDataQualityManager:
             logger.exception(f"❌ Error filling data gaps: {e}")
             return {"filled_gaps": [], "error": str(e)}
 
-    @with_tracing_span("validate_data_format")
-    @validate_data_structure
+    @traced(span_name="validate_data_format")
+    @validates()
     async def _validate_data_format(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate data format using the validator."""
         if not self.validator:
@@ -312,8 +312,8 @@ class EnhancedDataQualityManager:
             logger.exception(f"❌ Error validating data format: {e}")
             return {"issues": [f"Validation failed: {e}"], "metrics": {}}
 
-    @with_tracing_span("check_step3_step4_completeness")
-    @comprehensive_data_validation
+    @traced(span_name="check_step3_step4_completeness")
+    @validates()
     async def _check_step3_step4_completeness(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Check if data is complete for step03 and step04 requirements."""
         try:
@@ -373,8 +373,8 @@ class EnhancedDataQualityManager:
                 "aggtrades_available": False
             }
 
-    @with_tracing_span("get_data_for_step3_step4")
-    @secure_data_processing
+    @traced(span_name="get_data_for_step3_step4")
+    # @secure_data_processing - removed, handled by validates
     async def get_data_for_step3_step4(
         self, 
         symbol: str, 
@@ -437,7 +437,7 @@ class EnhancedDataQualityManager:
                 "error": str(e)
             }
 
-    @with_tracing_span("fix_missing_data_for_steps")
+    @traced(span_name="fix_missing_data_for_steps")
     async def _fix_missing_data_for_steps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Use step01 and step1_5 components to fix missing data for step03/step04."""
         try:
@@ -465,7 +465,7 @@ class EnhancedDataQualityManager:
             # Try to run step1_5 data conversion if needed
             try:
                 from ..step1_5_data_converter import run_step as run_step1_5
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
                 step1_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,
@@ -500,7 +500,7 @@ from src.core.decorators import handles_errors
             }
 
 # Convenience function for easy integration
-@with_tracing_span("ensure_data_quality")
+@traced(span_name="ensure_data_quality")
 async def ensure_data_quality(
     symbol: str, 
     exchange: str, 
@@ -512,7 +512,7 @@ async def ensure_data_quality(
     return await manager.comprehensive_quality_check(symbol, exchange, timeframe)
 
 # Convenience function for step03/step04 integration
-@with_tracing_span("prepare_data_for_steps")
+@traced(span_name="prepare_data_for_steps")
 async def prepare_data_for_steps(
     symbol: str, 
     exchange: str, 

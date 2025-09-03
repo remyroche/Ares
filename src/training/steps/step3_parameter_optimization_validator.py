@@ -5,6 +5,8 @@ This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
 """
 from src.core.domain import (
+
+from src.core.decorators import validates
     smart_validation_cache,
     validate_step3_comprehensive
 )
@@ -30,7 +32,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         super().__init__("step3_parameter_optimization", config)
         self.logger = system_logger.getChild("Validator.Step3")
 
-    @validate_step3_comprehensive
+    @validates()
     async def validate_step3_parameter_optimization(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
     ) -> bool:

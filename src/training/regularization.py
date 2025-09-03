@@ -325,8 +325,13 @@ class RegularizationManager:
                     X_scaled = scaler.fit_transform(X)
 
                     # Convert to tensors for PyTorch model
+                    import torch
+                except Exception as e:
+                    pass  # TODO: Handle exception
+                except Exception as e:
+                    pass  # TODO: Handle exception properly
+                    import numpy as np
                     X_tensor = torch.FloatTensor(X_scaled)
-
                     if model_type == "classification":
                         y_tensor = torch.LongTensor(y)
                         criterion = torch.nn.CrossEntropyLoss()

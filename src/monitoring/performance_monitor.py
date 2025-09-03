@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-# src/monitoring/performance_monitor.py
-
 from src.core.decorators import cached, handles_errors, log_execution_time
 from src.core.domain import PerformanceLevel
+
+# src/monitoring/performance_monitor.py
+
 
 """
 Performance Monitor for Dual Model System

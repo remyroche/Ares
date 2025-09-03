@@ -584,9 +584,14 @@ class PositionMonitor:
                 if Path(path).exists():
                     try:
                         with open(path, 'r') as f:
-                            updated_config = yaml.safe_load(f)
-                            
+                            import yaml
+                    except Exception as e:
+                        pass  # TODO: Handle exception
+                    except Exception as e:
+                        pass  # TODO: Handle exception properly
+                           
                         # Check if this is newer than our current config
+                        updated_config = yaml.safe_load(f)
                         if "timestamp" in updated_config:
                             config_time = datetime.fromisoformat(updated_config["timestamp"])
                             if hasattr(self, '_last_step12_refresh'):

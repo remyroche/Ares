@@ -1,6 +1,6 @@
 # src/tactician/ml_target_validator.py
 
-
+from src.core.decorators import handles_errors
 
 """
 from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors
@@ -10,7 +10,7 @@ ML Target Validator for validating machine learning targets and predictions.
 from datetime import datetime
 from typing import Any
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors, validates
+from src.core.decorators import handles_errors, validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,

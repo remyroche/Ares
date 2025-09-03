@@ -93,7 +93,7 @@ class DataEfficiencyOptimizer:
                     data_type TEXT NOT NULL,  -- 'klines', 'agg_trades', 'futures'
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),"
+            """),""""
             )
 
             # Create indexes for efficient querying

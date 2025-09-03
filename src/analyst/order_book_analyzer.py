@@ -6,10 +6,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import (
-    validates as validate_data_quality,
-    traced as with_tracing_span,
-)
+from src.core.decorators import traced as with_tracing_span
+from src.core.decorators import validates as validate_data_quality
 from src.utils.logger import system_logger
 
 

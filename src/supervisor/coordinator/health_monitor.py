@@ -8,13 +8,14 @@ performance metrics, and system stability.
 from __future__ import annotations
 
 import asyncio
-import psutil
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import psutil
+
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import warning, error, failed
+from src.utils.warning_symbols import error, failed, warning
 
 
 class HealthMonitor:

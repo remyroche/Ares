@@ -23,41 +23,27 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.step01_5_data_converter import DataConverterStep
-from src.training.steps.step01_5_data_converter_validator import (
-    run_validator as validate_step1_5,
-)
+from src.training.steps.step01_5_data_converter_validator import run_validator as validate_step1_5
 
 # Import all step classes
 from src.training.steps.step01_data_collection import DataCollectionStep
 
 # Import validators
-from src.training.steps.step01_data_collection_validator import (
-    run_validator as validate_step1,
-)
+from src.training.steps.step01_data_collection_validator import run_validator as validate_step1
 from src.training.steps.step02_data_reading import DataReadingStep
-from src.training.steps.step02_data_reading_validator import (
-    run_validator as validate_step2,
-)
+from src.training.steps.step02_data_reading_validator import run_validator as validate_step2
 from src.training.steps.step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
-from src.training.steps.step03_hmm_regime_discovery_validator import (
-    run_validator as validate_step3,
-)
+from src.training.steps.step03_hmm_regime_discovery_validator import run_validator as validate_step3
 from src.training.steps.step04_regime_data_splitting import RegimeDataSplittingStep
-from src.training.steps.step04_regime_data_splitting_validator import (
-    run_validator as validate_step4,
-)
+from src.training.steps.step04_regime_data_splitting_validator import run_validator as validate_step4
 from src.training.steps.step05_labeling import LabelingStep
 from src.training.steps.step05_labeling_validator import run_validator as validate_step5
 from src.training.steps.step06_feature_engineering import FeatureEngineeringStep
-from src.training.steps.step06_feature_engineering_validator import (
-    run_validator as validate_step6,
-)
+from src.training.steps.step06_feature_engineering_validator import run_validator as validate_step6
 from src.training.steps.step07_enhanced_matrix_operations import (
     Step7EnhancedMatrixOperations,
 )
-from src.training.steps.step07_enhanced_matrix_operations_validator import (
-    run_validator as validate_step7,
-)
+from src.training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
 from src.utils.enhanced_mlflow_integration import (
     log_step_report,
 )

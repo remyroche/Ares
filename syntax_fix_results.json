@@ -1,0 +1,246 @@
+{
+  "fixed": 12,
+  "failed": 8,
+  "results": [
+    {
+      "file": "/workspace/src/tactician/ml_target_validator.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/ml_target_validator.py",
+        "line": 3,
+        "offset": 86,
+        "msg": "invalid syntax",
+        "text": "from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/ml_tactics_manager.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/ml_tactics_manager.py",
+        "line": 8,
+        "offset": 86,
+        "msg": "invalid syntax",
+        "text": "from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/position_sizer.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/position_sizer.py",
+        "line": 16,
+        "offset": 86,
+        "msg": "invalid syntax",
+        "text": "from src.core.decorators import handles_errors as handles_errors_src_core_decorators as core_handles_errors as core_handles_errors\n"
+      }
+    },
+    {
+      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+        "line": 81,
+        "offset": 5,
+        "msg": "invalid syntax",
+        "text": "    @handle_specific_errors(\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/model_trainer.py",
+        "line": 322,
+        "offset": 0,
+        "msg": "expected an indented block after 'try' statement on line 321",
+        "text": "from src.utils.mlflow_utils import log_params_with_metadata\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/multi_output_model_trainer.py",
+        "line": 54,
+        "offset": 1,
+        "msg": "expected an indented block after 'try' statement on line 53",
+        "text": "from .steps.step9_hmm_based_training import (\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/training/enhanced_training_manager.py",
+        "line": 2542,
+        "offset": 0,
+        "msg": "expected an indented block after 'try' statement on line 2541",
+        "text": "from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep\n"
+      }
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+        "line": 30,
+        "offset": 1,
+        "msg": "invalid syntax",
+        "text": "class EventType(Enum):\n"
+      }
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+        "line": 257,
+        "offset": 0,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "from src.core.decorators import handles_errors\n"
+      }
+    },
+    {
+      "file": "/workspace/src/supervisor/system_coordinator_backup.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/supervisor/system_coordinator_backup.py",
+        "line": 630,
+        "offset": 12,
+        "msg": "unexpected indent",
+        "text": "            analyst_decision = analyst_signals.get(\"analyst_decision\", {})\n"
+      }
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+        "line": 19,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    performance_monitor,\n"
+      }
+    },
+    {
+      "file": "/workspace/src/pipelines/improved_pipeline_executor.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/pipelines/improved_pipeline_executor.py",
+        "line": 159,
+        "offset": 8,
+        "msg": "unexpected indent",
+        "text": "        prices = []\n"
+      }
+    },
+    {
+      "file": "/workspace/src/integration/paper_trading_integration.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/integration/paper_trading_integration.py",
+        "line": 15,
+        "offset": 1,
+        "msg": "invalid syntax",
+        "text": "from datetime import datetime\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/position_division_strategy.py",
+        "line": 13,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    handle_errors,\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/tactician.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/tactician.py",
+        "line": 100,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    @handles_errors(\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+      "success": false,
+      "message": "No automatic fix available",
+      "error": {
+        "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+        "line": 47,
+        "offset": 8,
+        "msg": "unexpected indent",
+        "text": "        self.barrier_calculator = DynamicBarrierCalculator(self.config)\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/position_monitor.py",
+        "line": 590,
+        "offset": 0,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "import copy\n"
+      }
+    },
+    {
+      "file": "/workspace/src/tactician/sr_data_integration.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/tactician/sr_data_integration.py",
+        "line": 32,
+        "offset": 1,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "from src.utils.logger import system_logger\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/multi_output_probability_trainer.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/training/multi_output_probability_trainer.py",
+        "line": 38,
+        "offset": 4,
+        "msg": "unexpected indent",
+        "text": "    def fit(\n"
+      }
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "success": true,
+      "message": "Fixed",
+      "error": {
+        "file": "/workspace/src/training/regularization.py",
+        "line": 329,
+        "offset": 0,
+        "msg": "expected 'except' or 'finally' block",
+        "text": "import numpy as np\n"
+      }
+    }
+  ]
+}

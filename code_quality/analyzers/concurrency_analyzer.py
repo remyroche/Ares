@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from minimal_config import CodeQualityConfig as CodeQualityConfig_minimal_config, get_default_config
+from minimal_config import CodeQualityConfig as CodeQualityConfig_minimal_config
+from minimal_config import get_default_config
 from minimal_file_utils import find_python_files as find_python_files_minimal_file_utils
 
 

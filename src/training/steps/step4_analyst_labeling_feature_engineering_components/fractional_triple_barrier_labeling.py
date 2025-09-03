@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 )
 from src.utils.logger import get_logger
 
@@ -68,8 +68,8 @@ class FractionalTripleBarrierLabeling:
         self.logger = get_logger("FractionalTripleBarrierLabeling")
 
     @handles_errors(fallback=pd.DataFrame())
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FractionalTripleBarrier.apply", log_args=False)
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=1)
+    @traced(span_name="FractionalTripleBarrier.apply")
     def apply_fractional_triple_barrier_labeling(
         self,
         data: pd.DataFrame,

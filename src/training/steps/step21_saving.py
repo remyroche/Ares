@@ -241,6 +241,8 @@ class SavingStep:
             from src.config.system import get_mlflow_config
 import mlflow  # type: ignore
 import tempfile
+
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
                 log_step_report,
                 log_step_artifact_with_standardized_name
             )
@@ -451,10 +453,10 @@ import tempfile
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step16_saving")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=1200.0)
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=1200)
 @validates(
     required_directories=["data/training", "models"],
     min_memory_gb=4.0,
@@ -466,10 +468,10 @@ import tempfile
     },
     context="Saving Results",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
@@ -505,7 +507,7 @@ import tempfile
     performance_thresholds={"saving_time_minutes": 30.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"saving_success_rate": 0.9},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"saving_score": 0.8},

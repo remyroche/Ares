@@ -16,7 +16,7 @@ from src.utils.logger import system_logger
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
 from src.core.domain import (
     handle_errors,
@@ -86,7 +86,7 @@ class AggtradesFormatValidator:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
 
-    @with_tracing_span("get_aggtrades_files")
+    @traced(span_name="get_aggtrades_files")
     def get_aggtrades_files(self, symbol: str, exchange: str) -> List[Path]:
         """Get all aggtrades files for a symbol and exchange."""
         pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
@@ -98,8 +98,8 @@ class AggtradesFormatValidator:
 
         return sorted(csv_files + parquet_files)
 
-    @validate_data_structure
-    @with_tracing_span("validate_file_format")
+    @validates()
+    @traced(span_name="validate_file_format")
     @handles_errors
         default_return={
             "valid": False,
@@ -356,7 +356,7 @@ class AggtradesFormatValidator:
         
         return warnings
 
-    @with_tracing_span("fix_file_format")
+    @traced(span_name="fix_file_format")
     @handles_errors(fallback=False)
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format issues to ensure pipeline compatibility.
@@ -434,7 +434,7 @@ class AggtradesFormatValidator:
             logger.exception(f"❌ Error fixing {file_path.name}: {e}")
             return False
 
-    @with_tracing_span("validate_all_aggtrades")
+    @traced(span_name="validate_all_aggtrades")
     @handles_errors
         default_return={
             "total_files": 0,
@@ -502,7 +502,7 @@ class AggtradesFormatValidator:
 
         return validation_result
 
-    @with_tracing_span("generate_compatibility_report")
+    @traced(span_name="generate_compatibility_report")
     def generate_compatibility_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive compatibility report.
 

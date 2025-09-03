@@ -91,7 +91,7 @@ except ImportError as e:
 
     # Fallback logger
     import logging
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
 
@@ -148,7 +148,7 @@ class MissingDataDownloaderAndGapFiller:
                 return False
         return True
 
-    @with_tracing_span("download_aggtrades_data")
+    @traced(span_name="download_aggtrades_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_aggtrades_data"
@@ -301,7 +301,7 @@ class MissingDataDownloaderAndGapFiller:
             logger.exception(f"❌ Error counting rows: {e}")
             return 0
 
-    @with_tracing_span("download_klines_data")
+    @traced(span_name="download_klines_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_klines_data"
@@ -448,7 +448,7 @@ class MissingDataDownloaderAndGapFiller:
             logger.exception(f"❌ Error counting rows: {e}")
             return 0
 
-    @with_tracing_span("download_futures_data")
+    @traced(span_name="download_futures_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_futures_data"
@@ -598,7 +598,7 @@ class MissingDataDownloaderAndGapFiller:
             logger.exception(f"❌ Error counting rows: {e}")
             return 0
 
-    @with_tracing_span("download_all_missing_data")
+    @traced(span_name="download_all_missing_data")
     @handles_errors
         default_return={"success": False, "error": "Download failed"},
         context="missing_data_downloader.download_all_missing_data"

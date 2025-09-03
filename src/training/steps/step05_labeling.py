@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Step 5: Labeling with Standardized Data Quality Management."
 
+from src.core.decorators import handles_errors, traced
+import logging
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
 
@@ -17,7 +19,6 @@ from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
-from src.core.decorators import handles_errors, traced
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -54,7 +55,6 @@ pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
-    import logging
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 

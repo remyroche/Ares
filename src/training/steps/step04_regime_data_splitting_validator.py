@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validator for Step 4: Regime Data Splitting."
 
+import pandas as pd
 This module validates the regime data splitting step outputs with support for 10+ regimes.
 """
 from src.core.domain import (
@@ -15,7 +16,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger

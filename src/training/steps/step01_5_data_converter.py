@@ -13,12 +13,15 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators, traced, validates
 
 # src/training/steps/step1_5_data_converter.py
 
 
 # Ensure project root is on path
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators, traced, validates
+import logging
+import psutil
+import os.path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -52,7 +55,6 @@ pyarrow = PipelineStandards.safe_import("pyarrow", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
-    import logging
 
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
@@ -557,7 +559,6 @@ class MemoryTracker:
     @staticmethod
     def get_memory_usage() -> dict[str, float]:
         try:
-            import psutil
 
             process = psutil.Process()
             mem = process.memory_info()
@@ -2310,6 +2311,5 @@ if __name__ == "__main__":
     finally:
         import gc
 
-import os.path
 
 gc.collect()

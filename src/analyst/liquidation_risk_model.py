@@ -1,12 +1,12 @@
 # src/analyst/liquidation_risk_model.py
 from src.core.decorators import (
+from src.core.domain import handle_specific_errors
     handles_errors,
     retry,
     timeout,
     validate_data_quality,
     with_tracing_span
 
-from src.core.domain import handle_specific_errors
 
 from src.utils.logger import system_logger
 from typing import Any

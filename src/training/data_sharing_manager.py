@@ -27,11 +27,11 @@ import asyncio
 )
 
 class DataSharingManager:
-    """Manages data sharing between training steps to eliminate redundant data loading.
+    """Manages data sharing between training steps to eliminate redundant data loading."
 
     This manager provides a centralized way to load and share data between steps,
     with intelligent caching and memory management.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -233,7 +233,7 @@ class DataSharingManager:
         lookback_days: int = 180,
         force_reload: bool = False,
     ) -> pd.DataFrame | None:
-        """Get unified data, either from cache or by loading it.
+        """Get unified data, either from cache or by loading it."
 
         Args:
             symbol: Trading symbol
@@ -245,7 +245,7 @@ class DataSharingManager:
         Returns:
             DataFrame with unified data or None if loading fails
 
-        """
+        """"
         cache_key = self._generate_cache_key(symbol, exchange, timeframe, lookback_days)
 
         # Check if data is already cached and not expired
@@ -314,7 +314,7 @@ class DataSharingManager:
         timeframe: str = "1m",
         lookback_days: int = 180,
     ) -> pd.DataFrame | None:
-        """Get data from cache only (no loading).
+        """Get data from cache only (no loading)."
 
         Args:
             symbol: Trading symbol
@@ -325,7 +325,7 @@ class DataSharingManager:
         Returns:
             DataFrame from cache or None if not cached
 
-        """
+        """"
         cache_key = self._generate_cache_key(symbol, exchange, timeframe, lookback_days)
 
         if cache_key in self._data_cache:
@@ -351,7 +351,7 @@ class DataSharingManager:
         data: pd.DataFrame,
         data_type: str = "unified",
     ) -> None:
-        """Manually cache data.
+        """Manually cache data."
 
         Args:
             symbol: Trading symbol
@@ -361,7 +361,7 @@ class DataSharingManager:
             data: Data to cache
             data_type: Type of data being cached
 
-        """
+        """"
         cache_key = self._generate_cache_key(
             symbol, exchange, timeframe, lookback_days, data_type,
         )

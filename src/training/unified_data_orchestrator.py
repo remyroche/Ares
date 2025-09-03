@@ -1,6 +1,6 @@
 # src/training/unified_data_orchestrator.py
 
-"""Unified Data Orchestrator - Single Source of Truth for Data Operations.
+"""Unified Data Orchestrator - Single Source of Truth for Data Operations."
 
 This module provides a centralized, unified approach to all data operations including:
 - Data loading from various sources (cache, unified format, raw files)
@@ -12,7 +12,7 @@ This module provides a centralized, unified approach to all data operations incl
 
 This serves as the single source of truth for all data operations across the training pipeline.
 Enhanced with comprehensive security and troubleshooting decorators.
-"""
+""""
 
 import asyncio
 import contextlib
@@ -50,7 +50,7 @@ import copy
 )
 
 class UnifiedDataOrchestrator:
-    """Unified Data Orchestrator - Single source of truth for all data operations.
+    """Unified Data Orchestrator - Single source of truth for all data operations."
 
     This orchestrator provides a centralized interface for:
     - Data loading with intelligent fallback strategies
@@ -59,7 +59,7 @@ class UnifiedDataOrchestrator:
     - Quality validation and repair
     - Memory-efficient processing
     - Comprehensive logging and monitoring
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         start_time = time.time()
@@ -346,7 +346,7 @@ class UnifiedDataOrchestrator:
         validate_quality: bool = True,
         auto_repair: bool = True,
     ) -> pd.DataFrame | None:
-        """Get unified data with comprehensive fallback strategies and quality validation.
+        """Get unified data with comprehensive fallback strategies and quality validation."
 
         Args:
             symbol: Trading symbol
@@ -360,7 +360,7 @@ class UnifiedDataOrchestrator:
         Returns:
             DataFrame with unified data or None if loading fails
 
-        """
+        """"
         start_time = time.time()
         request_id = f"{exchange}_{symbol}_{timeframe}_{int(start_time)}"
 
@@ -568,7 +568,7 @@ class UnifiedDataOrchestrator:
         validate_quality: bool = True,
         auto_repair: bool = True,
     ) -> dict[str, pd.DataFrame]:
-        """Get data for multiple timeframes with intelligent resampling.
+        """Get data for multiple timeframes with intelligent resampling."
 
         Args:
             symbol: Trading symbol
@@ -582,7 +582,7 @@ class UnifiedDataOrchestrator:
         Returns:
             Dictionary mapping timeframes to DataFrames
 
-        """
+        """"
         start_time = time.time()
         request_id = f"multi_{exchange}_{symbol}_{int(start_time)}"
 
@@ -782,7 +782,7 @@ class UnifiedDataOrchestrator:
         symbol: str,
         exchange: str,
     ) -> pd.DataFrame | None:
-        """Resample data from one timeframe to another with caching.
+        """Resample data from one timeframe to another with caching."
 
         Args:
             data: Input DataFrame
@@ -794,7 +794,7 @@ class UnifiedDataOrchestrator:
         Returns:
             Resampled DataFrame or None if resampling fails
 
-        """
+        """"
         start_time = time.time()
         request_id = f"resample_{from_timeframe}_{to_timeframe}_{int(start_time)}"
 
@@ -1008,7 +1008,7 @@ class UnifiedDataOrchestrator:
         data: pd.DataFrame,
         auto_repair: bool = True,
     ) -> pd.DataFrame:
-        """Validate data quality and repair issues if possible.
+        """Validate data quality and repair issues if possible."
 
         Args:
             data: Input DataFrame
@@ -1017,7 +1017,7 @@ class UnifiedDataOrchestrator:
         Returns:
             Validated and repaired DataFrame
 
-        """
+        """"
         start_time = time.time()
         request_id = f"validate_{data.shape[0]}_{int(start_time)}"
 

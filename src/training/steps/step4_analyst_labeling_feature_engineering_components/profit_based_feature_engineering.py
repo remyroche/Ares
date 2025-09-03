@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Profit-Based Feature Engineering System.
+"""Profit-Based Feature Engineering System."
 
 This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
-"""
+""""
 
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -93,12 +93,12 @@ else:
         return rolling_mean, rolling_std, rolling_max, rolling_min
 
 class ProfitBasedFeatureEngineering:
-    """Comprehensive profit-based feature engineering system.
+    """Comprehensive profit-based feature engineering system."
     
     This class provides extensive feature engineering capabilities based on profit
     percentage data from triple barrier labeling. It includes multiple feature
     categories with performance optimizations and comprehensive validation.
-    """
+    """"
 
     def __init__(
         self,
@@ -108,7 +108,7 @@ class ProfitBasedFeatureEngineering:
         use_numba: bool = True,
         memory_efficient: bool = True,
     ) -> None:
-        """Initialize the profit-based feature engineering system.
+        """Initialize the profit-based feature engineering system."
         
         Args:
             profit_column: Name of the profit percentage column
@@ -116,7 +116,7 @@ class ProfitBasedFeatureEngineering:
             price_column: Name of the price column
             use_numba: Whether to use Numba acceleration
             memory_efficient: Whether to use memory-efficient operations
-        """
+        """"
         self.profit_column = profit_column
         self.volume_column = volume_column
         self.price_column = price_column
@@ -161,7 +161,7 @@ class ProfitBasedFeatureEngineering:
         data: pd.DataFrame,
         feature_categories: Optional[List[str]] = None
     ) -> pd.DataFrame:
-        """Apply all profit-based feature engineering categories.
+        """Apply all profit-based feature engineering categories."
         
         Args:
             data: Input DataFrame with profit percentage data
@@ -169,7 +169,7 @@ class ProfitBasedFeatureEngineering:
             
         Returns:
             DataFrame with all profit-based features added
-        """
+        """"
         start_time = time.time()
         
         # Generate unique correlation ID for tracking
@@ -248,10 +248,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply basic profit features.
+        """Apply basic profit features."
         
         Features: profit, profit², profit³, profit_abs
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Basic profit features
@@ -267,10 +267,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply categorical profit features.
+        """Apply categorical profit features."
         
         Features: profit_bins, profit_sign, profit_magnitude
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Profit sign (positive/negative)
@@ -300,10 +300,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply risk-reward features.
+        """Apply risk-reward features."
         
         Features: profit_sharpe, profit_sortino, profit_risk_adjusted
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Calculate rolling statistics for risk-reward metrics
@@ -330,7 +330,7 @@ class ProfitBasedFeatureEngineering:
         )
         data[f"{self.profit_column}_sortino"] = pd.Series(sortino_ratio, index=data.index).fillna(0.0)
         
-        # Kelly criterion removed - it's for position sizing, not ML features
+        # Kelly criterion removed - it's for position sizing, not ML features'
         
         # Risk-adjusted return
         data[f"{self.profit_column}_risk_adjusted"] = profit_pcts / (1 + rolling_std)
@@ -339,10 +339,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply momentum features.
+        """Apply momentum features."
         
         Features: profit_momentum, profit_acceleration
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Momentum features for different windows
@@ -374,10 +374,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply volatility features.
+        """Apply volatility features."
         
         Features: profit_volatility, profit_volatility_ratio
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Volatility features for different windows
@@ -414,10 +414,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply volume-based profit features.
+        """Apply volume-based profit features."
         
         Features: profit_volume_weighted, profit_volume_correlation
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Volume-weighted profit
@@ -451,10 +451,10 @@ class ProfitBasedFeatureEngineering:
 
     @handles_errors(fallback=pd.DataFrame())
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply rolling profit features.
+        """Apply rolling profit features."
         
         Features: profit_rolling_mean, profit_rolling_std, profit_rolling_max
-        """
+        """"
         profit_pcts = data[self.profit_column].values
         
         # Rolling features for different windows
@@ -497,14 +497,14 @@ class ProfitBasedFeatureEngineering:
         return data
 
     def get_feature_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Get summary of profit-based features.
+        """Get summary of profit-based features."
         
         Args:
             data: DataFrame with profit-based features
             
         Returns:
             Dictionary with feature summary information
-        """
+        """"
         profit_features = [col for col in data.columns if self.profit_column in col and col != self.profit_column]
         
         # Categorize features
@@ -547,7 +547,7 @@ class ProfitBasedFeatureEngineering:
         threshold: float = 0.01,
         max_features: Optional[int] = None
     ) -> List[str]:
-        """Select important profit-based features.
+        """Select important profit-based features."
         
         Args:
             data: DataFrame with profit-based features
@@ -557,7 +557,7 @@ class ProfitBasedFeatureEngineering:
             
         Returns:
             List of selected feature names
-        """
+        """"
         profit_features = [col for col in data.columns if self.profit_column in col and col != self.profit_column]
         
         if method == "correlation":
@@ -632,14 +632,14 @@ class ProfitBasedFeatureEngineering:
 
 @handles_errors(fallback={})
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
-    """Benchmark profit-based feature engineering performance.
+    """Benchmark profit-based feature engineering performance."
     
     Args:
         data: Input DataFrame with profit percentage data
         
     Returns:
         Dictionary with benchmark results
-    """
+    """"
     # Test with Numba
     start_time = time.time()
     feature_eng_numba = ProfitBasedFeatureEngineering(use_numba=True)

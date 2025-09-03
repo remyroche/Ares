@@ -21,10 +21,10 @@ from src.utils.centralized_decorators_simple import (
 )
 
 class MetaLabelingSystem:
-    """
+    """"
     Comprehensive meta-labeling system for path-dependent trading signals.
     Implements both analyst labels (setup identification) and tactician labels (entry optimization).
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -950,7 +950,7 @@ class MetaLabelingSystem:
         volume_data: pd.DataFrame,
         timeframe: str = "30m",
     ) -> dict[str, Any]:
-        """
+        """"
         Generate analyst labels for setup identification (multi-timeframe).
 
         Args:
@@ -960,7 +960,7 @@ class MetaLabelingSystem:
 
         Returns:
             Dict containing analyst labels and confidence scores
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.logger.error(initialization_"Meta-labeling system not initialized")
@@ -1044,7 +1044,7 @@ class MetaLabelingSystem:
         order_flow_data: pd.DataFrame | None = None,
         timeframe: str = "1m",
     ) -> dict[str, Any]:
-        """
+        """"
         Generate tactician labels for entry optimization (1m timeframe).
 
         Args:
@@ -1055,7 +1055,7 @@ class MetaLabelingSystem:
 
         Returns:
             Dict containing tactician labels and confidence scores
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.logger.error(initialization_"Meta-labeling system not initialized")
@@ -1135,7 +1135,7 @@ class MetaLabelingSystem:
         analyst_timeframe: str = "30m",
         tactician_timeframe: str = "1m",
     ) -> dict[str, Any]:
-        """
+        """"
         Generate combined analyst and tactician labels.
 
         Args:
@@ -1147,7 +1147,7 @@ class MetaLabelingSystem:
 
         Returns:
             Dict containing combined labels
-        """
+        """"
         try:
             # Generate analyst labels
             analyst_labels = await self.generate_analyst_labels(

@@ -36,7 +36,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		training_input: Dict[str, Any],
 		pipeline_state: Dict[str, Any],
 	) -> Dict[str, Any]:
-		"""Validate the data collection step with comprehensive checks.
+		"""Validate the data collection step with comprehensive checks."
 
 		Args:
 			training_input: Training input parameters
@@ -45,7 +45,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		Returns:
 			Dict containing validation results with detailed information
 
-		"""
+		""""
 		symbol = training_input.get("symbol", "ETHUSDT")
 		exchange = training_input.get("exchange", "BINANCE")
 		timeframe = training_input.get("timeframe", "1m")
@@ -146,7 +146,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		timeframe: str,
 		data_dir: str,
 	) -> Dict[str, Any]:
-		"""Check for consolidated files in the data directory.
+		"""Check for consolidated files in the data directory."
 
 		Args:
 			symbol: Trading symbol
@@ -156,7 +156,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 		Returns:
 			Dictionary with file information
-		"""
+		""""
 		files_found: List[str] = []
 
 		# Check for klines consolidated files
@@ -197,7 +197,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		exchange: str,
 		timeframe: str,
 	) -> Dict[str, Any]:
-		"""Validate the quality of consolidated data files.
+		"""Validate the quality of consolidated data files."
 
 		Args:
 			files: List of file paths to validate
@@ -207,7 +207,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 		Returns:
 			bool: True if validation passed
-		"""
+		""""
 		try:
 			validation_result = {
 				"valid": True,
@@ -297,7 +297,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		symbol: str,
 		exchange: str,
 	) -> bool:
-		"""Validate specific characteristics of the collected data.
+		"""Validate specific characteristics of the collected data."
 
 		Args:
 			data: Historical data DataFrame
@@ -307,7 +307,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		Returns:
 			bool: True if characteristics are valid
 
-		"""
+		""""
 		try:
 			# Check minimum data size (more lenient for ML training)
 			if len(data) < self.min_records:
@@ -393,7 +393,7 @@ async def run_validator(
 	training_input: Dict[str, Any],
 	pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-	"""Run the Step 1 Data Collection validator.
+	"""Run the Step 1 Data Collection validator."
 
 	Args:
 		training_input: Training input parameters
@@ -402,7 +402,7 @@ async def run_validator(
 	Returns:
 		Dictionary containing validation results
 
-	"""
+	""""
 	validator = Step1DataCollectionValidator(CONFIG)
 	validation_passed = await validator.validate(training_input, pipeline_state)
 

@@ -23,12 +23,12 @@ class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training manager with enhanced type safety.
+        """Initialize training manager with enhanced type safety."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TrainingManager")
 
@@ -66,12 +66,12 @@ class TrainingManager:
         context="training manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training manager with enhanced error handling.
+        """Initialize training manager with enhanced error handling."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Training Manager...")
 
@@ -124,12 +124,12 @@ class TrainingManager:
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate training configuration.
+        """Validate training configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate training interval
             if self.training_interval <= 0:
@@ -196,9 +196,11 @@ class TrainingManager:
         """Initialize feature integration manager."""
         try:
             from src.training.feature_integration import FeatureIntegrationManager
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-            self.feature_integration_manager = FeatureIntegrationManager(self.config)
+self.feature_integration_manager = FeatureIntegrationManager(self.config)
             await self.feature_integration_manager.initialize()
             self.logger.info("Feature integration manager initialized successfully")
         except Exception as e:
@@ -292,7 +294,7 @@ import copy
         context="training execution",
     )
     async def execute_training(self, training_input: dict[str, Any]) -> bool:
-        """Execute training operations.
+        """Execute training operations."
 
         Args:
             training_input: Training input dictionary
@@ -300,7 +302,7 @@ import copy
         Returns:
             bool: True if successful, False otherwise
 
-        """
+        """"
         if not self._validate_training_inputs(training_input):
             return False
 
@@ -344,7 +346,7 @@ import copy
 
     @handles_errors(fallback=False)
     def _validate_training_inputs(self, training_input: dict[str, Any]) -> bool:
-        """Validate training inputs.
+        """Validate training inputs."
 
         Args:
             training_input: Training input dictionary
@@ -352,7 +354,7 @@ import copy
         Returns:
             bool: True if valid, False otherwise
 
-        """
+        """"
         # Check required training input fields
         required_fields = ["training_type", "model_type", "timestamp"]
         for field in required_fields:
@@ -376,7 +378,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform model training.
+        """Perform model training."
 
         Args:
             training_input: Training input dictionary
@@ -384,7 +386,7 @@ import copy
         Returns:
             Dict[str, Any]: Model training results
 
-        """
+        """"
         try:
             results = {}
 
@@ -428,7 +430,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform hyperparameter optimization.
+        """Perform hyperparameter optimization."
 
         Args:
             training_input: Training input dictionary
@@ -436,7 +438,7 @@ import copy
         Returns:
             Dict[str, Any]: Hyperparameter optimization results
 
-        """
+        """"
         try:
             results = {}
 
@@ -490,7 +492,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform model evaluation.
+        """Perform model evaluation."
 
         Args:
             training_input: Training input dictionary
@@ -498,7 +500,7 @@ import copy
         Returns:
             Dict[str, Any]: Model evaluation results
 
-        """
+        """"
         try:
             results = {}
 
@@ -540,7 +542,7 @@ import copy
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform model persistence.
+        """Perform model persistence."
 
         Args:
             training_input: Training input dictionary
@@ -548,7 +550,7 @@ import copy
         Returns:
             Dict[str, Any]: Model persistence results
 
-        """
+        """"
         try:
             results = {}
 
@@ -940,7 +942,7 @@ import copy
         self,
         training_type: str | None = None,
     ) -> dict[str, Any]:
-        """Get training results.
+        """Get training results."
 
         Args:
             training_type: Optional training type filter
@@ -948,7 +950,7 @@ import copy
         Returns:
             Dict[str, Any]: Training results
 
-        """
+        """"
         try:
             if training_type:
                 return self.training_results.get(training_type, {})
@@ -962,7 +964,7 @@ import copy
 
     @handles_errors(fallback=None)
     def get_training_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get training history.
+        """Get training history."
 
         Args:
             limit: Optional limit on number of records
@@ -970,7 +972,7 @@ import copy
         Returns:
             List[Dict[str, Any]]: Training history
 
-        """
+        """"
         try:
             history = self.training_history.copy()
 
@@ -986,12 +988,12 @@ import copy
             return []
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get training status information.
+        """Get training status information."
 
         Returns:
             Dict[str, Any]: Training status
 
-        """
+        """"
         return {
             "is_training": self.is_training,
             "training_interval": self.training_interval,
@@ -1038,7 +1040,7 @@ training_manager: TrainingManager | None = None
 async def setup_training_manager(
     config: dict[str, Any] | None = None,
 ) -> TrainingManager | None:
-    """Setup global training manager.
+    """Setup global training manager."
 
     Args:
         config: Optional configuration dictionary
@@ -1046,7 +1048,7 @@ async def setup_training_manager(
     Returns:
         Optional[TrainingManager]: Global training manager instance
 
-    """
+    """"
     try:
         global training_manager
 

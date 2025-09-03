@@ -85,17 +85,17 @@ class TrainingData:
     data_info: dict[str, Any]
 
 class RayModelTrainer:
-    """Ray-based model trainer for distributed model training and data processing.
+    """Ray-based model trainer for distributed model training and data processing."
     Handles both analyst and tactician models with parallel processing capabilities.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize Ray model trainer.
+        """Initialize Ray model trainer."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("RayModelTrainer")
 
@@ -146,12 +146,12 @@ class RayModelTrainer:
         context="Ray initialization",
     )
     def _initialize_ray(self) -> bool:
-        """Initialize Ray cluster.
+        """Initialize Ray cluster."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             if not ray.is_initialized():
                 ray.init(
@@ -178,12 +178,12 @@ class RayModelTrainer:
         context="model trainer initialization",
     )
     def initialize(self) -> bool:
-        """Initialize model trainer.
+        """Initialize model trainer."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Ray Model Trainer...")
 
@@ -204,12 +204,12 @@ class RayModelTrainer:
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate model trainer configuration.
+        """Validate model trainer configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate model trainer specific settings
             if not self.enable_analyst_models and not self.enable_tactician_models:
@@ -242,7 +242,7 @@ class RayModelTrainer:
     def _initialize_model_storage(self) -> None:
         """Initialize model storage and metadata."""
         try:
-            # Create model storage directory if it doesn't exist
+            # Create model storage directory if it doesn't exist'
             model_dir = self.model_trainer_config.get("model_directory", "models")
             os.makedirs(model_dir, exist_ok=True)
 
@@ -274,10 +274,10 @@ class RayModelTrainer:
         hpo_trials: int = 50,
         hpo_model_type: str = "random_forest",
     ) -> dict[str, Any] | None:
-        """Train all required models based on configuration using Ray.
+        """Train all required models based on configuration using Ray."
         If use_hpo is True, run Optuna HPO before final model training.
         Logs all training runs to MLflow.
-        """
+        """"
         try:
             self.logger.info("🚀 Starting Ray-based model training...")
             self.is_training = True
@@ -451,7 +451,7 @@ class RayModelTrainer:
 
     @handles_errors(fallback=False)
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
-        """Validate training input parameters.
+        """Validate training input parameters."
 
         Args:
             training_input: Training input parameters
@@ -459,7 +459,7 @@ class RayModelTrainer:
         Returns:
             bool: True if input is valid, False otherwise
 
-        """
+        """"
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
@@ -486,10 +486,10 @@ class RayModelTrainer:
         self,
         training_input: dict[str, Any],
     ) -> dict[str, TrainingData] | None:
-        """Prepare training data for model training.
+        """Prepare training data for model training."
         Loads the labeled/enhanced feature file produced by the previous pipeline step (step 4),
         not the raw data from step 1.
-        """
+        """"
         try:
             self.logger.info(
                 "📊 Preparing training data from labeled/enhanced pipeline output...",
@@ -502,11 +502,13 @@ class RayModelTrainer:
             import os
 
             import pandas as pd
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import numpy as np
 import os.path
 
-            if os.path.exists(labeled_path):
+if os.path.exists(labeled_path):
                 try:
                     feat_cols = training_input.get(
                         "model_feature_columns",
@@ -611,9 +613,9 @@ import os.path
         training_input: dict[str, Any],
         best_params: dict | None = None,
     ) -> dict[str, Any]:
-        """Train models using Ray for distributed processing.
+        """Train models using Ray for distributed processing."
         Accepts best_params from HPO for model instantiation.
-        """
+        """"
         try:
             self.logger.info("🧠 Starting Ray-based model training...")
 
@@ -692,9 +694,9 @@ import os.path
         training_data: TrainingData,
         best_params: dict | None = None,
     ) -> dict[str, Any]:
-        """Train a single model (Ray remote function).
+        """Train a single model (Ray remote function)."
         Accepts best_params from HPO for model instantiation.
-        """
+        """"
         try:
             X = training_data.features
             y = training_data.labels
@@ -760,14 +762,14 @@ import os.path
         model: Any,
         scaler: StandardScaler,
     ) -> None:
-        """Store model and scaler (Ray remote function).
+        """Store model and scaler (Ray remote function)."
 
         Args:
             result: Model result
             model: Trained model
             scaler: Fitted scaler
 
-        """
+        """"
         try:
             # Create model directory
             model_dir = self.model_trainer_config.get("model_directory", "models")
@@ -793,12 +795,12 @@ import os.path
 
     @handles_errors(fallback=None)
     def _store_trained_models(self, training_results: dict[str, Any]) -> None:
-        """Store all trained models metadata.
+        """Store all trained models metadata."
 
         Args:
             training_results: Complete training results
 
-        """
+        """"
         try:
             self.logger.info("📁 Storing trained models metadata...")
 
@@ -831,12 +833,12 @@ import os.path
             self.logger.error(f"❌ Failed to store trained models metadata: {e}")
 
     def _store_multi_output_model_metadata(self, model_name: str, model_result: dict[str, Any]) -> None:
-        """Store multi-output model metadata.
+        """Store multi-output model metadata."
         
         Args:
             model_name: Name of the multi-output model
             model_result: Multi-output model training result
-        """
+        """"
         try:
             self.logger.info(f"📁 Storing multi-output model metadata for {model_name}")
             
@@ -868,12 +870,12 @@ import os.path
             self.logger.error(f"❌ Failed to store multi-output model metadata: {e}")
 
     def _store_model_metadata(self, model_result: dict[str, Any]) -> None:
-        """Store model metadata.
+        """Store model metadata."
 
         Args:
             model_result: Model training result
 
-        """
+        """"
         try:
             model_key = f"{model_result['model_type']}_{model_result['timeframe']}"
             self.model_metadata[model_key] = {
@@ -888,12 +890,12 @@ import os.path
             self.logger.error(f"❌ Failed to store model metadata: {e}")
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get current training status.
+        """Get current training status."
 
         Returns:
             dict: Training status information
 
-        """
+        """"
         return {
             "is_training": self.is_training,
             "trained_models_count": len(self.trained_models),
@@ -907,12 +909,12 @@ import os.path
         }
 
     def get_trained_models(self) -> dict[str, Any]:
-        """Get all trained models.
+        """Get all trained models."
 
         Returns:
             dict: Trained models information
 
-        """
+        """"
         return self.trained_models.copy()
 
     def load_model(
@@ -920,7 +922,7 @@ import os.path
         model_type: str,
         timeframe: str,
     ) -> tuple[Any, StandardScaler] | None:
-        """Load a trained model and its scaler.
+        """Load a trained model and its scaler."
 
         Args:
             model_type: Type of model (analyst/tactician)
@@ -929,7 +931,7 @@ import os.path
         Returns:
             tuple: (model, scaler) or None if not found
 
-        """
+        """"
         try:
             model_key = f"{model_type}_{timeframe}"
             if model_key in self.model_metadata:
@@ -979,7 +981,7 @@ import os.path
 def setup_model_trainer(
     config: dict[str, Any] | None = None,
 ) -> RayModelTrainer | None:
-    """Setup and return a configured RayModelTrainer instance.
+    """Setup and return a configured RayModelTrainer instance."
 
     Args:
         config: Configuration dictionary
@@ -987,7 +989,7 @@ def setup_model_trainer(
     Returns:
         RayModelTrainer: Configured model trainer instance
 
-    """
+    """"
     try:
         trainer = RayModelTrainer(config or {})
         if trainer.initialize():

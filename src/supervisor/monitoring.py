@@ -1,8 +1,8 @@
-"""Monitoring Module.
+"""Monitoring Module."
 
 This module provides system-wide monitoring capabilities for the trading system,
 including health checks, performance tracking, and alerting functionality.
-"""
+""""
 
 # src/supervisor/monitoring.py
 
@@ -21,9 +21,9 @@ import copy
 )
 
 class Monitoring:
-    """
+    """"
     Enhanced Monitoring component with DI, type hints, and robust error handling.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config

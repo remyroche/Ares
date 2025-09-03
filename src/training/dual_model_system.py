@@ -32,21 +32,21 @@ from src.utils.warning_symbols import (
 )
 
 class DualModelSystem:
-    """Dual Model System for trading decisions.
+    """Dual Model System for trading decisions."
 
     Analyst Model: Decides IF we enter/exit a trade (multi-timeframe: 30m/15m/5m)
     Tactician Model: Decides WHEN we enter/exit a trade (1m timeframe)
 
     Both models use ml_confidence_predictor.py for predictions.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize Dual Model System.
+        """Initialize Dual Model System."
 
         Args:
             config: Configuration dictionary
 
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("DualModelSystem")
         # Backward-compatibility shim for legacy self.print calls
@@ -136,12 +136,12 @@ class DualModelSystem:
         context="dual model system initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize Dual Model System with enhanced error handling.
+        """Initialize Dual Model System with enhanced error handling."
 
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """
+        """"
         try:
             self.logger.info("Initializing Dual Model System...")
 
@@ -228,12 +228,12 @@ class DualModelSystem:
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate dual model configuration.
+        """Validate dual model configuration."
 
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
+        """"
         try:
             # Validate analyst timeframes
             if not self.analyst_timeframes:
@@ -505,7 +505,7 @@ class DualModelSystem:
         current_price: float,
         current_position: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Make trading decision using dual model system.
+        """Make trading decision using dual model system."
 
         Args:
             market_data: Market data for analysis
@@ -515,7 +515,7 @@ class DualModelSystem:
         Returns:
             Dictionary with trading decision
 
-        """
+        """"
         try:
             if not self.is_initialized:
                 msg = "Dual Model System not initialized"
@@ -1136,7 +1136,7 @@ class DualModelSystem:
             if position_type == "LONG":
                 # For long positions, check if we should take profit or stop loss
                 if price_target_confidences:
-                    # Check if we've reached profit targets
+                    # Check if we've reached profit targets'
                     profit_targets = {
                         k: v
                         for k, v in price_target_confidences.items()
@@ -1168,7 +1168,7 @@ class DualModelSystem:
             elif position_type == "SHORT":
                 # For short positions, check if we should take profit or stop loss
                 if adversarial_confidences:
-                    # Check if we've reached profit targets (price went down)
+                    # Check if we've reached profit targets (price went down)'
                     profit_targets = {
                         k: v
                         for k, v in adversarial_confidences.items()
@@ -1480,7 +1480,7 @@ class DualModelSystem:
         training_type: str = "continuous",
         force_training: bool = False,
     ) -> dict[str, Any]:
-        """Trigger model training for the dual model system.
+        """Trigger model training for the dual model system."
 
         Args:
             training_data: Historical data for training
@@ -1490,7 +1490,7 @@ class DualModelSystem:
         Returns:
             Dictionary containing training results
 
-        """
+        """"
         try:
             if not self.ml_confidence_predictor:
                 return {
@@ -1662,7 +1662,7 @@ dual_model_system: DualModelSystem | None = None
 async def setup_dual_model_system(
     config: dict[str, Any] | None = None,
 ) -> DualModelSystem | None:
-    """Setup global dual model system.
+    """Setup global dual model system."
 
     Args:
         config: Optional configuration dictionary
@@ -1670,7 +1670,7 @@ async def setup_dual_model_system(
     Returns:
         Optional[DualModelSystem]: Global dual model system instance
 
-    """
+    """"
     try:
         global dual_model_system
 

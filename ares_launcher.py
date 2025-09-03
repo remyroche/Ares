@@ -80,6 +80,12 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
+# Import common operations
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_json_dump
+)
+
 # Try to import requests for GUI health checks
 try:
     import requests
@@ -168,12 +174,12 @@ class AresLauncher:
         self.logger.info("=" * 80)
         self.logger.info("🚀 ARES COMPREHENSIVE LAUNCHER")
         self.logger.info("=" * 80)
-        self.logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"Start time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
         self.logger.info(f"Log directory: {self.comprehensive_logger.log_dir}")
         self.logger.info(f"Log level: {CONFIG.get('logging', {}).get('level', 'INFO')}")
         if self.global_logger:
             self.logger.info(
-                f"Global log file: ares_global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+                f"Global log file: ares_global_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.log",
             )
         if self.full_log_path:
             self.logger.info(f"Full run log: {self.full_log_path}")
@@ -447,7 +453,7 @@ class AresLauncher:
             logger.info("🚀 ENHANCED TRAINING PIPELINE START")
             logger.info("=" * 80)
             logger.info(
-                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}"
             )
             logger.info(f"🎯 Symbol: {symbol}")
             logger.info(f"🏢 Exchange: {exchange}")
@@ -512,7 +518,7 @@ class AresLauncher:
                     mode=training_mode,
                     symbol=symbol,
                     exchange=exchange,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                     lookback_days=lookback_days,
                 )
 
@@ -526,7 +532,7 @@ class AresLauncher:
                     logger.info("🎉 ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
                     logger.info("=" * 80)
                     logger.info(
-                        f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"📅 Completed at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}"
                     )
                     logger.info(f"🎯 Symbol: {symbol}")
                     logger.info(f"🏢 Exchange: {exchange}")
@@ -1903,7 +1909,7 @@ class AresLauncher:
         self.logger.info(f"📋 Subcommand: {subcommand}")
         self.logger.info(f"🖥️ GUI mode: {with_gui}")
         self.logger.info(
-            f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"⏰ Start time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}",
         )
 
         if with_gui:

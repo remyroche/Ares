@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Step 2.5: S/R Detection Optimization with Comprehensive Reporting.
+"""Step 2.5: S/R Detection Optimization with Comprehensive Reporting."
 
 This module performs comprehensive S/R detection optimization before HMM clustering
 to ensure that all subsequent steps use optimized parameters for S/R features.
 Includes detailed reporting and integration with all relevant SR files.
-"""
+""""
 
 import asyncio
 import sys
@@ -368,7 +368,7 @@ class SROptimizationStep:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 2.5 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     @handles_errors(fallback=None)
     @resource_monitor
@@ -1189,7 +1189,7 @@ class SROptimizationStep:
             # Save optimization results
             results_file = results_dir / "sr_optimization_results.json"
             
-            # Convert to dictionary if it's an OptimizationResult object
+            # Convert to dictionary if it's an OptimizationResult object'
             if hasattr(optimization_result, 'to_dict'):
                 results_data = optimization_result.to_dict()
             else:

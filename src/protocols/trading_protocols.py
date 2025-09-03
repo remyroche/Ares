@@ -1,8 +1,8 @@
 # src/protocols/trading_protocols.py
 
-"""
+""""
 Enhanced trading system protocols with comprehensive type safety (minimal scaffold).
-"""
+""""
 
 from __future__ import annotations
 

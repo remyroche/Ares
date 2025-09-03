@@ -1,8 +1,8 @@
 # src/training/steps/step7_enhanced_matrix_operations.py
 
-"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
+"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management."
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
-"""
+""""
 
 import asyncio
 import json
@@ -15,6 +15,9 @@ from typing import Any, Dict
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
+
+# Common utilities
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -121,8 +124,7 @@ class Step7EnhancedMatrixOperations:
         
         # Step-specific configuration
         self.step_config = config.get("step7_enhanced_matrix_operations", {})
-        self.output_dir = Path(self.step_config.get("output_dir", "data/matrix_operations"))
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = ensure_directory(self.step_config.get("output_dir", "data/matrix_operations"))
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -156,7 +158,7 @@ class Step7EnhancedMatrixOperations:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
-        """
+        """"
         Execute Step 7: Enhanced Matrix Operations.
         
         Args:
@@ -165,7 +167,7 @@ class Step7EnhancedMatrixOperations:
             
         Returns:
             Updated pipeline state with matrix operations results
-        """
+        """"
         try:
             start_time = datetime.now()
             self.logger.info("🚀 Starting Step 7: Enhanced Matrix Operations...")
@@ -442,7 +444,7 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     def _prepare_matrix_operations_config(
         self, 
@@ -1591,20 +1593,17 @@ class Step7EnhancedMatrixOperations:
         
         # Save configuration
         config_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
-        with open(config_file, 'w') as f:
-            json.dump(config, f, indent=2, default=str)
+        safe_json_dump(config, config_file, indent=2, default=str)
         output_files["config"] = str(config_file)
         
         # Save results
         results_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
-        with open(results_file, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+        safe_json_dump(results, results_file, indent=2, default=str)
         output_files["results"] = str(results_file)
         
         # Save quality metrics
         quality_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_quality_metrics.json"
-        with open(quality_file, 'w') as f:
-            json.dump(quality_metrics, f, indent=2, default=str)
+        safe_json_dump(quality_metrics, quality_file, indent=2, default=str)
         output_files["quality_metrics"] = str(quality_file)
         
         # Generate and save detailed quality report
@@ -1636,8 +1635,7 @@ class Step7EnhancedMatrixOperations:
         }
         
         summary_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
-        with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2, default=str)
+        safe_json_dump(summary, summary_file, indent=2, default=str)
         output_files["summary"] = str(summary_file)
         
         self.logger.info(f"💾 Saved matrix operations results to {self.output_dir}")
@@ -1652,7 +1650,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """
+    """"
     Run Step 7: Enhanced Matrix Operations with standardized data quality management.
     
     Args:
@@ -1665,7 +1663,7 @@ async def run_step(
         
     Returns:
         True if successful, False otherwise
-    """
+    """"
     try:
         # Use standardized path construction
         if data_dir is None:
@@ -1673,12 +1671,14 @@ async def run_step(
         
         # Load configuration
         from src.config.training import get_training_config
+    except Exception as e:
+        pass  # TODO: Handle exception properly
 import numpy as np
 import os.path
 import pandas as pd
 from src.core.decorators import handles_errors
 
-        config = get_training_config()
+config = get_training_config()
         
         # Create step instance
         step = Step7EnhancedMatrixOperations(config)

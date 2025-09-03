@@ -1,9 +1,9 @@
-"""
+""""
 VIF Calculator
 
 This module provides robust VIF (Variance Inflation Factor) calculation functions
 with comprehensive error handling and validation.
-"""
+""""
 
 import logging
 from typing import Dict, List, Optional, Tuple, Union
@@ -24,7 +24,7 @@ from src.utils.vif_validation_decorators import (
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
-    """
+    """"
     Simple VIF calculation using correlation matrix.
 
     Args:
@@ -33,7 +33,7 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
 
     Returns:
         Series with VIF values for each feature
-    """
+    """"
     if features is None:
         # Fallback implementation for features
         # Fallback implementation for features
@@ -62,9 +62,11 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         try:
             # Calculate R-squared
             from sklearn.linear_model import LinearRegression
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-            model = LinearRegression()
+model = LinearRegression()
             model.fit(X_clean, y_clean)
             r_squared = model.score(X_clean, y_clean)
 
@@ -84,7 +86,7 @@ import copy
 
 @comprehensive_vif_validation(timeout_seconds=30, max_vif_threshold=1000.0, fallback_strategy="ones")
 def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
-    """
+    """"
     Robust VIF calculation with comprehensive error handling.
 
     Args:
@@ -93,7 +95,7 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
 
     Returns:
         Series with VIF values for each feature
-    """
+    """"
     logger = system_logger.getChild("VIFCalculator")
 
     if features is None:
@@ -187,7 +189,7 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
 def calculate_vif_iterative(
     data: pd.DataFrame, max_vif: float = 10.0, max_iterations: int = 10, features: Optional[List[str]] = None
 ) -> Tuple[pd.Series, List[str]]:
-    """
+    """"
     Iterative VIF calculation that removes high VIF features.
 
     Args:
@@ -198,7 +200,7 @@ def calculate_vif_iterative(
 
     Returns:
         Tuple of (VIF values, removed features)
-    """
+    """"
     logger = system_logger.getChild("VIFCalculator")
 
     if features is None:
@@ -245,7 +247,7 @@ def calculate_vif_iterative(
 
 
 def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
-    """
+    """"
     Analyze VIF values for potential issues.
 
     Args:
@@ -253,7 +255,7 @@ def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
 
     Returns:
         Dictionary with analysis results
-    """
+    """"
     logger = system_logger.getChild("VIFAnalyzer")
 
     analysis = {
@@ -302,7 +304,7 @@ def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
 
 
 def get_vif_recommendations(vif_values: pd.Series, threshold: float = 10.0) -> List[str]:
-    """
+    """"
     Get recommendations for handling VIF issues.
 
     Args:
@@ -311,7 +313,7 @@ def get_vif_recommendations(vif_values: pd.Series, threshold: float = 10.0) -> L
 
     Returns:
         List of recommendations
-    """
+    """"
     recommendations = []
 
     # Analyze issues

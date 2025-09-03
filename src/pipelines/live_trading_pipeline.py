@@ -1,6 +1,6 @@
-"""
+""""
 Live trading pipeline implementation (minimal scaffold).
-"""
+""""
 
 from __future__ import annotations
 

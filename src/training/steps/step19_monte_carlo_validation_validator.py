@@ -12,6 +12,7 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 from src.core.decorators import handles_errors
+from src.utils.common_operations import safe_json_load
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -180,8 +181,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         metrics: dict[str, Any] = {}
 
         if os.path.exists(results_file):
-            with open(results_file, "r", encoding="utf-8") as f:
-                results = json.load(f)
+            results = safe_json_load(results_file)
 
             # Check number of simulations
             if "simulation_count" in results:
@@ -271,8 +271,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         metrics: dict[str, Any] = {}
 
         if os.path.exists(performance_file):
-            with open(performance_file, "r", encoding="utf-8") as f:
-                performance = json.load(f)
+            performance = safe_json_load(performance_file)
 
             # Check performance distribution statistics
             if "distribution_stats" in performance:
@@ -391,8 +390,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         metrics: dict[str, Any] = {}
 
         if os.path.exists(metadata_file):
-            with open(metadata_file, "r", encoding="utf-8") as f:
-                metadata = json.load(f)
+            metadata = safe_json_load(metadata_file)
 
             # Check simulation parameters
             if "simulation_parameters" in metadata:

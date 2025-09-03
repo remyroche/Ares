@@ -17,6 +17,8 @@ from src.utils.warning_symbols import (
     missing,
 )
 
+from src.utils.common_operations import safe_json_load
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -238,10 +240,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 return False
 
             # Validate that at least one model path exists in the summary
-            import json
-
-            with open(summary_file) as f:
-                summary = json.load(f)
+            summary = safe_json_load(summary_file)
 
             found_any_model = False
             for timeframe_models in summary.values():
@@ -288,16 +287,13 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         """
         try:
             # Load original metrics from step05 HMM history
-            import json
-
             original_history_file = (
                 f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
             )
             original_metrics: dict[str, Any] = {}
             if os.path.exists(original_history_file):
-                with open(original_history_file) as f:
-                    original_data = json.load(f)
-                    original_metrics = original_data.get("metrics", {})
+                original_data = safe_json_load(original_history_file)
+                original_metrics = original_data.get("metrics", {})
 
             # Load enhanced HMM models summary produced by Step 6
             summary_file = (
@@ -309,8 +305,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 )
                 return False
 
-            with open(summary_file) as f:
-                enhanced_summary = json.load(f)
+            enhanced_summary = safe_json_load(summary_file)
 
             # Aggregate enhanced accuracies
             enhanced_accuracies: list[float] = []
@@ -372,8 +367,6 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         """
         try:
             # Load enhancement summary to find a concrete model artifact
-            import json
-
             summary_file = (
                 f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
             )
@@ -383,8 +376,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 )
                 return False
 
-            with open(summary_file) as f:
-                summary = json.load(f)
+            summary = safe_json_load(summary_file)
 
             # Find the first available model path
             model_path: str | None = None

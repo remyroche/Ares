@@ -1,4 +1,4 @@
-"""Data Preparation for Step1_5.
+"""Data Preparation for Step1_5."
 
 Prepares data for step1_5_data_converter.py processing. This module focuses on:
 1. Loading and validating klines data
@@ -6,7 +6,7 @@ Prepares data for step1_5_data_converter.py processing. This module focuses on:
 3. Optimizing data storage and access patterns
 
 Note: Actual resampling is handled by step1_5_data_converter.py
-"""
+""""
 
 import sys
 from datetime import datetime
@@ -90,7 +90,7 @@ class DataPreparation:
     def load_klines_data(
         self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None
     ) -> pd.DataFrame:
-        """Load and combine klines data from multiple files.
+        """Load and combine klines data from multiple files."
 
         Args:
             symbol: Trading symbol
@@ -101,7 +101,7 @@ class DataPreparation:
         Returns:
             Combined DataFrame with all klines data
 
-        """
+        """"
         logger.info(f"📊 Loading klines data for {exchange}_{symbol}")
 
         klines_files = self.get_klines_files(symbol, exchange)
@@ -165,7 +165,7 @@ class DataPreparation:
         context="data_resampler.prepare_for_step1_5"
     )
     def prepare_for_step1_5(self, symbol: str, exchange: str) -> dict:
-        """Prepare data for step1_5_data_converter.py processing.
+        """Prepare data for step1_5_data_converter.py processing."
 
         Args:
             symbol: Trading symbol
@@ -174,7 +174,7 @@ class DataPreparation:
         Returns:
             Dictionary with preparation results
 
-        """
+        """"
         logger.info(f"🔧 Preparing data for step1_5 processing: {exchange}_{symbol}")
 
         preparation_result = {
@@ -233,7 +233,7 @@ class DataPreparation:
     def save_resampled_data(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, output_format: str = "parquet"
     ) -> Path:
-        """Save resampled data with proper formatting and indexing.
+        """Save resampled data with proper formatting and indexing."
 
         Args:
             df: Resampled DataFrame
@@ -245,7 +245,7 @@ class DataPreparation:
         Returns:
             Path to saved file
 
-        """
+        """"
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for saving")
             return None
@@ -302,7 +302,7 @@ class DataPreparation:
     @handles_errors(fallback=None)
     def create_partitioned_dataset(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, ) -> Path:
-        """Create partitioned Parquet dataset for efficient querying.
+        """Create partitioned Parquet dataset for efficient querying."
 
         Args:
             df: Resampled DataFrame
@@ -313,7 +313,7 @@ class DataPreparation:
         Returns:
             Path to partitioned dataset
 
-        """
+        """"
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for partitioning")
             return None
@@ -367,7 +367,7 @@ class DataPreparation:
     def resample_all_timeframes(
         self, symbol: str, exchange: str, timeframes: list[str] | None = None, start_date: datetime | None = None, end_date: datetime | None = None, create_partitions: bool = True
     ) -> dict:
-        """Resample data to all specified timeframes.
+        """Resample data to all specified timeframes."
 
         Args:
             symbol: Trading symbol
@@ -380,7 +380,7 @@ class DataPreparation:
         Returns:
             Dictionary with resampling results
 
-        """
+        """"
         resampling_start = datetime.now()
         
         if timeframes is None:
@@ -499,7 +499,7 @@ class DataPreparation:
     )
     def validate_resampled_data(
         self, symbol: str, exchange: str, timeframe: str, ) -> dict:
-        """Validate resampled data quality.
+        """Validate resampled data quality."
 
         Args:
             symbol: Trading symbol
@@ -509,7 +509,7 @@ class DataPreparation:
         Returns:
             Dictionary with validation results
 
-        """
+        """"
         logger.info(f"🔍 Validating {timeframe} resampled data for {exchange}_{symbol}")
 
         # Find resampled file
@@ -589,7 +589,7 @@ class DataPreparation:
     @with_tracing_span("resample_to_timeframe")
     @handles_errors(fallback=pd.DataFrame())
     def resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-        """Resample DataFrame to specified timeframe.
+        """Resample DataFrame to specified timeframe."
 
         Args:
             df: Source DataFrame with OHLCV data
@@ -598,7 +598,7 @@ class DataPreparation:
         Returns:
             Resampled DataFrame
 
-        """
+        """"
         if timeframe not in self.SUPPORTED_TIMEFRAMES:
             logger.error(f"❌ Unsupported timeframe: {timeframe}")
             return pd.DataFrame()
@@ -652,7 +652,7 @@ class DataPreparation:
         context="data_resampler.validate_resampled_data_quality"
     )
     def validate_resampled_data_quality(self, df: pd.DataFrame, timeframe: str) -> dict:
-        """Validate quality of resampled data.
+        """Validate quality of resampled data."
 
         Args:
             df: Resampled DataFrame
@@ -661,7 +661,7 @@ class DataPreparation:
         Returns:
             Dictionary with validation results
 
-        """
+        """"
         validation_result = {
             "valid": True,
             "issues": [],
@@ -726,15 +726,15 @@ class DataPreparation:
 
     def generate_resampling_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive resampling report."""
-        report = f"""
+        report = f""""
 🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
 {'='*60}
 
 📊 AVAILABLE TIMEFRAMES:
     pass
-"""
+""""
 
-        for timeframe in self.SUPPORTED_TIMEFRAMES:
+for timeframe in self.SUPPORTED_TIMEFRAMES:
             # Check if resampled file exists
             output_dir = self.data_cache_path / "resampled" / exchange / symbol
             filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
@@ -749,11 +749,11 @@ class DataPreparation:
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
 
-        report += f"""
+        report += f""""
 {'='*60}
-"""
+""""
 
-        return report
+return report
 
     @with_tracing_span("create_1m_consolidated_data")
     @handles_errors
@@ -768,7 +768,7 @@ class DataPreparation:
         context="data_resampler.create_1m_consolidated_data"
     )
     def create_1m_consolidated_data(self, symbol: str, exchange: str) -> dict:
-        """Create 1m consolidated data from klines files.
+        """Create 1m consolidated data from klines files."
 
         Args:
             symbol: Trading symbol
@@ -777,7 +777,7 @@ class DataPreparation:
         Returns:
             Dictionary with consolidation results
 
-        """
+        """"
         logger.info(f"🔧 Creating 1m consolidated data for {exchange}_{symbol}")
 
         consolidation_result = {

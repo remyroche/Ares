@@ -26,13 +26,13 @@ class OptimizationMetrics:
     cvar_95: float  # Conditional Value at Risk 95%
 
 class MultiObjectiveOptimizer:
-    """Advanced multi-objective hyperparameter optimizer using Pareto optimization.
+    """Advanced multi-objective hyperparameter optimizer using Pareto optimization."
 
     This optimizer considers multiple performance metrics simultaneously:
     - Risk-adjusted returns (Sharpe, Sortino, Calmar ratios)
     - Risk metrics (Max drawdown, VaR, CVaR)
     - Profitability metrics (Total return, Win rate, Profit factor)
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -62,7 +62,7 @@ class MultiObjectiveOptimizer:
             from src.training.optimized_backtester import OptimizedBacktester
 import datetime as datetime
 
-            self.optimized_backtester = OptimizedBacktester(
+self.optimized_backtester = OptimizedBacktester(
                 config["market_data"],
                 config.get("computational_optimization", {}),
             )

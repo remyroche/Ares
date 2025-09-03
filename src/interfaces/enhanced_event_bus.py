@@ -406,9 +406,9 @@ class EventVersionManager:
             return event
 
 class EnhancedEventBus:
-    """
+    """"
     Enhanced Event Bus with event sourcing, versioning, and persistence capabilities
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]):
         self.config = config

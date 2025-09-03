@@ -1,4 +1,4 @@
-"""
+""""
 Configuration Security Module
 
 This module provides secure configuration management including:
@@ -7,7 +7,7 @@ This module provides secure configuration management including:
 - Configuration validation and schema checking
 - Secure configuration updates and persistence
 - Audit logging for configuration changes
-"""
+""""
 
 import configparser
 import json
@@ -100,7 +100,7 @@ class ConfigurationSecurityManager:
 
     @handles_errors(fallback=None)
     def load_secure_configuration(self, file_path: str, config_format: str = "auto") -> Optional[Dict[str, Any]]:
-        """Load configuration from file with security validation.
+        """Load configuration from file with security validation."
 
         Args:
             file_path: Path to configuration file
@@ -108,7 +108,7 @@ class ConfigurationSecurityManager:
 
         Returns:
             Loaded configuration dictionary
-        """
+        """"
         file_path = Path(file_path)
 
         if not file_path.exists():
@@ -309,7 +309,7 @@ class ConfigurationSecurityManager:
                     encrypt_dict(value)
                 elif isinstance(value, str) and self._is_sensitive_key(key):
                     # In a real implementation, you would encrypt this value
-                    # For now, we'll just mark it as encrypted
+                    # For now, we'll just mark it as encrypted'
                     d[key] = f"[ENCRYPTED]{value[:4]}..."
 
         encrypt_dict(encrypted_config)
@@ -355,9 +355,11 @@ class ConfigurationSecurityManager:
             else:
                 # For other formats, just copy the file
                 import shutil
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-                shutil.copy2(file_path, backup_file)
+shutil.copy2(file_path, backup_file)
 
             # Set secure permissions on backup
             backup_file.chmod(self.security_policies["config_file_permissions"])
@@ -369,7 +371,7 @@ import copy
 
     @handles_errors(fallback=None)
     def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
-        """Get configuration value by dot-notation path.
+        """Get configuration value by dot-notation path."
 
         Args:
             config: Configuration dictionary
@@ -378,7 +380,7 @@ import copy
 
         Returns:
             Configuration value or default
-        """
+        """"
         try:
             keys = key_path.split(".")
             value = config
@@ -402,7 +404,7 @@ import copy
 
     @handles_errors(fallback=None)
     def set_config_value(self, config: Dict[str, Any], key_path: str, value: Any) -> Optional[Dict[str, Any]]:
-        """Set configuration value by dot-notation path.
+        """Set configuration value by dot-notation path."
 
         Args:
             config: Configuration dictionary
@@ -411,7 +413,7 @@ import copy
 
         Returns:
             Updated configuration dictionary
-        """
+        """"
         try:
             keys = key_path.split(".")
             updated_config = config.copy()
@@ -440,7 +442,7 @@ import copy
             return None
 
     def save_secure_configuration(self, config: Dict[str, Any], file_path: str, config_format: str = "auto") -> bool:
-        """Save configuration to file with security measures.
+        """Save configuration to file with security measures."
 
         Args:
             config: Configuration dictionary
@@ -449,7 +451,7 @@ import copy
 
         Returns:
             True if successful
-        """
+        """"
         try:
             file_path = Path(file_path)
 
@@ -496,11 +498,11 @@ import copy
             return False
 
     def get_configuration_security_report(self) -> Dict[str, Any]:
-        """Get configuration security report.
+        """Get configuration security report."
 
         Returns:
             Configuration security report
-        """
+        """"
         try:
             # Count sensitive keys in recent configurations
             sensitive_access_count = sum(1 for entry in self.access_audit_log if "sensitive" in entry["action"])

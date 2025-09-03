@@ -1,10 +1,10 @@
 # src/training/steps/step15_tactician_specialist_training.py
 
-"""Step 15: Tactician Specialist Training with Standardized Data Quality Management.
+"""Step 15: Tactician Specialist Training with Standardized Data Quality Management."
 
 This step performs tactician specialist model training with S/R level integration
 using standardized data quality management patterns.
-"""
+""""
 
 import asyncio
 import contextlib
@@ -348,9 +348,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             return labeled_data
 
     def _get_timeframe_minutes(self, timeframe: str) -> int:
-        """Convert timeframe string to minutes for adaptive processing.
+        """Convert timeframe string to minutes for adaptive processing."
         Step9 only supports 1m and 5m timeframes.
-        """
+        """"
         tf = timeframe.lower()
         if tf == "1m":
             return 1
@@ -729,7 +729,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             # Calculate overall accuracy from probability outputs
             overall_accuracy = 0.0
             prob_values = [v for k, v in price_action_probabilities.items() 
-                          if k not in ["generation_timestamp", "model_type"]]
+            if k not in ["generation_timestamp", "model_type"]]
             if prob_values:
                 overall_accuracy = sum(prob_values) / len(prob_values)
 
@@ -1254,7 +1254,7 @@ async def run_step(
     symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
-    """Run the tactician specialist training step.
+    """Run the tactician specialist training step."
 
     Args:
         symbol: Trading symbol
@@ -1265,7 +1265,7 @@ async def run_step(
     Returns:
         bool: True if successful = False otherwise
 
-    """
+    """"
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

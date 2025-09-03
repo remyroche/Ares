@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Step 4: Triple Barrier Method.
+"""Step 4: Triple Barrier Method."
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
-"""
+""""
 
 import asyncio
 import sys
 from pathlib import Path
+from src.utils.common_operations import ensure_directory
 from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
@@ -124,7 +125,7 @@ class TripleBarrierMethodStep:
         data_dir: str = "data_cache",
         force_rerun: bool = False,
     ) -> bool:
-        """Execute the triple barrier method step.
+        """Execute the triple barrier method step."
 
         Args:
             symbol: Trading symbol
@@ -135,7 +136,7 @@ class TripleBarrierMethodStep:
 
         Returns:
             True if successful, False otherwise
-        """
+        """"
         step_start = time.time()
         self.logger.info(f"🚀 Executing Triple Barrier Method for {symbol} on {exchange}")
 
@@ -173,7 +174,7 @@ class TripleBarrierMethodStep:
 
             # Save results
             output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_directory(output_path.parent)
             
             # Combine data with labels
             result_data = data.copy()
@@ -316,7 +317,7 @@ class TripleBarrierMethodStep:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 4 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Apply optimized triple barrier labeling with profit tracking."""
@@ -329,10 +330,12 @@ class TripleBarrierMethodStep:
 
             # Create triple barrier labeler with configuration
             from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 from src.core.decorators import handles_errors
 
-                OptimizedTripleBarrierLabeling
+OptimizedTripleBarrierLabeling
             )
             
             labeler = OptimizedTripleBarrierLabeling(
@@ -441,7 +444,7 @@ from src.core.decorators import handles_errors
             return None
 
     def _create_enhanced_labels(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create enhanced labels that include profit information alongside direction labels.
+        """Create enhanced labels that include profit information alongside direction labels."
         
         This method creates additional columns that combine direction and profit information
         for more comprehensive trading signal analysis.
@@ -451,7 +454,7 @@ from src.core.decorators import handles_errors
             
         Returns:
             DataFrame with enhanced label columns
-        """
+        """"
         try:
             enhanced_data = data.copy()
             
@@ -475,7 +478,7 @@ from src.core.decorators import handles_errors
             enhanced_data['profit_weighted_label'] = enhanced_data['label'] * enhanced_data['potential_profit_pct']
             
             # Create risk-adjusted labels (profit divided by time to barrier hit)
-            # For now, we'll use a simple approach - can be enhanced later
+            # For now, we'll use a simple approach - can be enhanced later'
             enhanced_data['risk_adjusted_profit'] = enhanced_data['potential_profit_pct'].abs()
             
             # Create confidence scores based on profit magnitude
@@ -506,7 +509,7 @@ async def run_step(
     force_rerun: bool = False,
     config: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Run the triple barrier method step.
+    """Run the triple barrier method step."
 
     Args:
         symbol: Trading symbol
@@ -518,7 +521,7 @@ async def run_step(
 
     Returns:
         True if successful, False otherwise
-    """
+    """"
     if config is None:
         config = {}
 

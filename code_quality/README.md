@@ -97,6 +97,16 @@ python code_quality/comprehensive_code_review.py --project-root /path/to/project
 python code_quality/function_validator.py --project-root /path/to/project --output validation.json
 ```
 
+**Enhanced Validator (Function Arguments & Data Access):**
+```bash
+python code_quality/enhanced_validator.py --project-root /path/to/project --output enhanced_report.txt
+```
+
+**Integrated Validator (All Validators Combined):**
+```bash
+python code_quality/integrated_validator.py --project-root /path/to/project --output-dir reports/
+```
+
 ### Examples
 
 1. **Validate current project:**
@@ -137,11 +147,23 @@ python code_quality/function_validator.py --project-root /path/to/project --outp
 - ✅ Function argument counts
 - ✅ Default parameter values
 - ⚠️ Functions with too many arguments (warnings)
+- ✅ Missing required arguments detection
+- ✅ Unknown keyword arguments detection
+- ✅ Type consistency checking
 
 ### Import Consistency
 - ✅ Import statement validation
 - ⚠️ Potential naming conflicts
 - ✅ Import path verification
+
+### Data Access Validation (Enhanced Validator)
+- ✅ Safe dictionary access patterns (using .get())
+- ❌ Unsafe dictionary key access without checks
+- ✅ Safe attribute access with null checks
+- ❌ Unsafe attribute access on potentially None objects
+- ✅ Safe list/array access with bounds checking
+- ❌ Unsafe list indexing without validation
+- ✅ Tracking of null/None checks for safety analysis
 
 ### Code Style
 - ✅ Line length limits (120 characters)

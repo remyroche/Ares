@@ -14,7 +14,12 @@ from typing import Any
 from src.utils.logger import system_logger
 from copy import copy
 import asyncio
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as _handles_errors
+
+# Backward-compatible wrapper to accept legacy arguments (error_handlers/context/default_return)
+def handles_errors(*_args, **kwargs):
+    fallback = kwargs.get("default_return", kwargs.get("fallback", None))
+    return _handles_errors(fallback=fallback)
 
 
 class LeverageSizer:

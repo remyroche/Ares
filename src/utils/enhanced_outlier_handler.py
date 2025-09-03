@@ -9,18 +9,17 @@ This module provides sophisticated outlier detection and handling including:
 - Data integrity preservation
 """
 
-import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
-from .pipeline_standards import PipelineStandards, pipeline_standards
+
 
 class OutlierSeverity(Enum):
     """Outlier severity levels."""
@@ -36,10 +35,10 @@ class DataSchema:
     def __init__(
         self,
         name: str,
-        required_columns: List[str],
-        optional_columns: List[str] = None,
-        data_types: Dict[str, str] = None,
-        constraints: Dict[str, Dict[str, Any]] = None,
+        required_columns: list[str],
+        optional_columns: list[str] = None,
+        data_types: dict[str, str] = None,
+        constraints: dict[str, dict[str, Any]] = None,
     ):
         """Initialize data schema.
 
@@ -57,7 +56,7 @@ class DataSchema:
         self.constraints = constraints or {}
         self.all_columns = self.required_columns.union(self.optional_columns)
 
-    def validate_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
+    def validate_dataframe(self, df: pd.DataFrame) -> dict[str, Any]:
         """Validate dataframe against schema.
 
         Args:
@@ -96,10 +95,10 @@ class DataSchema:
                 actual_type = str(df[column].dtype)
                 if actual_type != expected_type:
                     results["type_mismatches"].append(
-                        {"column": column, "expected": expected_type, "actual": actual_type}
+                        {"column": column, "expected": expected_type, "actual": actual_type},
                     )
                     results["warnings"].append(
-                        f"Type mismatch in {column}: expected {expected_type}, got {actual_type}"
+                        f"Type mismatch in {column}: expected {expected_type}, got {actual_type}",
                     )
 
         # Check constraints
@@ -119,7 +118,7 @@ class DataSchema:
                     min_val = constraint["min"]
                     if (df[column] < min_val).any():
                         results["constraint_violations"].append(
-                            f"Column {column} contains values below minimum {min_val}"
+                            f"Column {column} contains values below minimum {min_val}",
                         )
                         results["warnings"].append(f"Values below minimum {min_val} found in {column}")
 
@@ -127,7 +126,7 @@ class DataSchema:
                     max_val = constraint["max"]
                     if (df[column] > max_val).any():
                         results["constraint_violations"].append(
-                            f"Column {column} contains values above maximum {max_val}"
+                            f"Column {column} contains values above maximum {max_val}",
                         )
                         results["warnings"].append(f"Values above maximum {max_val} found in {column}")
 
@@ -139,8 +138,8 @@ class OutlierInfo:
     def __init__(
         self,
         column: str,
-        indices: List[int],
-        values: List[Any],
+        indices: list[int],
+        values: list[Any],
         method: str,
         severity: OutlierSeverity,
         threshold: float,
@@ -231,7 +230,7 @@ class EnhancedOutlierHandler:
         }
 
         self.logger.info(
-            f"🔍 Enhanced Outlier Handler initialized with {len(self.detection_methods)} detection methods"
+            f"🔍 Enhanced Outlier Handler initialized with {len(self.detection_methods)} detection methods",
         )
 
     @handles_errors(fallback=[])
@@ -240,9 +239,9 @@ class EnhancedOutlierHandler:
         data: pd.DataFrame,
         method: str = "zscore",
         threshold: float = 3.0,
-        columns: List[str] = None,
+        columns: list[str] = None,
         raise_errors: bool = None,
-    ) -> List[OutlierInfo]:
+    ) -> list[OutlierInfo]:
         """Detect outliers in data using specified method.
 
         Args:
@@ -297,7 +296,7 @@ class EnhancedOutlierHandler:
 
         return all_outliers
 
-    def _detect_zscore_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+    def _detect_zscore_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
         """Detect outliers using Z-score method."""
         outliers = []
 
@@ -337,11 +336,11 @@ class EnhancedOutlierHandler:
                 outliers.append(outlier_info)
 
         except Exception as e:
-            self.logger.error(f"Error in Z-score outlier detection: {e}")
+            self.logger.exception(f"Error in Z-score outlier detection: {e}")
 
         return outliers
 
-    def _detect_iqr_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+    def _detect_iqr_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
         """Detect outliers using IQR method."""
         outliers = []
 
@@ -396,11 +395,11 @@ class EnhancedOutlierHandler:
                 outliers.append(outlier_info)
 
         except Exception as e:
-            self.logger.error(f"Error in IQR outlier detection: {e}")
+            self.logger.exception(f"Error in IQR outlier detection: {e}")
 
         return outliers
 
-    def _detect_isolation_forest_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+    def _detect_isolation_forest_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
         """Detect outliers using Isolation Forest method."""
         outliers = []
 
@@ -453,11 +452,11 @@ class EnhancedOutlierHandler:
             self.logger.warning("scikit-learn not available for isolation forest outlier detection")
 
         except Exception as e:
-            self.logger.error(f"Error in isolation forest outlier detection: {e}")
+            self.logger.exception(f"Error in isolation forest outlier detection: {e}")
 
         return outliers
 
-    def _detect_lof_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+    def _detect_lof_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
         """Detect outliers using Local Outlier Factor method."""
         outliers = []
 
@@ -510,11 +509,11 @@ class EnhancedOutlierHandler:
             self.logger.warning("scikit-learn not available for LOF outlier detection")
 
         except Exception as e:
-            self.logger.error(f"Error in LOF outlier detection: {e}")
+            self.logger.exception(f"Error in LOF outlier detection: {e}")
 
         return outliers
 
-    def _detect_mahalanobis_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+    def _detect_mahalanobis_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> list[OutlierInfo]:
         """Detect outliers using Mahalanobis distance method."""
         outliers = []
 
@@ -565,11 +564,11 @@ class EnhancedOutlierHandler:
             self.logger.warning("scipy not available for Mahalanobis outlier detection")
 
         except Exception as e:
-            self.logger.error(f"Error in Mahalanobis outlier detection: {e}")
+            self.logger.exception(f"Error in Mahalanobis outlier detection: {e}")
 
         return outliers
 
-    def _log_outlier_details(self, outliers: List[OutlierInfo]) -> None:
+    def _log_outlier_details(self, outliers: list[OutlierInfo]) -> None:
         """Log detailed outlier information."""
         if not outliers:
             return
@@ -579,7 +578,7 @@ class EnhancedOutlierHandler:
         for outlier in outliers:
             self.logger.warning(
                 f"Outlier in {outlier.column}: {len(outlier.indices)} values, "
-                f"severity={outlier.severity.value}, method={outlier.method}"
+                f"severity={outlier.severity.value}, method={outlier.method}",
             )
 
             if outlier.severity in [OutlierSeverity.HIGH, OutlierSeverity.CRITICAL]:
@@ -587,7 +586,7 @@ class EnhancedOutlierHandler:
                 self.logger.error(f"  Values: {outlier.values[:5]}...")  # Show first 5 values
                 self.logger.error(f"  Context: {outlier.context}")
 
-    def _handle_outlier_errors(self, outliers: List[OutlierInfo]) -> None:
+    def _handle_outlier_errors(self, outliers: list[OutlierInfo]) -> None:
         """Handle outlier errors by raising exceptions or logging."""
         critical_outliers = [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
         high_outliers = [o for o in outliers if o.severity == OutlierSeverity.HIGH]
@@ -609,7 +608,7 @@ class EnhancedOutlierHandler:
             if self.raise_errors:
                 raise ValueError(error_msg)
 
-    def validate_data_schema(self, data: pd.DataFrame, schema_name: str) -> Dict[str, Any]:
+    def validate_data_schema(self, data: pd.DataFrame, schema_name: str) -> dict[str, Any]:
         """Validate data against a standard schema.
 
         Args:
@@ -629,10 +628,10 @@ class EnhancedOutlierHandler:
     def create_custom_schema(
         self,
         name: str,
-        required_columns: List[str],
-        optional_columns: List[str] = None,
-        data_types: Dict[str, str] = None,
-        constraints: Dict[str, Dict[str, Any]] = None,
+        required_columns: list[str],
+        optional_columns: list[str] = None,
+        data_types: dict[str, str] = None,
+        constraints: dict[str, dict[str, Any]] = None,
     ) -> DataSchema:
         """Create a custom data schema.
 
@@ -652,7 +651,7 @@ class EnhancedOutlierHandler:
         self.logger.info(f"Created custom schema: {name}")
         return schema
 
-    def get_schema_info(self, schema_name: str) -> Dict[str, Any]:
+    def get_schema_info(self, schema_name: str) -> dict[str, Any]:
         """Get information about a schema.
 
         Args:
@@ -674,7 +673,7 @@ class EnhancedOutlierHandler:
             "constraints": schema.constraints,
         }
 
-    def list_available_schemas(self) -> List[str]:
+    def list_available_schemas(self) -> list[str]:
         """List all available schemas.
 
         Returns:
@@ -682,7 +681,7 @@ class EnhancedOutlierHandler:
         """
         return list(self.standard_schemas.keys())
 
-    def get_outlier_report(self) -> Dict[str, Any]:
+    def get_outlier_report(self) -> dict[str, Any]:
         """Generate comprehensive outlier report.
 
         Returns:
@@ -712,7 +711,7 @@ class EnhancedOutlierHandler:
             method = outlier.method
             method_counts[method] = method_counts.get(method, 0) + 1
 
-        report = {
+        return {
             "timestamp": datetime.now().isoformat(),
             "total_outlier_groups": len(self.outlier_history),
             "severity_distribution": severity_counts,
@@ -730,7 +729,6 @@ class EnhancedOutlierHandler:
             ],
         }
 
-        return report
 
 # Global enhanced outlier handler instance
 enhanced_outlier_handler = EnhancedOutlierHandler()

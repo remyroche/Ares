@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Union, overload
+from typing import Any, Union
 
 import numpy as np
 import pandas as pd
-
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +26,8 @@ def safe_pct_change(
     series: pd.Series,
     periods: int = 1,
     *,
-    fill_method: Optional[str] = "ffill",
-    limit: Optional[int] = None,
+    fill_method: str | None = "ffill",
+    limit: int | None = None,
     freq: Any | None = None,
     **kwargs: Any,
 ) -> pd.Series:
@@ -61,8 +58,8 @@ def safe_log_returns(
     series: pd.Series,
     periods: int = 1,
     *,
-    fill_method: Optional[str] = "ffill",
-    limit: Optional[int] = None,
+    fill_method: str | None = "ffill",
+    limit: int | None = None,
     freq: Any | None = None,
     **kwargs: Any,
 ) -> pd.Series:
@@ -182,13 +179,12 @@ def safe_division(
                     int(smalls),
                     context,
                 )
-            result = result.replace([np.inf, -np.inf], fill_value).fillna(fill_value)
-            return result
+            return result.replace([np.inf, -np.inf], fill_value).fillna(fill_value)
 
         # ndarray/scalars
-        if isinstance(numerator, (np.ndarray, float, int)) and isinstance(
+        if isinstance(numerator, np.ndarray | float | int) and isinstance(
             denominator,
-            (np.ndarray, float, int),
+            np.ndarray | float | int,
         ):
             num_arr = np.asarray(numerator)
             den_arr = np.asarray(denominator)

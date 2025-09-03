@@ -4,15 +4,14 @@ import logging
 import os
 from typing import Any
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
     failed,
 )
 
 # Try to import Sentry SDK modules
 try:
-    from sentry_sdk.integrations.logging import LoggingIntegration
     from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
 except ImportError:
     LoggingIntegration = None
     FastApiIntegration = None
@@ -41,17 +40,17 @@ def init_sentry() -> None:
     try:
         if SENTRY_AVAILABLE and sentry_sdk:
             integrations = []
-            
+
             if LoggingIntegration:
                 sentry_logging = LoggingIntegration(
                     level=logging.INFO,
                     event_level=logging.ERROR,
                 )
                 integrations.append(sentry_logging)
-            
+
             if AioHttpIntegration:
                 integrations.append(AioHttpIntegration())
-            
+
             if FastApiIntegration:
                 integrations.append(FastApiIntegration())
 

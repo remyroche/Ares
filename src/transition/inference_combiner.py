@@ -1,12 +1,14 @@
 # src/transition/inference_combiner.py
 
 from __future__ import annotations
-from src.utils.logger import system_logger
-from typing import Any
+
 import json
 import os
-from dataclasses import dataclass
 import os.path
+from dataclasses import dataclass
+from typing import Any
+
+from src.utils.logger import system_logger
 
 
 @dataclass
@@ -77,7 +79,7 @@ class TransitionInferenceCombiner:
         path_probs_by_timeframe: {timeframe: {"continuation": p, "reversal": p, "beginning_of_trend": p, "end_of_trend": p}}
         """
         classes = ["continuation", "reversal", "beginning_of_trend", "end_of_trend"]
-        combined: dict[str, float] = {c: 0.0 for c in classes}
+        combined: dict[str, float] = dict.fromkeys(classes, 0.0)
         weight_sum = 0.0
         for tf, probs in path_probs_by_timeframe.items():
             w = float(self.cfg.weights.get(tf, 0.0))

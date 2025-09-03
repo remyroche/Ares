@@ -4,10 +4,10 @@ Extract Specific Feature Details from Validation Results
 Provides detailed information about which features are causing issues
 """
 
-from collections import defaultdict
-from typing import Any
 import argparse
 import json
+from collections import defaultdict
+from typing import Any
 
 
 def extract_feature_issues_from_logs(log_file_path: str) -> dict[str, Any]:

@@ -1,19 +1,18 @@
 # src/utils/mlflow_utils.py
 
-from datetime import datetime
 from functools import wraps
-from typing import Any, Optional
+from typing import Any
 
 import mlflow
 
 from src.config import ARES_VERSION
 from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_log_metric, safe_log_params, safe_log_artifact
+    format_datetime,
+    get_current_datetime,
 )
+from src.utils.logger import system_logger
+
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
     """Extract required metadata from enhanced training manager configuration.
@@ -140,9 +139,9 @@ def log_enhanced_training_metadata(
     exchange: str,
     lookback_period: str,
     project_version: str = ARES_VERSION,
-    training_date: Optional[str] = None,
-    additional_metadata: Optional[dict[str, Any]] = None,
-    run_id: Optional[str] = None,
+    training_date: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Log enhanced training metadata ensuring all required associations.
 
@@ -205,9 +204,9 @@ def log_model_with_metadata(
     exchange: str,
     lookback_period: str,
     project_version: str = ARES_VERSION,
-    training_date: Optional[str] = None,
-    additional_metadata: Optional[dict[str, Any]] = None,
-    run_id: Optional[str] = None,
+    training_date: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Log a model to MLflow with all required metadata associations.
 
@@ -275,9 +274,9 @@ def log_artifacts_with_metadata(
     exchange: str,
     lookback_period: str,
     project_version: str = ARES_VERSION,
-    training_date: Optional[str] = None,
-    additional_metadata: Optional[dict[str, Any]] = None,
-    run_id: Optional[str] = None,
+    training_date: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Log artifacts to MLflow with all required metadata associations.
 
@@ -344,10 +343,10 @@ def log_metrics_with_metadata(
     exchange: str,
     lookback_period: str,
     project_version: str = ARES_VERSION,
-    training_date: Optional[str] = None,
-    additional_metadata: Optional[dict[str, Any]] = None,
-    run_id: Optional[str] = None,
-    step: Optional[int] = None,
+    training_date: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
+    run_id: str | None = None,
+    step: int | None = None,
 ) -> None:
     """Log metrics to MLflow with all required metadata associations.
 
@@ -421,9 +420,9 @@ def log_params_with_metadata(
     exchange: str,
     lookback_period: str,
     project_version: str = ARES_VERSION,
-    training_date: Optional[str] = None,
-    additional_metadata: Optional[dict[str, Any]] = None,
-    run_id: Optional[str] = None,
+    training_date: str | None = None,
+    additional_metadata: dict[str, Any] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Log parameters to MLflow with all required metadata associations.
 
@@ -580,8 +579,8 @@ def validate_run_metadata(run_id: str) -> bool:
 @handles_errors(fallback=None)
 def ensure_enhanced_mlflow_run(
     config: dict[str, Any],
-    run_name: Optional[str] = None,
-    experiment_name: Optional[str] = None,
+    run_name: str | None = None,
+    experiment_name: str | None = None,
 ) -> str:
     """Ensure an MLflow run is created with all required metadata.
 

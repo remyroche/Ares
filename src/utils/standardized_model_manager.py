@@ -9,19 +9,19 @@ This module provides centralized model management functionality including:
 """
 
 import json
-import os
-import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
-from .pipeline_standards import PipelineStandards, pipeline_standards
+from .pipeline_standards import pipeline_standards
+
 
 class ModelMetadata:
     """Model metadata container."""
@@ -40,7 +40,7 @@ class ModelMetadata:
         self.file_path = kwargs.get("file_path", "")
         self.file_size = kwargs.get("file_size", 0)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert metadata to dictionary."""
         return {
             "model_id": self.model_id,
@@ -58,14 +58,14 @@ class ModelMetadata:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ModelMetadata":
+    def from_dict(cls, data: dict[str, Any]) -> "ModelMetadata":
         """Create metadata from dictionary."""
         return cls(**data)
 
 class StandardizedModelManager:
     """Centralized model management system."""
 
-    def __init__(self, base_path: Optional[str] = None):
+    def __init__(self, base_path: str | None = None):
         """Initialize the model manager.
 
         Args:
@@ -87,7 +87,7 @@ class StandardizedModelManager:
         """Load the model registry from disk."""
         try:
             if self.metadata_file.exists():
-                with open(self.metadata_file, "r") as f:
+                with open(self.metadata_file) as f:
                     self.registry = json.load(f)
             else:
                 self.registry = {}
@@ -101,11 +101,11 @@ class StandardizedModelManager:
             with open(self.metadata_file, "w") as f:
                 json.dump(self.registry, f, indent=2)
         except Exception as e:
-            self.logger.error(f"Could not save model registry: {e}")
+            self.logger.exception(f"Could not save model registry: {e}")
 
     @handles_errors(fallback=False)
     def save_model(
-        self, model: Any, metadata: Union[ModelMetadata, Dict[str, Any]], step_name: str, model_id: Optional[str] = None
+        self, model: Any, metadata: ModelMetadata | dict[str, Any], step_name: str, model_id: str | None = None,
     ) -> bool:
         """Save a model with metadata.
 
@@ -171,11 +171,11 @@ class StandardizedModelManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error saving model: {e}")
+            self.logger.exception(f"Error saving model: {e}")
             return False
 
     @handles_errors(fallback=None)
-    def load_model(self, model_id: str, step_name: Optional[str] = None) -> Optional[Tuple[Any, ModelMetadata]]:
+    def load_model(self, model_id: str, step_name: str | None = None) -> tuple[Any, ModelMetadata] | None:
         """Load a model and its metadata.
 
         Args:
@@ -209,7 +209,7 @@ class StandardizedModelManager:
                 # PyTorch model - requires model class to be provided
                 self.logger.warning("PyTorch models require model class for loading")
                 return None, metadata
-            elif file_path.suffix == ".txt":
+            if file_path.suffix == ".txt":
                 # LightGBM model
                 import lightgbm as lgb
 
@@ -228,12 +228,12 @@ class StandardizedModelManager:
             return model, metadata
 
         except Exception as e:
-            self.logger.error(f"Error loading model: {e}")
+            self.logger.exception(f"Error loading model: {e}")
             return None
 
     @handles_errors(fallback=False)
     def validate_model(
-        self, model: Any, test_data: Union[pd.DataFrame, np.ndarray], expected_output_shape: Optional[Tuple] = None
+        self, model: Any, test_data: pd.DataFrame | np.ndarray, expected_output_shape: tuple | None = None,
     ) -> bool:
         """Validate a model with test data.
 
@@ -268,15 +268,14 @@ class StandardizedModelManager:
 
                 self.logger.info("Model validation passed")
                 return True
-            else:
-                self.logger.error("Model does not have predict method")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Model validation failed: {e}")
+            self.logger.error("Model does not have predict method")
             return False
 
-    def get_model_metadata(self, model_id: str) -> Optional[ModelMetadata]:
+        except Exception as e:
+            self.logger.exception(f"Model validation failed: {e}")
+            return False
+
+    def get_model_metadata(self, model_id: str) -> ModelMetadata | None:
         """Get model metadata by ID.
 
         Args:
@@ -289,7 +288,7 @@ class StandardizedModelManager:
             return ModelMetadata.from_dict(self.registry[model_id])
         return None
 
-    def list_models(self, step_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_models(self, step_name: str | None = None) -> list[dict[str, Any]]:
         """List all models or models for a specific step.
 
         Args:
@@ -300,8 +299,7 @@ class StandardizedModelManager:
         """
         if step_name is None:
             return list(self.registry.values())
-        else:
-            return [metadata for metadata in self.registry.values() if metadata.get("step_name") == step_name]
+        return [metadata for metadata in self.registry.values() if metadata.get("step_name") == step_name]
 
     def delete_model(self, model_id: str) -> bool:
         """Delete a model and its metadata.
@@ -337,10 +335,10 @@ class StandardizedModelManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error deleting model: {e}")
+            self.logger.exception(f"Error deleting model: {e}")
             return False
 
-    def get_model_stats(self) -> Dict[str, Any]:
+    def get_model_stats(self) -> dict[str, Any]:
         """Get statistics about stored models.
 
         Returns:
@@ -348,7 +346,7 @@ class StandardizedModelManager:
         """
         stats = {"total_models": len(self.registry), "models_by_step": {}, "models_by_type": {}, "total_size": 0}
 
-        for model_id, metadata in self.registry.items():
+        for metadata in self.registry.values():
             step_name = metadata.get("step_name", "unknown")
             model_type = metadata.get("model_type", "unknown")
             file_size = metadata.get("file_size", 0)

@@ -20,8 +20,9 @@ except Exception:  # minimal fallback types for smoke test
     def Field(default=None, env: str | None = None):  # type: ignore
         return default
 
-from src.utils.logger import system_logger
 import os.path
+
+from src.utils.logger import system_logger
 
 # --- Environment Loading ---
 dotenv_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")

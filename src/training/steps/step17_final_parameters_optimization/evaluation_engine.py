@@ -110,7 +110,7 @@ class AdvancedEvaluationEngine:
         )
 
     def evaluate_parameters(
-        self, parameters: dict[str, Any], calibration_results: dict[str, Any], backtest_data: pd.DataFrame | None = None
+        self, parameters: dict[str, Any], calibration_results: dict[str, Any], backtest_data: pd.DataFrame | None = None,
     ) -> PerformanceMetrics:
         """Evaluate a set of parameters using comprehensive metrics.
 
@@ -257,8 +257,8 @@ class AdvancedEvaluationEngine:
 
             # Basic metrics
             total_trades = len(trades)
-            winning_trades = len(df[df["is_win"] == True])
-            losing_trades = len(df[df["is_win"] == False])
+            winning_trades = len(df[df["is_win"]])
+            losing_trades = len(df[not df["is_win"]])
             win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
 
             # Return metrics
@@ -274,10 +274,10 @@ class AdvancedEvaluationEngine:
 
             # Average win/loss
             average_win = (
-                df[df["is_win"] == True]["return"].mean() if winning_trades > 0 else 0.0
+                df[df["is_win"]]["return"].mean() if winning_trades > 0 else 0.0
             )
             average_loss = (
-                df[df["is_win"] == False]["return"].mean() if losing_trades > 0 else 0.0
+                df[not df["is_win"]]["return"].mean() if losing_trades > 0 else 0.0
             )
 
             # Risk metrics

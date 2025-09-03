@@ -6,17 +6,17 @@ This step performs tactician specialist model training with S/R level integratio
 using standardized data quality management patterns.
 """
 import asyncio
-import contextlib
 import json
 import os
 import pickle
 from datetime import datetime
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 import sys
+
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
@@ -33,7 +33,7 @@ REQUIRED_MODULES = [
     "src.training.model_probability_generator",
     "src.training.model_saving_utils",
     "src.training.enhanced_lm_optimizer",
-    "src.training.optimized_feature_selection_manager"
+    "src.training.optimized_feature_selection_manager",
 ]
 
 # Validate environment dependencies
@@ -90,7 +90,8 @@ else:
     pipeline_checkpoint = centralized_decorators.pipeline_checkpoint
 
 if warning_symbols is None:
-    error = lambda msg: print(f"ERROR: {msg}")
+    def error(msg):
+        return print(f"ERROR: {msg}")
 else:
     error = warning_symbols.error
 
@@ -156,18 +157,19 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 self.optimized_feature_selection = optimized_feature_selection.OptimizedFeatureSelectionManager(config)
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
-        
+
         # Initialize probability generator for enhanced prediction service
         if model_probability_generator is not None:
             self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
         else:
             self.logger.warning("⚠️ ModelProbabilityGenerator not available")
             self.probability_generator = None
+        return None
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -490,7 +492,8 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 "tactician_label" if "tactician_label" in data.columns else "label"
             )
             if target_column not in data.columns:
-                raise ValueError("Target column for tactician training not found")
+                msg = "Target column for tactician training not found"
+                raise ValueError(msg)
 
             y = data[target_column].copy()
 
@@ -635,12 +638,14 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     ) -> dict[str, Any]:
         """Train LightGBM model with multi-output probability training."""
         try:
-            from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
+            from src.training.multi_output_probability_trainer import (
+                MultiOutputProbabilityTrainer,
+            )
 
             # Create market data DataFrame for probability calculations
             market_data = pd.DataFrame({
-                'close': np.random.randn(len(X_train) + len(X_test)),  # Placeholder - should use actual market data
-                'volume': np.random.randn(len(X_train) + len(X_test))
+                "close": np.random.randn(len(X_train) + len(X_test)),  # Placeholder - should use actual market data
+                "volume": np.random.randn(len(X_train) + len(X_test)),
             })
 
             # Configure multi-output training with advanced models
@@ -662,7 +667,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     "5m": "tcn",      # TCN for 5-minute data (Analyst)
                     "15m": "transformer", # Transformer for 15-minute data (Enhanced)
                     "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
-                    "1h": "hmm_regime"    # HMM regime definition only
+                    "1h": "hmm_regime",    # HMM regime definition only
                 },
                 "neural_config": {
                     "tcn": {
@@ -671,7 +676,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "cnn": {
                         "num_filters": [64, 128, 256],
@@ -679,7 +684,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "transformer": {
                         "d_model": 128,
@@ -688,7 +693,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                         "dropout": 0.1,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "lstm": {
                         "hidden_size": 128,
@@ -697,7 +702,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "gru": {
                         "hidden_size": 128,
@@ -706,34 +711,34 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
-                    }
-                }
+                        "learning_rate": 0.001,
+                    },
+                },
             }
-            
+
             multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
-            
+
             # Generate multi-output targets
             y_train_multi = multi_output_trainer.prepare_multi_output_targets(
-                X_train.values, y_train.values, market_data.iloc[:len(X_train)]
+                X_train.values, y_train.values, market_data.iloc[:len(X_train)],
             )
             y_test_multi = multi_output_trainer.prepare_multi_output_targets(
-                X_test.values, y_test.values, market_data.iloc[len(X_train):]
+                X_test.values, y_test.values, market_data.iloc[len(X_train):],
             )
-            
+
             # Train multi-output model
             trained_models = multi_output_trainer.train_multi_output_model(
-                X_train.values, y_train_multi, X_test.values, y_test_multi
+                X_train.values, y_train_multi, X_test.values, y_test_multi,
             )
-            
+
             # Generate probability outputs
             price_action_probabilities = multi_output_trainer.predict_probabilities(
-                X_test.values, market_data.iloc[len(X_train):]
+                X_test.values, market_data.iloc[len(X_train):],
             )
-            
+
             # Calculate overall accuracy from probability outputs
             overall_accuracy = 0.0
-            prob_values = [v for k, v in price_action_probabilities.items() 
+            prob_values = [v for k, v in price_action_probabilities.items()
             if k not in ["generation_timestamp", "model_type"]]
             if prob_values:
                 overall_accuracy = sum(prob_values) / len(prob_values)
@@ -748,20 +753,22 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 "exchange": exchange,
                 "training_date": datetime.now().isoformat(),
                 "hyperparameters": multi_output_config,
-                "price_action_probabilities": price_action_probabilities
+                "price_action_probabilities": price_action_probabilities,
             }
 
             # Save model with probabilities using multi-output format
             model_path = f"models/{exchange}_{symbol}_multi_output_lightgbm_tactician_model.pkl"
             try:
-                from ..model_saving_utils import save_multi_output_model_with_probabilities
+                from src.training.model_saving_utils import (
+                    save_multi_output_model_with_probabilities,
+                )
                 save_multi_output_model_with_probabilities(
-                    model_data, model_path, save_format="joblib"
+                    model_data, model_path, save_format="joblib",
                 )
                 self.logger.info(f"✅ Saved multi-output LightGBM tactician model with probabilities to {model_path}")
                 self.logger.info(f"   Probability outputs: {probability_outputs}")
             except Exception as save_error:
-                self.logger.error(f"❌ Failed to save multi-output model: {save_error}")
+                self.logger.exception(f"❌ Failed to save multi-output model: {save_error}")
 
             return {
                 "multi_output_trainer": multi_output_trainer,
@@ -804,24 +811,24 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             calibrated_model.fit(X_train, y_train)
 
             y_pred = calibrated_model.predict(X_test)
-            y_pred_proba = calibrated_model.predict_proba(X_test)
+            calibrated_model.predict_proba(X_test)
             accuracy = float(accuracy_score(y_test, y_pred))
 
             # Generate probability outputs for Enhanced Prediction Service
             try:
                 # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
-                    'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
-                    'volume': np.random.randn(len(X_test))
+                    "close": np.random.randn(len(X_test)),  # Placeholder - should use actual market data
+                    "volume": np.random.randn(len(X_test)),
                 })
-                
+
                 price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
-                    calibrated_model, X_test.values, y_test.values, market_data, model_type="classification"
+                    calibrated_model, X_test.values, y_test.values, market_data, model_type="classification",
                 )
-                
+
                 self.logger.info(f"✅ Generated probability outputs for Calibrated Logistic model ({symbol})")
                 self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
+
             except Exception as prob_error:
                 self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
                 price_action_probabilities = {
@@ -831,7 +838,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     "barrier_avoidance_probability": 0.5,
                     "generation_timestamp": datetime.now().isoformat(),
                     "model_type": "classification",
-                    "note": "Default probabilities due to generation error"
+                    "note": "Default probabilities due to generation error",
                 }
 
             # Prepare model data for saving
@@ -850,19 +857,19 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     "cv_folds": 5,
                 },
                 "metrics": {
-                    "accuracy": accuracy
-                }
+                    "accuracy": accuracy,
+                },
             }
 
             # Save model with probabilities using standardized format
             model_path = f"models/{exchange}_{symbol}_calibrated_logistic_tactician_model.pkl"
             try:
                 save_model_with_probabilities(
-                    model_data, model_path, price_action_probabilities, save_format="joblib"
+                    model_data, model_path, price_action_probabilities, save_format="joblib",
                 )
                 self.logger.info(f"✅ Saved Calibrated Logistic tactician model with probabilities to {model_path}")
             except Exception as save_error:
-                self.logger.error(f"❌ Failed to save model with probabilities: {save_error}")
+                self.logger.exception(f"❌ Failed to save model with probabilities: {save_error}")
 
             return {
                 "model": calibrated_model,
@@ -941,28 +948,28 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             model.fit(X_train, y_train, eval_set=eval_set)
 
             y_pred = model.predict(X_test)
-            y_pred_proba = model.predict_proba(X_test)
+            model.predict_proba(X_test)
             accuracy = float(accuracy_score(y_test, y_pred))
 
             feature_importance = dict(
-                zip(X_train.columns, model.feature_importances_),
+                zip(X_train.columns, model.feature_importances_, strict=False),
             )
 
             # Generate probability outputs for Enhanced Prediction Service
             try:
                 # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
-                    'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
-                    'volume': np.random.randn(len(X_test))
+                    "close": np.random.randn(len(X_test)),  # Placeholder - should use actual market data
+                    "volume": np.random.randn(len(X_test)),
                 })
-                
+
                 price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
-                    model, X_test.values, y_test.values, market_data, model_type="classification"
+                    model, X_test.values, y_test.values, market_data, model_type="classification",
                 )
-                
+
                 self.logger.info(f"✅ Generated probability outputs for XGBoost model ({symbol})")
                 self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
+
             except Exception as prob_error:
                 self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
                 price_action_probabilities = {
@@ -972,7 +979,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     "barrier_avoidance_probability": 0.5,
                     "generation_timestamp": datetime.now().isoformat(),
                     "model_type": "classification",
-                    "note": "Default probabilities due to generation error"
+                    "note": "Default probabilities due to generation error",
                 }
 
             # Prepare model data for saving
@@ -986,19 +993,19 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 "training_date": datetime.now().isoformat(),
                 "hyperparameters": best_params,
                 "metrics": {
-                    "accuracy": accuracy
-                }
+                    "accuracy": accuracy,
+                },
             }
 
             # Save model with probabilities using standardized format
             model_path = f"models/{exchange}_{symbol}_xgboost_tactician_model.pkl"
             try:
                 save_model_with_probabilities(
-                    model_data, model_path, price_action_probabilities, save_format="joblib"
+                    model_data, model_path, price_action_probabilities, save_format="joblib",
                 )
                 self.logger.info(f"✅ Saved XGBoost tactician model with probabilities to {model_path}")
             except Exception as save_error:
-                self.logger.error(f"❌ Failed to save model with probabilities: {save_error}")
+                self.logger.exception(f"❌ Failed to save model with probabilities: {save_error}")
 
             return {
                 "model": model,
@@ -1036,28 +1043,28 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             model.fit(X_train, y_train)
 
             y_pred = model.predict(X_test)
-            y_pred_proba = model.predict_proba(X_test)
+            model.predict_proba(X_test)
             accuracy = float(accuracy_score(y_test, y_pred))
 
             feature_importance = dict(
-                zip(X_train.columns, model.feature_importances_),
+                zip(X_train.columns, model.feature_importances_, strict=False),
             )
 
             # Generate probability outputs for Enhanced Prediction Service
             try:
                 # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
-                    'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
-                    'volume': np.random.randn(len(X_test))
+                    "close": np.random.randn(len(X_test)),  # Placeholder - should use actual market data
+                    "volume": np.random.randn(len(X_test)),
                 })
-                
+
                 price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
-                    model, X_test.values, y_test.values, market_data, model_type="classification"
+                    model, X_test.values, y_test.values, market_data, model_type="classification",
                 )
-                
+
                 self.logger.info(f"✅ Generated probability outputs for Random Forest model ({symbol})")
                 self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
+
             except Exception as prob_error:
                 self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
                 price_action_probabilities = {
@@ -1067,7 +1074,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     "barrier_avoidance_probability": 0.5,
                     "generation_timestamp": datetime.now().isoformat(),
                     "model_type": "classification",
-                    "note": "Default probabilities due to generation error"
+                    "note": "Default probabilities due to generation error",
                 }
 
             # Prepare model data for saving
@@ -1086,19 +1093,19 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     "min_samples_leaf": 2,
                 },
                 "metrics": {
-                    "accuracy": accuracy
-                }
+                    "accuracy": accuracy,
+                },
             }
 
             # Save model with probabilities using standardized format
             model_path = f"models/{exchange}_{symbol}_random_forest_tactician_model.pkl"
             try:
                 save_model_with_probabilities(
-                    model_data, model_path, price_action_probabilities, save_format="joblib"
+                    model_data, model_path, price_action_probabilities, save_format="joblib",
                 )
                 self.logger.info(f"✅ Saved Random Forest tactician model with probabilities to {model_path}")
             except Exception as save_error:
-                self.logger.error(f"❌ Failed to save model with probabilities: {save_error}")
+                self.logger.exception(f"❌ Failed to save model with probabilities: {save_error}")
 
             return {
                 "model": model,
@@ -1123,6 +1130,10 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+
+import numpy as np
+import pandas as pd
+
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
     artifact_write_lock,
@@ -1139,18 +1150,6 @@ from src.utils.training_pipeline_decorators import (
     time_budget_watchdog,
     validate_step_output,
     validate_step_prerequisites,
-)
-import copy
-import numpy as np
-import pandas as pd
-from src.utils.enhanced_mlflow_integration import (
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
 )
 
 
@@ -1296,99 +1295,99 @@ async def run_step(
         return False
 
     async def _train_regime_aware_tactician_models(
-        self, labeled_data: pd.DataFrame, symbol: str, exchange: str, data_dir: str
+        self, labeled_data: pd.DataFrame, symbol: str, exchange: str, data_dir: str,
     ) -> dict[str, Any]:
         """Train tactician specialist models with regime-specific logic."""
         try:
             self.logger.info("🚀 Starting regime-aware tactician specialist model training")
-            
+
             # Check for regime information
-            if 'composite_cluster_id' not in labeled_data.columns:
+            if "composite_cluster_id" not in labeled_data.columns:
                 self.logger.warning("⚠️ No composite_cluster_id column found, using default training")
                 return await self._train_tactician_models(labeled_data, symbol, exchange)
-            
+
             # Get unique regimes
-            unique_regimes = labeled_data['composite_cluster_id'].unique()
+            unique_regimes = labeled_data["composite_cluster_id"].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
-            
+
             regime_training_results = {}
-            
+
             # Train models for each regime
             for regime in unique_regimes:
                 self.logger.info(f"🔧 Training tactician specialist models for regime: {regime}")
-                
+
                 # Filter data for this regime
-                regime_data = labeled_data[labeled_data['composite_cluster_id'] == regime]
-                
+                regime_data = labeled_data[labeled_data["composite_cluster_id"] == regime]
+
                 # Check minimum samples
                 if len(regime_data) < self.regime_config["min_regime_samples"]:
                     self.logger.warning(f"⚠️ Regime {regime} has insufficient samples: {len(regime_data)} < {self.regime_config['min_regime_samples']}")
                     continue
-                
+
                 # Train regime-specific models
                 regime_models = await self._train_regime_specific_models(
-                    regime_data, regime, symbol, exchange, data_dir
+                    regime_data, regime, symbol, exchange, data_dir,
                 )
-                
+
                 regime_training_results[regime] = regime_models
-                
+
                 # Log regime-specific metrics
                 if self.regime_config["regime_specific_logging"]:
                     self._log_regime_specific_metrics(regime, {
                         "samples": len(regime_data),
                         "models_trained": len(regime_models),
-                        "regime": regime
+                        "regime": regime,
                     }, "tactician_training")
-            
+
             # Store regime-specific results
             self.regime_training_results = regime_training_results
-            
+
             self.logger.info(f"✅ Completed regime-aware tactician specialist training for {len(regime_training_results)} regimes")
             return regime_training_results
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Error in regime-aware tactician training: {e}")
+            self.logger.exception(f"❌ Error in regime-aware tactician training: {e}")
             raise
 
     async def _train_regime_specific_models(
-        self, regime_data: pd.DataFrame, regime: str, symbol: str, exchange: str, data_dir: str
+        self, regime_data: pd.DataFrame, regime: str, symbol: str, exchange: str, data_dir: str,
     ) -> dict[str, Any]:
         """Train specialist models for a specific regime."""
         try:
             self.logger.info(f"🔧 Training specialist models for regime: {regime}")
-            
+
             # Regime-specific model training logic
             regime_models = {}
-            
+
             # Train different specialist models based on regime characteristics
             regime_characteristics = self._analyze_regime_characteristics(regime_data, regime)
-            
+
             # Train regime-specific breakout predictor
             if self.regime_config["regime_sr_integration"] and self.sr_predictor is not None:
                 breakout_model = await self._train_regime_breakout_predictor(
-                    regime_data, regime, regime_characteristics
+                    regime_data, regime, regime_characteristics,
                 )
                 regime_models["breakout_predictor"] = breakout_model
-            
+
             # Train regime-specific trend following model
             trend_model = await self._train_regime_trend_following_model(
-                regime_data, regime, regime_characteristics
+                regime_data, regime, regime_characteristics,
             )
             regime_models["trend_following"] = trend_model
-            
+
             # Train regime-specific mean reversion model
             mean_reversion_model = await self._train_regime_mean_reversion_model(
-                regime_data, regime, regime_characteristics
+                regime_data, regime, regime_characteristics,
             )
             regime_models["mean_reversion"] = mean_reversion_model
-            
+
             # Store regime-specific models
             self.regime_specialist_models[regime] = regime_models
-            
+
             return regime_models
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Error training models for regime {regime}: {e}")
+            self.logger.exception(f"❌ Error training models for regime {regime}: {e}")
             raise
 
     def _analyze_regime_characteristics(self, regime_data: pd.DataFrame, regime: str) -> dict[str, Any]:
@@ -1397,33 +1396,33 @@ async def run_step(
             characteristics = {
                 "regime": regime,
                 "samples": len(regime_data),
-                "volatility": regime_data['close'].pct_change().std() if 'close' in regime_data.columns else 0.0,
-                "volume": regime_data['volume'].mean() if 'volume' in regime_data.columns else 0.0,
+                "volatility": regime_data["close"].pct_change().std() if "close" in regime_data.columns else 0.0,
+                "volume": regime_data["volume"].mean() if "volume" in regime_data.columns else 0.0,
                 "trend_strength": 0.0,  # Placeholder
                 "mean_reversion_tendency": 0.0,  # Placeholder
             }
-            
+
             # Calculate trend strength
-            if 'close' in regime_data.columns and len(regime_data) > 1:
-                price_change = (regime_data['close'].iloc[-1] - regime_data['close'].iloc[0]) / regime_data['close'].iloc[0]
+            if "close" in regime_data.columns and len(regime_data) > 1:
+                price_change = (regime_data["close"].iloc[-1] - regime_data["close"].iloc[0]) / regime_data["close"].iloc[0]
                 characteristics["trend_strength"] = abs(price_change)
-            
+
             # Calculate mean reversion tendency
-            if 'close' in regime_data.columns and len(regime_data) > 10:
-                returns = regime_data['close'].pct_change().dropna()
+            if "close" in regime_data.columns and len(regime_data) > 10:
+                returns = regime_data["close"].pct_change().dropna()
                 if len(returns) > 0:
                     # Simple mean reversion indicator: negative autocorrelation
                     autocorr = returns.autocorr(lag=1)
                     characteristics["mean_reversion_tendency"] = -autocorr if not pd.isna(autocorr) else 0.0
-            
+
             return characteristics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error analyzing regime characteristics for {regime}: {e}")
             return {"regime": regime, "samples": len(regime_data)}
 
     async def _train_regime_breakout_predictor(
-        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any],
     ) -> dict[str, Any]:
         """Train breakout predictor for a specific regime."""
         # Placeholder for regime-specific breakout predictor training
@@ -1431,7 +1430,7 @@ async def run_step(
         return {"model_type": "breakout_predictor", "regime": regime, "characteristics": characteristics}
 
     async def _train_regime_trend_following_model(
-        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any],
     ) -> dict[str, Any]:
         """Train trend following model for a specific regime."""
         # Placeholder for regime-specific trend following model training
@@ -1439,7 +1438,7 @@ async def run_step(
         return {"model_type": "trend_following", "regime": regime, "characteristics": characteristics}
 
     async def _train_regime_mean_reversion_model(
-        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any],
     ) -> dict[str, Any]:
         """Train mean reversion model for a specific regime."""
         # Placeholder for regime-specific mean reversion model training
@@ -1450,6 +1449,7 @@ async def run_step(
         """Log regime-specific metrics if enabled."""
         if self.regime_config["regime_specific_logging"]:
             self.logger.info(f"📊 Regime {regime} {step_name} metrics: {metrics}")
+    return None
 
 if __name__ == "__main__":
     # Test the step

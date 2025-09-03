@@ -9,14 +9,16 @@ Usage:
     python scripts/validate_multicollinearity_fix.py
 """
 
-from typing import Dict, List, Tuple
-from training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
 import asyncio
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from training.steps.vectorized_advanced_feature_engineering import (
+	VectorizedAdvancedFeatureEngineering,
+)
 
 # Add the src directory to the Python path
 current_dir=Path(__file__).parent
@@ -44,11 +46,11 @@ async def validate_multicollinearity_fix() -> bool:
 			"low": base_price - np.random.randn(1000) * 0.8,
 			"close": base_price + np.random.randn(1000) * 0.5,
 			"volume": np.random.randint(100, 1000, 1000),
-		}
+		},
 	)
 
 	volume_data=pd.DataFrame(
-		{"timestamp": dates, "volume": price_data["volume"].copy()}
+		{"timestamp": dates, "volume": price_data["volume"].copy()},
 	)
 
 	# Set timestamp as index
@@ -63,7 +65,7 @@ async def validate_multicollinearity_fix() -> bool:
 			"enable_microstructure_features": True,
 			"enable_adaptive_indicators": True,
 			"enable_wavelet_features": False,  # Disable for faster testing
-		}
+		},
 	}
 
 	try:
@@ -73,7 +75,7 @@ async def validate_multicollinearity_fix() -> bool:
 		# Engineer features
 		print("🔧 Engineering features...")
 		features=await feature_eng.engineer_features(
-			price_data=price_data, volume_data=volume_data
+			price_data=price_data, volume_data=volume_data,
 		)
 
 		# Convert features to DataFrame
@@ -89,7 +91,7 @@ async def validate_multicollinearity_fix() -> bool:
 		correlation_matrix=feature_df.corr()
 
 		# Find perfect correlations (r >= 0.9999)
-		perfect_correlations: List[Tuple[str, str, float]] = []
+		perfect_correlations: list[tuple[str, str, float]] = []
 		for i in range(len(correlation_matrix.columns)):
 			for j in range(i + 1, len(correlation_matrix.columns)):
 				corr_value=float(abs(correlation_matrix.iloc[i, j]))
@@ -130,7 +132,7 @@ async def validate_multicollinearity_fix() -> bool:
 			correlation=float(
 				feature_df["1m_price_change"].corr(
 					feature_df["5m_price_change"],
-				)
+				),
 			)
 			print(f"📊 1m vs 5m price change correlation: {correlation:.6f}")
 

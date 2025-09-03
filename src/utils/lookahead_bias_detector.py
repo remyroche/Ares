@@ -12,9 +12,7 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import copy
-from src.core.decorators import handles_errors
+
 
 class LookaheadBiasDetector:
     """
@@ -160,7 +158,7 @@ class LookaheadBiasDetector:
 
             elif abs_corr > 0.7:
                 results["warnings"].append(
-                    f"MODERATE CORRELATION: {feature} has {corr:.4f} correlation with target " f"(investigate further)",
+                    f"MODERATE CORRELATION: {feature} has {corr:.4f} correlation with target (investigate further)",
                 )
 
         results["feature_correlations"] = correlations

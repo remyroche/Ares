@@ -3,14 +3,9 @@ Step dependency validator for the training pipeline.
 Ensures that steps don't proceed if their prerequisites have failed.
 """
 
-import asyncio
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.warning_symbols import critical, error, warning
 
 
 class StepDependencyValidator:
@@ -192,10 +187,10 @@ class StepDependencyValidator:
     async def validate_step_prerequisites(
         self,
         step_name: str,
-        pipeline_state: Dict[str, Any],
+        pipeline_state: dict[str, Any],
         checkpoint_dir: str = "checkpoints",
         force_rerun: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Validate that all dependencies for a step have been completed successfully.
 
@@ -225,7 +220,7 @@ class StepDependencyValidator:
             }
         return {"valid": True, "reason": "All dependencies satisfied"}
 
-    async def _validate_single_dependency(self, step_name: str, pipeline_state: Dict[str, Any]) -> bool:
+    async def _validate_single_dependency(self, step_name: str, pipeline_state: dict[str, Any]) -> bool:
         """
         Validate a single step dependency.
 
@@ -293,10 +288,9 @@ class StepDependencyValidator:
 
         # Check minimum rows
         min_rows = requirements.get("min_rows", 0)
-        if min_rows > 0:
-            if not await self._check_min_rows(step_name, min_rows):
-                self.logger.error(f"❌ Insufficient data rows: {min_rows} required")
-                return False
+        if min_rows > 0 and not await self._check_min_rows(step_name, min_rows):
+            self.logger.error(f"❌ Insufficient data rows: {min_rows} required")
+            return False
 
         return True
 
@@ -311,7 +305,6 @@ class StepDependencyValidator:
             bool: True if files exist, False otherwise
         """
         try:
-            import glob
             from pathlib import Path
 
             # Convert glob pattern to path
@@ -328,10 +321,10 @@ class StepDependencyValidator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error checking file pattern {file_pattern}: {e}")
+            self.logger.exception(f"Error checking file pattern {file_pattern}: {e}")
             return False
 
-    async def _check_columns(self, step_name: str, required_columns: List[str]) -> bool:
+    async def _check_columns(self, step_name: str, required_columns: list[str]) -> bool:
         """
         Check if required columns exist in step data.
 
@@ -349,7 +342,7 @@ class StepDependencyValidator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error checking columns for {step_name}: {e}")
+            self.logger.exception(f"Error checking columns for {step_name}: {e}")
             return False
 
     async def _check_min_rows(self, step_name: str, min_rows: int) -> bool:
@@ -370,10 +363,10 @@ class StepDependencyValidator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error checking row count for {step_name}: {e}")
+            self.logger.exception(f"Error checking row count for {step_name}: {e}")
             return False
 
-    def get_step_dependencies(self, step_name: str) -> List[str]:
+    def get_step_dependencies(self, step_name: str) -> list[str]:
         """
         Get the list of dependencies for a step.
 
@@ -385,7 +378,7 @@ class StepDependencyValidator:
         """
         return self.step_dependencies.get(step_name, [])
 
-    def get_critical_requirements(self, step_name: str) -> Dict[str, Any]:
+    def get_critical_requirements(self, step_name: str) -> dict[str, Any]:
         """
         Get the critical data requirements for a step.
 
@@ -403,7 +396,7 @@ class StepDependencyValidator:
         self.last_validation_time.clear()
         self.logger.info("Validation cache cleared")
 
-    def get_validation_stats(self) -> Dict[str, Any]:
+    def get_validation_stats(self) -> dict[str, Any]:
         """
         Get validation statistics.
 
@@ -422,7 +415,7 @@ class StepDependencyValidator:
 step_dependency_validator = StepDependencyValidator()
 
 
-async def validate_step_dependencies(step_name: str, pipeline_state: Dict[str, Any]) -> bool:
+async def validate_step_dependencies(step_name: str, pipeline_state: dict[str, Any]) -> bool:
     """
     Convenience function to validate step dependencies.
 
@@ -442,7 +435,7 @@ async def validate_step_dependencies(step_name: str, pipeline_state: Dict[str, A
     return bool(result.get("valid", False))
 
 
-def get_step_dependencies(step_name: str) -> List[str]:
+def get_step_dependencies(step_name: str) -> list[str]:
     """
     Convenience function to get step dependencies.
 
@@ -455,7 +448,7 @@ def get_step_dependencies(step_name: str) -> List[str]:
     return step_dependency_validator.get_step_dependencies(step_name)
 
 
-def get_critical_requirements(step_name: str) -> Dict[str, Any]:
+def get_critical_requirements(step_name: str) -> dict[str, Any]:
     """
     Convenience function to get critical requirements.
 

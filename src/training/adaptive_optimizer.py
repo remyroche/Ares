@@ -1,5 +1,6 @@
 # src/training/adaptive_optimizer.py
 
+import datetime as datetime
 from typing import Any
 
 import numpy as np
@@ -8,8 +9,7 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import copy
-import datetime as datetime
+
 
 class MarketRegime:
     """Represents a market regime with specific characteristics."""

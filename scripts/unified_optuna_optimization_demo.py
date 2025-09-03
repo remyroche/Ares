@@ -28,7 +28,7 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import optuna
@@ -42,7 +42,6 @@ from src.training.steps.step17_final_parameters_optimization.optimized_optuna_op
     AdvancedOptunaManager,
 )
 from src.utils.logger import setup_logging  # noqa: E402
-
 
 # Initialize logging and suppress noisy warnings
 setup_logging()
@@ -133,7 +132,7 @@ class UnifiedOptunaDemo:
                     "low": base_price + np.cumsum(rng.normal(0, 0.1, n_samples)) - 0.5,
                     "close": base_price + np.cumsum(rng.normal(0, 0.1, n_samples)),
                     "volume": rng.lognormal(10, 1, n_samples),
-                }
+                },
             )
             # Create target returns
             y=X["close"].pct_change().shift(-1).fillna(0.0)
@@ -158,7 +157,7 @@ class UnifiedOptunaDemo:
                     "volume": rng.lognormal(10, 1, n_samples),
                     "volatility": rng.uniform(0.01, 0.05, n_samples),
                     "spread": rng.uniform(0.001, 0.01, n_samples),
-                }
+                },
             )
             y=pd.Series(rng.integers(0, 2, size=n_samples))  # Success/failure
 
@@ -175,8 +174,8 @@ class UnifiedOptunaDemo:
         return X, y
 
     def optimize_ml_models(
-        self, X: pd.DataFrame, y: pd.Series, n_trials: int=50
-    ) -> dict[str, Optional[dict[str, Any]]]:
+        self, X: pd.DataFrame, y: pd.Series, n_trials: int=50,
+    ) -> dict[str, dict[str, Any] | None]:
         """
         Optimize traditional ML models.
 
@@ -191,7 +190,7 @@ class UnifiedOptunaDemo:
         self.logger.info("🤖 Optimizing traditional ML models...")
 
         models=["lightgbm", "xgboost", "random_forest", "catboost"]
-        results: dict[str, Optional[dict[str, Any]]] = {}
+        results: dict[str, dict[str, Any] | None] = {}
 
         config=self.configs["ml_models"]
 
@@ -217,8 +216,8 @@ class UnifiedOptunaDemo:
         return results
 
     def optimize_sr_parameters(
-        self, X: pd.DataFrame, y: pd.Series, n_trials: int=100
-    ) -> Optional[dict[str, Any]]:
+        self, X: pd.DataFrame, y: pd.Series, n_trials: int=100,
+    ) -> dict[str, Any] | None:
         """
         Optimize S/R-like parameters using a surrogate model configuration.
         Demonstrated via XGBoost to keep the demo self-contained.
@@ -245,8 +244,8 @@ class UnifiedOptunaDemo:
             return None
 
     def optimize_autoencoder(
-        self, X: pd.DataFrame, y: pd.Series, n_trials: int=75
-    ) -> Optional[dict[str, Any]]:
+        self, X: pd.DataFrame, y: pd.Series, n_trials: int=75,
+    ) -> dict[str, Any] | None:
         """
         Optimize autoencoder-like hyperparameters using a surrogate model (LightGBM).
         """
@@ -274,8 +273,8 @@ class UnifiedOptunaDemo:
             return None
 
     def optimize_order_execution(
-        self, X: pd.DataFrame, y: pd.Series, n_trials: int=50
-    ) -> Optional[dict[str, Any]]:
+        self, X: pd.DataFrame, y: pd.Series, n_trials: int=50,
+    ) -> dict[str, Any] | None:
         """
         Optimize order execution parameters using a surrogate model (RandomForest).
         """
@@ -303,8 +302,8 @@ class UnifiedOptunaDemo:
             return None
 
     def custom_optimization_example(
-        self, X: pd.DataFrame, y: pd.Series, n_trials: int=50
-    ) -> Optional[dict[str, Any]]:
+        self, X: pd.DataFrame, y: pd.Series, n_trials: int=50,
+    ) -> dict[str, Any] | None:
         """
         Example of custom optimization with user-defined objective.
         Implemented by wrapping a score into the XGBoost objective space.
@@ -357,16 +356,16 @@ class UnifiedOptunaDemo:
                         study.get_trials(
                             deepcopy=False,
                             states=[optuna.trial.TrialState.COMPLETE],
-                        )
-                    )
+                        ),
+                    ),
                 ),
                 "n_pruned": int(
                     len(
                         study.get_trials(
                             deepcopy=False,
                             states=[optuna.trial.TrialState.PRUNED],
-                        )
-                    )
+                        ),
+                    ),
                 ),
             }
             self.logger.info(
@@ -377,7 +376,7 @@ class UnifiedOptunaDemo:
             self.logger.exception(f"❌ Custom optimization failed: {e}")
             return None
 
-    def print_optimization_summary(self, results: dict[str, Optional[dict[str, Any]]]) -> None:
+    def print_optimization_summary(self, results: dict[str, dict[str, Any] | None]) -> None:
         """Print comprehensive optimization summary."""
         print("\n" + "=" * 80)
         print("🎯 UNIFIED OPTUNA OPTIMIZATION SUMMARY")
@@ -401,7 +400,7 @@ class UnifiedOptunaDemo:
                 try:
                     sorted_params=sorted(
                         best_params.items(),
-                        key=lambda x: float(x[1]) if isinstance(x[1], (int, float)) else 0.0,
+                        key=lambda x: float(x[1]) if isinstance(x[1], int | float) else 0.0,
                         reverse=True,
                     )[:5]
                 except Exception:
@@ -412,7 +411,7 @@ class UnifiedOptunaDemo:
         print("\n" + "=" * 80)
 
     def create_visualizations(
-        self, results: dict[str, Optional[dict[str, Any]]], save_dir: str="optimization_results"
+        self, results: dict[str, dict[str, Any] | None], save_dir: str="optimization_results",
     ) -> None:
         """Create visualizations for optimization results."""
         try:
@@ -426,7 +425,7 @@ class UnifiedOptunaDemo:
                 try:
                     # Load study for visualization
                     study=optuna.load_study(
-                        study_name=str(result["study_name"]), storage=self.optimizer.storage_url
+                        study_name=str(result["study_name"]), storage=self.optimizer.storage_url,
                     )
 
                     # Optimization history
@@ -452,7 +451,7 @@ class UnifiedOptunaDemo:
         except Exception as e:
             self.logger.exception(f"Error creating visualizations: {e}")
 
-    def run_comprehensive_demo(self, optimization_type: str="all", n_trials: int=50) -> dict[str, Optional[dict[str, Any]]]:
+    def run_comprehensive_demo(self, optimization_type: str="all", n_trials: int=50) -> dict[str, dict[str, Any] | None]:
         """
         Run comprehensive optimization demo.
 
@@ -462,7 +461,7 @@ class UnifiedOptunaDemo:
         """
         self.logger.info("🚀 Starting Unified Optuna Optimization Demo...")
 
-        results: dict[str, Optional[dict[str, Any]]] = {}
+        results: dict[str, dict[str, Any] | None] = {}
 
         if optimization_type in ["all", "ml_models"]:
             # ML Models optimization
@@ -565,7 +564,7 @@ async def main() -> int:
             # Use best_value field when available
             non_null_results=[v for v in results.values() if v is not None]
             best_result=max(
-                non_null_results, key=lambda x: float(x.get("best_value", float("nan")))
+                non_null_results, key=lambda x: float(x.get("best_value", float("nan"))),
             )
             print(f"🏆 Best value: {best_result.get('best_value', float('nan')):.4f}")
         return 0

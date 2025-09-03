@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
 
 class MetricType(Enum):
     """Metric types for categorization."""
@@ -31,17 +34,17 @@ class DashboardMetric:
     metric_name: str
     metric_type: MetricType
     current_value: float
-    previous_value: Optional[float]
-    change_percentage: Optional[float]
+    previous_value: float | None
+    change_percentage: float | None
     trend: str  # "up", "down", "stable"
     last_updated: datetime
-    metadata: Dict[str, Any]
-    unit: Optional[str]
+    metadata: dict[str, Any]
+    unit: str | None
 
 class MetricsDashboard:
     """Real-time metrics dashboard."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("MetricsDashboard")
 
@@ -54,8 +57,8 @@ class MetricsDashboard:
         )
 
         self.is_active: bool = False
-        self.update_task: Optional[asyncio.Task] = None
-        self.metrics: List[DashboardMetric] = []
+        self.update_task: asyncio.Task | None = None
+        self.metrics: list[DashboardMetric] = []
         self.update_interval: int = int(self.dashboard_config["update_interval_seconds"])  # type: ignore[index]
 
     @handles_errors(fallback=False)

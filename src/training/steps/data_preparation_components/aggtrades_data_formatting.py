@@ -3,8 +3,8 @@
 import csv
 import glob
 import os
-import shutil
 import os.path
+import shutil
 
 
 def check_file_format(file_path) -> bool | None:
@@ -107,7 +107,7 @@ class DataFileReformatter:
                     self.output_path,
                     "w",
                     newline="",
-                    encoding="utf-8"
+                    encoding="utf-8",
                 ) as outfile,
             ):
                 writer = csv.writer(outfile)
@@ -352,7 +352,7 @@ class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
 
     def __init__(
-        self, input_directory: str, output_directory: str, write_header: bool = True
+        self, input_directory: str, output_directory: str, write_header: bool = True,
     ) -> None:
         self.input_directory = input_directory
         self.output_directory = output_directory

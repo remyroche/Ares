@@ -2,8 +2,6 @@
 
 import numpy as np
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 # Empirically derived baseline and range for dual confidence normalization
 DUAL_CONF_BASELINE = 0.216
 DUAL_CONF_RANGE = 0.784
@@ -267,10 +265,9 @@ def get_confidence_threshold_signals(confidence_scores: dict[str, np.ndarray], t
     direction_prediction = confidence_scores["direction_prediction"]
 
     # Generate signals based on confidence threshold
-    signals = np.where(
+    return np.where(
         (final_confidence >= threshold) & (direction_prediction == 1),
         1,  # Long signal
         np.where((final_confidence >= threshold) & (direction_prediction == 0), -1, 0),  # Short signal  # No signal
     )
 
-    return signals

@@ -5,15 +5,13 @@ Simplified Leverage Sizer for high leverage trading.
 Uses ML confidence scores, liquidation risk model, and market health analysis.
 """
 
-from datetime import datetime
-from src.utils.logger import system_logger
 import contextlib
+from datetime import datetime
 from typing import Any
 
-from src.config_optuna import get_parameter_value
 from src.core.decorators import handles_errors
-import copy
-import asyncio
+from src.utils.logger import system_logger
+
 
 class LeverageSizer:
     """
@@ -34,24 +32,24 @@ class LeverageSizer:
 
         # Load configuration from step17 optimization results
         self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
-        
+
         # Load step17 optimized parameters
         step17_config = self.config.get("step17_optimization", {})
         leverage_optimization = step17_config.get("leverage", {})
-        
+
         # Load optimized leverage parameters
         self.min_leverage: float = leverage_optimization.get("min_leverage", 10.0)
         self.max_leverage: float = leverage_optimization.get("max_leverage", 100.0)
         self.confidence_threshold: float = leverage_optimization.get("confidence_threshold", 0.6)
         self.liquidation_buffer: float = leverage_optimization.get("liquidation_buffer", 0.05)
-        
+
         # NEW: Combined confidence threshold for leverage sizing (optimizable in step17)
         self.leverage_combined_threshold: float = leverage_optimization.get("leverage_combined_threshold", 0.75)
-        
+
         # Load optimized component weights
         self.ml_weight: float = leverage_optimization.get("ml_weight", 0.6)
         self.liquidation_weight: float = leverage_optimization.get("liquidation_weight", 0.4)
-        
+
         # Load additional optimized parameters
         self.leverage_multiplier: float = leverage_optimization.get("leverage_multiplier", 1.0)
         self.risk_adjustment_factor: float = leverage_optimization.get("risk_adjustment_factor", 1.0)
@@ -108,41 +106,41 @@ class LeverageSizer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+            self.logger.exception(f"Configuration validation failed: {e}")
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "leverage" in step17_results:
                 leverage_optimization = step17_results["leverage"]
-                
+
                 # Update leverage parameters
                 self.min_leverage = leverage_optimization.get("min_leverage", self.min_leverage)
                 self.max_leverage = leverage_optimization.get("max_leverage", self.max_leverage)
                 self.confidence_threshold = leverage_optimization.get("confidence_threshold", self.confidence_threshold)
                 self.liquidation_buffer = leverage_optimization.get("liquidation_buffer", self.liquidation_buffer)
-                
+
                 # Update component weights
                 self.ml_weight = leverage_optimization.get("ml_weight", self.ml_weight)
                 self.liquidation_weight = leverage_optimization.get("liquidation_weight", self.liquidation_weight)
-                
+
                 # Update additional parameters
                 self.leverage_multiplier = leverage_optimization.get("leverage_multiplier", self.leverage_multiplier)
                 self.risk_adjustment_factor = leverage_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
                 self.confidence_boost_threshold = leverage_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
                 self.max_risk_leverage = leverage_optimization.get("max_risk_leverage", self.max_risk_leverage)
-                
+
                 self.logger.info("✅ Leverage sizer configuration refreshed from step17 results")
-                
+
         except Exception as e:
-            self.logger.error(f"Error refreshing step17 configuration: {e}")
+            self.logger.exception(f"Error refreshing step17 configuration: {e}")
 
     @handles_errors(
         error_handlers={
@@ -184,7 +182,7 @@ class LeverageSizer:
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
-            
+
             # Extract ML confidence scores (for backward compatibility)
             price_target_confidences = ml_predictions.get("price_target_confidences", {})
             adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
@@ -253,7 +251,7 @@ class LeverageSizer:
             return leverage_analysis
 
         except Exception as e:
-            self.logger.error(f"Error calculating leverage: {e}")
+            self.logger.exception(f"Error calculating leverage: {e}")
             return {}
 
     def _calculate_ml_leverage(
@@ -442,7 +440,7 @@ class LeverageSizer:
                     f"Leverage: {final_leverage:.1f}x (minimum due to low combined confidence "
                     f"{combined_confidence:.2f} below threshold {self.leverage_combined_threshold:.2f})"
                 )
-            
+
             return (
                 f"Leverage: {final_leverage:.1f}x "
                 f"(ML: {ml_leverage:.1f}x, Liquidation: {liquidation_leverage:.1f}x, "
@@ -470,7 +468,7 @@ class LeverageSizer:
             self.is_initialized = False
             self.logger.info("✅ Leverage sizer stopped successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to stop leverage sizer: {e}")
+            self.logger.exception(f"❌ Failed to stop leverage sizer: {e}")
 
     @handles_errors(fallback=None)
     async def cleanup(self) -> None:
@@ -481,7 +479,7 @@ class LeverageSizer:
             self.leverage_sizing_history.clear()
             self.logger.info("✅ Leverage sizer cleanup completed")
         except Exception as e:
-            self.logger.error(f"Error cleaning up leverage sizer: {e}")
+            self.logger.exception(f"Error cleaning up leverage sizer: {e}")
 
 @handles_errors(fallback=None)
 async def setup_leverage_sizer(

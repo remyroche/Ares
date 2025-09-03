@@ -17,14 +17,7 @@ from scipy import stats
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid, warning
-import copy
-import os.path
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid,
-    warning,
-)
+
 
 class PerformanceMonitor:
     """
@@ -446,16 +439,16 @@ class PerformanceMonitor:
                 return
 
             # Calculate accuracy (for binary outcomes)
-            correct_predictions = sum(1 for p, o in zip(predictions, outcomes) if abs(p - o) < 0.1)
+            correct_predictions = sum(1 for p, o in zip(predictions, outcomes, strict=False) if abs(p - o) < 0.1)
             accuracy = correct_predictions / len(predictions)
 
             # Calculate mean absolute error
-            mae = sum(abs(p - o) for p, o in zip(predictions, outcomes)) / len(predictions)
+            mae = sum(abs(p - o) for p, o in zip(predictions, outcomes, strict=False)) / len(predictions)
 
             # Calculate precision and recall (for binary classification)
-            true_positives = sum(1 for p, o in zip(predictions, outcomes) if p > 0.5 and o > 0.5)
-            false_positives = sum(1 for p, o in zip(predictions, outcomes) if p > 0.5 and o <= 0.5)
-            false_negatives = sum(1 for p, o in zip(predictions, outcomes) if p <= 0.5 and o > 0.5)
+            true_positives = sum(1 for p, o in zip(predictions, outcomes, strict=False) if p > 0.5 and o > 0.5)
+            false_positives = sum(1 for p, o in zip(predictions, outcomes, strict=False) if p > 0.5 and o <= 0.5)
+            false_negatives = sum(1 for p, o in zip(predictions, outcomes, strict=False) if p <= 0.5 and o > 0.5)
 
             precision = (
                 true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
@@ -470,7 +463,7 @@ class PerformanceMonitor:
             if len(predictions) >= 20:
                 recent_predictions = predictions[-10:]
                 recent_outcomes = outcomes[-10:]
-                recent_correct = sum(1 for p, o in zip(recent_predictions, recent_outcomes) if abs(p - o) < 0.1)
+                recent_correct = sum(1 for p, o in zip(recent_predictions, recent_outcomes, strict=False) if abs(p - o) < 0.1)
                 recent_accuracy = recent_correct / len(recent_predictions)
 
             # Store metrics
@@ -512,7 +505,7 @@ class PerformanceMonitor:
                         "metric": "accuracy",
                         "value": metrics["accuracy"],
                         "threshold": 0.5,
-                    }
+                    },
                 )
 
             # Check for concept drift
@@ -524,7 +517,7 @@ class PerformanceMonitor:
                         "severity": "high",
                         "metric": "drift_detected",
                         "value": True,
-                    }
+                    },
                 )
 
             # Check for F1 score degradation
@@ -537,7 +530,7 @@ class PerformanceMonitor:
                         "metric": "f1_score",
                         "value": metrics["f1_score"],
                         "threshold": 0.4,
-                    }
+                    },
                 )
 
             # Check for recent accuracy drop
@@ -550,7 +543,7 @@ class PerformanceMonitor:
                         "metric": "recent_accuracy",
                         "value": metrics["recent_accuracy"],
                         "baseline": metrics["accuracy"],
-                    }
+                    },
                 )
 
             # Add triggers to the list
@@ -671,8 +664,7 @@ class PerformanceMonitor:
             if not model_type:
                 return 1.0  # Default multiplier
 
-            regime_multiplier = regime_multipliers.get(regime={}).get(model_type, 1.0)
-            return regime_multiplier
+            return regime_multipliers.get(regime={}).get(model_type, 1.0)
 
         except Exception as e:
             self.logger.exception(f"Error getting regime performance adjustment: {e}")
@@ -686,7 +678,7 @@ class PerformanceMonitor:
     async def get_performance_feedback(self) -> dict[str, Any]:
         """Get comprehensive performance feedback for the system."""
         try:
-            feedback = {
+            return {
                 "timestamp": datetime.now().isoformat(),
                 "real_time_tracking_enabled": self.enable_real_time_tracking,
                 "models_tracked": list(self.model_metrics.keys()),
@@ -696,7 +688,6 @@ class PerformanceMonitor:
                 "system_health": self._calculate_system_health(),
             }
 
-            return feedback
 
         except Exception as e:
             self.logger.exception(f"Error getting performance feedback: {e}")

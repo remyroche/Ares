@@ -21,14 +21,14 @@ PIPELINE_DIR = Path(__file__).parent
 CODE_QUALITY_DIR = PIPELINE_DIR.parent
 
 # Scripts directory (where individual tools are located)
-SCRIPTS_DIR = CODE_QUALITY_DIR / 'scripts'
+SCRIPTS_DIR = CODE_QUALITY_DIR / "scripts"
 
 # Reports directory
-REPORTS_DIR = CODE_QUALITY_DIR / 'reports'
+REPORTS_DIR = CODE_QUALITY_DIR / "reports"
 
 __all__ = [
-    'PIPELINE_DIR',
-    'CODE_QUALITY_DIR', 
-    'SCRIPTS_DIR',
-    'REPORTS_DIR'
+    "PIPELINE_DIR",
+    "CODE_QUALITY_DIR",
+    "SCRIPTS_DIR",
+    "REPORTS_DIR",
 ]

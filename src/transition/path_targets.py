@@ -1,14 +1,17 @@
 # src/transition/path_targets.py
 
 from __future__ import annotations
-from src.utils.logger import system_logger
-from typing import TYPE_CHECKING, Any
-import pandas as pd
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 
+from src.utils.logger import system_logger
+
 if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
+    import pandas as pd
+    # TODO: Add proper implementation
 @dataclass
 class PathClassConfig:
     enable_beginning_of_trend: bool

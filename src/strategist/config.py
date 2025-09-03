@@ -2,9 +2,9 @@
 Configuration management for the Strategist module using Pydantic.
 """
 
-from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field, validator
 from enum import Enum
+
+from pydantic import BaseModel, Field, validator
 
 
 class StrategyType(str, Enum):
@@ -32,12 +32,13 @@ class TechnicalIndicatorThresholds(BaseModel):
     volume_ratio_high: float = Field(default=1.5, gt=0, description="High volume ratio threshold")
     volume_ratio_low: float = Field(default=0.5, gt=0, description="Low volume ratio threshold")
     price_volatility_window: int = Field(default=20, ge=1, description="Price volatility calculation window")
-    
-    @validator('sma_slow_window')
-    def validate_sma_windows(cls, v, values):
+
+    @validator("sma_slow_window")
+    def validate_sma_windows(self, v, values):
         """Ensure slow SMA window is greater than fast SMA window."""
-        if 'sma_fast_window' in values and v <= values['sma_fast_window']:
-            raise ValueError('Slow SMA window must be greater than fast SMA window')
+        if "sma_fast_window" in values and v <= values["sma_fast_window"]:
+            msg = "Slow SMA window must be greater than fast SMA window"
+            raise ValueError(msg)
         return v
 
 
@@ -50,14 +51,14 @@ class StrategistConfig(BaseModel):
     strategy_type: StrategyType = Field(default=StrategyType.TECHNICAL_ANALYSIS, description="Type of strategy to use")
     technical_indicator_thresholds: TechnicalIndicatorThresholds = Field(
         default_factory=TechnicalIndicatorThresholds,
-        description="Technical indicator thresholds"
+        description="Technical indicator thresholds",
     )
-    
+
     # Performance optimization settings
     cache_ttl: int = Field(default=300, ge=0, description="Cache time-to-live in seconds")
     use_vectorized_calculations: bool = Field(default=True, description="Use vectorized calculations for performance")
     parallel_indicator_calculation: bool = Field(default=True, description="Calculate indicators in parallel")
-    
+
     class Config:
         """Pydantic configuration."""
         use_enum_values = True
@@ -68,13 +69,13 @@ class StrategistConfig(BaseModel):
 
 class MarketIndicators(BaseModel):
     """Market indicator data structure."""
-    rsi: Optional[float] = Field(None, ge=0, le=100, description="Relative Strength Index")
-    sma_fast: Optional[float] = Field(None, description="Fast Simple Moving Average")
-    sma_slow: Optional[float] = Field(None, description="Slow Simple Moving Average")
-    volume_ratio: Optional[float] = Field(None, gt=0, description="Volume ratio")
-    price_change_percent: Optional[float] = Field(None, description="Price change percentage")
-    volatility: Optional[float] = Field(None, ge=0, description="Price volatility")
-    sma_trend: Optional[str] = Field(None, description="SMA trend direction")
+    rsi: float | None = Field(None, ge=0, le=100, description="Relative Strength Index")
+    sma_fast: float | None = Field(None, description="Fast Simple Moving Average")
+    sma_slow: float | None = Field(None, description="Slow Simple Moving Average")
+    volume_ratio: float | None = Field(None, gt=0, description="Volume ratio")
+    price_change_percent: float | None = Field(None, description="Price change percentage")
+    volatility: float | None = Field(None, ge=0, description="Price volatility")
+    sma_trend: str | None = Field(None, description="SMA trend direction")
 
 
 class StrategyResult(BaseModel):
@@ -83,18 +84,18 @@ class StrategyResult(BaseModel):
     confidence: float = Field(..., ge=0, le=1, description="Strategy confidence level")
     reasoning: list[str] = Field(default_factory=list, description="Reasoning for the strategy")
     timestamp: str = Field(..., description="Strategy generation timestamp")
-    
+
     # Optional fields
-    market_health_score: Optional[float] = Field(None, ge=0, le=1, description="Market health score")
-    liquidation_risk: Optional[str] = Field(None, description="Liquidation risk level")
-    dual_model_direction: Optional[str] = Field(None, description="Direction from dual model system")
-    dual_model_confidence: Optional[float] = Field(None, ge=0, le=1, description="Confidence from dual model system")
-    
+    market_health_score: float | None = Field(None, ge=0, le=1, description="Market health score")
+    liquidation_risk: str | None = Field(None, description="Liquidation risk level")
+    dual_model_direction: str | None = Field(None, description="Direction from dual model system")
+    dual_model_confidence: float | None = Field(None, ge=0, le=1, description="Confidence from dual model system")
+
     # Risk management fields
-    stop_loss: Optional[float] = Field(None, description="Stop loss price")
-    take_profit: Optional[float] = Field(None, description="Take profit price")
-    max_position_size: Optional[float] = Field(None, description="Maximum position size recommendation")
-    
+    stop_loss: float | None = Field(None, description="Stop loss price")
+    take_profit: float | None = Field(None, description="Take profit price")
+    max_position_size: float | None = Field(None, description="Maximum position size recommendation")
+
     class Config:
         """Pydantic configuration."""
         extra = "allow"  # Allow additional fields for flexibility

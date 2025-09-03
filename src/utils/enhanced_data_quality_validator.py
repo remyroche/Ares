@@ -5,11 +5,8 @@ This module provides comprehensive data quality validation capabilities for the 
 """
 
 import logging
-import time
-import warnings
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 try:
     import numpy as np
@@ -46,9 +43,9 @@ class QualityResult:
     """Result of data quality validation."""
 
     passed: bool = True
-    issues: List[str] = field(default_factory=list)
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    warnings: List[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
     def add_issue(self, issue_type: str, description: str):
         """Add a quality issue."""
@@ -63,7 +60,7 @@ class QualityResult:
         """Add a quality metric."""
         self.metrics[name] = value
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get a summary of the validation result."""
         return {
             "passed": self.passed,
@@ -78,14 +75,15 @@ class QualityResult:
 class EnhancedDataQualityValidator:
     """Enhanced data quality validator with comprehensive checks."""
 
-    def __init__(self, thresholds: Optional[QualityThresholds] = None):
+    def __init__(self, thresholds: QualityThresholds | None = None):
         self.thresholds = thresholds or QualityThresholds()
         self.logger = system_logger.getChild("DataQualityValidator")
 
     def validate_dataframe_quality(self, df: pd.DataFrame, context: str = "") -> QualityResult:
         """Validate DataFrame quality with comprehensive checks."""
         if not PANDAS_AVAILABLE:
-            raise ImportError("pandas is required for data quality validation")
+            msg = "pandas is required for data quality validation"
+            raise ImportError(msg)
 
         result = QualityResult()
 
@@ -136,7 +134,7 @@ class EnhancedDataQualityValidator:
 
         if nan_ratio > self.thresholds.max_nan_ratio:
             result.add_issue(
-                "nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.thresholds.max_nan_ratio}"
+                "nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.thresholds.max_nan_ratio}",
             )
 
         # Check for columns with high NaN ratios
@@ -160,7 +158,7 @@ class EnhancedDataQualityValidator:
 
         if total_infinites > self.thresholds.max_infinite_count:
             result.add_issue(
-                "infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}"
+                "infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}",
             )
 
     def _validate_constant_features(self, df: pd.DataFrame, result: QualityResult):
@@ -180,7 +178,7 @@ class EnhancedDataQualityValidator:
 
         if constant_features:
             result.add_issue(
-                "constant_features", f"Found {len(constant_features)} constant features: {constant_features}"
+                "constant_features", f"Found {len(constant_features)} constant features: {constant_features}",
             )
 
         if low_variance_features:
@@ -219,7 +217,7 @@ class EnhancedDataQualityValidator:
                             "close": row["close"],
                             "high": row["high"],
                             "low": row["low"],
-                        }
+                        },
                     )
 
         result.add_metric("price_anomalies", anomalies)
@@ -256,7 +254,7 @@ class EnhancedDataQualityValidator:
                             "type": "large_gaps",
                             "count": len(large_gaps),
                             "max_gap_minutes": large_gaps.max().total_seconds() / 60,
-                        }
+                        },
                     )
 
             # Check for duplicates
@@ -317,7 +315,7 @@ class EnhancedDataQualityValidator:
                     corr_value = corr_matrix.iloc[i, j]
                     if abs(corr_value) > self.thresholds.max_correlation_threshold:
                         high_corr_pairs.append(
-                            {"col1": corr_matrix.columns[i], "col2": corr_matrix.columns[j], "correlation": corr_value}
+                            {"col1": corr_matrix.columns[i], "col2": corr_matrix.columns[j], "correlation": corr_value},
                         )
 
             result.add_metric("high_correlations", high_corr_pairs)
@@ -332,7 +330,7 @@ class EnhancedDataQualityValidator:
         """Log validation results."""
         status = "PASSED" if result.passed else "FAILED"
         self.logger.info(
-            f"Quality validation for {context}: {status} ({len(result.issues)} issues, {len(result.warnings)} warnings)"
+            f"Quality validation for {context}: {status} ({len(result.issues)} issues, {len(result.warnings)} warnings)",
         )
 
         if result.issues:
@@ -407,7 +405,7 @@ class UnifiedDataQualityValidator(EnhancedDataQualityValidator):
                             "type": "uneven_exchange_distribution",
                             "exchange_counts": exchange_counts.to_dict(),
                             "coefficient_of_variation": cv,
-                        }
+                        },
                     )
 
         # Check for consistent data across symbols
@@ -424,7 +422,7 @@ class UnifiedDataQualityValidator(EnhancedDataQualityValidator):
                             "type": "uneven_symbol_distribution",
                             "symbol_counts": symbol_counts.to_dict(),
                             "coefficient_of_variation": cv,
-                        }
+                        },
                     )
 
         result.add_metric("consistency_issues", issues)
@@ -446,7 +444,7 @@ def validate_unified_dataframe(df: pd.DataFrame, context: str = "") -> QualityRe
     return validator.validate_unified_data_quality(df, context)
 
 
-def check_dataframe_health(df: pd.DataFrame) -> Dict[str, Any]:
+def check_dataframe_health(df: pd.DataFrame) -> dict[str, Any]:
     """Quick health check of DataFrame."""
     if df is None or df.empty:
         return {"healthy": False, "reason": "DataFrame is None or empty"}

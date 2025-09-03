@@ -15,22 +15,20 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 import secrets
 import time
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from src.core.decorators import handles_errors
+
 from .logger import system_logger
-from .pipeline_standards import PipelineStandards, pipeline_standards
-import copy
+from .pipeline_standards import pipeline_standards
+
 
 class SecurityLevel(Enum):
     """Security levels for different operations."""
@@ -43,12 +41,11 @@ class SecurityLevel(Enum):
 class SecurityViolation(Exception):
     """Custom exception for security violations."""
 
-    pass
 
 class CredentialManager:
     """Manages API credentials and sensitive data securely."""
 
-    def __init__(self, master_key: Optional[str] = None):
+    def __init__(self, master_key: str | None = None):
         """Initialize credential manager.
 
         Args:
@@ -75,7 +72,7 @@ class CredentialManager:
         key = base64.urlsafe_b64decode(master_key.encode())
         return Fernet(key)
 
-    def _load_credentials(self) -> Dict[str, Any]:
+    def _load_credentials(self) -> dict[str, Any]:
         """Load encrypted credentials from file."""
         try:
             if self.credentials_file.exists():
@@ -95,10 +92,10 @@ class CredentialManager:
             with open(self.credentials_file, "wb") as f:
                 f.write(encrypted_data)
         except Exception as e:
-            self.logger.error(f"Could not save credentials: {e}")
+            self.logger.exception(f"Could not save credentials: {e}")
 
     def store_credential(
-        self, service: str, key: str, value: str, security_level: SecurityLevel = SecurityLevel.HIGH
+        self, service: str, key: str, value: str, security_level: SecurityLevel = SecurityLevel.HIGH,
     ) -> None:
         """Store a credential securely.
 
@@ -125,7 +122,7 @@ class CredentialManager:
         self._save_credentials()
         self.logger.info(f"Stored credential for {service}:{key}")
 
-    def get_credential(self, service: str, key: str) -> Optional[str]:
+    def get_credential(self, service: str, key: str) -> str | None:
         """Retrieve a credential securely.
 
         Args:
@@ -146,7 +143,7 @@ class CredentialManager:
                 return credential["value"]
             return None
         except Exception as e:
-            self.logger.error(f"Error accessing credential {service}:{key}: {e}")
+            self.logger.exception(f"Error accessing credential {service}:{key}: {e}")
             return None
 
     def validate_credential(self, service: str, key: str, value: str) -> bool:
@@ -194,13 +191,13 @@ class CredentialManager:
                 return True
             return False
         except Exception as e:
-            self.logger.error(f"Error rotating credential {service}:{key}: {e}")
+            self.logger.exception(f"Error rotating credential {service}:{key}: {e}")
             return False
 
 class DataEncryption:
     """Handles data encryption and decryption."""
 
-    def __init__(self, encryption_key: Optional[str] = None):
+    def __init__(self, encryption_key: str | None = None):
         """Initialize data encryption.
 
         Args:
@@ -223,7 +220,7 @@ class DataEncryption:
         key = base64.urlsafe_b64decode(encryption_key.encode())
         return Fernet(key)
 
-    def encrypt_data(self, data: Union[str, bytes, Dict[str, Any]]) -> bytes:
+    def encrypt_data(self, data: str | bytes | dict[str, Any]) -> bytes:
         """Encrypt data.
 
         Args:
@@ -242,10 +239,11 @@ class DataEncryption:
             self.logger.debug("Data encrypted successfully")
             return encrypted_data
         except Exception as e:
-            self.logger.error(f"Error encrypting data: {e}")
-            raise SecurityViolation(f"Encryption failed: {e}")
+            self.logger.exception(f"Error encrypting data: {e}")
+            msg = f"Encryption failed: {e}"
+            raise SecurityViolation(msg)
 
-    def decrypt_data(self, encrypted_data: bytes) -> Union[str, Dict[str, Any]]:
+    def decrypt_data(self, encrypted_data: bytes) -> str | dict[str, Any]:
         """Decrypt data.
 
         Args:
@@ -263,10 +261,11 @@ class DataEncryption:
             except json.JSONDecodeError:
                 return decrypted_data.decode()
         except Exception as e:
-            self.logger.error(f"Error decrypting data: {e}")
-            raise SecurityViolation(f"Decryption failed: {e}")
+            self.logger.exception(f"Error decrypting data: {e}")
+            msg = f"Decryption failed: {e}"
+            raise SecurityViolation(msg)
 
-    def encrypt_file(self, file_path: str, output_path: Optional[str] = None) -> str:
+    def encrypt_file(self, file_path: str, output_path: str | None = None) -> str:
         """Encrypt a file.
 
         Args:
@@ -291,10 +290,11 @@ class DataEncryption:
             self.logger.info(f"File encrypted: {file_path} -> {output_path}")
             return output_path
         except Exception as e:
-            self.logger.error(f"Error encrypting file {file_path}: {e}")
-            raise SecurityViolation(f"File encryption failed: {e}")
+            self.logger.exception(f"Error encrypting file {file_path}: {e}")
+            msg = f"File encryption failed: {e}"
+            raise SecurityViolation(msg)
 
-    def decrypt_file(self, file_path: str, output_path: Optional[str] = None) -> str:
+    def decrypt_file(self, file_path: str, output_path: str | None = None) -> str:
         """Decrypt a file.
 
         Args:
@@ -326,8 +326,9 @@ class DataEncryption:
             self.logger.info(f"File decrypted: {file_path} -> {output_path}")
             return output_path
         except Exception as e:
-            self.logger.error(f"Error decrypting file {file_path}: {e}")
-            raise SecurityViolation(f"File decryption failed: {e}")
+            self.logger.exception(f"Error decrypting file {file_path}: {e}")
+            msg = f"File decryption failed: {e}"
+            raise SecurityViolation(msg)
 
 class AccessControl:
     """Manages access control and authentication."""
@@ -343,7 +344,7 @@ class AccessControl:
             "api": ["read", "write"],
         }
 
-    def generate_access_token(self, user_id: str, permissions: List[str], expires_in: int = 3600) -> str:
+    def generate_access_token(self, user_id: str, permissions: list[str], expires_in: int = 3600) -> str:
         """Generate an access token.
 
         Args:
@@ -367,7 +368,7 @@ class AccessControl:
         self.logger.info(f"Generated access token for user {user_id}")
         return token
 
-    def validate_access_token(self, token: str) -> Optional[Dict[str, Any]]:
+    def validate_access_token(self, token: str) -> dict[str, Any] | None:
         """Validate an access token.
 
         Args:
@@ -415,7 +416,7 @@ class AccessControl:
         """
         if token in self.access_tokens:
             del self.access_tokens[token]
-            self.logger.info(f"Revoked access token")
+            self.logger.info("Revoked access token")
             return True
         return False
 
@@ -448,7 +449,7 @@ class AuditLogger:
         event_type: str,
         user_id: str,
         action: str,
-        details: Dict[str, Any],
+        details: dict[str, Any],
         severity: SecurityLevel = SecurityLevel.MEDIUM,
     ) -> None:
         """Log a security event.
@@ -460,7 +461,7 @@ class AuditLogger:
             details: Additional details
             severity: Security severity level
         """
-        event = {
+        {
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
             "user_id": user_id,
@@ -497,7 +498,7 @@ class AuditLogger:
 class SecurityFramework:
     """Comprehensive security framework."""
 
-    def __init__(self, master_key: Optional[str] = None):
+    def __init__(self, master_key: str | None = None):
         """Initialize security framework.
 
         Args:
@@ -550,12 +551,12 @@ class SecurityFramework:
             return True
 
         except Exception as e:
-            self.logger.error(f"Security configuration validation failed: {e}")
+            self.logger.exception(f"Security configuration validation failed: {e}")
             return False
 
     def secure_api_call(
-        self, service: str, endpoint: str, data: Dict[str, Any], security_level: SecurityLevel = SecurityLevel.HIGH
-    ) -> Dict[str, Any]:
+        self, service: str, endpoint: str, data: dict[str, Any], security_level: SecurityLevel = SecurityLevel.HIGH,
+    ) -> dict[str, Any]:
         """Make a secure API call.
 
         Args:
@@ -573,7 +574,8 @@ class SecurityFramework:
             api_secret = self.credential_manager.get_credential(service, "api_secret")
 
             if not api_key or not api_secret:
-                raise SecurityViolation(f"Missing credentials for service: {service}")
+                msg = f"Missing credentials for service: {service}"
+                raise SecurityViolation(msg)
 
             # Log API call
             self.audit_logger.log_security_event(
@@ -589,10 +591,11 @@ class SecurityFramework:
             return {"status": "success", "message": "Secure API call completed"}
 
         except Exception as e:
-            self.logger.error(f"Secure API call failed: {e}")
-            raise SecurityViolation(f"API call failed: {e}")
+            self.logger.exception(f"Secure API call failed: {e}")
+            msg = f"API call failed: {e}"
+            raise SecurityViolation(msg)
 
-    def encrypt_sensitive_data(self, data: Dict[str, Any], fields_to_encrypt: List[str]) -> Dict[str, Any]:
+    def encrypt_sensitive_data(self, data: dict[str, Any], fields_to_encrypt: list[str]) -> dict[str, Any]:
         """Encrypt sensitive data fields.
 
         Args:
@@ -610,7 +613,7 @@ class SecurityFramework:
 
         return encrypted_data
 
-    def decrypt_sensitive_data(self, data: Dict[str, Any], fields_to_decrypt: List[str]) -> Dict[str, Any]:
+    def decrypt_sensitive_data(self, data: dict[str, Any], fields_to_decrypt: list[str]) -> dict[str, Any]:
         """Decrypt sensitive data fields.
 
         Args:
@@ -628,13 +631,13 @@ class SecurityFramework:
 
         return decrypted_data
 
-    def get_security_report(self) -> Dict[str, Any]:
+    def get_security_report(self) -> dict[str, Any]:
         """Get comprehensive security report.
 
         Returns:
             Security report
         """
-        report = {
+        return {
             "timestamp": datetime.now().isoformat(),
             "security_configuration": self.security_policies,
             "credential_count": len(self.credential_manager.credentials),
@@ -643,7 +646,6 @@ class SecurityFramework:
             "security_validation": self.validate_security_configuration(),
         }
 
-        return report
 
 # Global security framework instance
 security_framework = SecurityFramework()

@@ -3,12 +3,9 @@ Time utilities for Ares Trading System
 """
 
 import os
-from datetime import datetime, timezone
-from typing import Union
+from datetime import UTC, datetime
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
-UTC = timezone.utc
+UTC = UTC
 
 
 def parse_datetime_to_ms(dt_str: str | None) -> int | None:
@@ -43,7 +40,7 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
             continue
     try:
         # Last-resort: fromisoformat without 'Z'
-        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(dt_str)
         if dt.tzinfo is None:
             # Fallback implementation for dt.tzinfo
             # Fallback implementation for dt.tzinfo
@@ -130,10 +127,7 @@ def is_valid_timestamp_ms(timestamp_ms: int) -> bool:
 
     # Check if timestamp is not too far in the future (e.g., 10 years)
     max_future = get_current_timestamp_ms() + (10 * 365 * 24 * 60 * 60 * 1000)
-    if timestamp_ms > max_future:
-        return False
-
-    return True
+    return not timestamp_ms > max_future
 
 
 def calculate_duration_ms(start_ms: int, end_ms: int) -> int:
@@ -160,9 +154,8 @@ def format_duration_ms(duration_ms: int) -> str:
     """
     if duration_ms < 1000:
         return f"{duration_ms}ms"
-    elif duration_ms < 60000:
+    if duration_ms < 60000:
         return f"{duration_ms / 1000:.1f}s"
-    elif duration_ms < 3600000:
+    if duration_ms < 3600000:
         return f"{duration_ms / 60000:.1f}m"
-    else:
-        return f"{duration_ms / 3600000:.1f}h"
+    return f"{duration_ms / 3600000:.1f}h"

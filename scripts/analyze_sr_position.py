@@ -12,16 +12,19 @@ Usage:
     python scripts/analyze_sr_position.py --symbol ETHUSDT --exchange BINANCE --timeframe 15m
 """
 
-from pathlib import Path
-from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering)
-from src.utils.logger import system_logger
-from typing import Any, Dict, List, Optional, Tuple
 import argparse
 import asyncio
 import sys
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from src.training.steps.vectorized_advanced_feature_engineering import (
+    VectorizedAdvancedFeatureEngineering,
+)
+from src.utils.logger import system_logger
 
 # Add the src directory to the path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -32,7 +35,7 @@ class SRPositionAnalyzer:
     Analyzer for calculating position between support and resistance levels.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config=config
         self.logger = system_logger.getChild("SRPositionAnalyzer")
         self.feature_engine=None
@@ -54,7 +57,7 @@ class SRPositionAnalyzer:
         self.logger.info("✅ SR Position Analyzer initialized successfully")
         return True
 
-    def calculate_sr_position(self, price_data: pd.DataFrame, sr_levels: Dict[str, List[float]]) -> pd.Series:
+    def calculate_sr_position(self, price_data: pd.DataFrame, sr_levels: dict[str, list[float]]) -> pd.Series:
         """
         Calculate position between closest support and resistance levels.
 
@@ -92,8 +95,8 @@ class SRPositionAnalyzer:
                 positions.append(0.5)  # Default to middle if no levels found
                 continue
 
-            min_support_dist=min(support_distances)
-            min_resistance_dist=min(resistance_distances)
+            min(support_distances)
+            min(resistance_distances)
 
             # Find the actual closest support and resistance levels
             closest_support=min(support_levels, key=lambda x: abs(price - x))
@@ -124,7 +127,7 @@ class SRPositionAnalyzer:
 
         return pd.Series(positions, index=price_data.index)
 
-    def analyze_sr_position(self, price_data: pd.DataFrame, sr_levels: Dict[str, List[float]]) -> Dict[str, Any]:
+    def analyze_sr_position(self, price_data: pd.DataFrame, sr_levels: dict[str, list[float]]) -> dict[str, Any]:
         """
         Comprehensive analysis of SR position with statistics and insights.
 
@@ -157,7 +160,7 @@ class SRPositionAnalyzer:
         position_volatility=self.calculate_sr_position(price_data, sr_levels).rolling(20).std().fillna(0)
         current_volatility=position_volatility.iloc[-1]
 
-        analysis = {
+        return {
             "current_position": current_position, "mean_position": mean_position,
             "std_position": std_position, "position_zones": {
                 "near_support_count": near_support, "near_resistance_count": near_resistance,
@@ -177,9 +180,8 @@ class SRPositionAnalyzer:
             },
             "position_series": self.calculate_sr_position(price_data, sr_levels)}
 
-        return analysis
 
-    def print_analysis_report(self, analysis: Dict[str, Any]) -> None:
+    def print_analysis_report(self, analysis: dict[str, Any]) -> None:
         """Print a formatted analysis report."""
         if "error" in analysis:
             self.logger.error(f"❌ Analysis error: {analysis['error']}")
@@ -201,58 +203,58 @@ class SRPositionAnalyzer:
             print("   → In Middle Zone")
 
         # Statistics
-        print(f"\n📊 Statistics:")
+        print("\n📊 Statistics:")
         print(f"   Mean Position: {analysis['mean_position']:.3f}")
         print(f"   Std Deviation: {analysis['std_position']:.3f}")
         print(
-            f"   Current Volatility: {analysis['volatility']['current_volatility']:.3f}"
+            f"   Current Volatility: {analysis['volatility']['current_volatility']:.3f}",
         )
 
         # Position zones
         zones=analysis["position_zones"]
         total = zones["total_periods"]
-        print(f"\n🎯 Position Zones:")
+        print("\n🎯 Position Zones:")
         print(
-            f"   Near Support (0-20%): {zones['near_support_count']} periods ({zones['near_support_count']/total*100:.1f}%)"
+            f"   Near Support (0-20%): {zones['near_support_count']} periods ({zones['near_support_count']/total*100:.1f}%)",
         )
         print(
-            f"   Middle Zone (20-80%): {zones['middle_zone_count']} periods ({zones['middle_zone_count']/total*100:.1f}%)"
+            f"   Middle Zone (20-80%): {zones['middle_zone_count']} periods ({zones['middle_zone_count']/total*100:.1f}%)",
         )
         print(
-            f"   Near Resistance (80-100%): {zones['near_resistance_count']} periods ({zones['near_resistance_count']/total*100:.1f}%)"
+            f"   Near Resistance (80-100%): {zones['near_resistance_count']} periods ({zones['near_resistance_count']/total*100:.1f}%)",
         )
 
         # Trend analysis
         trend=analysis["trend_analysis"]
-        print(f"\n📈 Trend Analysis:")
+        print("\n📈 Trend Analysis:")
         print(
-            f"   Trending Up: {trend['trending_up_count']} periods ({trend['trending_up_count']/total*100:.1f}%)"
+            f"   Trending Up: {trend['trending_up_count']} periods ({trend['trending_up_count']/total*100:.1f}%)",
         )
         print(
-            f"   Trending Down: {trend['trending_down_count']} periods ({trend['trending_down_count']/total*100:.1f}%)"
+            f"   Trending Down: {trend['trending_down_count']} periods ({trend['trending_down_count']/total*100:.1f}%)",
         )
         print(
-            f"   No Change: {trend['no_change_count']} periods ({trend['no_change_count']/total*100:.1f}%)"
+            f"   No Change: {trend['no_change_count']} periods ({trend['no_change_count']/total*100:.1f}%)",
         )
 
         # SR Levels
         sr_levels=analysis["sr_levels"]
-        print(f"\n🎚️ SR Levels:")
+        print("\n🎚️ SR Levels:")
         print(f"   Support Levels: {len(sr_levels['support_levels'])} levels")
         if sr_levels["support_levels"]:
             print(
-                f"   Support Range: {min(sr_levels['support_levels']):.2f} - {max(sr_levels['support_levels']):.2f}"
+                f"   Support Range: {min(sr_levels['support_levels']):.2f} - {max(sr_levels['support_levels']):.2f}",
             )
         print(f"   Resistance Levels: {len(sr_levels['resistance_levels'])} levels")
         if sr_levels["resistance_levels"]:
             print(
-                f"   Resistance Range: {min(sr_levels['resistance_levels']):.2f} - {max(sr_levels['resistance_levels']):.2f}"
+                f"   Resistance Range: {min(sr_levels['resistance_levels']):.2f} - {max(sr_levels['resistance_levels']):.2f}",
             )
 
         print("=" * 80)
 
 
-async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+async def load_price_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame | None:
     """Load price data for analysis."""
     # Try multiple data formats and locations
     possible_paths=[
@@ -275,13 +277,13 @@ async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optiona
 async def main():
     """Main function to run SR position analysis."""
     parser=argparse.ArgumentParser(
-        description="Analyze SR position between support and resistance levels"
+        description="Analyze SR position between support and resistance levels",
     )
     parser.add_argument(
-        "--symbol", default="ETHUSDT", help="Trading symbol (default: ETHUSDT)"
+        "--symbol", default="ETHUSDT", help="Trading symbol (default: ETHUSDT)",
     )
     parser.add_argument(
-        "--exchange", default="BINANCE", help="Exchange name (default: BINANCE)"
+        "--exchange", default="BINANCE", help="Exchange name (default: BINANCE)",
     )
     parser.add_argument("--timeframe", default="15m", help="Timeframe (default: 15m)")
     parser.add_argument("--output", help="Output file for detailed results (optional)")
@@ -289,7 +291,7 @@ async def main():
     args=parser.parse_args()
 
     system_logger.info(
-        f"🚀 Starting SR Position Analysis for {args.symbol} on {args.exchange}"
+        f"🚀 Starting SR Position Analysis for {args.symbol} on {args.exchange}",
     )
 
     # Load price data
@@ -301,7 +303,7 @@ async def main():
     # Initialize analyzer
     config={
         "symbol": args.symbol, "exchange": args.exchange,
-        "timeframe": args.timeframe
+        "timeframe": args.timeframe,
     }
 
     analyzer=SRPositionAnalyzer(config)
@@ -331,7 +333,7 @@ async def main():
             position_df=pd.DataFrame(
                 {
                     "timestamp": analysis["position_series"].index, "sr_position": analysis["position_series"].values,
-                }
+                },
             )
             position_df.to_csv(output_path, index=False)
             system_logger.info(f"✅ Saved detailed results to {output_path}")

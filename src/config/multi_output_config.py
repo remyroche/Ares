@@ -6,19 +6,19 @@ prediction for both direction and profit using the triple barrier method and
 profit-based feature engineering.
 """
 
-from typing import Dict, Any
+from typing import Any
 
 
-def get_multi_output_config() -> Dict[str, Any]:
+def get_multi_output_config() -> dict[str, Any]:
     """Get configuration for multi-output prediction features.
-    
+
     Returns:
         Dictionary containing multi-output configuration settings
     """
     return {
         # Enable multi-output prediction
         "enable_multi_output": True,
-        
+
         # Multi-output model configuration
         "multi_output_models": {
             "model_type": "LightGBM",  # "LightGBM", "RandomForest", "NeuralNetwork"
@@ -33,7 +33,7 @@ def get_multi_output_config() -> Dict[str, Any]:
             "test_size": 0.2,
             "random_state": 42,
         },
-        
+
         # Profit-based feature engineering configuration
         "profit_feature_engineering": {
             "profit_column": "potential_profit_pct",
@@ -48,15 +48,15 @@ def get_multi_output_config() -> Dict[str, Any]:
                 "momentum",
                 "volatility",
                 "volume",
-                "rolling"
+                "rolling",
             ],
-            "profit_bins": [-float('inf'), -0.005, -0.002, -0.001, 0, 0.001, 0.002, 0.005, float('inf')],
+            "profit_bins": [-float("inf"), -0.005, -0.002, -0.001, 0, 0.001, 0.002, 0.005, float("inf")],
             "profit_labels": [
                 "Large Loss", "Medium Loss", "Small Loss", "Tiny Loss",
-                "No Profit", "Tiny Profit", "Small Profit", "Large Profit"
-            ]
+                "No Profit", "Tiny Profit", "Small Profit", "Large Profit",
+            ],
         },
-        
+
         # Enhanced training configuration
         "enhanced_training": {
             "enable_enhanced_hmm_training": True,
@@ -69,9 +69,9 @@ def get_multi_output_config() -> Dict[str, Any]:
                 "validation_size": 0.2,
                 "min_samples_per_split": 1000,
                 "regime_aware_splitting": True,
-            }
+            },
         },
-        
+
         # Enhanced data-driven feature selection configuration
         "feature_reduction": {
             "target_features": 100,
@@ -84,7 +84,7 @@ def get_multi_output_config() -> Dict[str, Any]:
                 "mutual_info": 0.25,
                 "shap": 0.25,
                 "random_forest": 0.2,
-                "rfe": 0.1
+                "rfe": 0.1,
             },
             "enable_enhanced_selection": True,
             "enable_vif_filtering": True,
@@ -92,9 +92,9 @@ def get_multi_output_config() -> Dict[str, Any]:
             "enable_shap_filtering": True,
             "enable_rf_filtering": True,
             "enable_ensemble_selection": True,
-            "enable_final_rfe": True
+            "enable_final_rfe": True,
         },
-        
+
         # Model trainer configuration
         "model_trainer": {
             "enable_multi_output": True,
@@ -103,7 +103,7 @@ def get_multi_output_config() -> Dict[str, Any]:
             "model_directory": "models",
             "multi_output_model_directory": "models/multi_output_models",
         },
-        
+
         # Triple barrier method configuration for multi-output
         "triple_barrier_multi_output": {
             "enable_direction_labeling": True,
@@ -115,7 +115,7 @@ def get_multi_output_config() -> Dict[str, Any]:
             "lower_barrier": -0.01,  # 1% stop loss
             "time_horizon": 100,  # Maximum bars to hold position
         },
-        
+
         # Fractional labeling configuration
         "fractional_labeling": {
             "enable_fractional_labels": True,
@@ -148,10 +148,10 @@ def get_multi_output_config() -> Dict[str, Any]:
                     "time_weight": 0.2,
                     "volatility_weight": 0.6,
                     "min_confidence": 0.2,
-                }
-            }
+                },
+            },
         },
-        
+
         # Performance monitoring
         "performance_monitoring": {
             "enable_metrics_tracking": True,
@@ -161,7 +161,7 @@ def get_multi_output_config() -> Dict[str, Any]:
             "enable_feature_importance": True,
             "enable_model_comparison": True,
         },
-        
+
         # Validation and testing
         "validation": {
             "enable_cross_validation": True,
@@ -178,10 +178,10 @@ def get_multi_output_config() -> Dict[str, Any]:
                 "profit_r2",
                 "profit_rmse",
                 "combined_correlation",
-                "profit_accuracy"
-            ]
+                "profit_accuracy",
+            ],
         },
-        
+
         # Logging and reporting
         "logging": {
             "enable_detailed_logging": True,
@@ -190,21 +190,21 @@ def get_multi_output_config() -> Dict[str, Any]:
             "log_feature_importance": True,
             "log_model_comparison": True,
             "log_performance_metrics": True,
-        }
+        },
     }
 
 
-def get_multi_output_model_config(model_type: str = "LightGBM") -> Dict[str, Any]:
+def get_multi_output_model_config(model_type: str = "LightGBM") -> dict[str, Any]:
     """Get specific configuration for multi-output model type.
-    
+
     Args:
         model_type: Type of model ("LightGBM", "RandomForest", "NeuralNetwork")
-        
+
     Returns:
         Model-specific configuration
     """
     base_config = get_multi_output_config()
-    
+
     if model_type == "LightGBM":
         model_config = {
             "n_estimators": 100,
@@ -238,18 +238,18 @@ def get_multi_output_model_config(model_type: str = "LightGBM") -> Dict[str, Any
         }
     else:
         model_config = {}
-    
+
     return {**base_config, "model_config": model_config}
 
 
-def get_enhanced_training_pipeline_config() -> Dict[str, Any]:
+def get_enhanced_training_pipeline_config() -> dict[str, Any]:
     """Get configuration for the enhanced training pipeline with multi-output support.
-    
+
     Returns:
         Enhanced training pipeline configuration
     """
     multi_output_config = get_multi_output_config()
-    
+
     return {
         # Pipeline configuration
         "pipeline": {
@@ -258,7 +258,7 @@ def get_enhanced_training_pipeline_config() -> Dict[str, Any]:
             "enable_profit_based_features": True,
             "enable_direction_profit_prediction": True,
         },
-        
+
         # Step-specific configurations
         "steps": {
             "step4_triple_barrier_method": {
@@ -281,18 +281,18 @@ def get_enhanced_training_pipeline_config() -> Dict[str, Any]:
                 "enable_profit_based_training": True,
             },
         },
-        
+
         # Include multi-output configuration
-        **multi_output_config
+        **multi_output_config,
     }
 
 
-def validate_multi_output_config(config: Dict[str, Any]) -> bool:
+def validate_multi_output_config(config: dict[str, Any]) -> bool:
     """Validate multi-output configuration.
-    
+
     Args:
         config: Configuration dictionary to validate
-        
+
     Returns:
         True if configuration is valid, False otherwise
     """
@@ -300,26 +300,26 @@ def validate_multi_output_config(config: Dict[str, Any]) -> bool:
         "enable_multi_output",
         "multi_output_models",
         "profit_feature_engineering",
-        "enhanced_training"
+        "enhanced_training",
     ]
-    
+
     for key in required_keys:
         if key not in config:
             print(f"❌ Missing required configuration key: {key}")
             return False
-    
+
     # Validate model type
     model_type = config["multi_output_models"].get("model_type")
     valid_model_types = ["LightGBM", "RandomForest", "NeuralNetwork"]
     if model_type not in valid_model_types:
         print(f"❌ Invalid model type: {model_type}. Must be one of {valid_model_types}")
         return False
-    
+
     # Validate profit feature engineering
     profit_config = config["profit_feature_engineering"]
     if not profit_config.get("use_numba", True):
         print("⚠️ Numba acceleration is recommended for profit feature engineering")
-    
+
     print("✅ Multi-output configuration validation passed")
     return True
 
@@ -332,18 +332,18 @@ if __name__ == "__main__":
     print(f"  - Enable multi-output: {config['enable_multi_output']}")
     print(f"  - Model type: {config['multi_output_models']['model_type']}")
     print(f"  - Use profit features: {config['multi_output_models']['use_profit_features']}")
-    
+
     # Validate configuration
     validate_multi_output_config(config)
-    
+
     # Test model-specific configuration
     lightgbm_config = get_multi_output_model_config("LightGBM")
-    print(f"\nLightGBM configuration:")
+    print("\nLightGBM configuration:")
     print(f"  - N estimators: {lightgbm_config['model_config']['n_estimators']}")
     print(f"  - Learning rate: {lightgbm_config['model_config']['learning_rate']}")
-    
+
     # Test enhanced pipeline configuration
     pipeline_config = get_enhanced_training_pipeline_config()
-    print(f"\nEnhanced pipeline configuration:")
+    print("\nEnhanced pipeline configuration:")
     print(f"  - Enable enhanced steps: {pipeline_config['pipeline']['enable_enhanced_steps']}")
     print(f"  - Enable multi-output training: {pipeline_config['pipeline']['enable_multi_output_training']}")

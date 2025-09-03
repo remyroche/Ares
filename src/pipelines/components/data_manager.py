@@ -3,24 +3,22 @@ Data manager for pipeline data operations (minimal scaffold).
 """
 from __future__ import annotations
 
-from typing import Any, Dict
-import asyncio
+from typing import Any
 
 from src.utils.centralized_decorators import (
-
-    performance_monitor,
     PerformanceLevel,
     handle_errors,
     handle_specific_errors,
-    validate_data_quality,
-    secure_data_processing,
     memory_efficient,
+    performance_monitor,
+    secure_data_processing,
+    validate_data_quality,
 )
 from src.utils.logger import system_logger
 
 
 class DataManager:
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("DataManager")
         self.data_config = config.get("data_manager", {})

@@ -9,9 +9,10 @@ import asyncio
 import functools
 import logging
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any
 
 try:
     from src.utils.logger import system_logger
@@ -31,19 +32,16 @@ class ErrorType(Enum):
 class RetryableError(Exception):
     """Error that can be retried."""
 
-    pass
 
 
 class NonRetryableError(Exception):
     """Error that should not be retried."""
 
-    pass
 
 
 class CircuitBreakerError(Exception):
     """Error raised when circuit breaker is open."""
 
-    pass
 
 
 @dataclass
@@ -63,7 +61,7 @@ class CircuitBreakerConfig:
 
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
-    expected_exception: Type[Exception] = Exception
+    expected_exception: type[Exception] = Exception
     monitor_interval: float = 10.0
 
 
@@ -84,13 +82,14 @@ class CircuitBreaker:
                 self.state = "HALF_OPEN"
                 self.logger.info("Circuit breaker transitioning to HALF_OPEN")
             else:
-                raise CircuitBreakerError("Circuit breaker is OPEN")
+                msg = "Circuit breaker is OPEN"
+                raise CircuitBreakerError(msg)
 
         try:
             result = func(*args, **kwargs)
             self._on_success()
             return result
-        except self.config.expected_exception as e:
+        except self.config.expected_exception:
             self._on_failure()
             raise
 
@@ -111,7 +110,7 @@ class CircuitBreaker:
             self.logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
 
 
-def retry_with_backoff(config: Optional[RetryConfig] = None):
+def retry_with_backoff(config: RetryConfig | None = None):
     """Decorator for retrying operations with exponential backoff."""
     if config is None:
         # Fallback implementation for config
@@ -127,8 +126,7 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                 try:
                     if asyncio.iscoroutinefunction(func):
                         return await func(*args, **kwargs)
-                    else:
-                        return func(*args, **kwargs)
+                    return func(*args, **kwargs)
                 except RetryableError as e:
                     last_exception = e
                     if attempt < config.max_retries:
@@ -136,10 +134,10 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                         logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.exception(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
                         raise
                 except NonRetryableError as e:
-                    logging.error(f"Non-retryable error: {e}")
+                    logging.exception(f"Non-retryable error: {e}")
                     raise
                 except Exception as e:
                     last_exception = e
@@ -148,7 +146,7 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                         logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.exception(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
                         raise
 
             raise last_exception
@@ -167,10 +165,10 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                         logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         time.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.exception(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
                         raise
                 except NonRetryableError as e:
-                    logging.error(f"Non-retryable error: {e}")
+                    logging.exception(f"Non-retryable error: {e}")
                     raise
                 except Exception as e:
                     last_exception = e
@@ -179,7 +177,7 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
                         logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         time.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
+                        logging.exception(f"Max retries ({config.max_retries}) exceeded. Last error: {e}")
                         raise
 
             raise last_exception
@@ -187,8 +185,7 @@ def retry_with_backoff(config: Optional[RetryConfig] = None):
         # Return appropriate wrapper based on function type
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
@@ -205,7 +202,7 @@ def _calculate_backoff_delay(attempt: int, config: RetryConfig) -> float:
     return delay
 
 
-def circuit_breaker(config: Optional[CircuitBreakerConfig] = None):
+def circuit_breaker(config: CircuitBreakerConfig | None = None):
     """Decorator for circuit breaker pattern."""
     if config is None:
         # Fallback implementation for config
@@ -226,13 +223,12 @@ def circuit_breaker(config: Optional[CircuitBreakerConfig] = None):
         # Return appropriate wrapper based on function type
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
-def categorize_errors(error_mapping: Dict[Type[Exception], ErrorType]):
+def categorize_errors(error_mapping: dict[type[Exception], ErrorType]):
     """Decorator for categorizing errors into retryable/non-retryable."""
 
     def decorator(func: Callable) -> Callable:
@@ -241,16 +237,16 @@ def categorize_errors(error_mapping: Dict[Type[Exception], ErrorType]):
             try:
                 if asyncio.iscoroutinefunction(func):
                     return await func(*args, **kwargs)
-                else:
-                    return func(*args, **kwargs)
+                return func(*args, **kwargs)
             except Exception as e:
                 error_type = _get_error_type(e, error_mapping)
                 if error_type == ErrorType.RETRYABLE:
-                    raise RetryableError(f"Retryable error: {e}") from e
-                elif error_type == ErrorType.NON_RETRYABLE:
-                    raise NonRetryableError(f"Non-retryable error: {e}") from e
-                else:
-                    raise
+                    msg = f"Retryable error: {e}"
+                    raise RetryableError(msg) from e
+                if error_type == ErrorType.NON_RETRYABLE:
+                    msg = f"Non-retryable error: {e}"
+                    raise NonRetryableError(msg) from e
+                raise
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
@@ -259,22 +255,22 @@ def categorize_errors(error_mapping: Dict[Type[Exception], ErrorType]):
             except Exception as e:
                 error_type = _get_error_type(e, error_mapping)
                 if error_type == ErrorType.RETRYABLE:
-                    raise RetryableError(f"Retryable error: {e}") from e
-                elif error_type == ErrorType.NON_RETRYABLE:
-                    raise NonRetryableError(f"Non-retryable error: {e}") from e
-                else:
-                    raise
+                    msg = f"Retryable error: {e}"
+                    raise RetryableError(msg) from e
+                if error_type == ErrorType.NON_RETRYABLE:
+                    msg = f"Non-retryable error: {e}"
+                    raise NonRetryableError(msg) from e
+                raise
 
         # Return appropriate wrapper based on function type
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
-def _get_error_type(exception: Exception, error_mapping: Dict[Type[Exception], ErrorType]) -> ErrorType:
+def _get_error_type(exception: Exception, error_mapping: dict[type[Exception], ErrorType]) -> ErrorType:
     """Get the error type for an exception based on the mapping."""
     for error_class, error_type in error_mapping.items():
         if isinstance(exception, error_class):

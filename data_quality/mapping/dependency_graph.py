@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import networkx as nx
 
-from code_quality.core.config import get_default_config, load_config, CodeQualityConfig
 from code_quality.analyzers.import_analyzer import ImportAnalyzer
+from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
 
-def _load_cq_config(config_path: Optional[str]) -> CodeQualityConfig:
+def _load_cq_config(config_path: str | None) -> CodeQualityConfig:
     if config_path:
         return load_config(config_path)
     return get_default_config()
@@ -25,8 +25,8 @@ def _load_cq_config(config_path: Optional[str]) -> CodeQualityConfig:
 
 def build_dependency_graph(
     path: str,
-    config_path: Optional[str] = None,
-) -> Dict[str, Any]:
+    config_path: str | None = None,
+) -> dict[str, Any]:
     """
     Analyze a directory and return an import dependency graph report.
 
@@ -36,14 +36,13 @@ def build_dependency_graph(
     config = _load_cq_config(config_path)
 
     analyzer = ImportAnalyzer(config)
-    report = analyzer.analyze_directory(directory)
-    return report
+    return analyzer.analyze_directory(directory)
 
 
 def visualize_dependency_graph(
     path: str,
     output_path: str,
-    config_path: Optional[str] = None,
+    config_path: str | None = None,
 ) -> None:
     """
     Build and save a PNG visualization of the dependency graph for a directory.
@@ -58,7 +57,7 @@ def visualize_dependency_graph(
 def export_dependency_graph_json(
     path: str,
     output_file: str,
-    config_path: Optional[str] = None,
+    config_path: str | None = None,
 ) -> str:
     """
     Build the dependency graph and export to a JSON file. Returns the path.
@@ -84,7 +83,7 @@ def export_dependency_graph_json(
     return str(out_path)
 
 
-def to_networkx_graph(report: Dict[str, Any]) -> nx.DiGraph:
+def to_networkx_graph(report: dict[str, Any]) -> nx.DiGraph:
     """
     Convert a dependency graph report to a NetworkX DiGraph.
     """
@@ -93,7 +92,7 @@ def to_networkx_graph(report: Dict[str, Any]) -> nx.DiGraph:
     for node in import_graph.get("nodes", []):
         g.add_node(node)
     for edge in import_graph.get("edges", []):
-        if isinstance(edge, (list, tuple)) and len(edge) >= 2:
+        if isinstance(edge, list | tuple) and len(edge) >= 2:
             g.add_edge(edge[0], edge[1])
     return g
 

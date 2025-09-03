@@ -4,28 +4,26 @@
 Critical path type validators for trading system safety.
 """
 
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from typing import Any, TypeVar
 
-from src.custom_types.validation import (
-    RuntimeTypeError,
-    TypeValidator,
-    validate_market_data,
-    validate_model_input,
-)
 from src.custom_types import (
     OrderRequest,
     PositionInfo,
     TradeDecision,
     TradingSignal,
 )
+from src.custom_types.validation import (
+    RuntimeTypeError,
+    TypeValidator,
+    validate_market_data,
+    validate_model_input,
+)
 from src.utils.structured_logging import get_correlation_id
 from src.utils.warning_symbols import error, failed
-
-import logging
-import copy
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +38,7 @@ class CriticalPathValidator:
         """Validate trading signal with comprehensive checks."""
         try:
             validated_signal = TypeValidator.validate_type(
-                signal, TradingSignal, "trading_signal"
+                signal, TradingSignal, "trading_signal",
             )
 
             # Additional business logic validation
@@ -72,7 +70,7 @@ class CriticalPathValidator:
         """Validate trade decision with risk checks."""
         try:
             validated_decision = TypeValidator.validate_type(
-                decision, TradeDecision, "trade_decision"
+                decision, TradeDecision, "trade_decision",
             )
 
             # Risk validation
@@ -128,7 +126,7 @@ class CriticalPathValidator:
         """Validate order request for execution safety."""
         try:
             validated_order = TypeValidator.validate_type(
-                order, OrderRequest, "order_request"
+                order, OrderRequest, "order_request",
             )
 
             # Order validation
@@ -167,7 +165,7 @@ class CriticalPathValidator:
         """Validate position information."""
         try:
             validated_position = TypeValidator.validate_type(
-                position, PositionInfo, "position_info"
+                position, PositionInfo, "position_info",
             )
 
             # Position validation
@@ -275,7 +273,7 @@ class TypeSafetyMonitor:
                 "context": violation.context,
                 "message": str(violation),
                 "correlation_id": get_correlation_id(),
-            }
+            },
         )
 
         # Count violations by type

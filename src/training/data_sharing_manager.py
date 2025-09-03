@@ -1,5 +1,6 @@
 # src/training/data_sharing_manager.py
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
 import gc
 import time
 from typing import Any
@@ -10,11 +11,7 @@ import pandas as pd
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
-# Import training pipeline decorators for comprehensive security and troubleshooting
-import asyncio
 from src.utils.training_pipeline_decorators import (
-
     circuit_breaker_protection,
     debug_training_step,
     memory_efficient,

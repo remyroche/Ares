@@ -5,9 +5,10 @@ This module centralizes all decorators used throughout the codebase for easy imp
 import asyncio
 import functools
 import logging
-import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
+
 import pandas as pd
 
 # Add project root to path
@@ -17,7 +18,7 @@ import sys
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -59,6 +60,9 @@ pd = pandas
 np = numpy
 
 # Import advanced decorators
+
+import numpy as np
+
 from src.utils.advanced_decorators import (
     PerformanceLevel,
     ValidationLevel,
@@ -102,10 +106,7 @@ from src.utils.error_handler import (
     handle_file_operations,
     handle_specific_errors,
 )
-import copy
-import numpy as np
 from src.utils.training_pipeline_decorators import (
-
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -129,7 +130,7 @@ from src.utils.training_pipeline_decorators import (
 
 def validate_data_quality(
     validation_level: str = "WARNING",
-    required_columns: Optional[List[str]] = None,
+    required_columns: list[str] | None = None,
     min_rows: int = 1,
     max_null_ratio: float = 0.0,
     check_duplicates: bool = True,
@@ -188,15 +189,16 @@ def validate_data_quality(
             )
 
             if input_issues and validation_level == "ERROR":
-                raise ValueError(f"Input data quality validation failed: {input_issues}")
-            elif input_issues and validation_level == "WARNING":
+                msg = f"Input data quality validation failed: {input_issues}"
+                raise ValueError(msg)
+            if input_issues and validation_level == "WARNING":
                 logger.warning(f"⚠️ Input data quality issues: {input_issues}")
 
             # Execute the function
             try:
                 result = await func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"❌ Function execution failed in {context}: {e}")
+                logger.exception(f"❌ Function execution failed in {context}: {e}")
                 raise
 
             # Validate output data
@@ -221,8 +223,9 @@ def validate_data_quality(
                 )
 
                 if output_issues and validation_level == "ERROR":
-                    raise ValueError(f"Output data quality validation failed: {output_issues}")
-                elif output_issues and validation_level == "WARNING":
+                    msg = f"Output data quality validation failed: {output_issues}"
+                    raise ValueError(msg)
+                if output_issues and validation_level == "WARNING":
                     logger.warning(f"⚠️ Output data quality issues: {output_issues}")
 
             return result
@@ -252,15 +255,16 @@ def validate_data_quality(
             )
 
             if input_issues and validation_level == "ERROR":
-                raise ValueError(f"Input data quality validation failed: {input_issues}")
-            elif input_issues and validation_level == "WARNING":
+                msg = f"Input data quality validation failed: {input_issues}"
+                raise ValueError(msg)
+            if input_issues and validation_level == "WARNING":
                 logger.warning(f"⚠️ Input data quality issues: {input_issues}")
 
             # Execute the function
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"❌ Function execution failed in {context}: {e}")
+                logger.exception(f"❌ Function execution failed in {context}: {e}")
                 raise
 
             # Validate output data
@@ -285,8 +289,9 @@ def validate_data_quality(
                 )
 
                 if output_issues and validation_level == "ERROR":
-                    raise ValueError(f"Output data quality validation failed: {output_issues}")
-                elif output_issues and validation_level == "WARNING":
+                    msg = f"Output data quality validation failed: {output_issues}"
+                    raise ValueError(msg)
+                if output_issues and validation_level == "WARNING":
                     logger.warning(f"⚠️ Output data quality issues: {output_issues}")
 
             return result
@@ -302,7 +307,7 @@ def _validate_data_quality_internal(
     data_type: str,
     logger: logging.Logger,
     validation_level: str,
-    required_columns: Optional[List[str]],
+    required_columns: list[str] | None,
     min_rows: int,
     max_null_ratio: float,
     check_duplicates: bool,
@@ -313,7 +318,7 @@ def _validate_data_quality_internal(
     check_correlation: bool,
     max_correlation_threshold: float,
     min_unique_values: int,
-) -> List[str]:
+) -> list[str]:
     """Internal data quality validation function."""
     issues = []
 
@@ -362,7 +367,7 @@ def _validate_single_dataframe(
     df_name: str,
     logger: logging.Logger,
     validation_level: str,
-    required_columns: Optional[List[str]],
+    required_columns: list[str] | None,
     min_rows: int,
     max_null_ratio: float,
     check_duplicates: bool,
@@ -373,7 +378,7 @@ def _validate_single_dataframe(
     check_correlation: bool,
     max_correlation_threshold: float,
     min_unique_values: int,
-) -> List[str]:
+) -> list[str]:
     """Validate a single DataFrame."""
     issues = []
 
@@ -402,7 +407,7 @@ def _validate_single_dataframe(
         nan_features = nan_counts[nan_counts > 0].index.tolist()
         if nan_features:
             nan_ratios = nan_counts[nan_features] / len(df)
-            high_nan_features = [f for f, ratio in zip(nan_features, nan_ratios) if ratio > max_null_ratio]
+            high_nan_features = [f for f, ratio in zip(nan_features, nan_ratios, strict=False) if ratio > max_null_ratio]
             if high_nan_features:
                 issues.append(f"{df_name}: Features with high NaN ratio: {high_nan_features}")
 
@@ -496,7 +501,7 @@ def quality_gate(
     max_drift_psi: float = 0.25,
     required_grade: str = "B",
     enable_alerts: bool = True,
-    alert_config: Optional[Dict[str, Any]] = None,
+    alert_config: dict[str, Any] | None = None,
     validation_level: str = "comprehensive",
 ):
     """
@@ -532,7 +537,7 @@ def quality_gate(
 
             # Check quality gates
             quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation, max_drift_psi, required_grade
+                quality_score, grade, min_quality_score, max_correlation, max_drift_psi, required_grade,
             )
 
             if not quality_gate_passed:
@@ -563,7 +568,7 @@ def quality_gate(
 
             # Check quality gates
             quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation, max_drift_psi, required_grade
+                quality_score, grade, min_quality_score, max_correlation, max_drift_psi, required_grade,
             )
 
             if not quality_gate_passed:
@@ -577,25 +582,24 @@ def quality_gate(
         # Return appropriate wrapper
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
 
     return decorator
 
 
-def _extract_dataframe_from_result(result: Any) -> Optional[Any]:
+def _extract_dataframe_from_result(result: Any) -> Any | None:
     """Extract DataFrame from function result."""
     if not PANDAS_AVAILABLE:
         return None
 
     if isinstance(result, pd.DataFrame):
         return result
-    elif isinstance(result, dict):
+    if isinstance(result, dict):
         # Look for DataFrame in dict values
         for value in result.values():
             if isinstance(value, pd.DataFrame):
                 return value
-    elif isinstance(result, (list, tuple)):
+    elif isinstance(result, list | tuple):
         # Look for DataFrame in list/tuple
         for item in result:
             if isinstance(item, pd.DataFrame):
@@ -603,7 +607,7 @@ def _extract_dataframe_from_result(result: Any) -> Optional[Any]:
     return None
 
 
-def _calculate_quality_score(df: Any, validation_level: str) -> Tuple[float, str]:
+def _calculate_quality_score(df: Any, validation_level: str) -> tuple[float, str]:
     """Calculate quality score and grade for a DataFrame."""
     if not PANDAS_AVAILABLE or not NUMPY_AVAILABLE:
         return 0.5, "C"  # Default score when dependencies not available
@@ -668,10 +672,7 @@ def _check_quality_gates(
 
     # Check grade
     grade_order = {"A": 5, "B": 4, "C": 3, "D": 2, "F": 1}
-    if grade_order.get(grade, 0) < grade_order.get(required_grade, 0):
-        return False
-
-    return True
+    return not grade_order.get(grade, 0) < grade_order.get(required_grade, 0)
 
 
 # ============================================================================
@@ -888,12 +889,11 @@ def auto_fix_data_quality_issues(
 
             # Extract and fix data
             fixed_args, fixed_kwargs = _auto_fix_data_quality(
-                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
+                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
             )
 
             # Execute function with fixed data
-            result = await func(*fixed_args, **fixed_kwargs)
-            return result
+            return await func(*fixed_args, **fixed_kwargs)
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
@@ -901,12 +901,11 @@ def auto_fix_data_quality_issues(
 
             # Extract and fix data
             fixed_args, fixed_kwargs = _auto_fix_data_quality(
-                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
+                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
             )
 
             # Execute function with fixed data
-            result = func(*fixed_args, **fixed_kwargs)
-            return result
+            return func(*fixed_args, **fixed_kwargs)
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
@@ -921,7 +920,7 @@ def _auto_fix_data_quality(
     fix_infinite: bool,
     fix_duplicates: bool,
     fix_irregular_intervals: bool,
-) -> Tuple[tuple, dict]:
+) -> tuple[tuple, dict]:
     """Auto-fix data quality issues in arguments."""
     fixed_args = list(args)
     fixed_kwargs = kwargs.copy()
@@ -935,7 +934,7 @@ def _auto_fix_data_quality(
     for i, arg in enumerate(args):
         if isinstance(arg, pd.DataFrame):
             fixed_df = _fix_dataframe_quality(
-                arg, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
+                arg, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
             )
             fixed_args[i] = fixed_df
 
@@ -943,7 +942,7 @@ def _auto_fix_data_quality(
     for key, value in kwargs.items():
         if isinstance(value, pd.DataFrame):
             fixed_df = _fix_dataframe_quality(
-                value, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
+                value, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals,
             )
             fixed_kwargs[key] = fixed_df
 

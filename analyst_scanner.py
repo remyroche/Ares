@@ -14,7 +14,7 @@ import ast
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Any
+from typing import Any
 
 
 def read_text(path: Path) -> str:
@@ -25,10 +25,10 @@ class FileAnalysis(ast.NodeVisitor):
     def __init__(self, source: str, filename: str):
         self.source = source
         self.filename = filename
-        self.placeholders: List[Dict[str, Any]] = []
-        self.silent_except_pass: List[Dict[str, Any]] = []
-        self.module_level_defs: List[Tuple[str, str, int]] = []  # (name, kind, line)
-        self.name_loads: List[Tuple[str, int]] = []  # (name, line)
+        self.placeholders: list[dict[str, Any]] = []
+        self.silent_except_pass: list[dict[str, Any]] = []
+        self.module_level_defs: list[tuple[str, str, int]] = []  # (name, kind, line)
+        self.name_loads: list[tuple[str, int]] = []  # (name, line)
 
         self._tree = ast.parse(source, filename=filename)
 
@@ -46,14 +46,14 @@ class FileAnalysis(ast.NodeVisitor):
                     "kind": "function",
                     "line": node.lineno,
                     "reason": "empty_function_pass",
-                }
+                },
             )
 
         # Placeholder: raises NotImplementedError anywhere in the body
         for stmt in ast.walk(node):
             if isinstance(stmt, ast.Raise):
                 exc = stmt.exc
-                if isinstance(exc, ast.Name) and exc.id == "NotImplementedError":
+                if isinstance(exc, ast.Name) and exc.id == "NotImplementedError" or isinstance(exc, ast.Call) and isinstance(exc.func, ast.Name) and exc.func.id == "NotImplementedError":
                     self.placeholders.append(
                         {
                             "file": self.filename,
@@ -61,17 +61,7 @@ class FileAnalysis(ast.NodeVisitor):
                             "kind": "function",
                             "line": getattr(stmt, "lineno", node.lineno),
                             "reason": "raises_NotImplementedError",
-                        }
-                    )
-                elif isinstance(exc, ast.Call) and isinstance(exc.func, ast.Name) and exc.func.id == "NotImplementedError":
-                    self.placeholders.append(
-                        {
-                            "file": self.filename,
-                            "name": node.name,
-                            "kind": "function",
-                            "line": getattr(stmt, "lineno", node.lineno),
-                            "reason": "raises_NotImplementedError",
-                        }
+                        },
                     )
 
         self.generic_visit(node)
@@ -90,7 +80,7 @@ class FileAnalysis(ast.NodeVisitor):
                     "kind": "class",
                     "line": node.lineno,
                     "reason": "empty_class_pass",
-                }
+                },
             )
 
         self.generic_visit(node)
@@ -105,7 +95,7 @@ class FileAnalysis(ast.NodeVisitor):
                     "file": self.filename,
                     "line": node.lineno,
                     "context": "except Exception: pass",
-                }
+                },
             )
         self.generic_visit(node)
 
@@ -113,11 +103,11 @@ class FileAnalysis(ast.NodeVisitor):
         if isinstance(node.ctx, ast.Load):
             self.name_loads.append((node.id, node.lineno))
 
-    def analyze(self) -> Dict[str, Any]:
+    def analyze(self) -> dict[str, Any]:
         # Set parent links for module-level detection
         for parent in ast.walk(self._tree):
             for child in ast.iter_child_nodes(parent):
-                setattr(child, "parent", parent)
+                child.parent = parent
 
         self.visit(self._tree)
 
@@ -129,9 +119,9 @@ class FileAnalysis(ast.NodeVisitor):
         }
 
 
-def scan_directory(root: Path) -> Dict[str, Any]:
-    files = sorted([p for p in root.rglob("*.py")])
-    results: Dict[str, Any] = {
+def scan_directory(root: Path) -> dict[str, Any]:
+    files = sorted(root.rglob("*.py"))
+    results: dict[str, Any] = {
         "files": {},
         "todos": [],
         "placeholders": [],
@@ -139,8 +129,8 @@ def scan_directory(root: Path) -> Dict[str, Any]:
         "potential_dead_defs": [],
     }
 
-    all_load_names: Set[str] = set()
-    module_defs: List[Tuple[str, str, int, str]] = []  # (name, kind, line, file)
+    all_load_names: set[str] = set()
+    module_defs: list[tuple[str, str, int, str]] = []  # (name, kind, line, file)
 
     for path in files:
         try:
@@ -189,7 +179,7 @@ def scan_directory(root: Path) -> Dict[str, Any]:
     return results
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Scan for placeholders and potential dead code")

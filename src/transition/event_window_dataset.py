@@ -1,17 +1,18 @@
 # src/transition/event_window_dataset.py
 
 from __future__ import annotations
-from src.transition.state_sequence_builder import StateSequenceBuilder
-from src.utils.logger import system_logger
-from typing import Any
+
 import json
 import os
+import os.path
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import copy
-import os.path
-import asyncio
+
+from src.transition.state_sequence_builder import StateSequenceBuilder
+from src.utils.logger import system_logger
 
 
 @dataclass

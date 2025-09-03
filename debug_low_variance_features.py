@@ -4,8 +4,8 @@ Debug script to analyze low variance features in the autoencoder feature generat
 This script helps identify which features have low variance and whether this is normal.
 """
 
-from typing import Any
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd

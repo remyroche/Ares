@@ -1,13 +1,11 @@
 # src/training/steps/step20_ab_testing.py
 
 import asyncio
-import json
-import os
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
-from src.utils.logger import system_logger
 from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
 
 
 class ABTestingStep:
@@ -33,7 +31,7 @@ class ABTestingStep:
 
 		ensure_directory(data_dir)
 
-		ab_results: Dict[str, Any] = {
+		ab_results: dict[str, Any] = {
 			"symbol": symbol,
 			"exchange": exchange,
 			"test_date": datetime.now().isoformat(),

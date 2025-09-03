@@ -6,15 +6,15 @@ This script downloads the missing timeframe data (5m, 15m, 30m) for the
 multi-timeframe HMM ensemble system.
 """
 
-from pathlib import Path
-from src.training.steps.data_downloader import download_all_data_with_consolidation
-from src.utils.logger import system_logger
-from typing import Any
 import argparse
 import asyncio
 import sys
+from pathlib import Path
+from typing import Any
 
 from src.config import CONFIG
+from src.training.steps.data_downloader import download_all_data_with_consolidation
+from src.utils.logger import system_logger
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -81,7 +81,7 @@ class MissingTimeframesDownloader:
 
         if not missing_timeframes:
             logger.info("✅ All required timeframes already have data!")
-            return {tf: True for tf in self.required_timeframes}
+            return dict.fromkeys(self.required_timeframes, True)
 
         logger.info(f"📋 Missing timeframes: {', '.join(missing_timeframes)}")
 

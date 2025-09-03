@@ -19,10 +19,9 @@ import argparse
 import os
 import re
 from pathlib import Path
-from typing import List, Tuple
 
 
-def fix_docstring_quote_lines(content: str) -> Tuple[str, bool]:
+def fix_docstring_quote_lines(content: str) -> tuple[str, bool]:
     """Compress 4+ consecutive quotes on a line down to 3.
 
     Only affects lines that contain ONLY quotes (optionally with indentation),
@@ -35,7 +34,7 @@ def fix_docstring_quote_lines(content: str) -> Tuple[str, bool]:
         nonlocal changed
         changed = True
         indent = match.group(1) or ""
-        return f"{indent}\"\"\""
+        return f'{indent}"""'
 
     # Handle single quotes
     def _compress_single_quotes(match: re.Match[str]) -> str:
@@ -50,19 +49,19 @@ def fix_docstring_quote_lines(content: str) -> Tuple[str, bool]:
     return new_content, changed
 
 
-def _extract_and_rewrite_from_block(block_body: str) -> Tuple[str, List[str]]:
+def _extract_and_rewrite_from_block(block_body: str) -> tuple[str, list[str]]:
     """Given the inner body of a multi-line from-import block, remove any
     accidental top-level import statements found within and return the cleaned
     body plus a list of those import statements to hoist above the block.
     """
     lines = block_body.splitlines()
-    hoisted: List[str] = []
-    kept: List[str] = []
+    hoisted: list[str] = []
+    kept: list[str] = []
 
     for line in lines:
         stripped = line.strip()
         # Only hoist true top-level import statements; keep symbols in the import list
-        if stripped.startswith("import ") or stripped.startswith("from "):
+        if stripped.startswith(("import ", "from ")):
             # Preserve original line exactly as written
             hoisted.append(stripped)
         else:
@@ -71,7 +70,7 @@ def _extract_and_rewrite_from_block(block_body: str) -> Tuple[str, List[str]]:
     return "\n".join(kept), hoisted
 
 
-def fix_imports_inside_from_blocks(content: str) -> Tuple[str, bool]:
+def fix_imports_inside_from_blocks(content: str) -> tuple[str, bool]:
     """Move `import ...` lines found inside a `from ... import ( ... )` block
     to just before the block.
     """
@@ -80,7 +79,7 @@ def fix_imports_inside_from_blocks(content: str) -> Tuple[str, bool]:
     pattern = re.compile(
         r"(?ms)"  # multiline + dotall
         r"(?P<head>^\s*from\s+[^\n]+?\s+import\s*\(\s*\n)"  # from ... import (\n
-        r"(?P<body>.*?)(?P<tail>\n\))"  # body ... \n)
+        r"(?P<body>.*?)(?P<tail>\n\))",  # body ... \n)
     )
 
     def _repl(match: re.Match[str]) -> str:
@@ -112,9 +111,9 @@ def fix_imports_inside_from_blocks(content: str) -> Tuple[str, bool]:
     return new_content, changed
 
 
-def process_file(path: Path, apply: bool) -> Tuple[bool, List[str]]:
+def process_file(path: Path, apply: bool) -> tuple[bool, list[str]]:
     """Process a single file. Returns (changed, messages)."""
-    messages: List[str] = []
+    messages: list[str] = []
     try:
         original = path.read_text(encoding="utf-8")
     except Exception as exc:
@@ -144,8 +143,8 @@ def process_file(path: Path, apply: bool) -> Tuple[bool, List[str]]:
     return any_change, messages
 
 
-def find_python_files(root: Path) -> List[Path]:
-    files: List[Path] = []
+def find_python_files(root: Path) -> list[Path]:
+    files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         # Skip common dirs
         dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", ".venv", "venv", "node_modules"}]

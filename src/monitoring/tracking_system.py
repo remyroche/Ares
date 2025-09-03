@@ -7,14 +7,12 @@ Provides scaffolding for comprehensive tracking.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import asyncio
+
 
 class TrackingType(Enum):
     ENSEMBLE_DECISION = "ensemble_decision"
@@ -26,7 +24,7 @@ class TrackingType(Enum):
 class TrackingSystem:
     """Comprehensive tracking system (scaffold)."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("TrackingSystem")
 

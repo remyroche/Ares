@@ -1,10 +1,9 @@
 # src/database/influxdb_manager.py
 
-from typing import Optional
 
+import influxdb_client
 import numpy as np
 import pandas as pd
-import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from src.config import (
@@ -14,7 +13,6 @@ from src.config import (
     INFLUXDB_URL,
 )
 from src.utils.logger import logger
-import copy
 
 
 class InfluxDBManager:

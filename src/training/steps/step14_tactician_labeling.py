@@ -1,5 +1,7 @@
 # src/training/steps/step14_tactician_labeling.py
 
+from src.core.decorators import handles_errors
+
 """Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."
 
 This step applies regime-aware triple barrier labeling for Tactician multi-outcome predictions
@@ -23,7 +25,6 @@ import pandas as pd
 
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger, dependency_status
 
 # Preference order for selecting analyst ensembles
@@ -583,7 +584,7 @@ class TacticianLabelingStep:
         self.config = config
         self.logger = system_logger
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="tactician labeling step initialization",
@@ -592,7 +593,7 @@ class TacticianLabelingStep:
         """Initialize the tactician labeling step."""
         self.logger.info("🚀 Initializing Tactician Labeling Step...")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician labeling step execution",
@@ -620,11 +621,16 @@ class TacticianLabelingStep:
 from src.utils.logger import log_dataframe_overview, log_io_operation
 from src.training.enhanced_training_manager_optimized import (
 from src.utils.logger import log_dataframe_overview, log_io_operation
-from src.utils.centralized_decorators import (
-from src.config.constants import (
-from src.training.enhanced_training_manager_optimized import (
-                BLANK_TRAINING_LOOKBACK_DAYS,
-            )
+from src.core.domain import (
+    config,
+    constants,
+    enhanced_training_manager_optimized,
+    from,
+    import,
+    src,
+    training,
+    BLANK_TRAINING_LOOKBACK_DAYS
+)
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
@@ -959,7 +965,7 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds=2400.0)
-@validate_step_prerequisites(
+@validates(
     required_directories=["data/training"],
     min_memory_gb=4.0,
     min_disk_gb=3.0,
@@ -978,29 +984,29 @@ from src.utils.enhanced_mlflow_integration import (
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=8.0,
     cpu_threshold_percent=80.0,
     disk_threshold_gb=5.0,
     monitor_interval=30.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=120.0,
     expected_exception=Exception,
     monitor_interval=30.0,
 )
-@validate_step_output(
+@validates(
     required_files=["data/training/{exchange}_{symbol}_tactician_labels.parquet"],
     data_quality_checks={
         "min_rows": 100,

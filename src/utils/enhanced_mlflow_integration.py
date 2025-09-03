@@ -1,5 +1,7 @@
 # src/utils/enhanced_mlflow_integration.py
 
+from src.core.decorators import handles_errors
+
 """
 Enhanced MLflow Integration for Enhanced Training Manager
 
@@ -24,7 +26,6 @@ import mlflow
 import pandas as pd
 
 from src.config import ARES_VERSION
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
 from src.utils.mlflow_utils import (
@@ -1021,7 +1022,7 @@ class EnhancedMLflowManager:
             self.current_run_id = None
 
 
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_step_metadata")
+@handles_errors(default_return=None, context="enhanced_mlflow_integration.log_step_metadata")
 def log_step_metadata(
     config: Dict[str, Any],
     step_name: str,
@@ -1060,7 +1061,7 @@ def log_step_metadata(
         system_logger.error(f"Failed to log step metadata for {step_name}: {e}")
 
 
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_model_performance")
+@handles_errors(default_return=None, context="enhanced_mlflow_integration.log_model_performance")
 def log_model_performance(
     config: Dict[str, Any],
     model_name: str,
@@ -1101,7 +1102,7 @@ def log_model_performance(
         system_logger.error(f"Failed to log model performance for {model_name}: {e}")
 
 
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion")
+@handles_errors(default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion")
 def log_pipeline_completion(
     config: Dict[str, Any],
     pipeline_results: Dict[str, Any],

@@ -3,10 +3,7 @@
 # from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier  # Temporarily commented due to syntax errors
 from src.core.decorators import handles_errors
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
-    validate_data_quality
-)
+from src.core.domain import validate_data_quality
 
 from src.utils.logger import system_logger
 from typing import Any

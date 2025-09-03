@@ -1,4 +1,6 @@
 # src/analyst/unified_regime_classifier.py
+from src.core.decorators import handles_errors
+
 import os
 from datetime import datetime
 from typing import Any
@@ -14,9 +16,6 @@ from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 import logging
-from src.utils.error_handler import (
-    handle_errors,
-)
 from src.utils.warning_symbols import (
     warning,
 )
@@ -332,7 +331,7 @@ class UnifiedRegimeClassifier:
                     warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
                 )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="UnifiedRegimeClassifier.initialize",
@@ -784,7 +783,7 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"Error adding basic S/R features: {e}")
             return features_df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="UnifiedRegimeClassifier._calculate_rsi",
@@ -799,7 +798,7 @@ class UnifiedRegimeClassifier:
         df["rsi"] = 100 - (100 / (1 + rs))
         return df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="UnifiedRegimeClassifier._calculate_macd",
@@ -821,7 +820,7 @@ class UnifiedRegimeClassifier:
         df["macd_histogram"] = df["macd"] - df["macd_signal"]
         return df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="UnifiedRegimeClassifier._calculate_adx",
@@ -859,7 +858,7 @@ class UnifiedRegimeClassifier:
 
         return df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="UnifiedRegimeClassifier._calculate_bollinger_bands",
@@ -883,7 +882,7 @@ class UnifiedRegimeClassifier:
         df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / sma
         return df
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="UnifiedRegimeClassifier._calculate_atr",
@@ -1346,7 +1345,7 @@ class UnifiedRegimeClassifier:
         return analyzed_levels
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("enhanced_location_classification")
+    @traced("enhanced_location_classification")
     async def _classify_enhanced_location(self, features_df: pd.DataFrame) -> list[str]:
         """
         Enhanced location classification using centralized SRBreakoutPredictor with advanced S/R analysis.
@@ -1494,7 +1493,7 @@ class UnifiedRegimeClassifier:
         return final_locations
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("location_classification")
+    @traced("location_classification")
     def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
         """
         Legacy location classification method - now calls enhanced version if available.
@@ -2171,7 +2170,7 @@ try:
             return False
 
     @comprehensive_data_validation
-    @with_tracing_span("regime_classification")
+    @traced("regime_classification")
     async def classify_regimes(self, historical_klines: pd.DataFrame) -> dict[str, Any]:
         """
         Classify regimes for historical data (for training purposes).

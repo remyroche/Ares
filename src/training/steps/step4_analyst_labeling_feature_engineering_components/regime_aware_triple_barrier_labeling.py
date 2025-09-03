@@ -21,10 +21,10 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     guard_dataframe_nulls,
     handle_errors,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import get_logger
 

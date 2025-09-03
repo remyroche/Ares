@@ -6,10 +6,7 @@ from src.core.decorators import (
     validates
 )
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
-    enforce_ndarray
-)
+from src.core.domain import enforce_ndarray
 
 """Computational Optimization Manager for Enhanced Training Pipeline."
 Implements all optimization strategies from computational_optimization_strategies.md.

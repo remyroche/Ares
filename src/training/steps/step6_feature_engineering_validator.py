@@ -1,5 +1,10 @@
 # src/training/steps/step7_feature_engineering_validator.py
 
+from src.core.domain import (
+    smart_validation_cache,
+    validate_step6_comprehensive
+)
+
 import json
 import os
 from pathlib import Path
@@ -9,10 +14,6 @@ import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
-from src.utils.enhanced_validation_decorators import (
-    validate_step6_comprehensive,
-    smart_validation_cache
-)
 
 logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 
@@ -152,7 +153,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate feature file: {error_context}")
             return False
 
-    def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 6 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -187,7 +188,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
 
         return validation_result
 
-    def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validates(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 6 output files and content using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,

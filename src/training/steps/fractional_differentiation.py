@@ -11,9 +11,9 @@ from typing import Optional, Tuple, Dict, Any
 from scipy import stats
 from statsmodels.tsa.stattools import adfuller
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     handle_errors,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import get_logger
 import copy

@@ -1,10 +1,7 @@
 # src/tactician/position_sizer.py
 
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
-    validate_data_quality
-)
+from src.core.domain import validate_data_quality
 
 """
 Simplified Position Sizer for high leverage trading.

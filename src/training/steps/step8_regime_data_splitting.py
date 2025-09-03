@@ -131,8 +131,8 @@ class RegimeDataSplittingStep:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @with_tracing_span("step8_regime_splitting.initialize", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=None, context="step8_initialization")
+    @traced("step8_regime_splitting.initialize", log_args=False)
+    @handles_errors(exceptions=(Exception,), default_return=None, context="step8_initialization")
     async def initialize(self) -> None:
         """Initialize the regime data splitting step."""
         self.logger.info("🚀 Initializing Step 8: Unified HMM Composite Regime Data Creation...")
@@ -143,8 +143,8 @@ class RegimeDataSplittingStep:
         self.logger.info("✅ Unified HMM Composite Regime Data Creation initialized successfully")
 
     @with_enhanced_mlflow_logging("step08")
-    @with_tracing_span("step8_regime_splitting.execute", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
+    @traced("step8_regime_splitting.execute", log_args=False)
+    @handles_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
     async def execute(self) -> dict[str, Any]:
         """Execute the unified regime data creation step."""
         try:
@@ -351,8 +351,8 @@ BLANK_TRAINING_LOOKBACK_DAYS,
             self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails'
 
-    @with_tracing_span("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
+    @traced("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
+    @handles_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
         try:
@@ -452,8 +452,8 @@ BLANK_TRAINING_LOOKBACK_DAYS,
             self.logger.exception(f"❌ Error creating regime statistics: {e}")
             return {}
 
-    @with_tracing_span("step8_regime_splitting._create_regime_summary", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
+    @traced("step8_regime_splitting._create_regime_summary", log_args=False)
+    @handles_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
     def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
         """Create a summary of the unified regime dataset."""
         summary = {
@@ -490,7 +490,7 @@ BLANK_TRAINING_LOOKBACK_DAYS,
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds=1800.0)
-@validate_step_prerequisites(
+@validates(
     required_directories=["data/training"],
     min_memory_gb=4.0,
     min_disk_gb=3.0,
@@ -512,32 +512,32 @@ BLANK_TRAINING_LOOKBACK_DAYS,
     feature_leakage_detection=False,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=8.0,
     cpu_threshold_percent=70.0,
     disk_threshold_gb=5.0,
     monitor_interval=30.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=20000, 
     streaming_processing=True, 
     memory_pool=True, 
     cleanup_frequency=40,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=90.0,
     expected_exception=Exception,
     monitor_interval=30.0,
 )
-@validate_step_output(
+@validates(
     required_files=["data/training/*_unified_regime_data.parquet"],
     data_quality_checks={"min_rows": 100, "required_columns": ["timestamp", "composite_cluster_id"]},
     performance_thresholds={"creation_time_minutes": 30.0},
@@ -548,7 +548,7 @@ BLANK_TRAINING_LOOKBACK_DAYS,
     validation_score_requirements={"creation_accuracy": 0.8},
 )
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context="step8_regime_data_splitting")
+@handles_errors(exceptions=(Exception,), default_return=False, context="step8_regime_data_splitting")
 async def run_step(
     symbol: str, 
     exchange: str, 

@@ -1,5 +1,7 @@
 # src/training/steps/vectorized_labelling_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 """Vectorized Labelling Orchestrator for comprehensive feature engineering and labeling pipeline."
 Coordinates optimized_triple_barrier_labeling.py, vectorized_advanced_feature_engineering.py
 and autoencoder_feature_generator.py with advanced preprocessing and feature selection.
@@ -20,7 +22,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from copy import copy
 
@@ -221,7 +222,7 @@ class VectorizedLabellingOrchestrator:
         except Exception:
             pass
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="vectorized labelling orchestrator initialization",
@@ -310,7 +311,7 @@ class VectorizedLabellingOrchestrator:
             )
             return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="vectorized labeling orchestration",

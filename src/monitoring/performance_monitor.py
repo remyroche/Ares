@@ -6,10 +6,7 @@ from src.core.decorators import (
     log_execution_time
 )
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
-    PerformanceLevel
-)
+from src.core.domain import PerformanceLevel
 
 """
 Performance Monitor for Dual Model System

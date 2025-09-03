@@ -135,14 +135,14 @@ class RegimeDataSplittingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @with_tracing_span("split_data_by_regimes")
+    @traced("split_data_by_regimes")
     @quality_gate(
         min_quality_score=0.8,
         max_correlation=0.95,
         required_grade="B"
     )
     @comprehensive_data_validation
-    @memory_efficient
+    @cached
     async def split_data_by_regimes(
         self, 
         symbol: str, 
@@ -420,16 +420,16 @@ self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
 
-@with_tracing_span("execute_regime_data_splitting")
+@traced("execute_regime_data_splitting")
 @quality_gate(
     min_quality_score=0.8,
     max_correlation=0.95,
     required_grade="B"
 )
 @comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
+@handles_errors
+@cached
+@log_execution_time
 @secure_data_processing
 @validate_data_structure
 @monitor_feature_engineering()

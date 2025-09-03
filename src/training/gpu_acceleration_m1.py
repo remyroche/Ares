@@ -6,8 +6,7 @@ from src.core.decorators import (
     validates
 )
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     quality_gate,
     secure_data_processing
 )

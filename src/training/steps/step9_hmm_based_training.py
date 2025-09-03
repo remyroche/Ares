@@ -20,6 +20,12 @@ import asyncio
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import common operations
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_read_parquet, safe_to_parquet, safe_copy, safe_json_dump
+)
+
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -592,7 +598,7 @@ class HMMBasedTrainingStep:
                 import pandas as _pd
 
                 rf_dir = os.path.join(data_dir, "regime_forecasting")
-                os.makedirs(rf_dir, exist_ok=True)
+                ensure_directory(rf_dir)
 
                 regime_forecasting_summary: dict[str, dict] = {}
                 for tf in timeframes:
@@ -2355,7 +2361,7 @@ class HMMBasedTrainingStep:
                 "label_encoder": label_encoder,
                 "feature_columns": self.specialist_features,
                 "timeframe": timeframe,
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "hyperparameters": multi_output_config,
                 "metrics": overall_metrics,
                 "price_action_probabilities": price_action_probabilities
@@ -2430,7 +2436,7 @@ class HMMBasedTrainingStep:
         try:
             # Create models directory
             models_dir = f"{data_dir}/models"
-            os.makedirs(models_dir, exist_ok=True)
+            ensure_directory(models_dir)
 
             # Save each model with enhanced metadata
             for timeframe, result in training_results.items():
@@ -2442,7 +2448,7 @@ class HMMBasedTrainingStep:
                     "model": result.get("best_model"),
                     "architecture": result.get("architecture"),
                     "timeframe": timeframe,
-                    "training_date": datetime.now().isoformat(),
+                    "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                     "feature_importance": result.get("feature_importance", {}),
                     "training_history": result.get("training_history", {}),
                     "cv_results": result.get("cv_results", []),
@@ -2489,7 +2495,7 @@ class HMMBasedTrainingStep:
             summary = {
                 "exchange": exchange,
                 "symbol": symbol,
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "models_trained": len(training_results),
                 "timeframes": list(training_results.keys()),
                 "model_architectures": self.model_architectures,
@@ -2545,7 +2551,7 @@ class HMMBasedTrainingStep:
                     "validation_config": self.validation_config,
                     "data_source_config": self.data_source_config,
                     "training_results": training_results,
-                    "execution_timestamp": datetime.now().isoformat(),
+                    "execution_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 }
                 
                 report_name = log_step_report(
@@ -2626,7 +2632,7 @@ class HMMBasedTrainingStep:
 
             # Create artifacts directory
             artifacts_dir = f"{data_dir}/{exchange}_{symbol}_hmm_models"
-            os.makedirs(artifacts_dir, exist_ok=True)
+            ensure_directory(artifacts_dir)
 
             # Save main model (first available)
             main_model_artifact = None
@@ -2674,12 +2680,12 @@ class HMMBasedTrainingStep:
 
             # Save per-timeframe models
             timeframe_models_dir = f"{artifacts_dir}/timeframes"
-            os.makedirs(timeframe_models_dir, exist_ok=True)
+            ensure_directory(timeframe_models_dir)
 
             for timeframe, models in training_results.items():
                 if models and isinstance(models, dict):
                     timeframe_dir = f"{timeframe_models_dir}/{timeframe}"
-                    os.makedirs(timeframe_dir, exist_ok=True)
+                    ensure_directory(timeframe_dir)
 
             for model_name, model_data in models.items():
                 if model_data:
@@ -2744,7 +2750,7 @@ class HMMBasedTrainingStep:
         try:
             metadata = {
                 "model_type": model_name,
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "symbol": symbol,
                 "exchange": exchange,
                 "model_file": os.path.basename(model_file),
@@ -2798,7 +2804,7 @@ class HMMBasedTrainingStep:
         """Create comprehensive training history."""
         try:
             history = {
-                "training_date": datetime.now().isoformat(),
+                "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframes_trained": list(training_results.keys()),
@@ -2987,7 +2993,7 @@ class HMMBasedTrainingStep:
                     "data_completeness": 0.0,
                 },
                 "training_metadata": {
-                    "training_date": datetime.now().isoformat(),
+                    "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                     "symbol": symbol,
                     "exchange": exchange,
                     "model_architectures": self.model_architectures,

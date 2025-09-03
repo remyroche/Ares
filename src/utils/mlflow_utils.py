@@ -10,6 +10,10 @@ from src.config import ARES_VERSION
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_json_dump, safe_log_metric, safe_log_params, safe_log_artifact
+)
 
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
@@ -65,7 +69,7 @@ def with_enhanced_metadata(func):
         metadata = extract_training_metadata(config)
 
         # Add training date
-        metadata["training_date"] = datetime.now().isoformat()
+        metadata["training_date"] = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
         # Add metadata to kwargs
         kwargs["enhanced_metadata"] = metadata
@@ -86,13 +90,13 @@ def log_bot_version_to_mlflow(run_id: str | None = None) -> None:
     if run_id:
         with mlflow.start_run(run_id=run_id):
             mlflow.set_tag("bot_version", ARES_VERSION)
-            mlflow.set_tag("training_date", datetime.now().isoformat())
+            mlflow.set_tag("training_date", format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"))
             system_logger.info(
                 f"✅ Logged bot version {ARES_VERSION} to MLFlow run {run_id}",
             )
     else:
         mlflow.set_tag("bot_version", ARES_VERSION)
-        mlflow.set_tag("training_date", datetime.now().isoformat())
+        mlflow.set_tag("training_date", format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"))
         system_logger.info(
             f"✅ Logged bot version {ARES_VERSION} to active MLFlow run",
         )
@@ -116,7 +120,7 @@ def log_training_metadata_to_mlflow(
     """
     metadata: dict[str, Any] = {
         "bot_version": ARES_VERSION,
-        "training_date": datetime.now().isoformat(),
+        "training_date": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
         "model_type": model_type,
         "symbol": symbol,
         "timeframe": timeframe,
@@ -170,7 +174,7 @@ def log_enhanced_training_metadata(
         # Fallback implementation for training_date
         # Fallback implementation for training_date
         # Fallback implementation for training_date
-        training_date = datetime.now().isoformat()
+        training_date = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
     # Core required metadata
     metadata: dict[str, Any] = {
@@ -230,7 +234,7 @@ def log_model_with_metadata(
         # Fallback implementation for training_date
         # Fallback implementation for training_date
         # Fallback implementation for training_date
-        training_date = datetime.now().isoformat()
+        training_date = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
     # Core required metadata
     metadata: dict[str, Any] = {
@@ -301,7 +305,7 @@ def log_artifacts_with_metadata(
         # Fallback implementation for training_date
         # Fallback implementation for training_date
         # Fallback implementation for training_date
-        training_date = datetime.now().isoformat()
+        training_date = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
     # Core required metadata
     metadata: dict[str, Any] = {
@@ -372,7 +376,7 @@ def log_metrics_with_metadata(
         # Fallback implementation for training_date
         # Fallback implementation for training_date
         # Fallback implementation for training_date
-        training_date = datetime.now().isoformat()
+        training_date = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
     # Core required metadata
     metadata: dict[str, Any] = {
@@ -448,7 +452,7 @@ def log_params_with_metadata(
         # Fallback implementation for training_date
         # Fallback implementation for training_date
         # Fallback implementation for training_date
-        training_date = datetime.now().isoformat()
+        training_date = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
 
     # Core required metadata
     metadata: dict[str, Any] = {
@@ -618,7 +622,7 @@ def ensure_enhanced_mlflow_run(
 
         # Create run name if not provided
         if not run_name:
-            run_name = f"{metadata['exchange']}_{metadata['asset']}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_name = f"{metadata['exchange']}_{metadata['asset']}_training_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}"
 
         # Start run and log metadata
         with mlflow.start_run(run_name=run_name) as run:

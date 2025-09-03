@@ -1,25 +1,21 @@
 """
 Lifecycle manager for pipeline components (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
+    cached,
+    compose,
     handles_errors,
-    log_execution_time
+    log_execution_time,
+    traced,
+    validates
 )
 
 from src.core.domain import PerformanceLevel
 
-from __future__ import annotations
-
 from typing import Any
-
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    handle_specific_errors,
     performance_monitor,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 
 class LifecycleManager:
@@ -35,7 +31,6 @@ class LifecycleManager:
         },
         default_return=False,
         context="lifecycle_manager.initialize",
-    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing LifecycleManager ...")
         return True

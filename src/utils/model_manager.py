@@ -11,7 +11,6 @@ from src.core.domain import (
     error,
     failed,
     handle_file_operations,
-    handle_specific_errors,
     initialization_error,
     invalid,
     missing,
@@ -42,7 +41,6 @@ from src.utils.warning_symbols import warning as warn_symbol
 # --- Compatibility shim for NumPy RNG unpickling across versions ---
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
-
 
 # type: ignore[override]
 def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:
@@ -77,7 +75,6 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
             return bitgen_cls()
         raise
 
-
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
     global _NUMPY_RNG_UNPICKLE_PATCHED, _NP_ORIGINAL_BITGEN_CTOR
@@ -108,12 +105,9 @@ if original_ctor is None:
                     _warn_symbol(
                         f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
                     ),
-                )
             except Exception:
                 logger.warning(
                     f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
-                )
-
 
 class ModelManager:
     """
@@ -144,7 +138,7 @@ class ModelManager:
         self.auto_backup: bool = bool(self.model_config.get("auto_backup", True))
         self.max_models: int = int(self.model_config.get("max_models", 10))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model manager configuration"),
             AttributeError: (False, "Missing required model parameters"),
@@ -152,7 +146,6 @@ class ModelManager:
         },
         default_return=False,
         context="model manager initialization",
-    )
     async def initialize(self) -> bool:
         """
         Initialize model manager with enhanced error handling.
@@ -183,7 +176,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model configuration loading",
-    )
     async def _load_model_configuration(self) -> None:
         """Load model configuration."""
         # Set default model parameters
@@ -209,7 +201,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
-    )
     def _validate_configuration(self) -> bool:
         """
         Validate model configuration.
@@ -238,7 +229,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="directory initialization",
-    )
     async def _initialize_directories(self) -> None:
         """Initialize directories."""
         # Create models directory
@@ -259,7 +249,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="existing models loading",
-    )
     async def _load_existing_models(self) -> None:
         """Load existing models and metadata."""
         # Load metadata if exists
@@ -281,7 +270,6 @@ class ModelManager:
         supported_formats: list[str] = self.model_config.get(
             "supported_formats",
             [".joblib", ".pkl", ".h5"],
-        )
         if os.path.isdir(self.models_dir):
             for file in os.listdir(self.models_dir):
                 if any(file.endswith(fmt) for fmt in supported_formats):
@@ -302,7 +290,7 @@ class ModelManager:
 
         self.logger.info(f"Loaded {len(self.models)} existing models")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model parameters"),
             AttributeError: (False, "Missing model components"),
@@ -310,7 +298,6 @@ class ModelManager:
         },
         default_return=False,
         context="model registration",
-    )
     async def register_model(
         self,
         model_name: str,
@@ -375,7 +362,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model loading",
-    )
     async def load_model(self, model_name: str) -> Any | None:
         """
         Load a model.
@@ -414,7 +400,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="model saving",
-    )
     async def save_model(
         self,
         model: Any,
@@ -472,7 +457,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="active model setting",
-    )
     async def set_active_model(self, model_name: str) -> bool:
         """
         Set the active model.
@@ -501,7 +485,6 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="active model getting",
-    )
     async def get_active_model(self) -> str | None:
         """
         Get the active model name.
@@ -514,7 +497,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="metadata saving",
-    )
     async def _save_metadata(self) -> None:
         """Save model metadata to file."""
         metadata_path = os.path.join(self.models_dir, self.metadata_file)
@@ -527,7 +509,6 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="model backup creation",
-    )
     async def create_backup(self, model_name: str) -> None:
         """
         Create backup of a model.
@@ -551,7 +532,6 @@ class ModelManager:
         backup_path = os.path.join(
             backup_dir,
             f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
-        )
 
         # Copy model file
         shutil.copy2(model_path, backup_path)
@@ -579,7 +559,6 @@ class ModelManager:
         exceptions=(Exception,),
         default_return=None,
         context="model manager cleanup",
-    )
     async def stop(self) -> None:
         """Stop the model manager."""
         self.logger.info("🛑 Stopping Model Manager...")
@@ -589,16 +568,13 @@ class ModelManager:
 
         self.logger.info("✅ Model Manager stopped successfully")
 
-
 # Global model manager instance
 model_manager: ModelManager | None = None
-
 
 @handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="model manager setup",
-)
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:

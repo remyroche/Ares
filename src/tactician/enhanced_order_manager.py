@@ -8,11 +8,6 @@ Handles sophisticated order management including stop-limit orders and leveraged
 with partial fill management.
 """
 
-<<<<<<< HEAD
-from src.utils.logger import system_logger
-
-=======
->>>>>>> origin/main
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
 import uuid
 from dataclasses import dataclass, field

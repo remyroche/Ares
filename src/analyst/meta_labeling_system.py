@@ -10,11 +10,10 @@ import numpy as np
 import pandas as pd
 
 from src.config import CONFIG
-from src.core.decorators import handles_errors
-from src.utils.centralized_decorators_simple import (
-    comprehensive_data_validation,
-    validate_data_quality,
-    with_tracing_span,
+from src.core.decorators import (
+    validates as comprehensive_data_validation,
+    validates as validate_data_quality,
+    traced as with_tracing_span,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (

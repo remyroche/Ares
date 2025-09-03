@@ -5,18 +5,14 @@ from src.core.domain import validate_data_quality
 
 from datetime import datetime
 from typing import Any
-<<<<<<< HEAD
 from src.core.decorators import handles_errors
 from src.utils.warning_symbols import failed, invalid, warning
-=======
->>>>>>> origin/main
 
 import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors, validates
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, invalid, warning
 
 
 class MLTacticsManager:

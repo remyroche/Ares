@@ -19,9 +19,9 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid
 
 from .circuit_breaker import CircuitBreaker
-from .online_learning_manager import OnlineLearningManager
 from .component_monitor import ComponentMonitor
 from .health_monitor import HealthMonitor
+from .online_learning_manager import OnlineLearningManager
 from .recovery_manager import RecoveryManager
 
 

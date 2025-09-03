@@ -305,7 +305,7 @@ for i, _col in enumerate(features_df.columns):
     try:
                 vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)
-            except:
+                except:
                 vif_scores.append(1.0)
 
         return np.array(vif_scores)

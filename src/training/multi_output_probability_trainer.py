@@ -35,7 +35,7 @@ from .advanced_neural_models import (
 
 from src.utils.logger import system_logger
 from catboost import CatBoostClassifier
-    def fit(
+def fit(
         self,
         X_train: np.ndarray,
         y_train_multi: dict[str, np.ndarray],

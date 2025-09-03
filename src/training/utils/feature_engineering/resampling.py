@@ -3,11 +3,12 @@
 This module provides efficient resampling functionality for time series data.
 """
 
-from typing import Dict, Any, Optional, List
-import pandas as pd
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-from numba import njit, prange
+import pandas as pd
 import pyarrow.parquet as pq
+from numba import njit, prange
 
 from src.utils.logger import system_logger
 

@@ -24,7 +24,8 @@ import pandas as pd
 import psutil
 
 if TYPE_CHECKING:
-    from collections.abc import Callable as Callable_collections_abc, Iterable
+    from collections.abc import Callable as Callable_collections_abc
+    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,8 @@ for easy importing.
 """
 
 # Additional composite decorators
-from src.core.decorators import cached as cached_src_core_decorators, compose, handles_errors, traced, validates
+from src.core.decorators import cached as cached_src_core_decorators
+from src.core.decorators import compose, handles_errors, traced, validates
 
 # Import all decorators from domain_decorators module
 from .decorators import (  # Enums; Data Quality; Monitoring and Performance; Security and Processing; Pipeline Management; Utilities

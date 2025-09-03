@@ -10,7 +10,7 @@ monitoring, and processing requirements in the trading system.
 import logging
 from datetime import datetime
 from functools import wraps
-from typing import A, Callableny, Callable, Dict, List, Optional, TypeVar, Union
+from typing import A, Callable, Callableny, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 import pandas as pd

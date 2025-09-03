@@ -9,16 +9,15 @@ Note: Data conversion and formatting is handled by step1_5_data_converter.py
 """
 
 import asyncio
+import os.path
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from src.core.domain import (
-    handle_errors,
-    with_tracing_span
-)
+from src.core.decorators import handles_errors, traced
+from src.core.domain import handle_errors, with_tracing_span
 from src.utils.logger import system_logger
 
 from .aggtrades_validator import AggtradesValidator
@@ -26,8 +25,6 @@ from .comprehensive_gap_filler import ComprehensiveGapFiller
 from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
-import os.path
-from src.core.decorators import handles_errors, traced
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

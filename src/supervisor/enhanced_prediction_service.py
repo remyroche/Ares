@@ -254,6 +254,9 @@ class EnhancedPredictionService:
             if optimization_path.exists():
                 for optimization_file in optimization_path.glob("*.json"):
                     try:
+                        import json
+                    except Exception as e:
+                        pass  # TODO: Handle exception
                         with open(optimization_file, "r") as f:
                             optimization_data = json.load(f)
 

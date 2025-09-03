@@ -1,8 +1,8 @@
 # src/analyst/meta_label_relevance.py
 
-from src.core.decorators import handles_errors
-
 from __future__ import annotations
+
+from src.core.decorators import handles_errors
 
 from typing import Any
 
@@ -106,14 +106,10 @@ def compute_shap_importance(
     # For classification, sv can be a list per class; take last as positive class
     if isinstance(sv, list) and len(sv) > 0:
         sv = sv[-1]
-    import numpy as _np
-import copy
-import os.path
-
-magnitudes = _np.abs(_np.array(sv))
+    magnitudes = np.abs(np.array(sv))
     if magnitudes.ndim == 1:
         magnitudes = magnitudes.reshape(-1, 1)
-    mean_abs = _np.mean(magnitudes, axis=0)
+    mean_abs = np.mean(magnitudes, axis=0)
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
 
 
@@ -166,7 +162,6 @@ class MetaLabelRelevanceEvaluator:
     Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.'
     """
     def __init__(
-        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         artifacts_dir: str,
         mi_threshold: float = 0.01,
@@ -181,6 +176,7 @@ class MetaLabelRelevanceEvaluator:
         self.max_pairs = max_pairs
         os.makedirs(self.artifacts_dir, exist_ok=True)
         self.logger = system_logger.getChild("MetaLabelRelevance")
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def _gating_from_intensity(
         self,

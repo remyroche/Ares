@@ -37,12 +37,12 @@ class MultiTimeframeEnsemble:
     Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
     """
     def __init__(
-        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         model_name: str,
         regime: str,
         config: dict[str, Any] | None = None,
     ):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
         self.regime = regime
         self.config = config or CONFIG.get("MULTI_TIMEFRAME_ENSEMBLE", {})
@@ -216,8 +216,8 @@ class MultiTimeframeEnsemble:
             )
             return False
 
-        except Exception:
-            self.logger.error("💥 Error in multi-timeframe ensemble training: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error in multi-timeframe ensemble training: {e}")
 
             return False
 
@@ -237,7 +237,7 @@ class MultiTimeframeEnsemble:
             X, y = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning("⚠️ No valid data for {timeframe}")
+                self.logger.warning(f"⚠️ No valid data for {timeframe}")
 
                 return False
 
@@ -252,7 +252,7 @@ class MultiTimeframeEnsemble:
             elif model_type == "random_forest":
                 model = self._train_random_forest_model(X, y)
             else:
-                self.logger.error("❌ Unknown model type: {model_type}")
+                self.logger.error(f"❌ Unknown model type: {model_type}")
 
                 return False
 
@@ -273,8 +273,8 @@ class MultiTimeframeEnsemble:
 
             return False
 
-        except Exception:
-            self.logger.error("💥 Error training {timeframe} model: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error training {timeframe} model: {e}")
 
             return False
 
@@ -316,8 +316,8 @@ class MultiTimeframeEnsemble:
             self.logger.info("✅ XGBoost model training completed")
             return model
 
-        except Exception:
-            self.logger.error("💥 Error training XGBoost model: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error training XGBoost model: {e}")
 
             return None
 
@@ -328,13 +328,8 @@ class MultiTimeframeEnsemble:
 
             # Use MLP as a simplified sequence model
             # TODO: Implement proper LSTM when TensorFlow/PyTorch is available
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import os
-
-model = MLPClassifier(
-hidden_layer_sizes=(100, 50),
+            model = MLPClassifier(
+                hidden_layer_sizes=(100, 50),
                 max_iter=200,
                 random_state=42,
             )
@@ -343,9 +338,8 @@ hidden_layer_sizes=(100, 50),
             self.logger.info("✅ LSTM model training completed")
             return model
 
-        except Exception:
-            self.logger.error("💥 Error training LSTM model: {e}")
-
+        except Exception as e:
+            self.logger.error(f"💥 Error training LSTM model: {e}")
             return None
 
     def _train_random_forest_model(
@@ -367,8 +361,8 @@ hidden_layer_sizes=(100, 50),
             self.logger.info("✅ Random Forest model training completed")
             return model
 
-        except Exception:
-            self.logger.error("💥 Error training Random Forest model: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error training Random Forest model: {e}")
 
             return None
 
@@ -444,8 +438,8 @@ hidden_layer_sizes=(100, 50),
             self.logger.debug(f"📊 Features shape: {X.shape}, Target shape: {y.shape}")
             return X, y
 
-        except Exception:
-            self.logger.error("💥 Error preparing features/target: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error preparing features/target: {e}")
 
             return pd.DataFrame(), pd.Series()
 
@@ -457,7 +451,7 @@ hidden_layer_sizes=(100, 50),
         """Get predictions and confidences for a timeframe."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning("⚠️ No trained model for {timeframe}")
+                self.logger.warning(f"⚠️ No trained model for {timeframe}")
 
                 return [], []
 
@@ -467,7 +461,7 @@ hidden_layer_sizes=(100, 50),
             X, _ = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning("⚠️ No valid features for {timeframe}")
+                self.logger.warning(f"⚠️ No valid features for {timeframe}")
 
                 return [], []
 
@@ -485,13 +479,13 @@ hidden_layer_sizes=(100, 50),
             else:
                 confidences = [0.5] * len(predictions)
                 self.logger.warning(
-                    f"⚠️ {timeframe}: Model doesn't support predict_proba, using default confidence",'
+                    f"⚠️ {timeframe}: Model doesn't support predict_proba, using default confidence"
                 )
 
             return predictions, confidences
 
-        except Exception:
-            self.logger.error("💥 Error getting predictions for {timeframe}: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error getting predictions for {timeframe}: {e}")
 
             return [], []
 
@@ -559,8 +553,8 @@ hidden_layer_sizes=(100, 50),
 
             return True
 
-        except Exception:
-            self.logger.error("💥 Error training meta-learner: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error training meta-learner: {e}")
 
             return False
 
@@ -616,8 +610,8 @@ hidden_layer_sizes=(100, 50),
             self.logger.info(f"📊 Meta-learner data prepared: {result_df.shape}")
             return result_df
 
-        except Exception:
-            self.logger.error("💥 Error preparing meta-learner data: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error preparing meta-learner data: {e}")
 
             return pd.DataFrame()
 
@@ -695,8 +689,8 @@ hidden_layer_sizes=(100, 50),
                 "regime": self.regime,
             }
 
-        except Exception:
-            self.logger.error("💥 Error getting prediction: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error getting prediction: {e}")
 
             return {"prediction": "HOLD", "confidence": 0.0}
 
@@ -708,7 +702,7 @@ hidden_layer_sizes=(100, 50),
         """Get prediction from single timeframe model."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning("⚠️ No trained model for {timeframe}")
+                self.logger.warning(f"⚠️ No trained model for {timeframe}")
 
                 return "HOLD", 0.0
 
@@ -719,7 +713,7 @@ hidden_layer_sizes=(100, 50),
             X, _ = self._prepare_features_target(features)
 
             if len(X) == 0:
-                self.logger.warning("⚠️ No valid features for {timeframe}")
+                self.logger.warning(f"⚠️ No valid features for {timeframe}")
 
                 return "HOLD", 0.0
 
@@ -735,8 +729,8 @@ hidden_layer_sizes=(100, 50),
 
             return prediction, confidence
 
-        except Exception:
-            self.logger.error("💥 Error getting prediction for {timeframe}: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error getting prediction for {timeframe}: {e}")
 
             return "HOLD", 0.0
 
@@ -788,8 +782,8 @@ hidden_layer_sizes=(100, 50),
             )
             return prediction, confidence
 
-        except Exception:
-            self.logger.error("💥 Error combining with meta-learner: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error combining with meta-learner: {e}")
 
             return "HOLD", 0.0
 
@@ -832,8 +826,8 @@ hidden_layer_sizes=(100, 50),
             )
             return final_prediction, final_confidence
 
-        except Exception:
-            self.logger.error("💥 Error in simple prediction combination: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error in simple prediction combination: {e}")
 
             return "HOLD", 0.0
 
@@ -876,8 +870,8 @@ hidden_layer_sizes=(100, 50),
             self.logger.info("✅ Multi-timeframe ensemble saved successfully")
             return True
 
-        except Exception:
-            self.logger.error("💥 Error saving model: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error saving model: {e}")
 
             return False
 
@@ -911,7 +905,7 @@ hidden_layer_sizes=(100, 50),
                     }
                     self.logger.debug(f"📂 Loaded {timeframe} model")
                 else:
-                    self.logger.warning("⚠️ No model file found for {timeframe}")
+                    self.logger.warning(f"⚠️ No model file found for {timeframe}")
 
 
             # Load meta-learner
@@ -935,7 +929,7 @@ hidden_layer_sizes=(100, 50),
             self.logger.info("✅ Multi-timeframe ensemble loaded successfully")
             return True
 
-        except Exception:
-            self.logger.error("💥 Error loading model: {e}")
+        except Exception as e:
+            self.logger.error(f"💥 Error loading model: {e}")
 
             return False

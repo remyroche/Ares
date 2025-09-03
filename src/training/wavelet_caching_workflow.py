@@ -2,7 +2,7 @@
 
 """Complete workflow example for wavelet feature caching and backtesting."
 Demonstrates the full pipeline from pre-computation to fast backtesting.
-""""
+"""
 
 import asyncio
 import time

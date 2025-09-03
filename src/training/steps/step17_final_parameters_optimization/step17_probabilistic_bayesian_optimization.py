@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""""
+"""
 Step 17: Probabilistic Bayesian Optimization for Final Parameters
 
 This step integrates probabilistic Bayesian optimization with the enhanced training manager
@@ -10,7 +10,7 @@ to optimize all parameters for maximum performance across three key objectives:
 
 The optimization covers all configurable parameters from previous steps and provides
 comprehensive uncertainty quantification for the optimized models.
-""""
+"""
 
 import asyncio
 import logging
@@ -60,7 +60,7 @@ except ImportError:
 
 
 class Step17ProbabilisticBayesianOptimization:
-    """"
+    """
     Step 17: Comprehensive probabilistic Bayesian optimization for all parameters.
     
     This step optimizes all configurable parameters from previous steps using
@@ -71,7 +71,7 @@ class Step17ProbabilisticBayesianOptimization:
     
     The optimization provides uncertainty quantification and confidence intervals
     for all optimized parameters.
-    """"
+    """
     
     def __init__(self, config: Dict[str, Any], training_manager=None):
         self.config = config

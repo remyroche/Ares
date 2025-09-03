@@ -43,9 +43,9 @@ class ServiceRegistration:
 
 
 class DependencyContainer:
-    """"
+    """
     Enhanced dependency injection container with configuration management.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any] | None = None):
         self._services: dict[Any, ServiceRegistration] = {}

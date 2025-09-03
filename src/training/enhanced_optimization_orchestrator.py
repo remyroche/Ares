@@ -28,7 +28,7 @@ class EnhancedOptimizationOrchestrator:
     - Bayesian optimization with advanced sampling
     - Adaptive optimization based on market regimes
     - Performance tracking and analysis
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -87,7 +87,7 @@ class EnhancedOptimizationOrchestrator:
                 - "adaptive": Only adaptive optimization
                 - "quick": Quick optimization with reduced trials
 
-        """"
+        """
         self.logger.info(f"Starting {optimization_type} optimization...")
 
         results = {

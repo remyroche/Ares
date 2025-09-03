@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""""
+"""
 Per-HMM Regime Triple Barrier Thresholds and TPSL Parameters Optimization
 
 This module implements regime-specific optimization of triple barrier thresholds
@@ -13,7 +13,7 @@ Key Features:
 - Cross-validation with regime-aware splits
 - Statistical significance testing per regime
 - Comprehensive reporting and visualization
-""""
+"""
 
 import asyncio
 import logging
@@ -37,7 +37,7 @@ from scipy import stats
 from src.utils.logger import setup_logging
 from pathlib import Path
 
-    SROptimizationParameters,
+SROptimizationParameters,
     HyperparameterOptimizationConfig,
     get_parameter_search_space
 from src.config.config_optuna import (
@@ -182,13 +182,13 @@ class RegimeSpecificOptimizationConfig:
 
 
 class RegimeSpecificTripleBarrierOptimizer:
-    """"
+    """
     Optimizer for regime-specific triple barrier thresholds and TPSL parameters.
     
     This optimizer extends the existing Optuna framework to provide regime-aware
     parameter optimization, ensuring that each HMM regime has optimal triple barrier
     thresholds and TPSL parameters for maximum performance.
-    """"
+    """
     
     def __init__(
         self, 
@@ -196,14 +196,14 @@ class RegimeSpecificTripleBarrierOptimizer:
         storage_url: str = "sqlite:///regime_triple_barrier_optuna_studies.db",
         study_name_prefix: str = "regime_triple_barrier_optimization"
     ):
-        """"
+        """
         Initialize the regime-specific triple barrier optimizer.
         
         Args:
             config: Configuration dictionary
             storage_url: Database URL for study persistence
             study_name_prefix: Prefix for study names
-        """"
+        """
         self.config = config
         self.storage_url = storage_url
         self.study_name_prefix = study_name_prefix
@@ -695,7 +695,7 @@ OptimizedTripleBarrierLabeling
         data: pd.DataFrame,
         regime_column: str = "composite_cluster_id"
     ) -> Dict[str, RegimeOptimizationResult]:
-        """"
+        """
         Optimize parameters for each regime.
         
         Args:
@@ -704,7 +704,7 @@ OptimizedTripleBarrierLabeling
             
         Returns:
             Dictionary mapping regime names to optimization results
-        """"
+        """
         
         try:
             self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
@@ -994,7 +994,7 @@ async def optimize_regime_triple_barrier_parameters(
     config: Dict[str, Any],
     regime_column: str = "composite_cluster_id"
 ) -> Dict[str, RegimeOptimizationResult]:
-    """"
+    """
     Optimize regime-specific triple barrier parameters.
     
     Args:
@@ -1004,7 +1004,7 @@ async def optimize_regime_triple_barrier_parameters(
         
     Returns:
         Dictionary mapping regime names to optimization results
-    """"
+    """
     
     optimizer = await setup_regime_specific_optimizer(config)
     return await optimizer.optimize_regime_parameters(data, regime_column)
@@ -1014,7 +1014,7 @@ def get_regime_optimized_triple_barrier_params(
     regime_name: str,
     optimization_results: Dict[str, RegimeOptimizationResult]
 ) -> Optional[RegimeTripleBarrierParams]:
-    """"
+    """
     Get optimized triple barrier parameters for a specific regime.
     
     Args:
@@ -1023,7 +1023,7 @@ def get_regime_optimized_triple_barrier_params(
         
     Returns:
         Optimized triple barrier parameters or None if not found
-    """"
+    """
     
     if regime_name not in optimization_results:
         return None
@@ -1035,7 +1035,7 @@ def get_regime_optimized_tpsl_params(
     regime_name: str,
     optimization_results: Dict[str, RegimeOptimizationResult]
 ) -> Optional[Dict[str, float]]:
-    """"
+    """
     Get optimized TPSL parameters for a specific regime.
     
     Args:
@@ -1044,7 +1044,7 @@ def get_regime_optimized_tpsl_params(
         
     Returns:
         Optimized TPSL parameters or None if not found
-    """"
+    """
     
     if regime_name not in optimization_results:
         return None

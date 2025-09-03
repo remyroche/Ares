@@ -34,7 +34,7 @@ if "numba" in globals() and numba is not None:
         Returns:
             labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
             profit_pcts: Actual profit/loss percentages at barrier hits
-        """"
+        """
         labels = np.zeros(close.shape[0], dtype=np.int8)
         profit_pcts = np.zeros(close.shape[0], dtype=np.float64)
         n = close.shape[0]
@@ -79,7 +79,7 @@ class OptimizedTripleBarrierLabeling:
     original O(n²) implementation by using NumPy vectorized operations.
     Focuses specifically on triple barrier labeling without feature engineering.
     Now includes profit tracking for enhanced analysis.
-    """"
+    """
 
     def __init__(
         self, 
@@ -102,7 +102,7 @@ class OptimizedTripleBarrierLabeling:
         Note:
             binary_classification=True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
-        """"
+        """
         self.profit_take_multiplier = profit_take_multiplier
         self.stop_loss_multiplier = stop_loss_multiplier
         self.time_barrier_minutes = time_barrier_minutes
@@ -142,7 +142,7 @@ class OptimizedTripleBarrierLabeling:
         to find the first barrier hit (profit-take or stop-loss). If neither is
         hit within the window, the label remains 0 (time barrier).
         Now includes potential_profit_pct to track actual profit/loss percentages.
-        """"
+        """
         # Debug
         self.logger.info(
             f"Applying triple barrier labeling with profit tracking | cols={list(data.columns)} shape={data.shape}"
@@ -383,7 +383,7 @@ class OptimizedTripleBarrierLabeling:
 
         Returns:
             DataFrame with labels added
-        """"
+        """
         # Disabled due to boundary lookahead correctness issues.
         return self.apply_triple_barrier_labeling_vectorized(data)
 
@@ -400,7 +400,7 @@ class OptimizedTripleBarrierLabeling:
 
         Returns:
             Processed chunk with labels
-        """"
+        """
         return self.apply_triple_barrier_labeling_vectorized(chunk)
 
     def apply_triple_barrier_labels(self, data: pd.DataFrame) -> pd.Series:
@@ -413,7 +413,7 @@ class OptimizedTripleBarrierLabeling:
             
         Returns:
             Series with triple barrier labels
-        """"
+        """
         labeled_data = self.apply_triple_barrier_labeling_vectorized(data)
         return labeled_data['label']
 
@@ -428,7 +428,7 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
 
     Returns:
         Dictionary with timing results
-    """"
+    """
     import time
 
     # Original method (simulated)
@@ -464,7 +464,7 @@ import asyncio
 import copy
 
     # Create sample data
-    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame(
         {
             "open": np.random.uniform(100, 110, 1000),

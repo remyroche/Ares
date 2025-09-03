@@ -4,7 +4,7 @@
 
 This step performs HMM-based model training with timeframe-specific architectures
 and S/R integration, using standardized data quality management patterns.
-""""
+"""
 
 import json
 import os
@@ -123,7 +123,7 @@ class HMMBasedTrainingStep:
     Includes an optional forecasting head that emits next-regime probabilities
     and simple exit-within-H-bars signals leveraging Step 3 HMM posteriors and
     transition probabilities.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -403,7 +403,7 @@ class HMMBasedTrainingStep:
 
         Returns: Tuple of (optimized_features_df = optimization_metadata)
 
-        """"
+        """
         try:
             # Enhanced LM optimizer is required - no fallbacks
             if self.enhanced_lm_optimizer is None:
@@ -459,7 +459,7 @@ class HMMBasedTrainingStep:
         Returns:
             Dict containing training results
 
-        """"
+        """
         try:
             self.logger.info("🔄 Executing HMM-Based Training...")
 
@@ -756,7 +756,7 @@ class HMMBasedTrainingStep:
 
         Prefer centralized artifact loader for 1m features to ensure column alignment via metadata,
         then resample to target timeframes.
-        """"
+        """
         feature_data: dict[str, pd.DataFrame] = {}
 
         # 1) Try centralized artifact loader for 1m and resample others
@@ -2623,7 +2623,7 @@ class HMMBasedTrainingStep:
         Returns:
             Dict containing artifact paths and metadata
 
-        """"
+        """
         try:
             self.logger.info("💾 Saving enhanced artifacts and metadata...")
 
@@ -3052,7 +3052,7 @@ class HMMBasedTrainingStep:
         - Objects with attribute 'best_estimator_' (e.g., GridSearchCV)
         - Tuple/list where the first element is the estimator
         - If the artifact itself implements a 'predict' method, return as-is
-        """"
+        """
         try:
             predict_attr = getattr(artifact, "predict", None)
             if callable(predict_attr):
@@ -3940,7 +3940,7 @@ class TCNTrainer:
         self, model_key: str, train_coro, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
         """Train a model using provided coroutine, then optionally refit with sample weights."
         Returns (model_key, model_package_or_None).
-        """"
+        """
         try:
             pkg = await train_coro(X_train, X_test, y_train, y_test, regime_name)
             if not pkg:
@@ -3997,7 +3997,7 @@ class TCNTrainer:
         Returns:
             List of selected feature names
 
-        """"
+        """
         try:
             self.logger.info(
                 f"🔍 Applying comprehensive feature selection on {len(feature_columns)} features...",
@@ -4799,7 +4799,7 @@ class TransformerTrainer:
         self, training_data: dict[str, pd.DataFrame], ) -> bool:
         """Train S/R outcome model using all available features from step04."
         Trains specifically on data near S/R levels using the pruning logic from step05.
-        """"
+        """
         try:
             self.logger.info("🔄 Training S/R outcome model...")
 
@@ -4839,7 +4839,7 @@ class TransformerTrainer:
         self, training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
         """Prepare training data specifically for S/R outcome prediction."
         Uses all available features from step04 and filters for data near S/R levels.
-        """"
+        """
         try:
             self.logger.info("🔄 Preparing S/R-specific training data...")
 
@@ -4890,7 +4890,7 @@ class TransformerTrainer:
         self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Get all available features from step04 for comprehensive S/R analysis."
         Uses the same feature engineering logic as the main HMM training.
-        """"
+        """
         try:
             # Start with base data
             features_df = data.copy()
@@ -5078,7 +5078,7 @@ class TransformerTrainer:
 
         Returns: True if successful, False otherwise
 
-        """"
+        """
         try:
             from src.utils.logger import system_logger
 
@@ -5257,14 +5257,14 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
 
     Returns: True if successful = False otherwise
 
-    """"
+    """
     try:
         from src.utils.logger import system_logger
     except Exception as e:
         pass  # TODO: Handle exception properly
 import copy
 import numpy as np
-import os.path
+import os
 
 # Create configuration
         config = {

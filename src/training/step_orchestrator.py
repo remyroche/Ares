@@ -3,7 +3,7 @@
 
 This module orchestrates the execution of training steps with progress saving
 and resuming capabilities. Now uses EnhancedTrainingManager for 16-step pipeline.
-""""
+"""
 
 import importlib
 import inspect
@@ -77,7 +77,7 @@ class StepOrchestrator:
         Returns:
             True if setup successful, False otherwise
 
-        """"
+        """
         try:
             from src.training.enhanced_training_manager import (
                 setup_enhanced_training_manager,
@@ -111,7 +111,7 @@ class StepOrchestrator:
         Returns:
             Step module if found, None otherwise
 
-        """"
+        """
         try:
             module_path = f"src.training.steps.{step_name}"
             module = importlib.import_module(module_path)
@@ -130,7 +130,7 @@ class StepOrchestrator:
         Returns:
             Step class if found, None otherwise
 
-        """"
+        """
         module = self.get_step_module(step_name)
         if not module:
             return None
@@ -166,7 +166,7 @@ class StepOrchestrator:
         Returns:
             True if step executed successfully, False otherwise
 
-        """"
+        """
         self.logger.info(f"🚀 Executing step: {step_name}")
 
         # Check if step already completed (unless force_rerun)
@@ -248,7 +248,7 @@ class StepOrchestrator:
         Returns:
             Pipeline state dictionary
 
-        """"
+        """
         pipeline_state = {}
 
         # Load progress from all previous steps
@@ -283,7 +283,7 @@ class StepOrchestrator:
         Returns:
             True if all steps completed successfully, False otherwise
 
-        """"
+        """
         self.logger.info(f"🚀 Starting execution from step: {start_step}")
 
         # Find the starting step index
@@ -357,7 +357,7 @@ get_step_specific_parameters,
         Returns:
             True if all steps completed successfully, False otherwise
 
-        """"
+        """
         return await self.execute_from_step(
             self.available_steps[0],
             config,
@@ -370,7 +370,7 @@ get_step_specific_parameters,
         Returns:
             Dictionary with execution status information
 
-        """"
+        """
         status = {
             "symbol": self.symbol,
             "exchange": self.exchange,
@@ -401,7 +401,7 @@ get_step_specific_parameters,
         Returns:
             True if cleared successfully, False otherwise
 
-        """"
+        """
         return self.progress_manager.clear_progress(step_name)
 
     def list_available_steps(self) -> list[str]:
@@ -410,5 +410,5 @@ get_step_specific_parameters,
         Returns:
             List of available step names
 
-        """"
+        """
         return self.available_steps.copy()

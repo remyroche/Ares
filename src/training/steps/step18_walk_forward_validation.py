@@ -51,7 +51,7 @@ class WalkForwardValidationStep:
 
         Returns:
             Dict containing validation results
-        """"
+        """
         try:
             self.logger.info("🔄 Executing Walk-Forward Validation...")
 
@@ -161,7 +161,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 from src.utils.enhanced_mlflow_integration import (
-import os.path
+import os
 
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -252,7 +252,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

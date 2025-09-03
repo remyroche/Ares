@@ -3,7 +3,7 @@
 """Feature Integration Module for ML Training Pipeline."
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
-""""
+"""
 
 from typing import Any
 
@@ -25,7 +25,7 @@ import asyncio
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
     into the ML training pipeline.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -109,7 +109,7 @@ AdvancedFeatureEngineering,
         Returns:
             DataFrame with integrated features
 
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.print(

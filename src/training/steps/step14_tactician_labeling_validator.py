@@ -44,7 +44,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if validation passed, False otherwise
 
-        """"
+        """
         self.logger.info("🔍 Validating tactician labeling step...")
 
         # Extract parameters
@@ -129,7 +129,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if files exist
 
-        """"
+        """
         try:
             # Expected tactician labeling file patterns
             expected_files = [
@@ -173,7 +173,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if signal quality is acceptable
 
-        """"
+        """
         try:
             # Load tactician signals (prefer Parquet)
             signals_parquet = (
@@ -343,7 +343,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if labeling is consistent
 
-        """"
+        """
         try:
             # Load tactician labels (prefer Parquet)
             labels_parquet = f"{data_dir}/{exchange}_{symbol}_tactician_labels.parquet"
@@ -538,7 +538,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if signal distribution is acceptable
 
-        """"
+        """
         try:
             # Load tactician labeling metadata
             metadata_file = (
@@ -661,7 +661,7 @@ async def run_validator(
     Returns:
         Dictionary containing validation results
 
-    """"
+    """
     validator = Step8TacticianLabelingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
 
@@ -679,7 +679,7 @@ if __name__ == "__main__":
 import os.path
 
     # Example usage
-    async def test_validator() -> None:
+async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",

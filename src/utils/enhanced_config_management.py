@@ -1,10 +1,14 @@
-""""
+"""
 Enhanced Configuration Management Utilities
 
 This module provides structured configuration management for the training pipeline.
-""""
+"""
 
 import json
+
+
+
+
 import logging
 import os
 from dataclasses import asdict, dataclass, field
@@ -321,7 +325,7 @@ class ConfigManager:
     def load_environment_config(self, environment: str) -> PipelineConfig:
         """Load environment-specific configuration."""
         config_name = f"pipeline_config_{environment}.json"
-        config = self.await load_config(config_name)
+        config = await self.load_config(config_name)
 
         if config.environment != environment:
             # Create new environment-specific config

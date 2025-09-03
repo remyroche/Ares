@@ -22,7 +22,7 @@ import copy
 class OptimizationManager:
     """Optimization manager responsible for hyperparameter optimization and model tuning."
     This module handles all optimization-related operations for trained models.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize optimization manager."
@@ -30,7 +30,7 @@ class OptimizationManager:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("OptimizationManager")
 
@@ -75,7 +75,7 @@ class OptimizationManager:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Optimization Manager...")
 
@@ -105,7 +105,7 @@ class OptimizationManager:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate optimization manager specific settings
             if not any(
@@ -175,7 +175,7 @@ class OptimizationManager:
         Returns:
             dict: Optimization results
 
-        """"
+        """
         try:
             self.logger.info("🔧 Starting model optimization...")
             self.is_optimizing = True
@@ -248,7 +248,7 @@ class OptimizationManager:
         Returns:
             bool: True if inputs are valid, False otherwise
 
-        """"
+        """
         try:
             # Validate model results
             if not model_results:
@@ -292,7 +292,7 @@ class OptimizationManager:
         Returns:
             dict: Hyperparameter optimization results
 
-        """"
+        """
         try:
             self.logger.info("🔧 Performing hyperparameter optimization...")
 
@@ -368,7 +368,7 @@ class OptimizationManager:
         Returns:
             dict: Optimized model result
 
-        """"
+        """
         try:
             self.logger.info(
                 f"🔧 Optimizing hyperparameters for {model_type} {timeframe} model...",
@@ -415,7 +415,7 @@ class OptimizationManager:
         Returns:
             dict: Feature selection optimization results
 
-        """"
+        """
         try:
             self.logger.info("🔧 Performing feature selection optimization...")
 
@@ -466,7 +466,7 @@ class OptimizationManager:
         Returns:
             dict: Ensemble optimization results
 
-        """"
+        """
         try:
             self.logger.info("🔧 Performing ensemble optimization...")
 
@@ -527,7 +527,7 @@ class OptimizationManager:
         Returns:
             dict: Optimized analyst ensemble results
 
-        """"
+        """
         try:
             self.logger.info("🔧 Optimizing analyst ensembles...")
 
@@ -568,7 +568,7 @@ class OptimizationManager:
         Returns:
             dict: Optimized tactician ensemble results
 
-        """"
+        """
         try:
             self.logger.info("🔧 Optimizing tactician ensembles...")
 
@@ -605,7 +605,7 @@ class OptimizationManager:
         Args:
             optimization_results: Optimization results to store
 
-        """"
+        """
         try:
             self.logger.info("📁 Storing optimization results...")
 
@@ -624,7 +624,7 @@ class OptimizationManager:
         Returns:
             dict: Optimization status information
 
-        """"
+        """
         return {
             "is_optimizing": self.is_optimizing,
             "has_optimization_results": bool(self.optimization_results),
@@ -639,7 +639,7 @@ class OptimizationManager:
         Returns:
             dict: Optimization results
 
-        """"
+        """
         return self.optimization_results.copy()
 
     @handle_errors(
@@ -673,7 +673,7 @@ async def setup_optimization_manager(
     Returns:
         OptimizationManager: Configured optimization manager instance
 
-    """"
+    """
     try:
         manager = OptimizationManager(config or {})
         if await manager.initialize():

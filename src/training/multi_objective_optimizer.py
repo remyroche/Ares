@@ -34,7 +34,7 @@ class MultiObjectiveOptimizer:
     - Risk-adjusted returns (Sharpe, Sortino, Calmar ratios)
     - Risk metrics (Max drawdown, VaR, CVaR)
     - Profitability metrics (Total return, Win rate, Profit factor)
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -69,7 +69,7 @@ self.optimized_backtester = OptimizedBacktester(
                 config.get("computational_optimization", {}),
             )
 
-    @handle_errors(
+            @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="multi-objective optimization",

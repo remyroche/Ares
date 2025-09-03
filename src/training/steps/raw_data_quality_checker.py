@@ -2,7 +2,7 @@
 
 """Raw Data Quality Checker for Early Detection of Data Issues"
 This module provides comprehensive validation of raw market data before any processing.
-""""
+"""
 
 import asyncio
 import functools
@@ -23,7 +23,7 @@ from src.utils.warning_symbols import critical
 class RawDataQualityChecker:
     """Comprehensive raw data quality checker for early detection of issues."
     This should be called immediately after data download to prevent downstream problems.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = system_logger.getChild("RawDataQualityChecker")
@@ -33,7 +33,7 @@ class RawDataQualityChecker:
     def ensure_datetime_index(func):
         """Decorator to ensure DataFrame has datetime index before processing."
         Attempts to fix missing datetime index automatically.
-        """"
+        """
         @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
             if not isinstance(data.index, pd.DatetimeIndex):
@@ -275,7 +275,7 @@ class RawDataQualityChecker:
         Returns:
             Dict containing validation results and recommendations
 
-        """"
+        """
         self.logger.info(
             f"🔍 Starting raw data quality validation for {exchange} {symbol}",
         )
@@ -381,7 +381,7 @@ class RawDataQualityChecker:
 
         Returns: Tuple of (fixed_data = preprocessing_summary)
 
-        """"
+        """
         preprocessing_summary = {
             "method": "enhanced_preprocessing",
             "original_shape": data.shape,
@@ -462,7 +462,7 @@ class RawDataQualityChecker:
         Returns:
             Quick validation results
 
-        """"
+        """
         try:
             # Quick quality check
             time_diffs = data.index.to_series().diff().dropna()
@@ -512,7 +512,7 @@ class RawDataQualityChecker:
         Returns:
             Preprocessed data with intelligent gap handling
 
-        """"
+        """
         self.logger.info(f"🔧 Enhanced preprocessing for {exchange} {symbol}")
         self.logger.info(f"   Expected interval: {expected_interval_seconds}s")
         self.logger.info(f"   Max forward-fill: {max_forward_fill_seconds}s")
@@ -607,7 +607,7 @@ class RawDataQualityChecker:
         Returns:
             Data with downloaded missing data filled in
 
-        """"
+        """
         self.logger.info(f"🔧 Downloading missing data for {len(gaps)} large gaps")
 
         try:
@@ -655,7 +655,7 @@ class RawDataQualityChecker:
 
         Returns: Timeframe string (e.g. = '1m', '5m', '15m', '1h')
 
-        """"
+        """
         if len(data) < 2:
             return "1m"  # Default to 1 minute
 
@@ -701,7 +701,7 @@ class RawDataQualityChecker:
         Returns:
             Filtered data for the gap period or None if not found
 
-        """"
+        """
         try:
             # Look for data files in common locations
             possible_paths = [
@@ -761,7 +761,7 @@ class RawDataQualityChecker:
         Returns:
             Main dataset with gap filled
 
-        """"
+        """
         try:
             # Create a copy of the main data
             filled_data = main_data.copy()
@@ -799,7 +799,7 @@ class RawDataQualityChecker:
         Returns:
             Fixed data with regular intervals
 
-        """"
+        """
         self.logger.info(f"🔧 Auto-fixing irregular intervals for {exchange} {symbol}")
 
         # Analyze current interval issues
@@ -874,7 +874,7 @@ class RawDataQualityChecker:
 
         Returns: Tuple of (fixed_data = validation_results)
 
-        """"
+        """
         self.logger.info(f"🔍 Comprehensive data quality validation and fixing for {exchange} {symbol}")
 
         # Step 1: Initial validation
@@ -1018,7 +1018,7 @@ class RawDataQualityChecker:
         Returns:
             DataFrame with datetime index or None if failed
 
-        """"
+        """
         try:
             self.logger.info("🔧 Attempting to create datetime index...")
 
@@ -1127,7 +1127,7 @@ class RawDataQualityChecker:
         Returns:
             Estimated timeframe string
 
-        """"
+        """
         try:
             # Look for clues in column names
             column_names = " ".join(data.columns).lower()
@@ -1563,7 +1563,7 @@ class RawDataQualityChecker:
         Returns:
             Preprocessed data with regular intervals
 
-        """"
+        """
         self.logger.info(f"🔧 Preprocessing irregular intervals using method: {method}")
 
         # Handle duplicate timestamps first
@@ -1619,7 +1619,7 @@ class RawDataQualityChecker:
 
         Returns: Tuple of (updated_data = download_summary)
 
-        """"
+        """
         download_summary = {
             "data_downloaded": False,
             "gaps_found": 0,
@@ -1724,7 +1724,7 @@ class RawDataQualityChecker:
         Returns:
             Downloaded data or None if failed
 
-        """"
+        """
         self.logger.info(f"🔧 Downloading {timeframe} data for {symbol} on {exchange}")
 
         if start_time and end_time:
@@ -1781,7 +1781,7 @@ class RawDataQualityChecker:
         Returns:
             Loaded data or None if not found
 
-        """"
+        """
         try:
             import glob
             import os
@@ -1837,7 +1837,7 @@ import os.path
         Returns:
             Comprehensive data quality report
 
-        """"
+        """
         validation_results, _, self.validate_raw_data(data, symbol, exchange)
 
         # Add additional analysis
@@ -1876,7 +1876,7 @@ import os.path
 
         Returns: Tuple of (preprocessed_data = validation_results)
 
-        """"
+        """
         # First, validate the raw data
         validation_results, data, self.validate_raw_data(data, symbol, exchange)
 
@@ -2094,7 +2094,7 @@ def validate_raw_data_quality(
     Returns:
         Validation results dictionary
 
-    """"
+    """
     checker = RawDataQualityChecker(config)
     results, _ = checker.validate_raw_data(
         data,
@@ -2122,7 +2122,7 @@ def fix_irregular_intervals_automatically(
     Returns:
         Fixed data with regular intervals
 
-    """"
+    """
     checker = RawDataQualityChecker(config)
     return checker.fix_irregular_intervals_automatically(data, symbol, exchange)
 
@@ -2143,7 +2143,7 @@ def validate_and_fix_data_quality_issues(
 
     Returns: Tuple of (fixed_data = validation_results)
 
-    """"
+    """
     checker = RawDataQualityChecker(config)
     return checker.validate_and_fix_data_quality_issues(data, symbol, exchange)
 
@@ -2171,7 +2171,7 @@ def enhanced_preprocess_market_data(
     Returns:
         Preprocessed data with intelligent gap handling
 
-    """"
+    """
     checker = RawDataQualityChecker(config)
     return checker.enhanced_preprocess_market_data(
         data=data,
@@ -2193,7 +2193,7 @@ def auto_fix_data_quality_issues(func):
         def analyze_patterns(data, symbol, exchange):
         # Your analysis code here
             pass
-    """"
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Find the data argument (usually the first argument)

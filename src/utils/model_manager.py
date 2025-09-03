@@ -1,10 +1,10 @@
-""""
+"""
 Model manager for loading, serving, and hot-swapping trading models.
 
 This module manages the loading, serving, and hot-swapping of trading models, parameters,
 and their versions. This allows for updating the strategy without restarting the bot,
 with full version tracking. Now uses async operations for better performance.
-""""
+"""
 
 import json
 import os
@@ -50,7 +50,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
 
     Attempts to resolve the bit generator by name/class and call the original constructor
     with a possibly adjusted signature for cross-version compatibility.
-    """"
+    """
     global _NP_ORIGINAL_BITGEN_CTOR  # noqa: F824
     name_candidate: Any = bit_generator_name
     try:
@@ -116,17 +116,17 @@ original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
 
 
 class ModelManager:
-    """"
+    """
     Enhanced model manager with comprehensive error handling and type safety.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize model manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ModelManager")
 
@@ -155,12 +155,12 @@ class ModelManager:
         context="model manager initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize model manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         self.logger.info("Initializing Model Manager...")
 
         # Load model configuration
@@ -212,12 +212,12 @@ class ModelManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate model configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """"
+        """
         # Validate models directory
         if not self.models_dir:
             self.logger.error(invalid("Invalid models directory"))
@@ -318,7 +318,7 @@ class ModelManager:
         model_path: str,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """"
+        """
         Register a new model.
 
         Args:
@@ -328,7 +328,7 @@ class ModelManager:
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         if not model_name or not model_path:
             self.logger.error(invalid("Invalid model name or path"))
             return False
@@ -378,7 +378,7 @@ class ModelManager:
         context="model loading",
     )
     async def load_model(self, model_name: str) -> Any | None:
-        """"
+        """
         Load a model.
 
         Args:
@@ -386,7 +386,7 @@ class ModelManager:
 
         Returns:
             Optional[Any]: Loaded model or None if failed
-        """"
+        """
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
         if model_name not in self.models:
@@ -422,7 +422,7 @@ class ModelManager:
         model_name: str,
         format: str = "joblib",
     ) -> bool:
-        """"
+        """
         Save a model.
 
         Args:
@@ -432,7 +432,7 @@ class ModelManager:
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         if not model_name:
             self.logger.error(invalid("Invalid model name"))
             return False
@@ -475,7 +475,7 @@ class ModelManager:
         context="active model setting",
     )
     async def set_active_model(self, model_name: str) -> bool:
-        """"
+        """
         Set the active model.
 
         Args:
@@ -483,7 +483,7 @@ class ModelManager:
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         if model_name not in self.models:
             self.logger.error(missing(f"Model {model_name} not found"))
             return False
@@ -504,12 +504,12 @@ class ModelManager:
         context="active model getting",
     )
     async def get_active_model(self) -> str | None:
-        """"
+        """
         Get the active model name.
 
         Returns:
             Optional[str]: Active model name or None
-        """"
+        """
         return self.active_model
 
     @handle_file_operations(
@@ -530,12 +530,12 @@ class ModelManager:
         context="model backup creation",
     )
     async def create_backup(self, model_name: str) -> None:
-        """"
+        """
         Create backup of a model.
 
         Args:
             model_name: Name of the model to backup
-        """"
+        """
         if model_name not in self.models:
             self.logger.error(missing(f"Model {model_name} not found"))
             return
@@ -560,12 +560,12 @@ class ModelManager:
         self.logger.info(f"Model backup created: {backup_path}")
 
     def get_model_status(self) -> dict[str, Any]:
-        """"
+        """
         Get model manager status information.
 
         Returns:
             Dict[str, Any]: Model manager status
-        """"
+        """
         return {
             "total_models": len(self.models),
             "active_model": self.active_model,
@@ -603,7 +603,7 @@ model_manager: ModelManager | None = None
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:
-    """"
+    """
     Setup global model manager.
 
     Args:
@@ -611,7 +611,7 @@ async def setup_model_manager(
 
     Returns:
         Optional[ModelManager]: Global model manager instance
-    """"
+    """
     global model_manager
 
     if config is None:

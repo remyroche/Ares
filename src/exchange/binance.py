@@ -24,17 +24,17 @@ from src.utils.warning_symbols import (
 
 
 class BinanceExchange:
-    """"
+    """
     Enhanced Binance exchange client with comprehensive error handling and type safety.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize Binance exchange with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("BinanceExchange")
 
@@ -65,12 +65,12 @@ class BinanceExchange:
         context="Binance exchange initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize Binance exchange with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         self.logger.info("Initializing Binance Exchange...")
 
         # Load exchange configuration
@@ -119,12 +119,12 @@ class BinanceExchange:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate exchange configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """"
+        """
         # Validate timeout
         if self.timeout <= 0:
             self.print(invalid("Invalid timeout"))
@@ -148,12 +148,12 @@ class BinanceExchange:
         default_return=False,
     )
     async def _initialize_connection(self) -> bool:
-        """"
+        """
         Initialize connection to Binance API.
 
         Returns:
             bool: True if successful, False otherwise
-        """"
+        """
         try:
             # Create session
             self.session = aiohttp.ClientSession(
@@ -180,12 +180,12 @@ class BinanceExchange:
         default_return=None,
     )
     async def _get_server_time(self) -> int | None:
-        """"
+        """
         Get server time from Binance.
 
         Returns:
             Optional[int]: Server time in milliseconds or None
-        """"
+        """
         try:
             url = f"{self._get_base_url()}/api/v3/time"
 
@@ -209,7 +209,7 @@ class BinanceExchange:
         return self.testnet_futures_url if self.use_testnet else self.futures_base_url
 
     def _generate_signature(self, params: dict[str, Any]) -> str:
-        """"
+        """
         Generate HMAC signature for authenticated requests.
 
         Args:
@@ -217,7 +217,7 @@ class BinanceExchange:
 
         Returns:
             str: HMAC signature
-        """"
+        """
         try:
             if not self.api_secret:
                 msg = "API secret not configured"
@@ -239,12 +239,12 @@ class BinanceExchange:
         default_return=None,
     )
     async def get_account_info(self) -> dict[str, Any] | None:
-        """"
+        """
         Get account information.
 
         Returns:
             Optional[Dict[str, Any]]: Account information or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -289,7 +289,7 @@ class BinanceExchange:
         self,
         symbol: str | None = None,
     ) -> list[dict[str, Any]] | None:
-        """"
+        """
         Get position risk information.
 
         Args:
@@ -297,7 +297,7 @@ class BinanceExchange:
 
         Returns:
             Optional[List[Dict[str, Any]]]: Position risk information or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -363,7 +363,7 @@ class BinanceExchange:
         stop_loss: float | None = None,
         post_only: bool | None = None,
     ) -> dict[str, Any] | None:
-        """"
+        """
         Create an order.
 
         Args:
@@ -375,7 +375,7 @@ class BinanceExchange:
 
         Returns:
             Optional[Dict[str, Any]]: Order information or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -587,7 +587,7 @@ class BinanceExchange:
         interval: str = "1m",
         limit: int = 500,
     ) -> list[list[Any]] | None:
-        """"
+        """
         Get kline/candlestick data.
 
         Args:
@@ -597,7 +597,7 @@ class BinanceExchange:
 
         Returns:
             Optional[List[List[Any]]]: Kline data or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -628,7 +628,7 @@ class BinanceExchange:
         default_return=None,
     )
     async def get_ticker(self, symbol: str) -> dict[str, Any] | None:
-        """"
+        """
         Get ticker information.
 
         Args:
@@ -636,7 +636,7 @@ class BinanceExchange:
 
         Returns:
             Optional[Dict[str, Any]]: Ticker information or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -669,7 +669,7 @@ class BinanceExchange:
         symbol: str,
         limit: int = 100,
     ) -> dict[str, Any] | None:
-        """"
+        """
         Get order book.
 
         Args:
@@ -678,7 +678,7 @@ class BinanceExchange:
 
         Returns:
             Optional[Dict[str, Any]]: Order book or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -712,7 +712,7 @@ class BinanceExchange:
         start_time_ms: int,
         end_time_ms: int,
     ) -> list[dict[str, Any]] | None:
-        """"
+        """
         Get aggregate trades for a symbol within a time range.
 
         Args:
@@ -722,7 +722,7 @@ class BinanceExchange:
 
         Returns:
             List of aggregate trades or None if failed
-        """"
+        """
         try:
             params = {
                 "symbol": symbol,
@@ -755,7 +755,7 @@ class BinanceExchange:
         start_time_ms: int,
         end_time_ms: int,
     ) -> list[dict[str, Any]] | None:
-        """"
+        """
         Get historical aggregated trades data.
 
         Args:
@@ -765,7 +765,7 @@ class BinanceExchange:
 
         Returns:
             Optional[List[Dict[str, Any]]]: Aggregated trades data or None
-        """"
+        """
         try:
             if not self.is_connected:
                 self.print(error("Exchange not connected"))
@@ -808,7 +808,7 @@ class BinanceExchange:
         start_time_ms: int,
         end_time_ms: int,
     ) -> list[dict[str, Any]] | None:
-        """"
+        """
         Get futures funding rates for a symbol within a time range.
 
         Args:
@@ -818,7 +818,7 @@ class BinanceExchange:
 
         Returns:
             List of funding rates or None if failed
-        """"
+        """
         try:
             params = {
                 "symbol": symbol,
@@ -840,12 +840,12 @@ class BinanceExchange:
             return None
 
     def get_exchange_status(self) -> dict[str, Any]:
-        """"
+        """
         Get exchange status information.
 
         Returns:
             Dict[str, Any]: Exchange status
-        """"
+        """
         return {
             "is_connected": self.is_connected,
             "use_testnet": self.use_testnet,
@@ -889,7 +889,7 @@ binance_exchange: BinanceExchange | None = None
 async def setup_binance_exchange(
     config: dict[str, Any] | None = None,
 ) -> BinanceExchange | None:
-    """"
+    """
     Setup global Binance exchange.
 
     Args:
@@ -897,7 +897,7 @@ async def setup_binance_exchange(
 
     Returns:
         Optional[BinanceExchange]: Global Binance exchange instance
-    """"
+    """
     try:
         global binance_exchange
 

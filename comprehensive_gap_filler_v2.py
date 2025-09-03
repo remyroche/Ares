@@ -326,6 +326,8 @@ class ComprehensiveGapFillerV2:
         total_successful_calls = 0
 
         for file_path in files:
+            pass
+            pass
     pass  # TODO: Add proper implementation
             # Detect gaps in this file
             gaps = self.detect_gaps_in_file(file_path)

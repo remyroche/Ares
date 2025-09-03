@@ -3,7 +3,7 @@
 
 This module validates the parameter optimization step outputs with comprehensive
 quality checks for optimization results and configuration files.
-""""
+"""
 
 import json
 import os
@@ -44,7 +44,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """"
+        """
         self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
 
         try:
@@ -468,7 +468,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     logger.info("🔍 Validating Step 3: Parameter Optimization")
     
     try:
@@ -533,7 +533,7 @@ if __name__ == "__main__":
     import asyncio
 import datetime as datetime
     
-    test_input = {
+test_input = {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",

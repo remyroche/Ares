@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""""
+"""
 Optimized Step17 Implementation
 
 This module implements advanced optimization strategies for step17:
@@ -9,7 +9,7 @@ This module implements advanced optimization strategies for step17:
 4. Smart Parameter Grouping - Group related parameters for efficient optimization
 
 These strategies dramatically improve optimization efficiency while maintaining quality.
-""""
+"""
 
 import asyncio
 import logging
@@ -40,7 +40,7 @@ except Exception as e:
     pass  # TODO: Handle exception properly
 import copy
 
-    OPTUNA_AVAILABLE = True
+OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
 

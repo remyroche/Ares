@@ -25,7 +25,7 @@ import mlflow
 import pandas as pd
 
 from src.config import ARES_VERSION
-from src.utils.error_handler import handle_errors
+from src.utils.compat import handle_errors
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import (
 import asyncio

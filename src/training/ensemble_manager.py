@@ -130,12 +130,9 @@ class EnsembleManager:
         try:
             # Initialize ensemble creator
             from src.training.ensemble_creator import EnsembleCreator
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-self.ensemble_creator = EnsembleCreator(self.config)
-await self.ensemble_creator.initialize()
+            
+            self.ensemble_creator = EnsembleCreator(self.config)
+            await self.ensemble_creator.initialize()
 
             # Initialize ensemble optimization components
             if self.enable_ensemble_optimization:

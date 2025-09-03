@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
+import json
+import hashlib
 
 from src.core.decorators import handles_errors, traced
 
@@ -119,6 +121,38 @@ class LabelingStep:
         # Validate environment on initialization
         self._validate_environment()
         self._initialize_components()
+
+    def _compute_labeling_fingerprint(self, triple_barrier_path: Path) -> Dict[str, Any]:
+        """Compute a stable fingerprint of source labeling inputs to ensure idempotence.
+
+        Uses source file size and mtime plus relevant config toggles.
+        """
+        try:
+            stat = triple_barrier_path.stat()
+            # Include only the pieces of config that could affect labeling outputs
+            relevant_cfg = {
+                "vectorized_labelling_orchestrator": self.config.get(
+                    "vectorized_labelling_orchestrator", {}
+                ),
+                "labeling": self.config.get("labeling", {}),
+                "time_barrier_minutes": getattr(self, "time_barrier_minutes", None),
+                "max_lookahead": getattr(self, "max_lookahead", None),
+                "regime_col": getattr(self, "regime_col", None),
+                "auto_recalculate_hmm_barriers": getattr(
+                    self, "auto_recalculate_hmm_barriers", None
+                ),
+            }
+            relevant_cfg_json = json.dumps(relevant_cfg, sort_keys=True, default=str)
+            cfg_hash = hashlib.sha256(relevant_cfg_json.encode("utf-8")).hexdigest()
+            return {
+                "source_path": str(triple_barrier_path),
+                "source_size": stat.st_size,
+                "source_mtime": int(stat.st_mtime),
+                "config_hash": cfg_hash,
+            }
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"⚠️ Failed to compute labeling fingerprint: {e}")
+            return {}
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -239,6 +273,27 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
                 return False
 
             self.logger.info(f"📁 Loading triple barrier labels from {triple_barrier_path}")
+            # Compute idempotence fingerprint and check for existing outputs
+            labeled_dir = ensure_directory(Path(data_dir) / "training" / "labeled_data")
+            output_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
+            metadata_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
+
+            current_fp = self._compute_labeling_fingerprint(triple_barrier_path)
+
+            if not force_rerun and output_path.exists() and metadata_path.exists():
+                try:
+                    with open(metadata_path, "r", encoding="utf-8") as f:
+                        existing_meta = json.load(f)
+                    existing_fp = existing_meta.get("source_fingerprint", {})
+                    if existing_fp == current_fp and existing_meta.get("total_samples", 0) > 0:
+                        self.logger.info(
+                            "🟢 Labeling is idempotent: existing outputs match current inputs. Skipping recomputation."
+                        )
+                        self._log_step_timing("Labeling (skipped)", step_start)
+                        return True
+                except Exception as e:  # noqa: BLE001
+                    self.logger.warning(f"⚠️ Failed to read existing labeling metadata: {e}")
+
             data = pd.read_parquet(triple_barrier_path)
             self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
@@ -250,14 +305,10 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
                 return False
 
             # Save results under standardized labeled_data directory
-            labeled_dir = ensure_directory(Path(data_dir) / "training" / "labeled_data")
-            output_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
-            
             labeled_data.to_parquet(output_path)
             self.logger.info(f"✅ Labeled data saved to {output_path}")
 
             # Save labeling metadata alongside labeled data
-            metadata_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
             metadata = {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -266,7 +317,8 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
                 "label_distribution": labeled_data['label'].value_counts().to_dict(),
                 "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict(),
                 "created_at": pd.Timestamp.now().isoformat(),
-                "labeling_config": self.config.get("labeling", {})
+                "labeling_config": self.config.get("labeling", {}),
+                "source_fingerprint": current_fp,
             }
             
             safe_json_dump(metadata, metadata_path, indent=2)

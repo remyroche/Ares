@@ -1369,11 +1369,18 @@ class UnifiedRegimeIntelligenceStep:
             self.model.to(device)
 
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode="min", factor=0.5, patience=5, verbose=False
+            )
             criterion = nn.CrossEntropyLoss()
+            scaler = torch.cuda.amp.GradScaler() if self.device_str == "cuda" else None
 
             # Training loop
             best_val_loss: float = float("inf")
-            for epoch in range(self.epochs):
+            patience = int(self.config.get("early_stopping_patience", 15))
+            patience_counter = 0
+            max_epochs = int(self.config.get("max_epochs", self.epochs))
+            for epoch in range(max_epochs):
                 # Training phase
                 self.model.train()
                 train_loss = 0.0
@@ -1397,26 +1404,38 @@ class UnifiedRegimeIntelligenceStep:
                         if tf in train_hmm:
                             batch_hmm[tf] = train_hmm[tf][start_idx:end_idx].to(device)
 
-                    # Forward pass
-                    outputs = self.model(batch_hmm, batch_features)
-
-                    # Calculate losses
-                    regime_loss = criterion(outputs["regime_logits"], batch_regime)
-                    transition_loss = criterion(
-                        outputs["transition_logits"], batch_transition,
-                    )
-                    tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
-                    confidence_loss = F.mse_loss(
-                        outputs["confidence_logits"].squeeze(),
-                        torch.ones_like(outputs["confidence_logits"].squeeze()),
-                    )
-
-                    total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
-
-                    # Backward pass
-                    optimizer.zero_grad()
-                    total_loss.backward()
-                    optimizer.step()
+                    # Forward pass with AMP
+                    optimizer.zero_grad(set_to_none=True)
+                    if scaler is not None:
+                        with torch.cuda.amp.autocast():  # type: ignore[attr-defined]
+                            outputs = self.model(batch_hmm, batch_features)
+                            regime_loss = criterion(outputs["regime_logits"], batch_regime)
+                            transition_loss = criterion(outputs["transition_logits"], batch_transition)
+                            tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
+                            confidence_loss = F.mse_loss(
+                                outputs["confidence_logits"].squeeze(),
+                                torch.ones_like(outputs["confidence_logits"].squeeze()),
+                            )
+                            total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                        scaler.scale(total_loss).backward()
+                        # Gradient clipping
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
+                        outputs = self.model(batch_hmm, batch_features)
+                        regime_loss = criterion(outputs["regime_logits"], batch_regime)
+                        transition_loss = criterion(outputs["transition_logits"], batch_transition)
+                        tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
+                        confidence_loss = F.mse_loss(
+                            outputs["confidence_logits"].squeeze(),
+                            torch.ones_like(outputs["confidence_logits"].squeeze()),
+                        )
+                        total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                        total_loss.backward()
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        optimizer.step()
 
                     train_loss += total_loss.item()
 
@@ -1443,7 +1462,8 @@ class UnifiedRegimeIntelligenceStep:
                             if tf in val_hmm:
                                 batch_hmm[tf] = val_hmm[tf][start_idx - split_idx:end_idx - split_idx].to(device)
 
-                        outputs = self.model(batch_hmm, batch_features)
+                        with torch.cuda.amp.autocast(enabled=(scaler is not None)):
+                            outputs = self.model(batch_hmm, batch_features)
 
                         regime_loss = criterion(outputs["regime_logits"], batch_regime)
                         transition_loss = criterion(
@@ -1458,7 +1478,8 @@ class UnifiedRegimeIntelligenceStep:
                         total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
                         val_loss += total_loss.item()
 
-                # Log progress
+                # Scheduler step and logging
+                scheduler.step(val_loss)
                 if epoch % 10 == 0:
                     self.logger.info(
                         f"📊 Epoch {epoch}: Train Loss: {train_loss/len(train_loader):.4f}, "
@@ -1472,6 +1493,16 @@ class UnifiedRegimeIntelligenceStep:
                         self.model.state_dict(),
                         os.path.join(self.artifacts_dir, "best_model.pth"),
                     )
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+
+                # Early stopping
+                if patience_counter >= patience:
+                    self.logger.info(
+                        f"⏹️ Early stopping at epoch {epoch} with best val loss {best_val_loss:.4f}"
+                    )
+                    break
 
             self.logger.info("✅ Model training completed successfully")
             return True

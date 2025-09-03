@@ -691,10 +691,14 @@ class EnhancedHMMBasedTrainingStep:
             # Generate multi-output targets
             y_multi = self.multi_output_trainer.prepare_multi_output_targets(X, y, market_data)
             
-            # Split data for training
-            split_idx = int(0.8 * len(X))
-            X_train, X_test = X[:split_idx], X[split_idx:]
-            y_train_multi = {k: v[:split_idx] for k, v in y_multi.items()}
+            # Purged time split with embargo to prevent leakage
+            n_samples = len(X)
+            embargo = max(5, int(0.01 * n_samples))  # 1% or minimum 5 samples
+            split_idx = int(0.8 * n_samples)
+            train_end = max(0, split_idx - embargo)
+
+            X_train, X_test = X[:train_end], X[split_idx:]
+            y_train_multi = {k: v[:train_end] for k, v in y_multi.items()}
             y_test_multi = {k: v[split_idx:] for k, v in y_multi.items()}
             
             # Train multi-output model
@@ -835,18 +839,18 @@ class EnhancedHMMBasedTrainingStep:
             
             final_model.fit(X_scaled, y)
             
-            # Calculate metrics
-            y_pred_final = final_model.predict(X_scaled)
-            final_accuracy = accuracy_score(y, y_pred_final)
+            # Replace optimistic training-set metrics with cross-validated summary only
+            # Keep CV scores computed above as the primary evaluation
+            final_accuracy = None
             
             result = {
                 "model": final_model,
                 "scaler": scaler,
                 "architecture": architecture,
                 "cv_scores": cv_scores,
-                "cv_mean": np.mean(cv_scores) if cv_scores else 0.0,
-                "cv_std": np.std(cv_scores) if cv_scores else 0.0,
-                "final_accuracy": final_accuracy,
+                "cv_mean": float(np.mean(cv_scores)) if cv_scores else 0.0,
+                "cv_std": float(np.std(cv_scores)) if cv_scores else 0.0,
+                "final_accuracy": final_accuracy,  # No training-set metric reported
                 "feature_importance": dict(zip(features.columns, final_model.feature_importances_)) if hasattr(final_model, 'feature_importances_') else {},
                 "n_features": len(features.columns)
             }

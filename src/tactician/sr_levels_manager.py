@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 SR Levels Manager - Comprehensive Support/Resistance Level Management
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/utils/enhanced_mlflow_integration.py
 
 from src.core.decorators import handles_errors
@@ -1228,4 +1229,3 @@ def create_detailed_step_report(
             "disk_space_available_gb": execution_metadata.get("disk_space_available_gb"),
         },
     }
-

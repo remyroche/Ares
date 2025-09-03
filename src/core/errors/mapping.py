@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Exception mapping to transport-specific responses.
 

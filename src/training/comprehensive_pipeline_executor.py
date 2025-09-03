@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Comprehensive Pipeline Executor with Integrated Data Quality Management.
 

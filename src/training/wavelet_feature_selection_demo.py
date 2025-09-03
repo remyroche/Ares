@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Wavelet Feature Selection Demo.
 
 This script demonstrates the complete wavelet feature selection workflow using the two-model strategy:

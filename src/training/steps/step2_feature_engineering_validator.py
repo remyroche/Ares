@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/steps/step6_feature_engineering_validator.py
 
 """Validator for Step 2: Feature Engineering."""

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/steps/step1_5_data_converter.py
 
 import asyncio

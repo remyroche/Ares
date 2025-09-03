@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/tactics_orchestrator.py
 
 from src.core.decorators import handles_errors

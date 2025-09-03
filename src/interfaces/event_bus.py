@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/interfaces/event_bus.py
 
 import asyncio

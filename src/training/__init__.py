@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/__init__.py
 
 """Training Package.

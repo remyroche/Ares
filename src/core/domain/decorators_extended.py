@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Extended domain-specific decorators for specialized use cases.
 

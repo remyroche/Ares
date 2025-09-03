@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/sr_detection_optimization.py
 
 """

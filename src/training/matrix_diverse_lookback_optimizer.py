@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/matrix_diverse_lookback_optimizer.py
 
 """

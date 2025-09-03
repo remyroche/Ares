@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/__init__.py
 
 # Import the main components for easier access

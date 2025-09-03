@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Refactored VectorizedAdvancedFeatureEngineering with reduced complexity and type hints.
 This refactored version breaks down the massive engineer_features method into smaller,

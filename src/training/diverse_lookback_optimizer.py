@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/diverse_lookback_optimizer.py
 
 """

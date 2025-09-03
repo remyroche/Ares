@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/launcher_integration_patch.py
 
 """Integration patch for ares_launcher.py to enable the new optimization features.

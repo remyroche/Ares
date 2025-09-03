@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/dual_model_system.py
 
 from src.core.decorators import (

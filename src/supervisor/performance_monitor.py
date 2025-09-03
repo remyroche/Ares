@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Performance Monitor Module."
 
 This module provides comprehensive performance monitoring for trading models,

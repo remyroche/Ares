@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/paper_trader.py
 """
 PaperTrader for training and testnet trading.

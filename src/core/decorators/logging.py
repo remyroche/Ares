@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Structured logging decorators with correlation IDs.
 

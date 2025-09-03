@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/analyst/meta_labeling_system.py
 
 from src.core.decorators import handles_errors
@@ -1242,4 +1243,3 @@ class MetaLabelingSystem:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error stopping meta-labeling system: {e}")
-

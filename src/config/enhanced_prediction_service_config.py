@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/config/enhanced_prediction_service_config.py
 
 """

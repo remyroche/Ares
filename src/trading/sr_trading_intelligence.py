@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 SR Trading Intelligence - Comprehensive Access to SR Levels for Trading Decisions
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/steps/analyst_training_components/__init__.py
 
 """Analyst Training Components Package.

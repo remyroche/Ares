@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/tactician/leverage_sizer.py
 
 """

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/training/model_specific_pruning.py
 
 from typing import Any

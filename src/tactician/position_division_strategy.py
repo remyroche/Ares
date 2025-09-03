@@ -1,7 +1,5 @@
 # src/tactician/position_division_strategy.py
 
-from src.core.decorators import handles_errors
-
 """
 Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
@@ -10,12 +8,11 @@ from datetime import datetime
 from typing import Any
 
 from src.core.decorators import handles_errors, retry, timeout
-handle_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     warning,
+    invalid,
 )
 
 

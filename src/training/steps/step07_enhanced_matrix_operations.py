@@ -92,8 +92,16 @@ class Step7EnhancedMatrixOperations:
         else:
             self.logger.warning('⚠️ EnhancedMatrixOperations not available')
             self.matrix_ops = None
-        self.step_config = config.get('step07_enhanced_matrix_operations', {})
-        self.output_dir = ensure_directory(self.step_config.get('output_dir', 'data/matrix_operations'))
+        
+        # Step-specific configuration
+        self.step_config = config.get("step07_enhanced_matrix_operations", {})
+        self.output_dir = ensure_directory(self.step_config.get("output_dir", "data/matrix_operations"))
+        
+        # Feature selection configuration
+        self.target_features = self.step_config.get("target_features", 200)
+        self.removal_fraction = self.step_config.get("removal_fraction", 0.33)
+        self.enable_regime_selection = self.step_config.get("enable_regime_selection", True)
+        self.enable_shap_filtering = self.step_config.get("enable_shap_filtering", True)
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -103,7 +111,146 @@ class Step7EnhancedMatrixOperations:
             self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
             self.logger.info('📝 Pipeline will continue with fallback implementations')
         else:
-            self.logger.info('✅ All required dependencies available')
+            self.logger.info("✅ All required dependencies available")
+    
+    def regime_aware_initial_filtering(
+        self, 
+        features_df: pd.DataFrame, 
+        labels_df: pd.DataFrame,
+        regime_labels: pd.Series = None
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """
+        Conservative feature filtering with per-regime awareness.
+        Removes bottom 33% of features to arrive at ~200 features.
+        
+        Args:
+            features_df: Feature dataframe
+            labels_df: Labels dataframe with target column
+            regime_labels: Optional regime labels for per-regime selection
+            
+        Returns:
+            Filtered features and metadata
+        """
+        try:
+            self.logger.info(f"🎯 Starting regime-aware feature filtering: {features_df.shape[1]} features")
+            
+            # Extract target variable
+            if 'target' in labels_df.columns:
+                y = labels_df['target']
+            elif 'direction' in labels_df.columns:
+                y = labels_df['direction']
+            else:
+                raise ValueError("No target or direction column found in labels")
+            
+            # Ensure binary target
+            if y.dtype != int:
+                y = (y > 0).astype(int)
+            
+            # 1. Per-regime feature importance
+            regime_importances = {}
+            if self.enable_regime_selection and regime_labels is not None:
+                self.logger.info("📊 Calculating per-regime feature importance...")
+                for regime in np.unique(regime_labels):
+                    regime_mask = regime_labels == regime
+                    if regime_mask.sum() < 100:  # Skip small regimes
+                        continue
+                        
+                    X_regime = features_df[regime_mask]
+                    y_regime = y[regime_mask]
+                    
+                    # Fast MI calculation per regime
+                    from sklearn.feature_selection import mutual_info_classif
+                    mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                    regime_importances[f'regime_{regime}'] = mi_scores
+                
+                # Aggregate importance across regimes (keep features important in ANY regime)
+                aggregated_importance = np.max(
+                    np.vstack(list(regime_importances.values())), 
+                    axis=0
+                )
+            else:
+                # Calculate MI for all data
+                from sklearn.feature_selection import mutual_info_classif
+                aggregated_importance = mutual_info_classif(features_df, y, random_state=42)
+            
+            # 2. Quick SHAP sampling (subsample for speed)
+            shap_importance = None
+            if self.enable_shap_filtering and lgb is not None:
+                self.logger.info("🔮 Calculating SHAP-based importance (sampled)...")
+                try:
+                    # Subsample for efficiency
+                    sample_size = min(5000, len(features_df))
+                    if len(features_df) > sample_size:
+                        sample_idx = np.random.choice(len(features_df), sample_size, replace=False)
+                        X_sample = features_df.iloc[sample_idx]
+                        y_sample = y.iloc[sample_idx]
+                    else:
+                        X_sample, y_sample = features_df, y
+                    
+                    # Train lightweight model
+                    lgb_model = lgb.LGBMClassifier(
+                        n_estimators=100, 
+                        max_depth=5,
+                        n_jobs=-1,
+                        verbose=-1,
+                        random_state=42
+                    )
+                    lgb_model.fit(X_sample, y_sample)
+                    
+                    # Get feature importance
+                    shap_importance = lgb_model.feature_importances_
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ SHAP calculation failed, using MI only: {e}")
+            
+            # 3. Combined scoring
+            from scipy.stats import rankdata
+            mi_rank = rankdata(aggregated_importance)
+            
+            if shap_importance is not None:
+                shap_rank = rankdata(shap_importance)
+                combined_rank = (mi_rank + shap_rank) / 2
+            else:
+                combined_rank = mi_rank
+            
+            # 4. Remove bottom features, ensure minimum target
+            n_features_to_keep = max(self.target_features, int(len(combined_rank) * (1 - self.removal_fraction)))
+            top_features_idx = np.argsort(combined_rank)[-n_features_to_keep:]
+            
+            # Get feature names
+            selected_features = features_df.columns[top_features_idx].tolist()
+            removed_features = [f for f in features_df.columns if f not in selected_features]
+            
+            # Create filtered dataframe
+            filtered_df = features_df[selected_features]
+            
+            # 5. Generate metadata
+            metadata = {
+                'original_features': len(features_df.columns),
+                'selected_features': len(selected_features),
+                'removed_features': len(removed_features),
+                'removal_fraction': len(removed_features) / len(features_df.columns),
+                'regime_importances': regime_importances if regime_importances else None,
+                'method': 'MI + SHAP ranking' if shap_importance is not None else 'MI ranking only',
+                'removed_feature_names': removed_features[:50],  # Store first 50 for reference
+                'top_features_by_mi': features_df.columns[np.argsort(aggregated_importance)[-20:]].tolist(),
+                'selection_timestamp': datetime.now().isoformat()
+            }
+            
+            self.logger.info(f"✅ Feature filtering complete: {len(features_df.columns)} → {len(selected_features)} features")
+            self.logger.info(f"   Removed {len(removed_features)} features ({metadata['removal_fraction']:.1%})")
+            
+            return filtered_df, metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature filtering failed: {e}")
+            # Return original features if filtering fails
+            return features_df, {
+                'error': str(e),
+                'original_features': len(features_df.columns),
+                'selected_features': len(features_df.columns),
+                'method': 'filtering_failed'
+            }
 
     @log_execution_time(threshold_ms=30000)
     @cached(policy=CachePolicy.PER_REQUEST, ttl=3600)
@@ -198,13 +345,96 @@ class Step7EnhancedMatrixOperations:
                 else:
                     self.logger.warning('⚠️ Skipping timeframe analysis - insufficient multi-timeframe data')
                 timeframe_analysis_results = {}
-            matrix_config = self._prepare_matrix_operations_config(df, symbol, exchange, timeframe)
-            matrix_results = await self._execute_matrix_operations(df, matrix_config)
+            
+            # Apply regime-aware feature filtering
+            self.logger.info("🎯 Applying regime-aware feature filtering...")
+            
+            # Separate features from labels
+            label_columns = ['target', 'direction', 'profit', 'outcome', 'returns', 'timestamp', 
+                           'open', 'high', 'low', 'close', 'volume']
+            feature_columns = [col for col in df.columns if col not in label_columns]
+            
+            # Create features and labels dataframes
+            features_df = df[feature_columns]
+            labels_df = df[[col for col in label_columns if col in df.columns]]
+            
+            # Load regime labels if available
+            regime_labels = hmm_regimes if hmm_regimes is not None else None
+            
+            # Apply feature filtering
+            filtered_features_df, filtering_metadata = self.regime_aware_initial_filtering(
+                features_df=features_df,
+                labels_df=labels_df,
+                regime_labels=regime_labels
+            )
+            
+            # Store filtering metadata
+            pipeline_state["feature_filtering_metadata"] = filtering_metadata
+            
+            # Reconstruct full dataframe with filtered features
+            df_filtered = pd.concat([filtered_features_df, labels_df], axis=1)
+            
+            self.logger.info(f"✅ Feature filtering applied: {len(feature_columns)} → {len(filtered_features_df.columns)} features")
+            
+            # Save filtered features
+            filtered_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet"
+            filtered_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet"
+            
+            # Split back to train/val based on original sizes
+            train_size = len(df_train)
+            df_filtered_train = df_filtered.iloc[:train_size]
+            df_filtered_val = df_filtered.iloc[train_size:]
+            
+            df_filtered_train.to_parquet(filtered_train_path)
+            df_filtered_val.to_parquet(filtered_val_path)
+            
+            self.logger.info(f"💾 Saved filtered features to {filtered_train_path} and {filtered_val_path}")
+            
+            # Prepare matrix operations configuration
+            matrix_config = self._prepare_matrix_operations_config(df_filtered, symbol, exchange, timeframe)
+            
+            # Execute matrix operations on filtered features
+            matrix_results = await self._execute_matrix_operations(df_filtered, matrix_config)
+            
+            # Calculate quality metrics
             quality_metrics = self._calculate_quality_metrics(df, matrix_results)
-            output_files = await self._save_matrix_operations_results(matrix_results, matrix_config, quality_metrics, symbol, exchange, timeframe)
-            pipeline_state['step07_enhanced_matrix_operations'] = {'status': 'completed', 'start_time': start_time.isoformat(), 'end_time': datetime.now().isoformat(), 'output_files': output_files, 'matrix_config': matrix_config, 'matrix_results': matrix_results, 'quality_metrics': quality_metrics, 'data_shape': df.shape, 'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'feature_engineering_optimization': feature_optimization_results, 'timeframe_relevance_analysis': timeframe_analysis_results}
-            self.logger.info('✅ Step 7: Enhanced Matrix Operations completed successfully')
-            await self._log_step7_artifacts_and_report(training_input, pipeline_state, matrix_results, output_files, quality_metrics)
+            
+            # Save results
+            output_files = await self._save_matrix_operations_results(
+                matrix_results, matrix_config, quality_metrics, symbol, exchange, timeframe
+            )
+            
+            # Add filtered features paths to output files
+            output_files["filtered_features_train"] = filtered_train_path
+            output_files["filtered_features_val"] = filtered_val_path
+            
+            # Update pipeline state
+            pipeline_state["step07_enhanced_matrix_operations"] = {
+                "status": "completed",
+                "start_time": start_time.isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "output_files": output_files,
+                "matrix_config": matrix_config,
+                "matrix_results": matrix_results,
+                "quality_metrics": quality_metrics,
+                "data_shape": df.shape,
+                "filtered_data_shape": df_filtered.shape,
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "feature_engineering_optimization": feature_optimization_results,
+                "timeframe_relevance_analysis": timeframe_analysis_results,
+                "feature_filtering_metadata": filtering_metadata
+            }
+            
+            self.logger.info("✅ Step 7: Enhanced Matrix Operations completed successfully")
+            
+            # Log artifacts and create detailed report
+            await self._log_step7_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                training_input, pipeline_state, matrix_results, output_files, quality_metrics
+            )
+            
             return pipeline_state
         except Exception as e:
             self.logger.error(f'❌ Step 7 failed: {str(e)}')

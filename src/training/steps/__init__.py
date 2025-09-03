@@ -55,10 +55,17 @@ FeatureEngineeringStep = None
 # except ImportError:
 #     AnalystEnhancementStep, None
 
+# Temporarily comment out old step8
 # try:
 #     from .step8_tactician_labeling import TacticianLabelingStep
 # except ImportError:
-#     TacticianLabelingStep, None
+#     TacticianLabelingStep = None
+
+# New step8
+try:
+    from .step08_advanced_feature_selection import Step08AdvancedFeatureSelection
+except ImportError:
+    Step08AdvancedFeatureSelection = None
 
 # try:
 #     from .step9_tactician_specialist_training import TacticianSpecialistTrainingStep
@@ -103,7 +110,8 @@ RegimeDataSplittingStep = None
 UnifiedRegimeIntelligenceStep = None
 HMMBasedTrainingStep = None
 AnalystEnhancementStep = None
-TacticianLabelingStep = None
+# TacticianLabelingStep = None  # Old step8
+AdvancedFeatureSelectionStep = Step08AdvancedFeatureSelection  # New step8
 TacticianSpecialistTrainingStep = None
 ConfidenceCalibrationStep = None
 FinalParametersOptimizationStep = None
@@ -122,6 +130,7 @@ except ImportError:
 # Export all available classes
 __all__ = [
     "ABTestingStep",
+    "AdvancedFeatureSelectionStep",
     "AnalystEnhancementStep",
     "ConfidenceCalibrationStep",
     "DataCollectionStep",
@@ -134,7 +143,7 @@ __all__ = [
     "ProcessingLabelingStep",
     "RegimeDataSplittingStep",
     "SavingStep",
-    "TacticianLabelingStep",
+    "Step08AdvancedFeatureSelection",
     "TacticianSpecialistTrainingStep",
     "UnifiedDataLoader",
     "UnifiedRegimeIntelligenceStep",

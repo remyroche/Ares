@@ -118,15 +118,256 @@ class TrainingManager:
         self.pipeline_reports_dir.mkdir(parents=True, exist_ok=True)
         self.current_pipeline_execution_id = None
         self.step_reports = {}
-        self.STEP_ORDER = ['step01_data_collection', 'step01_5_data_converter', 'step2_feature_engineering', 'step03_hmm_regime_discovery', 'step04_regime_data_splitting', 'step5_triple_barrier_method', 'step6_feature_generation', 'step7_matrix_feature_selection', 'step8_tactician_labeling', 'step9_tactician_specialist_training', 'step10_confidence_calibration', 'step11_final_parameters_optimization', 'step12_walk_forward_validation', 'step13_monte_carlo_validation', 'step14_ab_testing', 'step15_saving', 'step16_confidence_calibration', 'step17_final_parameters_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']
-        self.CRITICAL_ARTIFACTS = {'step01_data_collection': ['data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet', 'data_cache/parquet/aggtrades_{exchange}_{symbol}/**/*.parquet'], 'step01_5_data_converter': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step2_feature_engineering': ['data/training/{exchange}_{symbol}_features_train.parquet', 'data/training/{exchange}_{symbol}_features_metadata.json'], 'step02_5_sr_optimization': ['data/optimization/sr_optimization_results.json', 'optimization_results.json'], 'step03_hmm_regime_discovery': ['data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet'], 'step4_processing_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet'], 'step5_regime_data_splitting': ['data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json'], 'step6_hmm_based_training': ['data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl'], 'step09_5_multi_timeframe_hmm_ensemble': ['models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json', 'models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib'], 'step6_5_unified_regime_intelligence': ['data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet'], 'step7_analyst_enhancement': ['data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl'], 'step8_tactician_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet'], 'step9_tactician_specialist_training': ['data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl'], 'step10_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl'], 'step11_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json'], 'step12_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json'], 'step13_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json'], 'step14_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json'], 'step15_saving': ['data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl'], 'step16_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_results.pkl'], 'step17_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_results.json'], 'step18_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_results.json'], 'step19_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_results.json'], 'step20_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_results.json'], 'step21_saving': ['data/training/{exchange}_{symbol}_{timeframe}_extended_final_models.pkl']}
-        self.ARTIFACT_PATTERNS = {'step01_data_collection': ['data_cache/klines_{exchange}_{symbol}_*_consolidated.*', 'data_cache/aggtrades_{exchange}_{symbol}_consolidated.*'], 'step01_5_data_converter': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step02_data_reading': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step03_hmm_regime_discovery': ['data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet', 'data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*', 'data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json'], 'step04_5_triple_barrier_method': ['data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json'], 'step05_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_labels_*.json'], 'step06_feature_engineering': ['data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*', 'data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*'], 'step7_regime_data_splitting': ['data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json', 'data/training/{exchange}_{symbol}_{timeframe}_regime_statistics.json'], 'step8_hmm_based_training': ['data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json'], 'step8_5_unified_regime_intelligence': ['data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json'], 'step9_analyst_enhancement': ['data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json'], 'step10_tactician_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json'], 'step11_tactician_specialist_training': ['data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json'], 'step10_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_calibration_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_calibration_*.json'], 'step11_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_optimization_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_best_params_*.json'], 'step12_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_walk_forward_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_validation_*.parquet'], 'step13_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet'], 'step14_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_ab_test_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet'], 'step15_saving': ['data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json'], 'step16_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.json'], 'step17_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_best_params_*.json'], 'step18_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_validation_*.parquet'], 'step19_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_mc_results_*.parquet'], 'step20_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_ab_results_*.parquet'], 'step21_saving': ['data/training/{exchange}_{symbol}_{timeframe}_extended_final_models_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_extended_final_results_*.json']}
-        self.enhanced_training_config: dict[str, Any] = self.config.get('enhanced_training_manager', {})
-        self.enhanced_training_interval: int = self.enhanced_training_config.get('enhanced_training_interval', 3600)
-        self.max_enhanced_training_history: int = self.enhanced_training_config.get('max_enhanced_training_history', 100)
-        self.enable_model_training: bool = self.enhanced_training_config.get('enable_model_training', True)
-        blank_env = os.getenv('BLANK_TRAINING_MODE', '0') == '1'
-        blank_config = self.enhanced_training_config.get('blank_training_mode', False)
+        # Define pipeline step order as class constant
+        self.STEP_ORDER = [
+            "step01_data_collection",           # Download and prepare market data
+            "step01_5_data_converter",          # Convert data to unified format
+            "step2_feature_engineering",       # Feature engineering
+            "step03_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
+            "step04_regime_data_splitting",     # Regime data splitting
+            "step5_triple_barrier_method",     # Apply triple barrier method
+            "step6_feature_generation",        # Feature generation
+            "step07_enhanced_matrix_operations",  # Matrix operations and initial filtering
+            "step08_advanced_feature_selection",  # Advanced feature selection
+            "step14_tactician_labeling",        # Tactician labeling (was step8)
+            "step9_tactician_specialist_training", # Tactician specialist training
+            "step10_confidence_calibration",   # Confidence calibration
+            "step11_final_parameters_optimization", # Final parameters optimization
+            "step12_walk_forward_validation",  # Walk forward validation
+            "step13_monte_carlo_validation",   # Monte Carlo validation
+            "step14_ab_testing",               # A/B testing
+            "step15_saving",                   # Save final models
+            "step16_confidence_calibration",   # Extended confidence calibration
+            "step17_final_parameters_optimization", # Extended final parameters optimization
+            "step18_walk_forward_validation",  # Extended walk forward validation
+            "step19_monte_carlo_validation",   # Extended Monte Carlo validation
+            "step20_ab_testing",               # Extended A/B testing
+            "step21_saving",                   # Extended saving results
+        ]
+
+        # Define critical artifact patterns for each step
+        self.CRITICAL_ARTIFACTS = {
+            "step01_data_collection": [
+                "data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
+                "data_cache/parquet/aggtrades_{exchange}_{symbol}/**/*.parquet",
+            ],
+            "step01_5_data_converter": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
+            ],
+            "step2_feature_engineering": [
+                "data/training/{exchange}_{symbol}_features_train.parquet",
+                "data/training/{exchange}_{symbol}_features_metadata.json",
+            ],
+            "step02_5_sr_optimization": [
+                "data/optimization/sr_optimization_results.json",
+                "optimization_results.json",
+            ],
+            "step03_hmm_regime_discovery": [
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
+            ],
+            "step4_processing_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
+            ],
+            "step5_regime_data_splitting": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json",
+            ],
+            "step6_hmm_based_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
+            ],
+            "step09_5_multi_timeframe_hmm_ensemble": [
+                "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json",
+                "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib",
+            ],
+            "step6_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
+            ],
+            "step07_enhanced_matrix_operations": [
+                "data/matrix_operations/{exchange}_{symbol}_{timeframe}_matrix_operations_results.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet",
+            ],
+            "step08_advanced_feature_selection": [
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top100_train.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top100_val.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top80_train.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top80_val.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top60_train.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top60_val.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_interpretability_report.json",
+            ],
+            "step14_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
+            ],
+            "step9_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
+            ],
+            "step16_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_results.pkl",
+            ],
+            "step17_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_results.json",
+            ],
+            "step18_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_results.json",
+            ],
+            "step19_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_results.json",
+            ],
+            "step20_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_results.json",
+            ],
+            "step21_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_final_models.pkl",
+            ],
+        }
+
+        # Define artifact patterns for clearing (includes all artifacts, not just critical ones)
+        self.ARTIFACT_PATTERNS = {
+            "step01_data_collection": [
+                "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
+                "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
+            ],
+            "step01_5_data_converter": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
+            ],
+            "step02_data_reading": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
+            ],
+            "step03_hmm_regime_discovery": [
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
+            ],
+            "step04_5_triple_barrier_method": [
+                "data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json",
+            ],
+            "step05_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_labels_*.json",
+            ],
+            "step06_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            ],
+            "step7_regime_data_splitting": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_statistics.json",
+            ],
+            "step8_hmm_based_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json",
+            ],
+            "step8_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json",
+            ],
+            "step9_analyst_enhancement": [
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json",
+            ],
+            "step10_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json",
+            ],
+            "step11_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_*.json",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_best_params_*.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_validation_*.parquet",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json",
+            ],
+            "step16_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.json",
+            ],
+            "step17_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_best_params_*.json",
+            ],
+            "step18_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_validation_*.parquet",
+            ],
+            "step19_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_mc_results_*.parquet",
+            ],
+            "step20_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_ab_results_*.parquet",
+            ],
+            "step21_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_final_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_final_results_*.json",
+            ],
+        }
+
+        # Configuration
+        self.enhanced_training_config: dict[str, Any] = self.config.get(
+            "enhanced_training_manager",
+            {},
+        )
+        self.enhanced_training_interval: int = self.enhanced_training_config.get(
+            "enhanced_training_interval",
+            3600,
+        )
+        self.max_enhanced_training_history: int = self.enhanced_training_config.get(
+            "max_enhanced_training_history",
+            100,
+        )
+
+        # Training parameters
+        self.enable_model_training: bool = self.enhanced_training_config.get(
+            "enable_model_training", True,
+        )
+        # Check for BLANK mode from environment variable or config
+        blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+        blank_config = self.enhanced_training_config.get("blank_training_mode", False)
         self.blank_training_mode: bool = blank_env or blank_config
         self.max_trials: int = self.enhanced_training_config.get('max_trials', 200)
         self.n_trials: int = self.enhanced_training_config.get('n_trials', 100)
@@ -413,8 +654,58 @@ class TrainingManager:
 
         """
         if is_blank_mode:
-            return {'step01_data_collection': 5, 'step01_5_data_converter': 3, 'step2_feature_engineering': 15, 'step03_hmm_regime_discovery': 3, 'step4_processing_labeling': 8, 'step5_regime_data_splitting': 2, 'step6_hmm_based_training': 10, 'step6_5_unified_regime_intelligence': 8, 'step7_analyst_enhancement': 8, 'step8_tactician_labeling': 5, 'step9_tactician_specialist_training': 10, 'step10_confidence_calibration': 3, 'step11_final_parameters_optimization': 15, 'step12_walk_forward_validation': 8, 'step13_monte_carlo_validation': 8, 'step14_ab_testing': 5, 'step15_saving': 2, 'step16_confidence_calibration': 3, 'step17_final_parameters_optimization': 15, 'step18_walk_forward_validation': 8, 'step19_monte_carlo_validation': 8, 'step20_ab_testing': 5, 'step21_saving': 2}
-        return {'step01_data_collection': 15, 'step01_5_data_converter': 10, 'step2_feature_engineering': 60, 'step03_hmm_regime_discovery': 8, 'step4_processing_labeling': 20, 'step5_regime_data_splitting': 5, 'step6_hmm_based_training': 30, 'step6_5_unified_regime_intelligence': 25, 'step7_analyst_enhancement': 25, 'step8_tactician_labeling': 15, 'step9_tactician_specialist_training': 30, 'step10_confidence_calibration': 10, 'step11_final_parameters_optimization': 240, 'step12_walk_forward_validation': 60, 'step13_monte_carlo_validation': 60, 'step14_ab_testing': 30, 'step15_saving': 5, 'step16_confidence_calibration': 10, 'step17_final_parameters_optimization': 240, 'step18_walk_forward_validation': 60, 'step19_monte_carlo_validation': 60, 'step20_ab_testing': 30, 'step21_saving': 5}
+            return {
+                "step01_data_collection": 5,
+                "step01_5_data_converter": 3,
+                "step2_feature_engineering": 15,
+                "step03_hmm_regime_discovery": 3,
+                "step4_processing_labeling": 8,
+                "step5_regime_data_splitting": 2,
+                "step6_hmm_based_training": 10,
+                "step6_5_unified_regime_intelligence": 8,
+                "step07_enhanced_matrix_operations": 8,
+                "step08_advanced_feature_selection": 10,
+                "step14_tactician_labeling": 5,
+                "step9_tactician_specialist_training": 10,
+                "step10_confidence_calibration": 3,
+                "step11_final_parameters_optimization": 15,
+                "step12_walk_forward_validation": 8,
+                "step13_monte_carlo_validation": 8,
+                "step14_ab_testing": 5,
+                "step15_saving": 2,
+                "step16_confidence_calibration": 3,
+                "step17_final_parameters_optimization": 15,
+                "step18_walk_forward_validation": 8,
+                "step19_monte_carlo_validation": 8,
+                "step20_ab_testing": 5,
+                "step21_saving": 2,
+            }
+        return {
+            "step01_data_collection": 15,
+            "step01_5_data_converter": 10,
+            "step2_feature_engineering": 60,
+            "step03_hmm_regime_discovery": 8,
+            "step4_processing_labeling": 20,
+            "step5_regime_data_splitting": 5,
+            "step6_hmm_based_training": 30,
+            "step6_5_unified_regime_intelligence": 25,
+            "step07_enhanced_matrix_operations": 25,
+            "step08_advanced_feature_selection": 30,
+            "step14_tactician_labeling": 15,
+            "step9_tactician_specialist_training": 30,
+            "step10_confidence_calibration": 10,
+            "step11_final_parameters_optimization": 240,
+            "step12_walk_forward_validation": 60,
+            "step13_monte_carlo_validation": 60,
+            "step14_ab_testing": 30,
+            "step15_saving": 5,
+            "step16_confidence_calibration": 10,
+            "step17_final_parameters_optimization": 240,
+            "step18_walk_forward_validation": 60,
+            "step19_monte_carlo_validation": 60,
+            "step20_ab_testing": 30,
+            "step21_saving": 5,
+        }
 
     def _optimize_memory_usage(self) -> None:
         """Perform memory optimization to reduce memory footprint."""

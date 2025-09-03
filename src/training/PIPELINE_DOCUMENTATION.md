@@ -26,27 +26,21 @@ The training pipeline is a comprehensive system for training machine learning mo
 │  │ Discovery  │    │ Splitting  │    │  Method    │           │
 │  └────────────┘    └────────────┘    └────────────┘           │
 │                                                                  │
-│  Feature Engineering & Selection (Steps 6-7)                    │
-│  ┌────────────┐    ┌────────────┐                              │
-│  │   Step 6   │───▶│   Step 7   │                              │
-│  │  Advanced  │    │   Matrix   │                              │
-│  │  Feature   │    │ Operations │                              │
-│  │Engineering │    │& Selection │                              │
-│  └────────────┘    └────────────┘                              │
-│                                                                  │
-│  Model Training (Steps 8-11)                                    │
+│  Feature Engineering & Selection (Steps 6-8)                    │
 │  ┌────────────┐    ┌────────────┐    ┌────────────┐           │
-│  │   Step 8   │───▶│   Step 9   │───▶│  Step 10   │           │
-│  │   Regime   │    │    HMM     │    │  Unified   │           │
-│  │   Based    │    │   Based    │    │  Regime    │           │
-│  │  Training  │    │  Training  │    │Intelligence│           │
+│  │   Step 6   │───▶│   Step 7   │───▶│   Step 8   │           │
+│  │  Advanced  │    │   Matrix   │    │  Advanced  │           │
+│  │  Feature   │    │ Operations │    │  Feature   │           │
+│  │Engineering │    │& Filtering │    │ Selection  │           │
 │  └────────────┘    └────────────┘    └────────────┘           │
-│         │                                                        │
-│         └──────────▶┌────────────┐                             │
-│                     │  Step 11   │                             │
-│                     │  Analyst   │                             │
-│                     │ Creation   │                             │
-│                     └────────────┘                             │
+│                                                                  │
+│  Model Training (Steps 9-11)                                    │
+│  ┌────────────┐    ┌────────────┐    ┌────────────┐           │
+│  │   Step 9   │───▶│  Step 10   │───▶│  Step 11   │           │
+│  │    HMM     │    │  Unified   │    │  Analyst   │           │
+│  │   Based    │    │  Regime    │    │ Creation   │           │
+│  │  Training  │    │Intelligence│    │            │           │
+│  └────────────┘    └────────────┘    └────────────┘           │
 │                                                                  │
 │  Advanced Training (Steps 12-15)                                │
 │  ┌────────────┐    ┌────────────┐    ┌────────────┐           │
@@ -136,19 +130,21 @@ The training pipeline is a comprehensive system for training machine learning mo
 - **Output**: Comprehensive feature set
 - **Key Files**: `step6_feature_engineering.py`
 
-#### Step 7: Matrix Operations & Feature Selection
-- **Purpose**: Apply matrix operations and select most relevant features
-- **Input**: Full feature set
-- **Output**: Optimized feature subset
-- **Key Files**: `step7_enhanced_matrix_operations.py`
+#### Step 7: Matrix Operations & Initial Feature Filtering
+- **Purpose**: Apply matrix operations and filter bottom 33% of features
+- **Input**: Full feature set (~300+ features)
+- **Output**: Filtered feature set (~200 features)
+- **Key Files**: `step07_enhanced_matrix_operations.py`
+
+#### Step 8: Advanced Feature Selection
+- **Purpose**: Two-phase advanced feature selection with interpretability
+- **Input**: Filtered features from Step 7
+- **Output**: Multiple feature sets (100, 80, 60 features)
+- **Key Files**: `step08_advanced_feature_selection.py`
+- **Phase 1**: mRMR/Random Forest selection to ~150 features
+- **Phase 2**: Boruta selection with multiple targets
 
 ### Model Training
-
-#### Step 8: Regime-Based Training
-- **Purpose**: Train initial models for each regime
-- **Input**: Selected features and labels
-- **Output**: Regime-specific models
-- **Key Files**: `step8_regime_data_splitting.py`
 
 #### Step 9: HMM-Based Training
 - **Purpose**: Train HMM-enhanced models

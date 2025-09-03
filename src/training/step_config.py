@@ -122,26 +122,26 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
     
     "07": StepConfig(
         step_number="07",
-        step_name="feature_selection",
-        description="Select optimal features using matrix operations",
-        module_path="src.training.steps.step7_enhanced_matrix_operations",
-        class_name="FeatureSelectionStep",
+        step_name="enhanced_matrix_operations",
+        description="Matrix operations and initial feature filtering",
+        module_path="src.training.steps.step07_enhanced_matrix_operations",
+        class_name="Step7EnhancedMatrixOperations",
         dependencies=["06"],
         required_inputs=["advanced_features"],
-        produced_outputs=["selected_features"],
-        required_files=["data/matrix_operations/*_matrix_operations_*.json"]
+        produced_outputs=["filtered_features", "matrix_analysis"],
+        required_files=["data/matrix_operations/*_matrix_operations_*.json", "data/training/*_features_filtered_*.parquet"]
     ),
     
     "08": StepConfig(
         step_number="08",
-        step_name="regime_model_training",
-        description="Train regime-specific models",
-        module_path="src.training.steps.step8_regime_data_splitting",
-        class_name="RegimeModelTrainingStep",
+        step_name="advanced_feature_selection",
+        description="Advanced two-phase feature selection with redundancy reduction",
+        module_path="src.training.steps.step08_advanced_feature_selection",
+        class_name="Step08AdvancedFeatureSelection",
         dependencies=["07"],
-        required_inputs=["selected_features", "regime_splits"],
-        produced_outputs=["regime_models"],
-        required_files=["data/training/*_regime_models.pkl"]
+        required_inputs=["filtered_features"],
+        produced_outputs=["selected_features_100", "selected_features_80", "selected_features_60"],
+        required_files=["data/selected_features/*_top*.parquet", "data/selected_features/*_interpretability_report.json"]
     ),
     
     "09": StepConfig(
@@ -151,7 +151,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         module_path="src.training.steps.step9_hmm_based_training",
         class_name="HMMModelTrainingStep",
         dependencies=["08"],
-        required_inputs=["regime_models"],
+        required_inputs=["selected_features_100", "selected_features_80", "selected_features_60"],
         produced_outputs=["hmm_models"],
         required_files=["data/training/*_hmm_models.pkl"]
     ),

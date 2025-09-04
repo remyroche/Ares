@@ -25,6 +25,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.core.domain import (
+from src.core.decorators.errors import handles_errors
     ValidationLevel,
     comprehensive_data_validation,
     guard_dataframe_nulls,

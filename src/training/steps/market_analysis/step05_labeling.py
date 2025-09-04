@@ -15,7 +15,7 @@ from src.core.decorators import handles_errors, traced, validates, cached, log_e
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import time
 from datetime import datetime
 import json
@@ -29,7 +29,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.analyst.meta_labeling_system']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
-system_logger = PipelineStandards.safe_import('src.utils.logger', None)
+from src.utils.logger import system_logger
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 meta_labeling_system = PipelineStandards.safe_import('src.analyst.meta_labeling_system', None)
 psutil = PipelineStandards.safe_import('psutil', None)
@@ -177,10 +177,10 @@ class LabelingStep:
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
     @traced(span_name='execute_labeling')
-    @validates(min_quality_score=0.7, max_correlation=0.95, required_grade='C')
-    @handles_errors
-    @cached
-    @log_execution_time
+    @validates()
+    @handles_errors()
+    @cached()
+    @log_execution_time()
     async def execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
         step_start = time.time()
         self.logger.info(f'🚀 Executing Labeling for {symbol} on {exchange}')
@@ -422,6 +422,7 @@ class LabelingStep:
                 return None
             try:
                 from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+from src.core.decorators.errors import handles_errors
                 regime_labeler = RegimeAwareTripleBarrierLabeling(default_profit_take_multiplier=0.002, default_stop_loss_multiplier=0.001, default_time_barrier_minutes=self.time_barrier_minutes, default_max_lookahead=self.max_lookahead)
                 labels = regime_labeler.generate_labels(data, regime_column=self.regime_col, time_barrier_minutes=self.time_barrier_minutes, max_lookahead=self.max_lookahead)
                 if labels is not None:

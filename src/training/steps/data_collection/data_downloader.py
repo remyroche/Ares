@@ -67,6 +67,7 @@ async def download_all_data_with_consolidation(
             CleanDataDownloader,
         )
         from backtesting.ares_data_downloader_clean import DownloadConfig as CleanDownloadConfig
+from src.core.decorators.errors import handles_errors
 
         clean_cfg = CleanDownloadConfig(
             symbol=symbol,

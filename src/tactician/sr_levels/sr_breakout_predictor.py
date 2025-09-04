@@ -507,6 +507,7 @@ class SRBreakoutPredictor:
             
             # Use the optimized probability calculator
             from .sr_modules.sr_probability_calculator import SRProbabilityCalculator
+from src.core.decorators.errors import handles_errors
             prob_calculator = SRProbabilityCalculator(self.config)
             
             # Calculate probabilities using optimized parameters

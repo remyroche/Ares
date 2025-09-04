@@ -29,6 +29,7 @@ import numpy as np
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
+from src.core.decorators.errors import handles_errors
 
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods

@@ -363,6 +363,7 @@ if __name__ == "__main__":
     # Test the validator
     import asyncio
     from src.core.decorators import handles_errors
+from src.core.decorators.errors import handles_errors
     
     # Test configuration
     test_config = {

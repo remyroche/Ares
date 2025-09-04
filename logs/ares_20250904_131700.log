@@ -1,0 +1,25 @@
+2025-09-04 13:17:00,627 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 13:17:00
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_131700.log
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:17:00,627 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 13:17:00,627 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 13:17:00,627 - AresComponent.AresLauncher - INFO - 📊 Running data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - File "/workspace/src/training/steps/data_collection/step01_data_collection_main.py", line 22, in <module>
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - from src.training.steps.data_collection.standalone_enhanced_pipeline import run_standalone_enhanced_data_collection_pipeline
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - File "/workspace/src/training/steps/data_collection/__init__.py", line 12, in <module>
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - from .step01_data_collection import DataCollectionStep
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - File "/workspace/src/training/steps/data_collection/step01_data_collection.py", line 13, in <module>
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^
+2025-09-04 13:17:00,843 - AresComponent.AresLauncher - INFO - NameError: name 'PipelineStandards' is not defined. Did you mean: 'pipeline_standards'?
+2025-09-04 13:17:00,885 - AresComponent.AresLauncher - ERROR - ❌ Data collection pipeline failed with return code: 1
+2025-09-04 13:17:00,886 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 13:17:00,886 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 13:17:00,886 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

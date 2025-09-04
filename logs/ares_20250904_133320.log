@@ -1,0 +1,110 @@
+2025-09-04 13:33:20,555 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 13:33:20
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_133320.log
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,555 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 13:33:20,555 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 13:33:20,555 - AresComponent.AresLauncher - INFO - 📊 Running data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:33:20,821 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,821 - __main__ - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:33:20,821 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,821 - __main__ - INFO - 📊 Running step1_data_collection
+2025-09-04 13:33:20,823 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,823 - __main__ - INFO - Collected 1000 rows of raw data for ETHUSDT on BINANCE
+2025-09-04 13:33:20,824 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,823 - __main__ - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:33:20,924 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,924 - __main__ - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:33:20,925 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,925 - __main__ - INFO - Collected 1000 rows of raw data for ETHUSDT on BINANCE
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,938 - __main__ - ERROR - Error in step3_data_formatting: __cinit__() got an unexpected keyword argument 'metadata'
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 302, in _run_step3_data_formatting
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - formatted_data = await self._format_and_store_data()
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 430, in _format_and_store_data
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - formatted_data.to_parquet(
+2025-09-04 13:33:20,942 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~~~~~~~~~~~~~^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - output_file,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ...<2 lines>...
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - metadata=metadata
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - )
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/util/_decorators.py", line 333, in wrapper
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - return func(*args, **kwargs)
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/core/frame.py", line 3118, in to_parquet
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - return to_parquet(
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - self,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ...<6 lines>...
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - **kwargs,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - )
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/io/parquet.py", line 482, in to_parquet
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - impl.write(
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - df,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ...<6 lines>...
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - **kwargs,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - )
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/io/parquet.py", line 229, in write
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - self.api.parquet.write_table(
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - table,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ...<3 lines>...
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - **kwargs,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - )
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pyarrow/parquet/core.py", line 1957, in write_table
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - with ParquetWriter(
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - where, table.schema,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ...<22 lines>...
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - store_decimal_as_integer=store_decimal_as_integer,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - **kwargs) as writer:
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pyarrow/parquet/core.py", line 1070, in __init__
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - self.writer = _parquet.ParquetWriter(
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~~~~~~~~~~^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - sink, schema,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ...<18 lines>...
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - store_decimal_as_integer=store_decimal_as_integer,
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - **options)
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^
+2025-09-04 13:33:20,943 - AresComponent.AresLauncher - INFO - File "pyarrow/_parquet.pyx", line 2293, in pyarrow._parquet.ParquetWriter.__cinit__
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - TypeError: __cinit__() got an unexpected keyword argument 'metadata'
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 2025-09-04 13:33:20,942 - __main__ - ERROR - Pipeline failure: Step 3: Data Formatting failed
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 🚀 Step 1: Enhanced Data Collection Pipeline
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 📊 Configuration:
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - Symbol: ETHUSDT
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - Exchange: BINANCE
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - Timeframe: 1m
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - Data directory: data_cache
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - Force rerun: True
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - Quality checks: True
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 📊 Running step1_data_collection
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ❌ Pipeline failure: Step 3: Data Formatting failed
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - 
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ❌ ENHANCED DATA COLLECTION FAILED!
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ❌ Please check the logs for error details
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ⏱️ Total execution time: 0.12 seconds
+2025-09-04 13:33:20,944 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:33:20,989 - AresComponent.AresLauncher - INFO - ✅ Data collection pipeline completed successfully
+2025-09-04 13:33:20,989 - AresTradingSystem - INFO - 🏁 Launcher ended: SUCCESS (exit code: 0)
+2025-09-04 13:33:20,989 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 13:33:20,989 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

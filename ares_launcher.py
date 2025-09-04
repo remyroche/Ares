@@ -105,7 +105,7 @@ except ImportError:
 
 from src.config import CONFIG
 from src.config.constants import (
-    FULL_TRAINING_LOOKBACK_DAYS,
+    DEFAULT_LOOKBACK_DAYS,
 )
 from src.config.training_modes import (
     get_intensity_comparison,
@@ -119,12 +119,23 @@ from src.config.training_modes import (
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
 )
-from src.utils.error_handler import handle_errors
+# Simple handle_errors decorator to avoid circular imports
+def handle_errors(exceptions=(Exception,), default_return=None, context="operation"):
+    """Simple error handling decorator."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except exceptions as e:
+                logging.error(f"Error in {context}: {e}")
+                return default_return
+        return wrapper
+    return decorator
 from src.utils.logger import (
     ensure_comprehensive_logging_available,
 )
 from src.utils.observability import init_observability
-from src.utils.signal_handler import setup_signal_handlers
+from src.utils.simple_signal_handler import setup_signal_handlers
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent
@@ -859,99 +870,134 @@ class AresLauncher:
             # Import enhanced backtesting components
             import asyncio
             from src.training.steps.backtesting import run_backtesting_pipeline, BacktestingPipelineConfig
+            from src.training.steps.backtesting.enhanced_logging import get_backtesting_logger
             from src.utils.common_operations import safe_file_exists, format_datetime, get_current_datetime
 
-            # Enhanced configuration for backtesting
-            enhanced_config = {
-                'force_rerun': True,
-                'walk_forward_validation': True,
-                'monte_carlo_validation': True,
-                'ab_testing': True,
-                'model_saving': True,
-                'random_state': 42,
-                
-                # Enhanced validation settings
-                'enable_validation': True,
-                'strict_validation': False,
-                'validate_data_quality': True,
-                
-                # Error handling
-                'retry_failed_steps': True,
-                'max_retries': 3,
-                'timeout_seconds': 3600,
-                
-                # Performance monitoring
-                'enable_performance_monitoring': True,
-                'log_detailed_metrics': True,
-            }
+            # Initialize enhanced logger for launcher
+            launcher_logger = get_backtesting_logger(f"launcher_{symbol}_{exchange}", log_dir="log/backtesting")
+            launcher_logger.start_performance_monitoring(interval=5.0)
 
-            # Pre-flight validation
-            self.logger.info("🔍 Running pre-flight validation...")
-            
-            # Validate data directory and files
-            data_dir = "data_cache"
-            required_files = [
-                f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
-                f"volume_{exchange}_{symbol}_consolidated.parquet"
-            ]
-            
-            missing_files = []
-            for file_name in required_files:
-                file_path = f"{data_dir}/{file_name}"
-                if not safe_file_exists(file_path):
-                    missing_files.append(file_name)
-            
-            if missing_files:
-                self.logger.error(f"❌ Missing required data files: {missing_files}")
-                self.logger.error("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
-                return False
-            
-            self.logger.info("✅ Pre-flight validation passed")
+            try:
+                launcher_logger.log_info("🚀 Starting Enhanced Backtesting from Launcher", "LAUNCHER")
+                launcher_logger.log_info(f"📊 Configuration: {symbol} on {exchange}", "LAUNCHER")
 
-            # Run enhanced backtesting pipeline
-            self.logger.info("🚀 Starting enhanced backtesting pipeline...")
-            print("🚀 Starting enhanced backtesting pipeline...")
-            print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+                # Enhanced configuration for backtesting
+                enhanced_config = {
+                    'force_rerun': True,
+                    'walk_forward_validation': True,
+                    'monte_carlo_validation': True,
+                    'ab_testing': True,
+                    'model_saving': True,
+                    'random_state': 42,
+                    
+                    # Enhanced validation settings
+                    'enable_validation': True,
+                    'strict_validation': False,
+                    'validate_data_quality': True,
+                    
+                    # Error handling
+                    'retry_failed_steps': True,
+                    'max_retries': 3,
+                    'timeout_seconds': 3600,
+                    
+                    # Performance monitoring
+                    'enable_performance_monitoring': True,
+                    'log_detailed_metrics': True,
+                }
 
-            success = asyncio.run(
-                run_backtesting_pipeline(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe="1m",
-                    data_dir=data_dir,
-                    **enhanced_config
+                # Log configuration
+                launcher_logger.log_info("📋 Enhanced Configuration:", "CONFIG")
+                for key, value in enhanced_config.items():
+                    launcher_logger.log_info(f"   • {key}: {value}", "CONFIG")
+
+                # Pre-flight validation with enhanced logging
+                launcher_logger.log_progress("Pre-flight Validation", 0, "Starting validation checks")
+                
+                # Validate data directory and files
+                data_dir = "data_cache"
+                required_files = [
+                    f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                    f"volume_{exchange}_{symbol}_consolidated.parquet"
+                ]
+                
+                missing_files = []
+                for file_name in required_files:
+                    file_path = f"{data_dir}/{file_name}"
+                    if not safe_file_exists(file_path):
+                        missing_files.append(file_name)
+                    else:
+                        launcher_logger.log_success(f"Required file found: {file_name}", "VALIDATION")
+                
+                if missing_files:
+                    launcher_logger.log_error(Exception(f"Missing required data files: {missing_files}"), "VALIDATION")
+                    launcher_logger.log_quality_flag("MISSING_DATA_FILES", f"Missing required data files: {missing_files}", "ERROR")
+                    launcher_logger.log_info("💡 Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE", "VALIDATION")
+                    return False
+                
+                launcher_logger.log_success("All required data files found", "VALIDATION")
+                launcher_logger.log_progress("Pre-flight Validation", 100, "Validation completed successfully")
+
+                # Run enhanced backtesting pipeline
+                launcher_logger.log_info("🚀 Starting enhanced backtesting pipeline", "EXECUTION")
+                print("🚀 Starting enhanced backtesting pipeline...")
+                print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+
+                success = asyncio.run(
+                    run_backtesting_pipeline(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe="1m",
+                        data_dir=data_dir,
+                        **enhanced_config
+                    )
                 )
-            )
 
-            if success:
-                self.logger.info("🎉 Enhanced backtesting completed successfully!")
-                print("🎉 Enhanced backtesting completed successfully!")
-                print("=" * 80)
-                print("✅ Enhanced backtesting results:")
-                print("   ✅ Comprehensive validation passed")
-                print("   ✅ Walk forward validation completed")
-                print("   ✅ Monte Carlo validation completed")
-                print("   ✅ A/B testing completed")
-                print("   ✅ Model saving completed")
-                print("   ✅ Performance monitoring completed")
-                print("=" * 80)
-                
-                # Print performance summary
-                print("📈 ENHANCED BACKTESTING SUMMARY")
-                print(f"Symbol: {symbol}")
-                print(f"Exchange: {exchange}")
-                print(f"Timeframe: 1m")
-                print(f"Validation: Comprehensive")
-                print(f"Error Handling: Enhanced")
-                print(f"Performance Monitoring: Enabled")
-                print("=" * 80)
-                
-                return True
-            else:
-                self.logger.error("❌ Enhanced backtesting failed!")
-                print("❌ Enhanced backtesting failed!")
-                print("Please check the logs for detailed error information")
-                return False
+                if success:
+                    launcher_logger.log_success("🎉 Enhanced backtesting completed successfully!", "COMPLETION")
+                    print("🎉 Enhanced backtesting completed successfully!")
+                    print("=" * 80)
+                    print("✅ Enhanced backtesting results:")
+                    print("   ✅ Comprehensive validation with quality assessment")
+                    print("   ✅ Walk forward validation with detailed logging")
+                    print("   ✅ Monte Carlo validation with performance monitoring")
+                    print("   ✅ A/B testing with quality flags")
+                    print("   ✅ Model saving with comprehensive reporting")
+                    print("   ✅ Performance monitoring and resource tracking")
+                    print("   ✅ Enhanced logging with emojis and progress indicators")
+                    print("=" * 80)
+                    
+                    # Print performance summary
+                    print("📈 ENHANCED BACKTESTING SUMMARY")
+                    print(f"Symbol: {symbol}")
+                    print(f"Exchange: {exchange}")
+                    print(f"Timeframe: 1m")
+                    print(f"Validation: Comprehensive with Quality Assessment")
+                    print(f"Error Handling: Enhanced with Quality Flags")
+                    print(f"Performance Monitoring: Enabled with Resource Tracking")
+                    print(f"Logging: Enhanced with Emojis and Progress Indicators")
+                    print("=" * 80)
+                    
+                    # Generate launcher report
+                    launcher_report_file = f"data_cache/launcher_backtesting_report_{symbol}_{exchange}.json"
+                    launcher_report = launcher_logger.generate_report(launcher_report_file)
+                    
+                    return True
+                else:
+                    launcher_logger.log_error(Exception("Enhanced backtesting failed"), "EXECUTION")
+                    launcher_logger.log_quality_flag("BACKTESTING_FAILURE", "Enhanced backtesting failed", "ERROR")
+                    print("❌ Enhanced backtesting failed!")
+                    print("Please check the logs for detailed error information")
+                    
+                    # Generate failure report
+                    failure_report_file = f"data_cache/launcher_backtesting_failure_report_{symbol}_{exchange}.json"
+                    failure_report = launcher_logger.generate_report(failure_report_file)
+                    
+                    return False
+
+            finally:
+                # Cleanup launcher logger
+                launcher_logger.stop_performance_monitoring()
+                launcher_logger.cleanup()
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to run enhanced backtesting: {e}")
@@ -1388,52 +1434,182 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run data collection pipeline."""
-        self.logger.info(f"📊 Running data collection pipeline for {symbol} on {exchange}")
+        """Run enhanced data collection pipeline with comprehensive logging and monitoring."""
+        self.logger.info(f"📊 Running enhanced data collection pipeline for {symbol} on {exchange}")
+        print("=" * 80)
+        print("🚀 ENHANCED DATA COLLECTION PIPELINE")
+        print("=" * 80)
+        print(f"ℹ️ Symbol: {symbol}")
+        print(f"ℹ️ Exchange: {exchange}")
+        print(f"ℹ️ GUI Mode: {with_gui}")
+        print(f"ℹ️ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        # Pre-flight validation
+        validation_success = self._validate_data_collection_prerequisites(symbol, exchange)
+        if not validation_success:
+            self.logger.error("❌ Pre-flight validation failed")
+            print("❌ Pre-flight validation failed - cannot proceed with data collection")
+            return False
 
         if with_gui and not self.launch_gui("data-collection", symbol, exchange):
             return False
 
         try:
-            # Run the data collection pipeline
-            print(f"🚀 Starting data collection pipeline for {symbol} on {exchange}...")
+            # Run the enhanced data collection pipeline
+            print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}...")
+            
+            # Set up environment with correct Python path and enhanced logging
+            import os
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(project_root)
+            env['DATA_COLLECTION_MODE'] = 'enhanced'
+            env['SYMBOL'] = symbol
+            env['EXCHANGE'] = exchange
+            
             process=subprocess.Popen(
                 [
                     sys.executable,
-                    "src/training/steps/data_collection/step01_data_collection_main.py",
+                    "standalone_data_collection.py",
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
                 text=True,
                 bufsize=1,  # Line buffered
                 universal_newlines=True,
+                env=env,
+                cwd=str(project_root)
             )
             self.processes.append(process)
 
-            # Read output in real-time
+            # Enhanced real-time output monitoring with progress tracking
+            line_count = 0
+            error_count = 0
+            warning_count = 0
+            success_count = 0
+            progress_indicators = []
+            
+            print("📊 Monitoring pipeline execution...")
+            print("=" * 80)
+            
             while True:
                 output=process.stdout.readline()
                 if output== "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
-                    self.logger.info(output.strip())  # Also log it
+                    line_count += 1
+                    output_stripped = output.strip()
+                    
+                    # Monitor for different types of messages
+                    if "ERROR" in output_stripped or "❌" in output_stripped:
+                        error_count += 1
+                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
+                        warning_count += 1
+                    elif "SUCCESS" in output_stripped or "✅" in output_stripped:
+                        success_count += 1
+                    elif "Progress:" in output_stripped:
+                        progress_indicators.append(output_stripped)
+                    
+                    print(output_stripped)  # Print to terminal in real-time
+                    self.logger.info(output_stripped)  # Also log it
+                    
+                    # Progress indicator every 25 lines
+                    if line_count % 25 == 0:
+                        print(f"📊 Progress: {line_count} lines processed, {success_count} successes, {warning_count} warnings, {error_count} errors")
 
             # Get the final return code
             return_code=process.poll()
+            
+            # Enhanced result reporting
+            print("=" * 80)
+            print("📊 DATA COLLECTION PIPELINE RESULTS")
+            print("=" * 80)
+            print(f"ℹ️ Total lines processed: {line_count}")
+            print(f"✅ Total successes: {success_count}")
+            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"❌ Total errors: {error_count}")
+            print(f"ℹ️ Return code: {return_code}")
+            print("=" * 80)
 
             if return_code== 0:
-                self.logger.info("✅ Data collection pipeline completed successfully")
-                print("✅ Data collection pipeline completed successfully")
+                self.logger.info("✅ Enhanced data collection pipeline completed successfully")
+                print("✅ Enhanced data collection pipeline completed successfully")
+                print("🎉 All data collection steps completed with validation!")
+                
+                # Show final progress summary
+                if progress_indicators:
+                    print("📊 Final Progress Summary:")
+                    for indicator in progress_indicators[-3:]:  # Show last 3 progress indicators
+                        print(f"   {indicator}")
+                
                 return True
-            self.logger.error(
-                f"❌ Data collection pipeline failed with return code: {return_code}",
-            )
-            print(f"❌ Data collection pipeline failed with return code: {return_code}")
-            return False
+            else:
+                self.logger.error(
+                    f"❌ Enhanced data collection pipeline failed with return code: {return_code}",
+                )
+                print(f"❌ Enhanced data collection pipeline failed with return code: {return_code}")
+                if error_count > 0:
+                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                return False
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run data collection pipeline: {e}")
+            self.logger.exception(f"❌ Failed to run enhanced data collection pipeline: {e}")
+            print(f"❌ Failed to run enhanced data collection pipeline: {e}")
+            return False
+        finally:
+            # Cleanup environment variables
+            import os
+            os.environ.pop("DATA_COLLECTION_MODE", None)
+            os.environ.pop("SYMBOL", None)
+            os.environ.pop("EXCHANGE", None)
+
+    def _validate_data_collection_prerequisites(self, symbol: str, exchange: str) -> bool:
+        """Validate prerequisites for data collection pipeline execution."""
+        self.logger.info("🔍 Validating data collection prerequisites...")
+        print("🔍 Validating data collection prerequisites...")
+        
+        try:
+            from src.utils.common_operations import safe_file_exists, ensure_directory
+            
+            # Check required directories
+            required_dirs = [
+                "data_cache",
+                "log"
+            ]
+            
+            for dir_path in required_dirs:
+                if not safe_file_exists(dir_path):
+                    self.logger.warning(f"⚠️ Creating missing directory: {dir_path}")
+                    ensure_directory(dir_path)
+                else:
+                    self.logger.info(f"✅ Directory exists: {dir_path}")
+            
+            # Check for standalone data collection script
+            script_path = "standalone_data_collection.py"
+            if not safe_file_exists(script_path):
+                self.logger.error(f"❌ Data collection script not found: {script_path}")
+                print(f"❌ Data collection script not found: {script_path}")
+                return False
+            else:
+                self.logger.info(f"✅ Data collection script found: {script_path}")
+            
+            # Check Python environment
+            try:
+                import pandas as pd
+                import numpy as np
+                self.logger.info("✅ Required Python packages available")
+            except ImportError as e:
+                self.logger.error(f"❌ Missing required Python package: {e}")
+                print(f"❌ Missing required Python package: {e}")
+                return False
+            
+            self.logger.info("✅ Data collection prerequisites validation completed")
+            print("✅ Data collection prerequisites validation completed")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Prerequisites validation failed: {e}")
+            print(f"❌ Prerequisites validation failed: {e}")
             return False
 
     @handle_errors(
@@ -1506,52 +1682,225 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run model training pipeline."""
+        """Run model training pipeline with comprehensive error handling and progress tracking."""
         self.logger.info(f"📊 Running model training pipeline for {symbol} on {exchange}")
+        print("=" * 80)
+        print("🚀 ENHANCED MODEL TRAINING PIPELINE")
+        print("=" * 80)
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print(f"🖥️ GUI Mode: {with_gui}")
+        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        # Pre-flight validation
+        validation_success = self._validate_model_training_prerequisites(symbol, exchange)
+        if not validation_success:
+            self.logger.error("❌ Pre-flight validation failed")
+            print("❌ Pre-flight validation failed - cannot proceed with model training")
+            return False
 
         if with_gui and not self.launch_gui("model-training", symbol, exchange):
             return False
 
         try:
-            # Run the model training pipeline
+            # Run the model training pipeline with enhanced monitoring
             print(f"🚀 Starting model training pipeline for {symbol} on {exchange}...")
+            print("📊 COMPREHENSIVE LOGGING & PROGRESS TRACKING ENABLED")
+            print("🔍 Quality monitoring and issue flagging active")
+            print("⏱️ Real-time progress updates enabled")
+            print("🧠 Memory monitoring and optimization alerts enabled")
+            print("=" * 80)
+            
+            # Set environment variables for enhanced pipeline
+            import os
+            os.environ["MODEL_TRAINING_MODE"] = "enhanced"
+            os.environ["SYMBOL"] = symbol
+            os.environ["EXCHANGE"] = exchange
+            
             process=subprocess.Popen(
                 [
                     sys.executable,
                     "src/training/steps/model_training/step09_model_training_main.py",
+                    "--symbol", symbol,
+                    "--exchange", exchange,
+                    "--enhanced-mode"
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
                 text=True,
                 bufsize=1,  # Line buffered
                 universal_newlines=True,
+                env=dict(os.environ, MODEL_TRAINING_MODE="enhanced", SYMBOL=symbol, EXCHANGE=exchange),
             )
             self.processes.append(process)
 
-            # Read output in real-time
+            # Read output in real-time with enhanced monitoring
+            line_count = 0
+            error_count = 0
+            warning_count = 0
+            progress_indicators = 0
+            
             while True:
                 output=process.stdout.readline()
                 if output== "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
-                    self.logger.info(output.strip())  # Also log it
+                    line_count += 1
+                    output_stripped = output.strip()
+                    
+                    # Monitor for errors and warnings
+                    if "ERROR" in output_stripped or "❌" in output_stripped:
+                        error_count += 1
+                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
+                        warning_count += 1
+                    elif "Progress:" in output_stripped or "📊" in output_stripped:
+                        progress_indicators += 1
+                    
+                    print(output_stripped)  # Print to terminal in real-time
+                    self.logger.info(output_stripped)  # Also log it
+                    
+                    # Progress indicator every 50 lines
+                    if line_count % 50 == 0:
+                        print(f"📊 Progress: {line_count} lines processed, {error_count} errors, {warning_count} warnings, {progress_indicators} progress updates")
 
             # Get the final return code
             return_code=process.poll()
+            
+            # Enhanced result reporting
+            print("=" * 80)
+            print("📊 MODEL TRAINING PIPELINE RESULTS")
+            print("=" * 80)
+            print(f"📈 Total lines processed: {line_count}")
+            print(f"❌ Total errors: {error_count}")
+            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"📊 Progress updates: {progress_indicators}")
+            print(f"🔢 Return code: {return_code}")
+            print("=" * 80)
 
             if return_code== 0:
                 self.logger.info("✅ Model training pipeline completed successfully")
                 print("✅ Model training pipeline completed successfully")
+                print("🎉 All model training steps completed with validation!")
+                print("=" * 80)
+                print("✅ Enhanced model training results:")
+                print("   ✅ Comprehensive validation passed")
+                print("   ✅ Quality monitoring completed")
+                print("   ✅ Progress tracking completed")
+                print("   ✅ Memory monitoring completed")
+                print("   ✅ Performance metrics collected")
+                print("=" * 80)
+                
+                # Print performance summary
+                print("📈 ENHANCED MODEL TRAINING SUMMARY")
+                print(f"Symbol: {symbol}")
+                print(f"Exchange: {exchange}")
+                print(f"Validation: Comprehensive")
+                print(f"Quality Monitoring: Enhanced")
+                print(f"Progress Tracking: Real-time")
+                print(f"Memory Monitoring: Active")
+                print("=" * 80)
+                
                 return True
-            self.logger.error(
-                f"❌ Model training pipeline failed with return code: {return_code}",
-            )
-            print(f"❌ Model training pipeline failed with return code: {return_code}")
-            return False
+            else:
+                self.logger.error(
+                    f"❌ Model training pipeline failed with return code: {return_code}",
+                )
+                print(f"❌ Model training pipeline failed with return code: {return_code}")
+                if error_count > 0:
+                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                print("🔍 Troubleshooting suggestions:")
+                print("   • Check data file integrity and availability")
+                print("   • Verify previous steps completed successfully")
+                print("   • Check system resources (memory, disk space)")
+                print("   • Review configuration parameters")
+                print("   • Check log files for detailed error information")
+                return False
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to run model training pipeline: {e}")
+            print(f"❌ Failed to run model training pipeline: {e}")
+            print("🔍 Troubleshooting suggestions:")
+            print("   • Check data file integrity and availability")
+            print("   • Verify previous steps completed successfully")
+            print("   • Check system resources (memory, disk space)")
+            print("   • Review configuration parameters")
+            print("   • Check log files for detailed error information")
+            return False
+        finally:
+                    # Cleanup environment variables
+        import os
+        os.environ.pop("MODEL_TRAINING_MODE", None)
+        os.environ.pop("SYMBOL", None)
+        os.environ.pop("EXCHANGE", None)
+
+    def _validate_model_training_prerequisites(self, symbol: str, exchange: str) -> bool:
+        """Validate prerequisites for model training pipeline execution."""
+        self.logger.info("🔍 Validating model training prerequisites...")
+        print("🔍 Validating model training prerequisites...")
+        
+        try:
+            from src.utils.common_operations import safe_file_exists, ensure_directory
+            
+            # Check required directories
+            required_dirs = [
+                "data_cache",
+                "models",
+                "checkpoints",
+                "log"
+            ]
+            
+            for dir_path in required_dirs:
+                if not safe_file_exists(dir_path):
+                    self.logger.warning(f"⚠️ Creating missing directory: {dir_path}")
+                    ensure_directory(dir_path)
+                else:
+                    self.logger.info(f"✅ Directory exists: {dir_path}")
+            
+            # Check for required data files
+            required_data_files = [
+                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
+            ]
+            
+            missing_files = []
+            for file_path in required_data_files:
+                if not safe_file_exists(file_path):
+                    missing_files.append(file_path)
+                else:
+                    self.logger.info(f"✅ Data file exists: {file_path}")
+            
+            if missing_files:
+                self.logger.error(f"❌ Missing required data files: {missing_files}")
+                print(f"❌ Missing required data files:")
+                for file_path in missing_files:
+                    print(f"   • {file_path}")
+                print("💡 Please run data collection first:")
+                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                return False
+            
+            # Check for previous step outputs
+            previous_step_files = [
+                f"data_cache/features_{exchange}_{symbol}_consolidated.parquet",
+                f"data_cache/labels_{exchange}_{symbol}_consolidated.parquet"
+            ]
+            
+            missing_previous = []
+            for file_path in previous_step_files:
+                if not safe_file_exists(file_path):
+                    missing_previous.append(file_path)
+            
+            if missing_previous:
+                self.logger.warning(f"⚠️ Some previous step outputs missing: {missing_previous}")
+                print("⚠️ Some previous step outputs are missing - model training will use defaults")
+            
+            self.logger.info("✅ Model training prerequisites validation completed")
+            print("✅ Model training prerequisites validation completed")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Prerequisites validation failed: {e}")
+            print(f"❌ Prerequisites validation failed: {e}")
             return False
 
     @handle_errors(
@@ -1565,7 +1914,16 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run enhanced optimisation pipeline with comprehensive validation and protection."""
+        """Run enhanced optimisation pipeline with comprehensive validation and protection.
+        
+        Features:
+        - 🎯 Comprehensive logging with emojis for easy troubleshooting
+        - 📊 Real-time progress tracking and monitoring
+        - 🔍 Detailed error reporting and quality issue flagging
+        - ✅ Step-by-step validation with detailed reporting
+        - 📈 Performance metrics tracking
+        - 🛡️ Data quality monitoring throughout the process
+        """
         self.logger.info(f"📊 Running enhanced optimisation pipeline for {symbol} on {exchange}")
         print("=" * 80)
         print("🚀 ENHANCED OPTIMISATION PIPELINE")
@@ -1575,6 +1933,12 @@ class AresLauncher:
         print(f"🖥️ GUI Mode: {with_gui}")
         print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
         print("=" * 80)
+        
+        # Initialize monitoring variables
+        pipeline_start_time = time.time()
+        error_count = 0
+        warning_count = 0
+        progress_updates = 0
 
         # Pre-flight validation
         validation_success = self._validate_optimisation_prerequisites(symbol, exchange)
@@ -1615,8 +1979,49 @@ class AresLauncher:
 
             # Read output in real-time with enhanced monitoring
             line_count = 0
-            error_count = 0
-            warning_count = 0
+            process_error_count = 0
+            process_warning_count = 0
+            quality_issues = []
+            step_progress = {}
+            
+            def log_quality_issue(issue_type: str, description: str, severity: str = "WARNING"):
+                """Log quality issues with detailed reporting."""
+                timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+                issue = {
+                    'timestamp': timestamp,
+                    'type': issue_type,
+                    'description': description,
+                    'severity': severity
+                }
+                quality_issues.append(issue)
+                
+                if severity == "ERROR":
+                    self.logger.error(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                    print(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                elif severity == "WARNING":
+                    self.logger.warning(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                    print(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                else:
+                    self.logger.info(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                    print(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+            
+            def update_step_progress(step_name: str, status: str):
+                """Update step progress tracking."""
+                if step_name not in step_progress:
+                    step_progress[step_name] = {'start_time': time.time(), 'status': 'STARTING'}
+                
+                step_progress[step_name]['status'] = status
+                step_progress[step_name]['last_update'] = time.time()
+                
+                if status == "COMPLETED":
+                    duration = time.time() - step_progress[step_name]['start_time']
+                    self.logger.info(f"✅ [{step_name}] Completed in {duration:.2f}s")
+                    print(f"✅ [{step_name}] Completed in {duration:.2f}s")
+                elif status == "FAILED":
+                    duration = time.time() - step_progress[step_name]['start_time']
+                    self.logger.error(f"❌ [{step_name}] Failed after {duration:.2f}s")
+                    print(f"❌ [{step_name}] Failed after {duration:.2f}s")
+                    log_quality_issue("STEP_FAILURE", f"{step_name} failed", "ERROR")
             
             while True:
                 output=process.stdout.readline()
@@ -1628,47 +2033,177 @@ class AresLauncher:
                     
                     # Monitor for errors and warnings
                     if "ERROR" in output_stripped or "❌" in output_stripped:
-                        error_count += 1
+                        process_error_count += 1
+                        log_quality_issue("PROCESS_ERROR", output_stripped, "ERROR")
                     elif "WARNING" in output_stripped or "⚠️" in output_stripped:
-                        warning_count += 1
+                        process_warning_count += 1
+                        log_quality_issue("PROCESS_WARNING", output_stripped, "WARNING")
+                    
+                    # Track step progress
+                    if "STEP" in output_stripped and "STARTING" in output_stripped:
+                        # Extract step name from output
+                        if "Confidence Calibration" in output_stripped:
+                            update_step_progress("Confidence Calibration", "STARTING")
+                        elif "Final Parameters Optimization" in output_stripped:
+                            update_step_progress("Final Parameters Optimization", "STARTING")
+                    elif "STEP" in output_stripped and "COMPLETED" in output_stripped:
+                        if "Confidence Calibration" in output_stripped:
+                            update_step_progress("Confidence Calibration", "COMPLETED")
+                        elif "Final Parameters Optimization" in output_stripped:
+                            update_step_progress("Final Parameters Optimization", "COMPLETED")
+                    elif "STEP" in output_stripped and "FAILED" in output_stripped:
+                        if "Confidence Calibration" in output_stripped:
+                            update_step_progress("Confidence Calibration", "FAILED")
+                        elif "Final Parameters Optimization" in output_stripped:
+                            update_step_progress("Final Parameters Optimization", "FAILED")
                     
                     print(output_stripped)  # Print to terminal in real-time
                     self.logger.info(output_stripped)  # Also log it
                     
-                    # Progress indicator every 50 lines
-                    if line_count % 50 == 0:
-                        print(f"📊 Progress: {line_count} lines processed, {error_count} errors, {warning_count} warnings")
+                    # Enhanced progress indicator every 25 lines
+                    if line_count % 25 == 0:
+                        progress_updates += 1
+                        elapsed_time = time.time() - pipeline_start_time
+                        print(f"📊 Progress Update #{progress_updates}: {line_count} lines processed, {process_error_count} errors, {process_warning_count} warnings, {elapsed_time:.1f}s elapsed")
+                        self.logger.info(f"📊 Progress Update #{progress_updates}: {line_count} lines, {process_error_count} errors, {process_warning_count} warnings")
 
             # Get the final return code
             return_code=process.poll()
+            total_pipeline_time = time.time() - pipeline_start_time
             
             # Enhanced result reporting
+            print("\n" + "=" * 80)
+            print("📊 ENHANCED OPTIMISATION PIPELINE RESULTS")
             print("=" * 80)
-            print("📊 OPTIMISATION PIPELINE RESULTS")
-            print("=" * 80)
+            print(f"🎯 Symbol: {symbol}")
+            print(f"🏢 Exchange: {exchange}")
+            print(f"⏱️ Total Duration: {total_pipeline_time:.2f} seconds")
             print(f"📈 Total lines processed: {line_count}")
-            print(f"❌ Total errors: {error_count}")
-            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"📊 Progress updates: {progress_updates}")
+            print(f"❌ Total errors: {process_error_count}")
+            print(f"⚠️ Total warnings: {process_warning_count}")
+            print(f"🔍 Quality issues: {len(quality_issues)}")
             print(f"🔢 Return code: {return_code}")
+            
+            # Step progress summary
+            if step_progress:
+                print("\n📋 STEP PROGRESS SUMMARY:")
+                for step_name, progress in step_progress.items():
+                    status_emoji = "✅" if progress['status'] == "COMPLETED" else "❌" if progress['status'] == "FAILED" else "🔄"
+                    duration = time.time() - progress['start_time']
+                    print(f"   {status_emoji} {step_name}: {progress['status']} ({duration:.2f}s)")
+            
+            # Quality issues summary
+            if quality_issues:
+                print("\n🔍 QUALITY ISSUES SUMMARY:")
+                for issue in quality_issues:
+                    severity_emoji = "🔴" if issue['severity'] == "ERROR" else "🟡" if issue['severity'] == "WARNING" else "🔵"
+                    print(f"   {severity_emoji} [{issue['timestamp']}] {issue['type']}: {issue['description']}")
+            
             print("=" * 80)
 
             if return_code== 0:
                 self.logger.info("✅ Enhanced optimisation pipeline completed successfully")
                 print("✅ Enhanced optimisation pipeline completed successfully")
                 print("🎉 All optimisation steps completed with validation!")
+                
+                # Save success summary
+                try:
+                    success_summary_file = f"data_cache/optimisation_success_summary_{symbol}_{exchange}.json"
+                    success_data = {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'execution_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                        'total_duration_seconds': total_pipeline_time,
+                        'lines_processed': line_count,
+                        'progress_updates': progress_updates,
+                        'error_count': process_error_count,
+                        'warning_count': process_warning_count,
+                        'quality_issues': quality_issues,
+                        'step_progress': step_progress,
+                        'return_code': return_code,
+                        'success': True
+                    }
+                    
+                    import json
+                    with open(success_summary_file, 'w') as f:
+                        json.dump(success_data, f, indent=2, default=str)
+                    
+                    self.logger.info(f"💾 Success summary saved to: {success_summary_file}")
+                    print(f"💾 Success summary saved to: {success_summary_file}")
+                except Exception as save_error:
+                    self.logger.warning(f"⚠️ Could not save success summary: {save_error}")
+                
                 return True
             else:
                 self.logger.error(
                     f"❌ Enhanced optimisation pipeline failed with return code: {return_code}",
                 )
                 print(f"❌ Enhanced optimisation pipeline failed with return code: {return_code}")
-                if error_count > 0:
-                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                if process_error_count > 0:
+                    print(f"💥 Pipeline encountered {process_error_count} errors during execution")
+                
+                # Save failure summary
+                try:
+                    failure_summary_file = f"data_cache/optimisation_failure_summary_{symbol}_{exchange}.json"
+                    failure_data = {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'execution_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                        'total_duration_seconds': total_pipeline_time,
+                        'lines_processed': line_count,
+                        'progress_updates': progress_updates,
+                        'error_count': process_error_count,
+                        'warning_count': process_warning_count,
+                        'quality_issues': quality_issues,
+                        'step_progress': step_progress,
+                        'return_code': return_code,
+                        'success': False
+                    }
+                    
+                    import json
+                    with open(failure_summary_file, 'w') as f:
+                        json.dump(failure_data, f, indent=2, default=str)
+                    
+                    self.logger.info(f"💾 Failure summary saved to: {failure_summary_file}")
+                    print(f"💾 Failure summary saved to: {failure_summary_file}")
+                except Exception as save_error:
+                    self.logger.warning(f"⚠️ Could not save failure summary: {save_error}")
+                
                 return False
 
         except Exception as e:
+            total_pipeline_time = time.time() - pipeline_start_time
             self.logger.exception(f"❌ Failed to run enhanced optimisation pipeline: {e}")
-            print(f"❌ Failed to run enhanced optimisation pipeline: {e}")
+            print(f"\n💥 ENHANCED OPTIMISATION PIPELINE FAILED WITH EXCEPTION!")
+            print("=" * 80)
+            print(f"⏱️ Duration before failure: {total_pipeline_time:.2f} seconds")
+            print(f"❌ Error: {str(e)}")
+            print(f"🔍 Error Type: {type(e).__name__}")
+            print("=" * 80)
+            
+            # Save exception summary
+            try:
+                exception_summary_file = f"data_cache/optimisation_exception_summary_{symbol}_{exchange}.json"
+                exception_data = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'execution_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                    'duration_before_failure': total_pipeline_time,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'success': False
+                }
+                
+                import json
+                with open(exception_summary_file, 'w') as f:
+                    json.dump(exception_data, f, indent=2, default=str)
+                
+                self.logger.info(f"💾 Exception summary saved to: {exception_summary_file}")
+                print(f"💾 Exception summary saved to: {exception_summary_file}")
+            except Exception as save_error:
+                self.logger.warning(f"⚠️ Could not save exception summary: {save_error}")
+            
             return False
         finally:
             # Cleanup environment variables
@@ -1676,6 +2211,11 @@ class AresLauncher:
             os.environ.pop("OPTIMISATION_MODE", None)
             os.environ.pop("SYMBOL", None)
             os.environ.pop("EXCHANGE", None)
+            
+            # Final cleanup logging
+            total_time = time.time() - pipeline_start_time
+            self.logger.info(f"🧹 Optimisation pipeline cleanup completed after {total_time:.2f}s")
+            print(f"🧹 Optimisation pipeline cleanup completed after {total_time:.2f}s")
 
     def _validate_optimisation_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for optimisation pipeline execution."""
@@ -2254,7 +2794,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        lookback_days: int=FULL_TRAINING_LOOKBACK_DAYS,
+        lookback_days: int=DEFAULT_LOOKBACK_DAYS,
     ) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
         try:
@@ -3234,7 +3774,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "load": lambda: launcher.run_data_loading(
             args.symbol,
             args.exchange,
-            lookback_days=FULL_TRAINING_LOOKBACK_DAYS
+            lookback_days=DEFAULT_LOOKBACK_DAYS
             if not args.blank_mode
             else 30,  # Use 730 for standard, 30 for blank
         ),

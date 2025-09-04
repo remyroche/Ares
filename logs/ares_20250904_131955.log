@@ -1,0 +1,55 @@
+2025-09-04 13:19:55,423 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 13:19:55
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_131955.log
+2025-09-04 13:19:55,423 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,423 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 13:19:55,423 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 13:19:55,424 - AresComponent.AresLauncher - INFO - 📊 Running data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:19:55,685 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,685 - __main__ - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:19:55,685 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,685 - __main__ - INFO - 📊 Running step1_data_collection
+2025-09-04 13:19:55,687 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,686 - __main__ - INFO - Collected 1000 rows of raw data for ETHUSDT on BINANCE
+2025-09-04 13:19:55,687 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,687 - __main__ - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:19:55,788 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,787 - __main__ - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:19:55,789 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,789 - __main__ - INFO - Collected 1000 rows of raw data for ETHUSDT on BINANCE
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,804 - __main__ - INFO - Data formatted and stored successfully: data_cache/formatted_BINANCE_ETHUSDT_klines.parquet
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,804 - __main__ - INFO - Pipeline completed successfully
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:55,804 - __main__ - INFO - ✅ Enhanced data collection pipeline completed successfully
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 🚀 Step 1: Enhanced Data Collection Pipeline
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 📊 Configuration:
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - Symbol: ETHUSDT
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - Exchange: BINANCE
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - Timeframe: 1m
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - Data directory: data_cache
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - Force rerun: True
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - Quality checks: True
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 📊 Running step1_data_collection
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 🎉 Pipeline completed successfully
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ✅ Enhanced data collection pipeline completed successfully
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 🎉 ENHANCED DATA COLLECTION COMPLETED SUCCESSFULLY!
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ✅ All data collection steps completed:
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ✅ Raw data collection from exchange
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ✅ Data quality validation
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ✅ Data formatting and preprocessing
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ⏱️ Total execution time: 0.12 seconds
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 📊 Pipeline ID: data_collection_20250904_131955
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - 📈 Steps completed: 3/3
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ⚠️ Warnings: 0
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ❌ Errors: 0
+2025-09-04 13:19:55,805 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:55,853 - AresComponent.AresLauncher - INFO - ✅ Data collection pipeline completed successfully
+2025-09-04 13:19:55,853 - AresTradingSystem - INFO - 🏁 Launcher ended: SUCCESS (exit code: 0)
+2025-09-04 13:19:55,853 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 13:19:55,853 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

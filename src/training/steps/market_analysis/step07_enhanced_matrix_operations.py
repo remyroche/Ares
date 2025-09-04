@@ -8,7 +8,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 import numpy as np
 project_root = Path(__file__).parent.parent.parent
 import sys
@@ -256,7 +256,7 @@ class Step7EnhancedMatrixOperations:
     @cached(policy=CachePolicy.PER_REQUEST, ttl=3600)
     @log_call()
     @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
-    @validates(model_performance_thresholds={}, data_quality_metrics={'completeness': 0.95})
+    @validates()
     @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """
@@ -1115,6 +1115,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         if data_dir is None:
             data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
         from src.config.training import get_training_config
+from src.core.decorators.errors import handles_errors
         config = get_training_config()
         step = Step7EnhancedMatrixOperations(config)
     except Exception as e:

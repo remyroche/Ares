@@ -28,6 +28,7 @@ from src.utils.logger import setup_logging, system_logger
 from src.utils.observability import init_observability
 from src.utils.state_manager import StateManager
 from src.utils.warning_symbols import critical, error, failed, warning
+from src.core.decorators.errors import handles_errors
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))

@@ -15,14 +15,14 @@ from .hmm_clustering import run_enhanced_step
 
 # Import regime and feature engineering components
 from .step04_regime_data_splitting import RegimeDataSplittingStep
-from .step04_regime_data_splitting_validator import RegimeDataSplittingValidator
-from .step04_5_triple_barrier_method_validator import TripleBarrierMethodValidator
+from .step04_regime_data_splitting_validator import Step4RegimeDataSplittingValidator
+# from .step04_5_triple_barrier_method_validator import TripleBarrierMethodValidator
 from .step05_labeling import LabelingStep
-from .step05_labeling_per_regime import PerRegimeLabelingStep
-from .step05_labeling_validator import LabelingValidator
-from .step06_feature_engineering import FeatureEngineeringStep
-from .step06_feature_engineering_per_regime import PerRegimeFeatureEngineeringStep
-from .step06_feature_engineering_validator import FeatureEngineeringValidator
+# from .step05_labeling_per_regime import PerRegimeLabelingStep
+from .step05_labeling_validator import Step5LabelingValidator
+# from .step06_feature_engineering import FeatureEngineeringStep
+# from .step06_feature_engineering_per_regime import PerRegimeFeatureEngineeringStep
+from .step06_feature_engineering_validator import Step6FeatureEngineeringValidator
 from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
 from .step07_enhanced_matrix_operations_per_regime import PerRegimeMatrixOperationsStep
 from .step07_enhanced_matrix_operations_validator import MatrixOperationsValidator
@@ -48,6 +48,10 @@ from .enhanced_market_analysis_orchestrator import (
     MarketAnalysisPipelineOrchestrator,
     run_enhanced_market_analysis_pipeline,
 )
+
+# Import enhanced logging system
+from .enhanced_logging_metrics import EnhancedPipelineLogger, enhanced_logger
+from .progress_monitor import ProgressMonitor, progress_monitor, ProgressContext
 
 # Main pipeline function - now uses enhanced orchestrator
 async def run_market_analysis_pipeline(symbol, exchange, timeframe, data_dir, **config):
@@ -97,5 +101,10 @@ __all__ = [
     'IntegrateRegimeProcessing',
     'MarketAnalysisPipelineOrchestrator',
     'run_enhanced_market_analysis_pipeline',
-    'run_market_analysis_pipeline'
+    'run_market_analysis_pipeline',
+    'EnhancedPipelineLogger',
+    'enhanced_logger',
+    'ProgressMonitor',
+    'progress_monitor',
+    'ProgressContext'
 ]

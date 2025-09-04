@@ -1,5 +1,5 @@
 """
-Base validator class for training step validators.
+Base validator class for training step validators with comprehensive error handling and emoji logging.
 """
 import logging
 import os
@@ -12,19 +12,80 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import failed, missing, validation_error
 import asyncio
 
+# Import enhanced logging functions
+try:
+    from .logger import log_error_with_context, log_validation_result, log_step_progress
+    from .warning_symbols import error, warning, info, success
+except ImportError:
+    # Fallback if imports fail
+    def log_error_with_context(logger, error, context=None, operation="", recovery_attempted=False):
+        logger.error(f"Error in {operation}: {error}")
+    
+    def log_validation_result(logger, validator_name, result, details="", metrics=None):
+        status = "PASSED" if result else "FAILED"
+        logger.info(f"Validation {status} | {validator_name}")
+    
+    def log_step_progress(logger, step_name, step_number, total_steps, status="running", details="", context=None):
+        logger.info(f"Step {step_number}/{total_steps} | {step_name} | {status}")
+    
+    def error(msg): return f"❌ {msg}"
+    def warning(msg): return f"⚠️ {msg}"
+    def info(msg): return f"ℹ️ {msg}"
+    def success(msg): return f"✅ {msg}"
+
 
 class BaseValidator(ABC):
-    """Base class for all step validators."""
+    """Base class for all step validators with comprehensive error handling and emoji logging."""
 
     def __init__(self, step_name: str, config: dict[str, Any]) -> None:
-        self.step_name: str = step_name
-        self.config: dict[str, Any] = config
-        self.logger = logging.getLogger(f"AresGlobal.{self.__class__.__name__}")
-        self.validation_results: dict[str, dict[str, Any]] = {}
+        try:
+            logger.info(f"🔧 Initializing BaseValidator for step: {step_name}")
+            
+            # Validate inputs
+            if not step_name or not isinstance(step_name, str):
+                raise ValueError(f"Step name must be a non-empty string, got: {step_name}")
+            
+            if not isinstance(config, dict):
+                raise ValueError(f"Config must be a dictionary, got: {type(config)}")
+            
+            self.step_name: str = step_name
+            self.config: dict[str, Any] = config
+            self.logger = logging.getLogger(f"AresGlobal.{self.__class__.__name__}")
+            self.validation_results: dict[str, dict[str, Any]] = {}
+            self.validation_count: int = 0
+            self.error_count: int = 0
+            self.last_validation_time: Optional[str] = None
+            
+            logger.info(f"✅ BaseValidator initialized successfully for step: {step_name}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize BaseValidator: {e}")
+            log_error_with_context(
+                logger, e,
+                context={"step_name": step_name, "config_type": type(config).__name__},
+                operation="BaseValidator.__init__"
+            )
+            raise
 
     def print(self, message: str) -> None:
-        """Proxy print to logger to keep output consistent in terminal."""
-        self.logger.info(message)
+        """Proxy print to logger to keep output consistent in terminal with emoji enhancement."""
+        try:
+            # Add emoji prefix based on message content
+            if any(word in message.lower() for word in ['error', 'failed', 'exception']):
+                enhanced_message = error(message)
+            elif any(word in message.lower() for word in ['warning', 'caution', 'alert']):
+                enhanced_message = warning(message)
+            elif any(word in message.lower() for word in ['success', 'completed', 'passed']):
+                enhanced_message = success(message)
+            else:
+                enhanced_message = info(message)
+            
+            self.logger.info(enhanced_message)
+            
+        except Exception as e:
+            # Fallback to basic logging if emoji enhancement fails
+            self.logger.info(message)
+            self.logger.error(f"❌ Error in print method: {e}")
 
     @abstractmethod
     async def validate(
@@ -33,7 +94,7 @@ class BaseValidator(ABC):
         pipeline_state: dict[str, Any],
     ) -> bool:
         """
-        Validate a training step.
+        Validate a training step with comprehensive error handling and logging.
 
         Args:
             training_input: Training input parameters
@@ -42,14 +103,88 @@ class BaseValidator(ABC):
         Returns:
             bool: True if validation passed, False otherwise
         """
-        raise NotImplementedError
+        try:
+            logger.info(f"🔍 Starting validation for step: {self.step_name}")
+            
+            # Validate inputs
+            if not isinstance(training_input, dict):
+                raise ValueError(f"training_input must be a dictionary, got: {type(training_input)}")
+            
+            if not isinstance(pipeline_state, dict):
+                raise ValueError(f"pipeline_state must be a dictionary, got: {type(pipeline_state)}")
+            
+            # Log validation start
+            log_step_progress(
+                self.logger, 
+                self.step_name, 
+                1, 1,  # Single step validation
+                "running",
+                "Starting validation process"
+            )
+            
+            # Increment validation count
+            self.validation_count += 1
+            
+            # Call the actual validation implementation
+            result = await self._perform_validation(training_input, pipeline_state)
+            
+            # Log validation result
+            log_validation_result(
+                self.logger,
+                self.step_name,
+                result,
+                f"Validation attempt {self.validation_count}",
+                {"validation_count": self.validation_count, "error_count": self.error_count}
+            )
+            
+            # Update last validation time
+            from datetime import datetime
+            self.last_validation_time = datetime.now().isoformat()
+            
+            if result:
+                logger.success(f"✅ Validation passed for step: {self.step_name}")
+            else:
+                logger.warning(f"⚠️ Validation failed for step: {self.step_name}")
+            
+            return result
+            
+        except Exception as e:
+            self.error_count += 1
+            logger.error(f"❌ Validation error for step {self.step_name}: {e}")
+            log_error_with_context(
+                self.logger, e,
+                context={
+                    "step_name": self.step_name,
+                    "validation_count": self.validation_count,
+                    "error_count": self.error_count
+                },
+                operation=f"BaseValidator.validate({self.step_name})"
+            )
+            return False
+
+    async def _perform_validation(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> bool:
+        """
+        Perform the actual validation logic. To be implemented by subclasses.
+        
+        Args:
+            training_input: Training input parameters
+            pipeline_state: Current pipeline state
+            
+        Returns:
+            bool: True if validation passed, False otherwise
+        """
+        raise NotImplementedError("Subclasses must implement _perform_validation method")
 
     def validate_error_absence(
         self,
         step_result: dict[str, Any],
     ) -> Tuple[bool, Dict[str, Any]]:
         """
-        Validate that the step completed without errors.
+        Validate that the step completed without errors with comprehensive error handling.
 
         Args:
             step_result: Step result dictionary
@@ -58,8 +193,22 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+            logger.debug(f"🔍 Validating error absence for step: {self.step_name}")
+            
+            if not isinstance(step_result, dict):
+                raise ValueError(f"step_result must be a dictionary, got: {type(step_result)}")
+            
             errors = step_result.get("errors", [])
             warnings = step_result.get("warnings", [])
+
+            # Validate error and warning structures
+            if not isinstance(errors, list):
+                logger.warning(f"⚠️ Errors should be a list, got: {type(errors)}")
+                errors = []
+            
+            if not isinstance(warnings, list):
+                logger.warning(f"⚠️ Warnings should be a list, got: {type(warnings)}")
+                warnings = []
 
             critical_errors = [e for e in errors if isinstance(e, dict) and e.get("severity") == "CRITICAL"]
 
@@ -73,15 +222,33 @@ class BaseValidator(ABC):
             }
 
             passed = len(critical_errors) == 0
+            
+            # Only log if there are issues
             if not passed:
-                self.logger.warning(
-                    f"⚠️ Step {self.step_name} has {len(critical_errors)} critical errors",
-                )
+                logger.error(f"❌ Step {self.step_name} has {len(critical_errors)} critical errors")
+                for i, error in enumerate(critical_errors):
+                    logger.error(f"  {i+1}. {error}")
+            elif len(warnings) > 0:
+                logger.warning(f"⚠️ Step {self.step_name} has {len(warnings)} warnings")
+            
+            # Log validation result
+            log_validation_result(
+                self.logger,
+                f"{self.step_name}_error_absence",
+                passed,
+                f"Critical errors: {len(critical_errors)}, Total errors: {len(errors)}, Warnings: {len(warnings)}",
+                metrics
+            )
 
             return passed, metrics
 
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.print(validation_error(f"❌ Error in error absence validation: {e}"))
+        except Exception as e:
+            logger.error(f"❌ Error in error absence validation: {e}")
+            log_error_with_context(
+                self.logger, e,
+                context={"step_name": self.step_name, "step_result_type": type(step_result).__name__},
+                operation="BaseValidator.validate_error_absence"
+            )
             return False, {"error": str(e)}
 
     def validate_file_exists(
@@ -90,7 +257,7 @@ class BaseValidator(ABC):
         file_type: str = "file",
     ) -> Tuple[bool, Dict[str, Any]]:
         """
-        Validate that a file exists.
+        Validate that a file exists with comprehensive error handling.
 
         Args:
             file_path: Path to the file
@@ -100,23 +267,137 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+            logger.debug(f"🔍 Validating {file_type} existence: {file_path}")
+            
+            if not file_path or not isinstance(file_path, str):
+                raise ValueError(f"file_path must be a non-empty string, got: {file_path}")
+            
+            if not file_type or not isinstance(file_type, str):
+                raise ValueError(f"file_type must be a non-empty string, got: {file_type}")
+            
             exists = os.path.exists(file_path)
+            
+            # Get additional file information if it exists
+            file_size = None
+            is_file = None
+            is_dir = None
+            
+            if exists:
+                try:
+                    stat_info = os.stat(file_path)
+                    file_size = stat_info.st_size
+                    is_file = os.path.isfile(file_path)
+                    is_dir = os.path.isdir(file_path)
+                except OSError as e:
+                    logger.warning(f"⚠️ Could not get file stats: {e}")
+            
             metrics: dict[str, Any] = {
                 "file_path": file_path,
                 "file_type": file_type,
                 "exists": exists,
+                "file_size": file_size,
+                "is_file": is_file,
+                "is_directory": is_dir,
             }
 
-            if not exists:
-                self.logger.warning(
-                    missing(f"⚠️ {file_type} not found: {file_path}"),
-                )
+            if exists:
+                if is_file:
+                    # Only log if there are issues - file existence is normal
+                    pass
+                elif is_dir:
+                    logger.warning(f"⚠️ Path exists but is a directory, not a {file_type}: {file_path}")
+                    exists = False  # Treat directory as failure for file validation
+                else:
+                    logger.warning(f"⚠️ Path exists but is neither file nor directory: {file_path}")
+                    exists = False
+            else:
+                logger.error(f"❌ {file_type} not found: {file_path}")
+            
+            # Log validation result
+            log_validation_result(
+                self.logger,
+                f"{self.step_name}_file_exists",
+                exists,
+                f"{file_type} at {file_path}",
+                metrics
+            )
 
             return exists, metrics
+            
+        except Exception as e:
+            logger.error(f"❌ Error validating {file_type} existence: {e}")
+            log_error_with_context(
+                self.logger, e,
+                context={"file_path": file_path, "file_type": file_type},
+                operation="BaseValidator.validate_file_exists"
+            )
+            return False, {"error": str(e), "file_path": file_path, "file_type": file_type}
 
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.print(validation_error(f"❌ Error checking file existence: {e}"))
-            return False, {"error": str(e)}
+    def get_validator_health_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive health status of this validator.
+        
+        Returns:
+            Dict[str, Any]: Health status information
+        """
+        try:
+            logger.info(f"🏥 Getting validator health status for: {self.step_name}")
+            
+            # Calculate health score
+            health_score = 100
+            issues = []
+            
+            if self.error_count > 0:
+                health_score -= min(self.error_count * 10, 50)
+                issues.append(f"Has {self.error_count} validation errors")
+            
+            if self.validation_count == 0:
+                health_score -= 20
+                issues.append("Never validated")
+            
+            # Check configuration
+            if not self.config:
+                health_score -= 15
+                issues.append("Empty configuration")
+            
+            # Determine status
+            if health_score >= 90:
+                status = "excellent"
+            elif health_score >= 70:
+                status = "good"
+            elif health_score >= 50:
+                status = "fair"
+            else:
+                status = "poor"
+            
+            health_info = {
+                "step_name": self.step_name,
+                "status": status,
+                "health_score": health_score,
+                "validation_count": self.validation_count,
+                "error_count": self.error_count,
+                "last_validation_time": self.last_validation_time,
+                "config_keys": list(self.config.keys()) if self.config else [],
+                "issues": issues,
+                "validator_class": self.__class__.__name__
+            }
+            
+            logger.info(f"✅ Validator health check completed: {status} ({health_score}/100)")
+            return health_info
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting validator health status: {e}")
+            log_error_with_context(
+                self.logger, e,
+                context={"step_name": self.step_name},
+                operation="BaseValidator.get_validator_health_status"
+            )
+            return {
+                "step_name": self.step_name,
+                "status": "error",
+                "health_score": 0,
+                "error": str(e)
+            }
 
     def validate_dataframe_quality(
         self,

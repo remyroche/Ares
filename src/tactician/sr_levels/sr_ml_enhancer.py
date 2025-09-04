@@ -630,8 +630,8 @@ class SRMLEnhancer:
                     rf_importance, perm_scores, correlation_scores, shap_scores
                 )
                 
-                # Step 6: Select top features based on combined scores
-                top_features = self._select_top_features(combined_scores, feature_names, top_k=20)
+                # Step 6: Select top features with S/R feature prioritization
+                top_features = self._select_top_features_with_sr_priority(combined_scores, feature_names, top_k=50)
                 
                 # Store comprehensive feature importance
                 self.feature_importance = {
@@ -1229,6 +1229,68 @@ class SRMLEnhancer:
             self.logger.error(f"Top feature selection failed: {e}")
             return feature_names[:top_k]  # Fallback to first K features
     
+    def _select_top_features_with_sr_priority(self, scores: np.ndarray, feature_names: List[str], top_k: int = 50) -> List[str]:
+        """Select top K features with S/R feature prioritization."""
+        try:
+            # Define S/R specific feature patterns
+            sr_feature_patterns = [
+                'proximity_to_level', 'level_strength', 'touch_count', 'age_bars',
+                'bounce_ratio', 'volume_confirmation', 'consistency_score', 'failure_count',
+                'level_density', 'confluence_score', 'time_since_touch', 'volume_at_touch',
+                'price_action_score', 'microstructure_score', 'rsi_14', 'macd_line',
+                'macd_signal', 'bollinger_position', 'atr_14', 'volume_ratio',
+                'price_momentum', 'stoch_k', 'stoch_d', 'williams_r', 'cci', 'adx',
+                'obv', 'doji_pattern', 'hammer_pattern', 'volatility_proxy'
+            ]
+            
+            # Identify S/R features
+            sr_features = []
+            non_sr_features = []
+            
+            for i, feature_name in enumerate(feature_names):
+                is_sr_feature = any(pattern in feature_name.lower() for pattern in sr_feature_patterns)
+                if is_sr_feature:
+                    sr_features.append((i, feature_name, scores[i]))
+                else:
+                    non_sr_features.append((i, feature_name, scores[i]))
+            
+            # Sort by scores
+            sr_features.sort(key=lambda x: x[2], reverse=True)
+            non_sr_features.sort(key=lambda x: x[2], reverse=True)
+            
+            # Select features with S/R prioritization
+            selected_features = []
+            
+            # First, select top S/R features (up to 60% of total)
+            sr_count = min(len(sr_features), int(top_k * 0.6))
+            for i in range(sr_count):
+                selected_features.append(sr_features[i][1])
+            
+            # Then, select top non-S/R features (remaining 40%)
+            remaining_count = top_k - len(selected_features)
+            for i in range(min(remaining_count, len(non_sr_features))):
+                selected_features.append(non_sr_features[i][1])
+            
+            # If we still need more features, fill with highest scoring remaining features
+            if len(selected_features) < top_k:
+                all_features = [(i, feature_names[i], scores[i]) for i in range(len(feature_names))]
+                all_features.sort(key=lambda x: x[2], reverse=True)
+                
+                for i, feature_name, score in all_features:
+                    if feature_name not in selected_features and len(selected_features) < top_k:
+                        selected_features.append(feature_name)
+            
+            self.logger.info(f"🎯 Feature selection with S/R prioritization:")
+            self.logger.info(f"   - S/R features selected: {sr_count}")
+            self.logger.info(f"   - Non-S/R features selected: {len(selected_features) - sr_count}")
+            self.logger.info(f"   - Total features selected: {len(selected_features)}")
+            
+            return selected_features
+            
+        except Exception as e:
+            self.logger.error(f"S/R prioritized feature selection failed: {e}")
+            return self._select_top_features(scores, feature_names, top_k)  # Fallback
+    
     def _log_feature_analysis(self) -> None:
         """Log comprehensive feature analysis results."""
         try:
@@ -1245,10 +1307,11 @@ class SRMLEnhancer:
             self.logger.info(f"📊 Total features analyzed: {len(combined_scores)}")
             self.logger.info(f"🎯 Selected features: {len(selected_features)}")
             
-            self.logger.info("🏆 Top 15 Most Important Features:")
-            for i, (feature, score) in enumerate(sorted_features[:15]):
+            self.logger.info("🏆 Top 25 Most Important Features:")
+            for i, (feature, score) in enumerate(sorted_features[:25]):
                 status = "✅ SELECTED" if feature in selected_features else "❌ NOT SELECTED"
-                self.logger.info(f"  {i+1:2d}. {feature:<25} {score:.4f} {status}")
+                feature_type = "🎯 S/R" if any(pattern in feature.lower() for pattern in ['proximity', 'level', 'touch', 'bounce', 'strength', 'rsi', 'macd', 'bollinger', 'atr', 'stoch', 'williams', 'cci', 'adx', 'obv', 'doji', 'hammer', 'volatility']) else "📊 STEP06"
+                self.logger.info(f"  {i+1:2d}. {feature:<30} {score:.4f} {feature_type} {status}")
             
             # Log feature selection statistics
             rf_importance = self.feature_importance.get('rf_importance', {})

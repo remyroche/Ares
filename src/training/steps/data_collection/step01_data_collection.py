@@ -158,56 +158,83 @@ class DataCollectionStep:
             self.logger.info('🔍 Running standardized quality check...')
             expected_files = [self.standards.generate_file_name('klines', exchange, symbol, timeframe), self.standards.generate_file_name('aggtrades', exchange, symbol)]
             quality_results = []
+            
             for file_name in expected_files:
                 file_path = os.path.join(data_dir, file_name)
-                if os.path.exists(file_path):
-                    self.logger.info(f'🔍 Validating {file_name}...')
-                    try:
-                        import pandas as pd
-                        df = pd.read_parquet(file_path)
-                        df = self.standards.standardize_timestamp(df, 'timestamp')
-                        if 'klines' in file_name:
-                            schema_name = 'klines'
-                        elif 'aggtrades' in file_name:
-                            schema_name = 'aggtrades'
-                        else:
-                            schema_name = 'unified'
-                        validation_result = self.standards.validate_data_quality(df, schema_name)
-                        quality_results.append(validation_result)
-                        if validation_result.passed:
-                            self.logger.info(f'✅ {file_name} quality check passed (score: {validation_result.quality_score:.2f})')
-                        else:
-                            self.logger.warning(f'⚠️ {file_name} quality check issues:')
-                            for issue in validation_result.issues[:3]:
-                                self.logger.warning(f'   - {issue.message}')
-                            if len(validation_result.issues) > 3:
-                                self.logger.warning(f'   ... and {len(validation_result.issues) - 3} more issues')
-                        for warning in validation_result.warnings[:3]:
-                            self.logger.info(f'   ⚠️ {warning.message}')
-                        if len(validation_result.warnings) > 3:
-                            self.logger.info(f'   ... and {len(validation_result.warnings) - 3} more warnings')
-                    except Exception as e:
-                        self.logger.exception(f'❌ Error validating {file_name}: {e}')
-                        return False
-                else:
+                if not os.path.exists(file_path):
                     self.logger.warning(f'⚠️ Expected file not found: {file_name}')
-            if quality_results:
-                overall_passed = all((result.passed for result in quality_results))
-                overall_quality_score = sum((result.quality_score for result in quality_results)) / len(quality_results)
-                self.logger.info(f"📊 Overall quality check: {('PASSED' if overall_passed else 'FAILED')}")
-                self.logger.info(f'📊 Average quality score: {overall_quality_score:.2f}')
-                total_issues = sum((len(result.issues) for result in quality_results))
-                total_warnings = sum((len(result.warnings) for result in quality_results))
-                if total_issues > 0:
-                    self.logger.warning(f'📊 Total issues found: {total_issues}')
-                if total_warnings > 0:
-                    self.logger.info(f'📊 Total warnings: {total_warnings}')
-                return overall_passed
-            self.logger.warning('⚠️ No quality results available')
-            return False
+                    continue
+                
+                validation_result = self._validate_single_file(file_name, file_path)
+                if validation_result is None:
+                    return False
+                quality_results.append(validation_result)
+            
+            return self._log_quality_summary(quality_results)
         except Exception as e:
             self.logger.exception(f'❌ Error running standardized quality check: {e}')
             return False
+
+    def _validate_single_file(self, file_name: str, file_path: str):
+        """Validate a single file and return validation result."""
+        self.logger.info(f'🔍 Validating {file_name}...')
+        try:
+            import pandas as pd
+            df = pd.read_parquet(file_path)
+            df = self.standards.standardize_timestamp(df, 'timestamp')
+            
+            # Determine schema name
+            if 'klines' in file_name:
+                schema_name = 'klines'
+            elif 'aggtrades' in file_name:
+                schema_name = 'aggtrades'
+            else:
+                schema_name = 'unified'
+            
+            validation_result = self.standards.validate_data_quality(df, schema_name)
+            self._log_validation_result(file_name, validation_result)
+            return validation_result
+            
+        except Exception as e:
+            self.logger.exception(f'❌ Error validating {file_name}: {e}')
+            return None
+
+    def _log_validation_result(self, file_name: str, validation_result):
+        """Log validation result details."""
+        if validation_result.passed:
+            self.logger.info(f'✅ {file_name} quality check passed (score: {validation_result.quality_score:.2f})')
+        else:
+            self.logger.warning(f'⚠️ {file_name} quality check issues:')
+            for issue in validation_result.issues[:3]:
+                self.logger.warning(f'   - {issue.message}')
+            if len(validation_result.issues) > 3:
+                self.logger.warning(f'   ... and {len(validation_result.issues) - 3} more issues')
+        
+        for warning in validation_result.warnings[:3]:
+            self.logger.info(f'   ⚠️ {warning.message}')
+        if len(validation_result.warnings) > 3:
+            self.logger.info(f'   ... and {len(validation_result.warnings) - 3} more warnings')
+
+    def _log_quality_summary(self, quality_results: list) -> bool:
+        """Log quality summary and return overall result."""
+        if not quality_results:
+            self.logger.warning('⚠️ No quality results available')
+            return False
+        
+        overall_passed = all(result.passed for result in quality_results)
+        overall_quality_score = sum(result.quality_score for result in quality_results) / len(quality_results)
+        total_issues = sum(len(result.issues) for result in quality_results)
+        total_warnings = sum(len(result.warnings) for result in quality_results)
+        
+        self.logger.info(f"📊 Overall quality check: {'PASSED' if overall_passed else 'FAILED'}")
+        self.logger.info(f'📊 Average quality score: {overall_quality_score:.2f}')
+        
+        if total_issues > 0:
+            self.logger.warning(f'📊 Total issues found: {total_issues}')
+        if total_warnings > 0:
+            self.logger.info(f'📊 Total warnings: {total_warnings}')
+        
+        return overall_passed
 
     async def _run_data_collection(self, training_input: dict[str, Any], data_dir: str) -> bool:
         """Run the actual data collection process with standardized validation."""

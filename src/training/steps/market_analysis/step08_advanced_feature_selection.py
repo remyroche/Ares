@@ -558,27 +558,17 @@ class Step08AdvancedFeatureSelection:
         X_values = X[candidate_features].values
         y_values = y.values
         
-        def evaluate_regime(regime):
-            """Evaluate features for a single regime."""
-            regime_mask = (regime_labels == regime).values
-            X_regime = X_values[regime_mask]
-            y_regime = y_values[regime_mask]
-            
-            # Calculate MI scores for all features at once
-            if NUMBA_AVAILABLE and y.dtype == int:
-                mi_scores = fast_mutual_info_discrete(X_regime, y_regime)
-            else:
-                mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
-            
-            return mi_scores
-        
         # Parallel evaluation of regimes
         if JOBLIB_AVAILABLE and len(valid_regimes) > 1:
             regime_scores_list = Parallel(n_jobs=-1)(
-                delayed(evaluate_regime)(regime) for regime in valid_regimes
+                delayed(self._evaluate_regime_features)(regime, X_values, y_values, regime_labels) 
+                for regime in valid_regimes
             )
         else:
-            regime_scores_list = [evaluate_regime(regime) for regime in valid_regimes]
+            regime_scores_list = [
+                self._evaluate_regime_features(regime, X_values, y_values, regime_labels) 
+                for regime in valid_regimes
+            ]
         
         # Aggregate scores across regimes
         regime_scores_matrix = np.array(regime_scores_list)
@@ -592,6 +582,20 @@ class Step08AdvancedFeatureSelection:
         )[0]
         
         return [candidate_features[idx] for idx in validated_indices]
+
+    def _evaluate_regime_features(self, regime, X_values, y_values, regime_labels):
+        """Evaluate features for a single regime."""
+        regime_mask = (regime_labels == regime).values
+        X_regime = X_values[regime_mask]
+        y_regime = y_values[regime_mask]
+        
+        # Calculate MI scores for all features at once
+        if NUMBA_AVAILABLE and y_values.dtype == int:
+            mi_scores = fast_mutual_info_discrete(X_regime, y_regime)
+        else:
+            mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+        
+        return mi_scores
     
     async def phase2_boruta_multi_target(
         self, 

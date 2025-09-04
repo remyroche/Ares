@@ -4,16 +4,14 @@
 step17_enhanced_optimization:
   # Multi-objective optimization targets with weights
   objectives:
-    # Primary objectives (higher weights)
-    sharpe_weight: 0.3
-    win_rate_weight: 0.25
-    profit_factor_weight: 0.2
+    # Primary objective (highest weight)
+    profit_factor_weight: 0.5
     
-    # Risk management objectives
-    drawdown_weight: 0.15
-    
-    # Secondary objectives (lower weights)
-    return_weight: 0.1
+    # Secondary objectives (equal weights)
+    sharpe_weight: 0.125
+    win_rate_weight: 0.125
+    drawdown_weight: 0.125
+    return_weight: 0.125
     
     # Target values for objectives
     target_sharpe: 2.0
@@ -106,9 +104,9 @@ step17_enhanced_optimization:
 
   # Computational efficiency settings
   computational_efficiency:
-    # Parallel optimization settings
-    enable_parallel_optimization: true
-    max_parallel_blocks: 2  # Only optimize 2 blocks in parallel to avoid resource conflicts
+    # Sequential optimization settings (blocks depend on each other)
+    enable_parallel_optimization: false
+    max_parallel_blocks: 1  # Sequential optimization since blocks depend on previous ones
     
     # Early stopping settings
     enable_early_stopping: true

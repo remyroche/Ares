@@ -28,6 +28,7 @@ from .step03_regime_persistence_forecasting import RegimePersistenceForecaster
 from .step03_microservices_regime_discovery import MicroservicesRegimeDiscovery, ServiceOrchestrator
 from .step03_realtime_streaming_pipeline import RealTimeStreamingPipeline, StreamingRegimeDiscovery as RealtimeStreaming
 from .step03_enhanced_hmm_regime_discovery import EnhancedHMMRegimeDiscoveryStep, run_enhanced_step
+from .step03_hmm_clustering_wrapper import HMMRegimeDiscoveryStep, run_hmm_clustering_step
 
 __all__ = [
     'OptimizedBayesianParameterOptimization',
@@ -46,5 +47,7 @@ __all__ = [
     'RealTimeStreamingPipeline',
     'RealtimeStreaming',
     'EnhancedHMMRegimeDiscoveryStep',
-    'run_enhanced_step'
+    'run_enhanced_step',
+    'HMMRegimeDiscoveryStep',
+    'run_hmm_clustering_step'
 ]

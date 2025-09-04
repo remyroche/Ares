@@ -23,19 +23,14 @@ sys.path.insert(0, str(project_root))
 from src.core.domain import (
     comprehensive_data_validation,
     ensure_data_integrity,
-    handle_errors,
-    memory_efficient,
     monitor_feature_engineering,
     monitor_step_execution,
     quality_gate,
-    resource_monitor,
     secure_data_processing,
     secure_step_execution,
-    validate_data_structure,
-    with_tracing_span,
     validate_pipeline_step
 )
-from src.core.decorators import validates
+from src.core.decorators import handles_errors, validates
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3ParameterOptimization")

@@ -26,19 +26,15 @@ sys.path.insert(0, str(project_root))
 from src.core.domain import (
     comprehensive_data_validation,
     ensure_data_integrity,
-    handle_errors,
-    memory_efficient,
     monitor_feature_engineering,
     monitor_step_execution,
     quality_gate,
-    resource_monitor,
     secure_data_processing,
     secure_step_execution,
-    validate_data_structure,
-    with_tracing_span,
+    validate_data_quality,
     validate_pipeline_step
 )
-from src.core.decorators import validates
+from src.core.decorators import handles_errors, traced, validates
 from src.utils.logger import system_logger
 
 # Import our new modules
@@ -209,6 +205,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             # Update pipeline state
             pipeline_state.update(final_results)
             pipeline_state['enhanced_hmm_regime_discovery_completed'] = True
+            pipeline_state['hmm_regime_discovery_completed'] = True  # For backward compatibility
             
             # Log final results
             self._log_final_results(final_results)
@@ -548,7 +545,12 @@ class EnhancedHMMRegimeDiscoveryStep:
                 # Quality metrics
                 'overall_quality_score': self._calculate_overall_quality_score(
                     ensemble_results, economic_validation, transition_results
-                )
+                ),
+                
+                # Required outputs for pipeline compatibility
+                'regime_labels': ensemble_results['consensus_regimes'].tolist(),  # For step 4 compatibility
+                'hmm_regime_discovery_completed': True,  # Standard completion flag
+                'composite_clusters': ensemble_results.get('composite_df', pd.DataFrame())  # For data saving
             }
             
             self.logger.info('✅ Final results compiled successfully')

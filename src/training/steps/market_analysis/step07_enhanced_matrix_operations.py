@@ -1115,6 +1115,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         if data_dir is None:
             data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
         from src.config.training import get_training_config
+from src.core.decorators.errors import handles_errors
         config = get_training_config()
         step = Step7EnhancedMatrixOperations(config)
     except Exception as e:

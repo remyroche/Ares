@@ -132,6 +132,7 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
+from src.core.decorators.errors import handles_errors
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
             quality_results = await manager.comprehensive_quality_check(symbol=symbol, exchange=exchange, timeframe=timeframe, check_gaps=True, fill_gaps=False, validate_format=True)
             await self._evaluate_quality_results(quality_results, symbol, exchange, timeframe)

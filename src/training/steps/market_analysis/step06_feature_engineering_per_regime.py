@@ -782,6 +782,7 @@ async def run_per_regime_step(
         config_path = Path(__file__).parent / 'step06_per_regime_config.json'
         if config_path.exists():
             import json
+from src.core.decorators.errors import handles_errors
             with open(config_path, 'r') as f:
                 default_config = json.load(f)
                 # Merge with user config, user config takes precedence

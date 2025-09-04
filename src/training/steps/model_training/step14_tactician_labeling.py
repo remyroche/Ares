@@ -923,6 +923,7 @@ from src.core.decorators import (
     circuit_breaker
 )
 import copy
+from src.core.decorators.errors import handles_errors
 
 
 # For backward compatibility with existing step structure

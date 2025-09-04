@@ -187,6 +187,7 @@ class FeatureEngineeringOrchestrator:
         """Calculate standard technical indicators using price differences."""
         try:
             import pandas_ta as ta
+from src.core.decorators.errors import handles_errors
             close_diff = df['close'].diff().fillna(0)
             high_diff = df['high'].diff().fillna(0)
             low_diff = df['low'].diff().fillna(0)

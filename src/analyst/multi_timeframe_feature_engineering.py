@@ -28,6 +28,7 @@ from src.config import CONFIG
 from src.utils.logger import system_logger
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

@@ -18,6 +18,7 @@ from .feature_selector import FeatureSelector
 from .model_optimizer import ModelOptimizer
 from .ensemble_creator import EnsembleCreator
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 class AnalystEnhancementStep(BaseStep):
     """Step 12: Analyst Enhancement with regime-aware optimization."""

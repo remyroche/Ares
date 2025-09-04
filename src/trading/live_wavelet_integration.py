@@ -16,6 +16,7 @@ import pandas as pd
 from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from src.utils.logger import system_logger
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class LiveWaveletIntegration:

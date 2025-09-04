@@ -15,6 +15,7 @@ import json
 
 from src.core.decorators import handles_errors, traced
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 
 @dataclass

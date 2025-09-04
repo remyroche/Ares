@@ -8,6 +8,7 @@ from pathlib import Path
 from src.core.decorators import handles_errors, validates, log_call, traced
 from src.utils.logger import system_logger
 from src.utils.common_operations import safe_file_exists, validate_dataframe_schema, validate_data_quality
+from src.core.decorators.errors import handles_errors
 
 class HMMTrainingValidator:
     """Validator for HMM-based training step."""

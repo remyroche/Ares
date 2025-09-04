@@ -47,6 +47,7 @@ from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
 from .step03_economic_significance_validator import EconomicSignificanceValidator
 from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
 from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
+from src.core.decorators.errors import handles_errors
 
 logger = system_logger.getChild("Step3EnhancedHMMRegimeDiscovery")
 

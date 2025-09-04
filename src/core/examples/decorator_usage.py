@@ -184,6 +184,7 @@ async def get_user_from_db(user_id: str) -> dict:
 
     # Add trace events
     from src.core.decorators import span_event
+from src.core.decorators.errors import handles_errors
 
     span_event("query_started", {"user_id": user_id})
 

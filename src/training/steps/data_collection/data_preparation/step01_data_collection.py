@@ -170,6 +170,7 @@ class DataCollectionStep(BaseStep):
             Mock DataFrame with OHLCV data
         """
         import numpy as np
+from src.core.decorators.errors import handles_errors
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)
         freq_map = {'1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1H', '4h': '4H', '1d': '1D'}

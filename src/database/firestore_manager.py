@@ -11,6 +11,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, missing, warning
 if TYPE_CHECKING:
     import logging
+from src.core.decorators.errors import handles_errors
 
 class FirestoreManager:
     """

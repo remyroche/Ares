@@ -21,6 +21,7 @@ from src.training.steps.feature_engineering.feature_components import (
 )
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class FeatureEngineeringStep(BaseStep):

@@ -166,6 +166,7 @@ class TripleBarrierMethodStep:
 
             # Create triple barrier labeler with configuration
             from src.labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
+from src.core.decorators.errors import handles_errors
             
             labeler = OptimizedTripleBarrierLabeling(
                 profit_take_multiplier=profit_take_multiplier,

@@ -14,6 +14,7 @@ from src.training.utils.feature_engineering.technical_indicators import Technica
 from src.training.utils.feature_engineering.wavelet_features import WaveletTransformAnalyzer
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 class AdvancedFeatureEngineeringStep(BaseStep):
     """Step 6: Advanced Feature Engineering using modular components."""

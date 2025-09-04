@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
 )
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 # Model imports - uncomment when models are available
 # Note: These imports are commented out to avoid import errors

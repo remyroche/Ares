@@ -22,6 +22,7 @@ except Exception as e:
 try:
     from src.training.steps.step01_5_data_converter import ParquetDatasetManager
     from src.core.domain import guard_dataframe_nulls, secure_file_path, validate_dataframe_schema, validate_file_size, with_tracing_span, sanitize_string
+from src.core.decorators.errors import handles_errors
 except ImportError:
 
     def handles_errors(*args, **kwargs) -> None:

@@ -23,6 +23,7 @@ from src.training.steps.regime_continuity_manager import regime_continuity_manag
 from src.training.steps.regime_continuity_validator import regime_continuity_validator
 from src.training.steps.per_regime_pipeline_integration import PerRegimePipelineIntegrator
 from src.training.steps.regime_handler import regime_handler
+from src.core.decorators.errors import handles_errors
 
 
 logger = get_logger('PerRegimePipelineOrchestrator')

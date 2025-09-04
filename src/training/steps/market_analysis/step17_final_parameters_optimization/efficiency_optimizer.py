@@ -481,6 +481,7 @@ if __name__ == '__main__':
         return sum(params.values()) + np.random.normal(0, 0.1)
     search_space = {'param1': {'type': 'float', 'min': 0, 'max': 1, 'step': 0.01}, 'param2': {'type': 'float', 'min': 0, 'max': 1, 'step': 0.01}, 'param3': {'type': 'int', 'min': 1, 'max': 10}, 'param4': {'type': 'categorical', 'choices': ['A', 'B', 'C']}}
     import asyncio
+from src.core.decorators.errors import handles_errors
 
     async def test() -> None:
         await optimizer.initialize()

@@ -180,6 +180,7 @@ class EnhancedPredictionService:
                 for optimization_file in optimization_path.glob('*.json'):
                     try:
                         import json
+from src.core.decorators.errors import handles_errors
                     except Exception as e:
                         pass
                         with open(optimization_file, 'r') as f:

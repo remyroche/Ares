@@ -796,6 +796,7 @@ class HMMLMGeneralistTrainingStep:
                                 "barrier_avoidance_probability": max(0.0, min(1.0, barrier_avoidance_probability)),
                             }
                             from src.utils.common_operations import standardize_price_action_probabilities
+from src.core.decorators.errors import handles_errors
                             result["price_action_probabilities"] = standardize_price_action_probabilities(probs_dict)
             except Exception:
                 pass

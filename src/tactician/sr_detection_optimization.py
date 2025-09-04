@@ -1310,6 +1310,7 @@ class SRDetectionOptimizer:
     def _generate_parameter_combinations(self, param_ranges: dict[str, list[Any]]) -> list[dict[str, Any]]:
         """Generate parameter combinations for grid search."""
         import itertools
+from src.core.decorators.errors import handles_errors
         keys = list(param_ranges.keys())
         values = list(param_ranges.values())
         combinations = []

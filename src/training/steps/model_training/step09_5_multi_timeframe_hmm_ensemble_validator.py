@@ -150,6 +150,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             # Check 4: Validate configuration consistency
             try:
                 from src.config.multi_timeframe_hmm_ensemble_config import (
+from src.core.decorators.errors import handles_errors
                     get_multi_timeframe_hmm_ensemble_config,
                 )
                 

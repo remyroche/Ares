@@ -215,6 +215,7 @@ class Tactician:
             if self.enable_enhanced_predictions:
                 try:
                     from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+from src.core.decorators.errors import handles_errors
                     self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
                     success = await self.scenario_predictor.initialize()
                     if not success:

@@ -8,6 +8,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 import asyncio
 import datetime
+from src.core.decorators.errors import handles_errors
 
 class DynamicRegimeMapper:
     """

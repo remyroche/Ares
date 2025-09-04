@@ -21,6 +21,7 @@ import pywt
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import warning, initialization_error
 from src.core.decorators import handles_errors
+from src.core.decorators.errors import handles_errors
 
 
 @dataclass

@@ -12,6 +12,7 @@ from collections import deque
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.core.decorators.errors import handles_errors
 
 
 class LimitedMicrostructureFeatures:

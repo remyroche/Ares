@@ -22,6 +22,7 @@ from src.utils.comprehensive_logger import get_component_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, initialization_error, missing
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 # Shared column projection helpers for Parquet reads

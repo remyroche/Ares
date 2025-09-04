@@ -415,6 +415,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             from sklearn.cluster import KMeans, DBSCAN
             from sklearn.mixture import GaussianMixture
             from sklearn.preprocessing import StandardScaler
+from src.core.decorators.errors import handles_errors
             
             results = {}
             

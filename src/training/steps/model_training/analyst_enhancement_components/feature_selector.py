@@ -8,6 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from src.core.decorators import handles_errors, log_execution_time
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 class FeatureSelector:
     """Handles feature selection for analyst models."""

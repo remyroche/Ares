@@ -25,6 +25,7 @@ from src.utils.logger import system_logger
 import logging
 import asyncio
 from src.core.decorators import (
+from src.core.decorators.errors import handles_errors
     validates as validate_data_quality,
     traced as with_tracing_span,
 )

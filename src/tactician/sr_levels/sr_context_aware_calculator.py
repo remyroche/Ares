@@ -421,6 +421,7 @@ class ContextAwareSRCalculator:
                 
                 # Get S/R levels
                 from src.tactician.sr_strength_optimizer import SRLevelIdentifier
+from src.core.decorators.errors import handles_errors
                 identifier = SRLevelIdentifier(self.config)
                 sr_levels = identifier.identify_strong_sr_levels(market_data)
                 

@@ -17,6 +17,7 @@ from typing import Any
 from src.core.decorators import log_execution_time
 from src.utils.logger import system_logger
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class TraceLevel(Enum):

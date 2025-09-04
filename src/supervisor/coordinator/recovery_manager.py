@@ -17,6 +17,7 @@ from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, warning
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 
 class RecoveryManager:

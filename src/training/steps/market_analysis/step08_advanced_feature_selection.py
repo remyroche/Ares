@@ -955,6 +955,7 @@ class Step08AdvancedFeatureSelection:
         """
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
+from src.core.decorators.errors import handles_errors
         
         # Calculate correlation matrix
         corr_matrix = X.corr().abs()

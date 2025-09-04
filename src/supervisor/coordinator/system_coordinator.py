@@ -154,6 +154,7 @@ class SystemCoordinator:
         try:
             if self.enhanced_prediction_service_config.get("enabled", True):
                 from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
+from src.core.decorators.errors import handles_errors
                 self.enhanced_prediction_service = EnhancedPredictionService(
                     self.enhanced_prediction_service_config
                 )

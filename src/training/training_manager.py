@@ -194,6 +194,7 @@ class TrainingManager:
         """Initialize feature integration manager."""
         try:
             from src.training.feature_integration import FeatureIntegrationManager
+from src.core.decorators.errors import handles_errors
             
             self.feature_integration_manager = FeatureIntegrationManager(self.config)
             await self.feature_integration_manager.initialize()

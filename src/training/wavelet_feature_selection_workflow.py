@@ -691,6 +691,7 @@ class WaveletFeatureSelectionWorkflow:
             # Save lean feature names for deployment
             feature_names_path = self.model_dir / "production_features.json"
             import json
+from src.core.decorators.errors import handles_errors
 
             with open(feature_names_path, "w") as f:
                 json.dump(lean_dataset["winner_feature_names"], f)

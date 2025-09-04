@@ -36,6 +36,7 @@ from src.utils.common_operations import handles_errors, traced, validates, cache
 from src.utils.enhanced_memory_management import memory_efficient, resource_monitor
 from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_metrics
 from .exchange_field_mappings import ExchangeFieldMapper, get_exchange_mapper, ExchangeType
+from src.core.decorators.errors import handles_errors
 
 logger = system_logger.getChild("EnhancedValidationWithDecorators")
 

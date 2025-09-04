@@ -237,6 +237,7 @@ class EnhancedMissingValueHandler:
             self.logger.info(f'Downloading {symbol} data from {exchange} for {start_dt} to {end_dt}')
             if exchange.lower() == 'binance':
                 from src.training.steps.data_downloader import DataDownloader
+from src.core.decorators.errors import handles_errors
                 downloader = DataDownloader()
                 downloaded_data = downloader.download_klines(symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt)
                 if downloaded_data is not None and len(downloaded_data) > 0:

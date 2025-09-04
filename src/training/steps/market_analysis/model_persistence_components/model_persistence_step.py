@@ -19,6 +19,7 @@ from .version_manager import VersionManager
 from .metadata_tracker import MetadataTracker
 from .model_registry import ModelRegistry
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 class ModelPersistenceStep(BaseStep):
     """Step 21: Model Persistence with comprehensive saving and versioning."""

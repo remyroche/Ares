@@ -455,6 +455,7 @@ class CombinedFractionalSystem:
             # Export to JSON
             report_file = output_path / "combined_system_performance.json"
             import json
+from src.core.decorators.errors import handles_errors
             
             with open(report_file, 'w') as f:
                 json.dump(summary, f, indent=2, default=str)

@@ -46,6 +46,7 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
             import pandas as pd
             import json
             import numpy as np
+from src.core.decorators.errors import handles_errors
             latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
             data = pd.read_parquet(latest_file)
             if len(data) == 0:

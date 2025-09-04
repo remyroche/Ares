@@ -14,6 +14,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, warning
 from copy import copy
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.decorators.errors import handles_errors
 try:
     _watchdog_events = importlib.import_module('watchdog.events')
     _watchdog_observers = importlib.import_module('watchdog.observers')

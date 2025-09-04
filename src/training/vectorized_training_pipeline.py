@@ -21,6 +21,7 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 from copy import copy
 import asyncio
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 
 @dataclass

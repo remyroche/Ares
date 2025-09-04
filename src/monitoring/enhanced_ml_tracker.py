@@ -12,6 +12,7 @@ from typing import Any
 
 from src.utils.logger import system_logger
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class ModelType(Enum):

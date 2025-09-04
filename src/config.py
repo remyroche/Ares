@@ -79,6 +79,7 @@ class RiskConfig:
     max_leverage: int = 10
 from src.core.decorators import handles_errors
 from src.utils.warning_symbols import failed, invalid, warning
+from src.core.decorators.errors import handles_errors
 
 class ConfigurationManager:
     """

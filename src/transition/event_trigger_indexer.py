@@ -60,6 +60,22 @@ class EventTriggerIndexer:
         self.etm = TrainingManager(config)
         self.activation_thresholds = self.etm.get_activation_thresholds()
         self.label_reliability = self.etm.get_label_reliability()
+        
+        # Load optimizable intensity parameters from step17
+        step17_config = config.get("step17_optimization", {})
+        intensity_config = step17_config.get("intensity", {})
+        
+        # Override hardcoded thresholds with optimized values if available
+        if intensity_config:
+            self.event_cfg = EventConfig(
+                pre_window=int(tm_cfg.get("pre_window", 60)),
+                post_window=int(tm_cfg.get("post_window", 20)),
+                label_cooldown_bars=int(tm_cfg.get("label_cooldown_bars", 45)),
+                window_iou_threshold=float(intensity_config.get("intensity_nms_threshold", tm_cfg.get("window_iou_threshold", 0.5))),
+                use_reliability_weighting=bool(tm_cfg.get("use_reliability_weighting", True)),
+                use_rising_edge_only=bool(tm_cfg.get("use_rising_edge_only", True)),
+                preserve_secondary_labels=bool(tm_cfg.get("preserve_secondary_labels", True)),
+            )
 
     def _weighted_intensity(self, label: str, intensity: float) -> float:
         if not self.event_cfg.use_reliability_weighting:

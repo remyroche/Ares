@@ -11,6 +11,7 @@ from typing import Any
 
 from kelly_criterion_fix import calculate_correct_kelly_position_size
 from src.utils.confidence import normalize_dual_confidence
+from src.utils.linear_confidence_scaling import LinearConfidenceScaler
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, missing
 from copy import copy
@@ -67,6 +68,9 @@ class PositionSizer:
 
         # Load additional optimized parameters
         # risk_adjustment_factor removed as requested
+
+        # Initialize linear confidence scaler
+        self.linear_scaler = LinearConfidenceScaler(config)
 
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
@@ -195,36 +199,46 @@ class PositionSizer:
             adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
             directional_confidence = ml_predictions.get("directional_confidence", {})
 
-            # NEW: Use combined confidence for position sizing if available
-            if combined_confidence >= self.positionsize_combined_threshold:
-                # Calculate base Kelly criterion position size
-                kelly_position_size = self._calculate_kelly_position_size(
-                    price_target_confidences, adversarial_confidences,
-                )
+            # NEW: Use linear confidence scaling instead of threshold-based approach
+            # Extract intensity and reliability from predictions
+            intensity = ml_predictions.get("intensity", 1.0)
+            reliability = ml_predictions.get("reliability", 1.0)
+            risk_score = ml_predictions.get("risk_score", 0.0)
+            
+            # Calculate base Kelly criterion position size
+            kelly_position_size = self._calculate_kelly_position_size(
+                price_target_confidences, adversarial_confidences,
+            )
 
-                # Calculate ML-based position size
-                ml_position_size = self._calculate_ml_position_size(
-                    price_target_confidences, adversarial_confidences,
-                )
+            # Calculate ML-based position size
+            ml_position_size = self._calculate_ml_position_size(
+                price_target_confidences, adversarial_confidences,
+            )
 
-                # Calculate weighted position size
-                final_position_size = self._calculate_weighted_position_size(
-                    kelly_position_size, ml_position_size,
-                )
+            # Calculate weighted position size
+            base_position_size = self._calculate_weighted_position_size(
+                kelly_position_size, ml_position_size,
+            )
 
-                # Apply market-health and strategist risk modifiers (volatility/liquidity/stress aware)
-                final_position_size = self._apply_position_size_modifiers(
-                    final_position_size,
-                    market_health_analysis=market_health_analysis,
-                    strategist_risk_parameters=strategist_risk_parameters,
-                    analyst_confidence=analyst_confidence,
-                    tactician_confidence=tactician_confidence,
-                )
-            else:
-                # If combined confidence is below threshold, use minimum position size
-                final_position_size = self.min_position_size
-                kelly_position_size = self.min_position_size
-                ml_position_size = self.min_position_size
+            # Apply linear confidence scaling
+            confidence_multiplier = self.linear_scaler.calculate_position_size_multiplier(
+                confidence=combined_confidence,
+                intensity=intensity,
+                reliability=reliability,
+                risk_score=risk_score
+            )
+            
+            # Apply confidence multiplier to base position size
+            confidence_adjusted_size = base_position_size * confidence_multiplier
+
+            # Apply market-health and strategist risk modifiers (volatility/liquidity/stress aware)
+            final_position_size = self._apply_position_size_modifiers(
+                confidence_adjusted_size,
+                market_health_analysis=market_health_analysis,
+                strategist_risk_parameters=strategist_risk_parameters,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+            )
 
             # Create position sizing analysis
             sizing_analysis = {
@@ -233,9 +247,15 @@ class PositionSizer:
                 "account_balance": account_balance,
                 "kelly_position_size": kelly_position_size,
                 "ml_position_size": ml_position_size,
+                "base_position_size": base_position_size,
+                "confidence_adjusted_size": confidence_adjusted_size,
                 "final_position_size": final_position_size,
                 "combined_confidence": combined_confidence,
-                "positionsize_combined_threshold": self.positionsize_combined_threshold,
+                "intensity": intensity,
+                "reliability": reliability,
+                "risk_score": risk_score,
+                "confidence_multiplier": confidence_multiplier,
+                "linear_scaling_enabled": True,
                 "price_target_confidences": price_target_confidences,
                 "adversarial_confidences": adversarial_confidences,
                 "directional_confidence": directional_confidence,

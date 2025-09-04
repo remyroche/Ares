@@ -1,0 +1,248 @@
+# Enhanced Step17 Multi-Objective Optimization Configuration
+# This configuration addresses curse of dimensionality, logical block ordering, and multi-objective optimization
+
+step17_enhanced_optimization:
+  # Multi-objective optimization targets with weights
+  objectives:
+    # Primary objective (highest weight)
+    profit_factor_weight: 0.5
+    
+    # Secondary objectives (equal weights)
+    sharpe_weight: 0.125
+    win_rate_weight: 0.125
+    drawdown_weight: 0.125
+    return_weight: 0.125
+    
+    # Target values for objectives
+    target_sharpe: 2.0
+    target_win_rate: 0.6
+    target_profit_factor: 1.5
+    target_drawdown: 0.1
+    target_return: 0.3
+
+  # Block-based optimization configuration
+  optimization_blocks:
+    # Block 1: Core confidence parameters (highest impact, independent)
+    core_confidence:
+      categories: ["confidence"]
+      n_trials: 100
+      timeout: 600  # 10 minutes
+      sampler: "tpe"
+      pruner: "median"
+      priority: 1
+      description: "Core confidence thresholds and scaling parameters"
+      
+    # Block 2: Core intensity parameters (high impact, depends on confidence)
+    core_intensity:
+      categories: ["intensity"]
+      n_trials: 80
+      timeout: 480  # 8 minutes
+      sampler: "tpe"
+      pruner: "median"
+      priority: 2
+      description: "Intensity thresholds and weighting parameters"
+      
+    # Block 3: Position management (depends on core parameters)
+    position_management:
+      categories: ["position_sizing", "leverage"]
+      n_trials: 120
+      timeout: 900  # 15 minutes
+      sampler: "nsga2"
+      pruner: "successive_halving"
+      priority: 3
+      description: "Position sizing and leverage optimization"
+      
+    # Block 4: Risk management (depends on position management)
+    risk_management:
+      categories: ["tpsl"]
+      n_trials: 60
+      timeout: 360  # 6 minutes
+      sampler: "tpe"
+      pruner: "median"
+      priority: 4
+      description: "Take profit and stop loss optimization"
+      
+    # Block 5: Market analysis (depends on core parameters)
+    market_analysis:
+      categories: ["sr", "technical_indicators", "regime_transitions"]
+      n_trials: 150
+      timeout: 1200  # 20 minutes
+      sampler: "nsga2"
+      pruner: "successive_halving"
+      priority: 5
+      description: "Support/resistance and technical analysis optimization"
+      
+    # Block 6: Signal processing (depends on market analysis)
+    signal_processing:
+      categories: ["ensemble", "signal_aggregation"]
+      n_trials: 100
+      timeout: 600  # 10 minutes
+      sampler: "tpe"
+      pruner: "median"
+      priority: 6
+      description: "Ensemble and signal aggregation optimization"
+      
+    # Block 7: System optimization (depends on all above)
+    system_optimization:
+      categories: ["two_tier", "system_monitoring"]
+      n_trials: 80
+      timeout: 480  # 8 minutes
+      sampler: "tpe"
+      pruner: "median"
+      priority: 7
+      description: "System-level optimization and monitoring"
+      
+    # Block 8: Performance tuning (final fine-tuning)
+    performance_tuning:
+      categories: ["training_optimization"]
+      n_trials: 60
+      timeout: 360  # 6 minutes
+      sampler: "tpe"
+      pruner: "median"
+      priority: 8
+      description: "Final performance tuning and training optimization"
+
+  # Computational efficiency settings
+  computational_efficiency:
+    # Sequential optimization settings (blocks depend on each other)
+    enable_parallel_optimization: false
+    max_parallel_blocks: 1  # Sequential optimization since blocks depend on previous ones
+    
+    # Early stopping settings
+    enable_early_stopping: true
+    early_stopping_patience: 20  # Stop if no improvement for 20 trials
+    early_stopping_min_delta: 0.001  # Minimum improvement threshold
+    
+    # Resource management
+    max_memory_usage: "8GB"
+    max_cpu_usage: 0.8  # Use 80% of available CPU
+    
+    # Caching settings
+    enable_parameter_caching: true
+    cache_size: 1000  # Cache up to 1000 parameter combinations
+    
+    # Warm start settings
+    enable_warm_start: true
+    warm_start_trials: 10  # Use 10 trials from previous optimization
+
+  # Multi-objective optimization settings
+  multi_objective:
+    # Pareto front settings
+    enable_pareto_front: true
+    pareto_front_size: 50  # Keep top 50 solutions on Pareto front
+    
+    # Objective normalization
+    normalize_objectives: true
+    objective_bounds:
+      sharpe_ratio: [0.0, 5.0]
+      win_rate: [0.0, 1.0]
+      profit_factor: [0.0, 3.0]
+      max_drawdown: [0.0, 0.5]
+      total_return: [0.0, 1.0]
+    
+    # Constraint handling
+    enable_constraints: true
+    constraints:
+      min_sharpe_ratio: 0.5
+      min_win_rate: 0.3
+      max_drawdown: 0.3
+      min_profit_factor: 0.8
+
+  # Block dependency management
+  block_dependencies:
+    # Define which blocks depend on others
+    dependencies:
+      core_intensity: ["core_confidence"]
+      position_management: ["core_confidence", "core_intensity"]
+      risk_management: ["position_management"]
+      market_analysis: ["core_confidence", "core_intensity"]
+      signal_processing: ["market_analysis"]
+      system_optimization: ["position_management", "risk_management", "signal_processing"]
+      performance_tuning: ["system_optimization"]
+    
+    # Dependency resolution strategy
+    dependency_strategy: "sequential"  # "sequential" or "parallel" where possible
+
+  # Performance monitoring
+  performance_monitoring:
+    # Real-time monitoring
+    enable_real_time_monitoring: true
+    monitoring_interval: 60  # seconds
+    
+    # Performance tracking
+    track_convergence: true
+    track_diversity: true
+    track_hypervolume: true
+    
+    # Logging settings
+    log_level: "INFO"
+    log_interval: 100  # Log every 100 trials
+    
+    # Metrics to track
+    metrics:
+      - "sharpe_ratio"
+      - "win_rate"
+      - "profit_factor"
+      - "max_drawdown"
+      - "total_return"
+      - "convergence_score"
+      - "diversity_score"
+      - "hypervolume"
+
+  # Optimization strategies
+  optimization_strategies:
+    # Adaptive strategy selection
+    enable_adaptive_strategies: true
+    
+    # Strategy selection criteria
+    strategy_selection:
+      high_dimensional: "nsga2"  # Use NSGA-II for high-dimensional problems
+      low_dimensional: "tpe"     # Use TPE for low-dimensional problems
+      multi_objective: "nsga2"   # Use NSGA-II for multi-objective
+      single_objective: "tpe"    # Use TPE for single-objective
+    
+    # Dynamic parameter adjustment
+    enable_dynamic_adjustment: true
+    adjustment_criteria:
+      convergence_threshold: 0.01
+      diversity_threshold: 0.1
+      improvement_threshold: 0.05
+
+  # Validation and testing
+  validation:
+    # Cross-validation settings
+    enable_cross_validation: true
+    cv_folds: 5
+    cv_strategy: "time_series_split"
+    
+    # Out-of-sample testing
+    enable_out_of_sample: true
+    oos_percentage: 0.2  # Use 20% for out-of-sample testing
+    
+    # Statistical significance testing
+    enable_significance_testing: true
+    significance_level: 0.05
+    
+    # Robustness testing
+    enable_robustness_testing: true
+    robustness_scenarios: 10  # Test 10 different market scenarios
+
+  # Results and reporting
+  results:
+    # Output settings
+    save_detailed_results: true
+    save_pareto_front: true
+    save_optimization_history: true
+    
+    # Report generation
+    generate_reports: true
+    report_formats: ["json", "yaml", "csv"]
+    
+    # Visualization
+    enable_visualization: true
+    visualization_types: ["pareto_front", "convergence", "parameter_importance"]
+    
+    # Export settings
+    export_optimized_parameters: true
+    export_performance_metrics: true
+    export_optimization_summary: true

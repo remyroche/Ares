@@ -186,7 +186,8 @@ class FinalParametersOptimizationStepNew:
 
             optimization_results = {}
             categories = [
-                "confidence", 
+                "confidence",
+                "intensity", 
                 "position_sizing", 
                 "leverage", 
                 "tpsl", 

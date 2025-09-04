@@ -260,13 +260,22 @@ class SRMLEnhancer:
                     elif isinstance(feature_values, (int, float)):
                         all_features.append(float(feature_values))
                 
-                # Technical features
+                # Technical features (including penetration features)
                 technical_features = step06_result.get('technical_features', {})
+                penetration_features_count = 0
                 for feature_name, feature_values in technical_features.items():
                     if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
                         all_features.append(float(feature_values[-1]))
+                        # Count penetration features
+                        if 'penetration' in feature_name.lower() or 'wick' in feature_name.lower():
+                            penetration_features_count += 1
                     elif isinstance(feature_values, (int, float)):
                         all_features.append(float(feature_values))
+                        if 'penetration' in feature_name.lower() or 'wick' in feature_name.lower():
+                            penetration_features_count += 1
+                
+                if penetration_features_count > 0:
+                    self.logger.info(f"📊 Step06 penetration features extracted: {penetration_features_count} features")
                 
                 # Regime features
                 regime_features = step06_result.get('regime_features', {})
@@ -1901,9 +1910,12 @@ class SRMLEnhancer:
                 test_duration = test.get('test_duration', 1)  # Bars spent testing
                 wick_penetration = test.get('wick_penetration', 0.0)  # How deep the test went
                 
-                # Calculate test strength score
+                # Get step06 penetration features if available
+                step06_penetration_features = test.get('step06_penetration_features', None)
+                
+                # Calculate test strength score with step06 penetration features
                 test_strength = self._calculate_test_strength(
-                    volume_ratio, momentum_strength, test_duration, wick_penetration
+                    volume_ratio, momentum_strength, test_duration, wick_penetration, step06_penetration_features
                 )
                 
                 # Only count as qualified bounce if it held against a strong test
@@ -1973,7 +1985,8 @@ class SRMLEnhancer:
         volume_ratio: float, 
         momentum_strength: float, 
         test_duration: int, 
-        wick_penetration: float
+        wick_penetration: float,
+        step06_penetration_features: Optional[Dict[str, float]] = None
     ) -> float:
         """Calculate the strength of a test based on volume, momentum, duration, and penetration."""
         try:
@@ -1987,7 +2000,19 @@ class SRMLEnhancer:
             duration_score = min(test_duration / 5.0, 1.0)  # Normalize to 5 bars
             
             # Penetration component (10% weight) - deeper penetration is stronger
-            penetration_score = min(wick_penetration / 0.02, 1.0)  # Normalize to 2% penetration
+            # Use step06 penetration features if available, otherwise fallback to wick_penetration
+            if step06_penetration_features:
+                # Use step06 penetration features for more accurate calculation
+                upper_wick_pen = step06_penetration_features.get('upper_wick_penetration', 0.0)
+                lower_wick_pen = step06_penetration_features.get('lower_wick_penetration', 0.0)
+                body_pen_ratio = step06_penetration_features.get('body_penetration_ratio', 0.0)
+                
+                # Combine penetration metrics
+                combined_penetration = max(upper_wick_pen, lower_wick_pen) + body_pen_ratio * 0.5
+                penetration_score = min(combined_penetration / 0.02, 1.0)  # Normalize to 2% penetration
+            else:
+                # Fallback to simple wick penetration
+                penetration_score = min(wick_penetration / 0.02, 1.0)  # Normalize to 2% penetration
             
             # Weighted combination
             test_strength = (

@@ -229,6 +229,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         features['macd'] = self._calculate_macd(price_data)
         features['bb'] = self._calculate_bollinger_bands(price_data)
         features['volume_indicators'] = self._calculate_volume_indicators(price_data, volume_data)
+        features['penetration'] = self._calculate_penetration_features(price_data)
         return {'technical': pd.concat(features.values(), axis=1)}
 
     async def _extract_microstructure_features(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
@@ -336,3 +337,64 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         volume_features['volume_ma'] = volume_data['volume'].rolling(window=20).mean()
         volume_features['volume_roc'] = volume_data['volume'].pct_change(periods=10)
         return volume_features
+    
+    def _calculate_penetration_features(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """Calculate penetration depth features for S/R analysis"""
+        penetration_features = pd.DataFrame(index=price_data.index)
+        
+        # Calculate wick penetration (high/low vs open/close)
+        penetration_features['upper_wick_penetration'] = (price_data['high'] - np.maximum(price_data['open'], price_data['close'])) / price_data['close']
+        penetration_features['lower_wick_penetration'] = (np.minimum(price_data['open'], price_data['close']) - price_data['low']) / price_data['close']
+        
+        # Calculate body penetration (open/close vs high/low)
+        penetration_features['body_penetration_ratio'] = abs(price_data['close'] - price_data['open']) / (price_data['high'] - price_data['low'])
+        
+        # Calculate penetration momentum (rate of penetration)
+        penetration_features['upper_wick_momentum'] = penetration_features['upper_wick_penetration'].diff()
+        penetration_features['lower_wick_momentum'] = penetration_features['lower_wick_penetration'].diff()
+        
+        # Calculate average penetration over different periods
+        for period in [5, 10, 20]:
+            penetration_features[f'avg_upper_wick_pen_{period}'] = penetration_features['upper_wick_penetration'].rolling(period).mean()
+            penetration_features[f'avg_lower_wick_pen_{period}'] = penetration_features['lower_wick_penetration'].rolling(period).mean()
+            penetration_features[f'avg_body_pen_ratio_{period}'] = penetration_features['body_penetration_ratio'].rolling(period).mean()
+        
+        # Calculate penetration volatility
+        penetration_features['upper_wick_pen_volatility'] = penetration_features['upper_wick_penetration'].rolling(20).std()
+        penetration_features['lower_wick_pen_volatility'] = penetration_features['lower_wick_penetration'].rolling(20).std()
+        
+        # Calculate penetration strength (penetration * volume)
+        if 'volume' in price_data.columns:
+            penetration_features['upper_wick_strength'] = penetration_features['upper_wick_penetration'] * price_data['volume']
+            penetration_features['lower_wick_strength'] = penetration_features['lower_wick_penetration'] * price_data['volume']
+        
+        # Calculate penetration patterns
+        penetration_features['penetration_pattern'] = self._identify_penetration_patterns(penetration_features)
+        
+        return penetration_features
+    
+    def _identify_penetration_patterns(self, penetration_features: pd.DataFrame) -> pd.Series:
+        """Identify penetration patterns"""
+        patterns = pd.Series(index=penetration_features.index, dtype='int64')
+        
+        # Pattern 1: High upper wick penetration (resistance testing)
+        high_upper_wick = penetration_features['upper_wick_penetration'] > penetration_features['upper_wick_penetration'].rolling(20).quantile(0.8)
+        patterns[high_upper_wick] = 1
+        
+        # Pattern 2: High lower wick penetration (support testing)
+        high_lower_wick = penetration_features['lower_wick_penetration'] > penetration_features['lower_wick_penetration'].rolling(20).quantile(0.8)
+        patterns[high_lower_wick] = 2
+        
+        # Pattern 3: High body penetration (strong directional move)
+        high_body_pen = penetration_features['body_penetration_ratio'] > penetration_features['body_penetration_ratio'].rolling(20).quantile(0.8)
+        patterns[high_body_pen] = 3
+        
+        # Pattern 4: Low penetration (consolidation)
+        low_penetration = (penetration_features['upper_wick_penetration'] < penetration_features['upper_wick_penetration'].rolling(20).quantile(0.2)) & \
+                         (penetration_features['lower_wick_penetration'] < penetration_features['lower_wick_penetration'].rolling(20).quantile(0.2))
+        patterns[low_penetration] = 4
+        
+        # Default: Normal penetration
+        patterns = patterns.fillna(0)
+        
+        return patterns

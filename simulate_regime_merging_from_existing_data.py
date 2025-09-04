@@ -7,6 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import json
 
 import pandas as pd
+from copy import copy
 
 
 def load_existing_data():

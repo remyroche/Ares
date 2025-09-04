@@ -49,7 +49,7 @@ class PerformanceAttributionSystem:
         # Configuration
         self.attribution_config = config.get('performance_attribution', {})
         self.regime_names = [f"regime_{i:02d}" for i in range(20)]  # regime_00 to regime_19
-        self.timeframes = ['15m', '30m', '1h']
+        self.timeframes = ['5m', '15m', '30m', '1h']  # Added 5m for high-leverage trading
         self.leverage_multiplier = self.attribution_config.get('leverage_multiplier', 10)
         
         # Storage
@@ -528,8 +528,9 @@ class PerformanceAttributionSystem:
         
         # Sharpe ratio (annualized for high-frequency trading)
         if std_pnl > 0:
-            # Annualize based on timeframe frequency
-            sharpe_ratio = avg_pnl / std_pnl * np.sqrt(252 * 24 * 4)  # 15m intervals
+            # Annualize based on timeframe frequency (5m = 12 intervals/hour, 15m = 4 intervals/hour, 30m = 2 intervals/hour, 1h = 1 interval/hour)
+            # Use 15m as baseline (4 intervals/hour)
+            sharpe_ratio = avg_pnl / std_pnl * np.sqrt(252 * 24 * 4)  # 15m intervals baseline
         else:
             sharpe_ratio = 0.0
         

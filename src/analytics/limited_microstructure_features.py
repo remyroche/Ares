@@ -370,7 +370,8 @@ class LimitedMicrostructureFeatures:
         hour = timestamp.hour
         
         # Assume active trading hours (adjust based on your market)
-        return 8 <= hour <= 22  # 8 AM to 10 PM
+        # For high-frequency 5m trading, consider extended hours
+        return 6 <= hour <= 23  # 6 AM to 11 PM (extended for 5m trading)
     
     def _update_feature_statistics(self, features: Dict[str, Any]) -> None:
         """Update feature statistics for normalization"""
@@ -483,12 +484,131 @@ class LimitedMicrostructureFeatures:
         
         return signals
     
+    def get_timeframe_specific_features(
+        self,
+        market_data: Dict[str, Any],
+        timeframe: str,
+        historical_data: Optional[pd.DataFrame] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract timeframe-specific features optimized for high-frequency trading.
+        
+        Args:
+            market_data: Current market data
+            timeframe: Trading timeframe ('5m', '15m', '30m', '1h')
+            historical_data: Historical data for context
+            
+        Returns:
+            Dict: Timeframe-specific features
+        """
+        try:
+            # Get base features
+            base_features = await self.extract_features(market_data, historical_data)
+            if not base_features:
+                return None
+            
+            # Add timeframe-specific adjustments
+            timeframe_features = base_features.copy()
+            
+            # Adjust parameters based on timeframe
+            if timeframe == '5m':
+                # 5m timeframe: Higher sensitivity, faster response
+                timeframe_features['timeframe_multiplier'] = 1.5
+                timeframe_features['sensitivity_level'] = 'high'
+                timeframe_features['response_speed'] = 'fast'
+                
+                # Adjust volatility window for 5m
+                if historical_data is not None and 'last_price' in historical_data.columns:
+                    recent_prices = historical_data['last_price'].tail(12)  # 1 hour of 5m data
+                    if len(recent_prices) > 1:
+                        short_volatility = recent_prices.std()
+                        timeframe_features['short_term_volatility'] = short_volatility
+                        timeframe_features['volatility_5m'] = short_volatility
+                
+            elif timeframe == '15m':
+                # 15m timeframe: Balanced approach
+                timeframe_features['timeframe_multiplier'] = 1.0
+                timeframe_features['sensitivity_level'] = 'medium'
+                timeframe_features['response_speed'] = 'medium'
+                
+            elif timeframe == '30m':
+                # 30m timeframe: Lower sensitivity, more stable
+                timeframe_features['timeframe_multiplier'] = 0.8
+                timeframe_features['sensitivity_level'] = 'low'
+                timeframe_features['response_speed'] = 'slow'
+                
+            elif timeframe == '1h':
+                # 1h timeframe: Lowest sensitivity, most stable
+                timeframe_features['timeframe_multiplier'] = 0.6
+                timeframe_features['sensitivity_level'] = 'very_low'
+                timeframe_features['response_speed'] = 'very_slow'
+            
+            # Add timeframe-specific trading signals
+            timeframe_signals = self._create_timeframe_specific_signals(timeframe_features, timeframe)
+            timeframe_features.update(timeframe_signals)
+            
+            return timeframe_features
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting timeframe-specific features: {e}")
+            return None
+    
+    def _create_timeframe_specific_signals(
+        self,
+        features: Dict[str, Any],
+        timeframe: str
+    ) -> Dict[str, int]:
+        """Create timeframe-specific trading signals"""
+        
+        signals = {}
+        
+        # Base signals
+        base_signals = self.create_trading_signals(features)
+        signals.update(base_signals)
+        
+        # Timeframe-specific signals
+        if timeframe == '5m':
+            # High-frequency signals for 5m
+            if 'spread_percentage' in features:
+                if features['spread_percentage'] < 0.005:  # Very tight spread for 5m
+                    signals['ultra_tight_spread'] = 1
+                elif features['spread_percentage'] > 0.02:  # Wide spread for 5m
+                    signals['wide_spread_5m'] = 1
+            
+            if 'volume_velocity' in features:
+                if features['volume_velocity'] > 2.0:  # High volume for 5m
+                    signals['high_volume_5m'] = 1
+                elif features['volume_velocity'] < 0.3:  # Low volume for 5m
+                    signals['low_volume_5m'] = 1
+            
+            # 5m-specific volatility signals
+            if 'volatility_5m' in features:
+                if features['volatility_5m'] > 0.001:  # High volatility for 5m
+                    signals['high_volatility_5m'] = 1
+                elif features['volatility_5m'] < 0.0001:  # Low volatility for 5m
+                    signals['low_volatility_5m'] = 1
+        
+        elif timeframe == '15m':
+            # Standard signals for 15m
+            signals['timeframe_15m'] = 1
+            
+        elif timeframe == '30m':
+            # Longer-term signals for 30m
+            signals['timeframe_30m'] = 1
+            
+        elif timeframe == '1h':
+            # Long-term signals for 1h
+            signals['timeframe_1h'] = 1
+        
+        return signals
+    
     def get_feature_summary(self) -> Dict[str, Any]:
         """Get summary of extracted features"""
         
         return {
             'system_status': 'active',
             'available_data_types': self.available_data_types,
+            'supported_timeframes': ['5m', '15m', '30m', '1h'],
             'feature_count': len(self.feature_statistics),
             'history_length': len(self.feature_history),
             'feature_statistics': self.feature_statistics,

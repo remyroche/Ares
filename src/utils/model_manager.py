@@ -507,6 +507,7 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="metadata saving",
+    )
     async def _save_metadata(self) -> None:
         """Save model metadata to file."""
         metadata_path = os.path.join(self.models_dir, self.metadata_file)
@@ -519,6 +520,7 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="model backup creation",
+    )
     async def create_backup(self, model_name: str) -> None:
         """
         Create backup of a model.

@@ -6,6 +6,7 @@ import pandas as pd
 import pywt
 from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+from src.analytics.limited_microstructure_features import LimitedMicrostructureFeatures
 from src.config import CONFIG
 from src.core.decorators import handles_errors
 from src.core.domain import handle_data_processing_errors, handle_file_operations
@@ -32,6 +33,7 @@ class FeatureEngineeringOrchestrator:
         self.logger = system_logger.getChild('FeatureEngineeringOrchestrator')
         self.advanced_feature_engineering = AdvancedFeatureEngineering(config)
         self.autoencoder_generator = AutoencoderFeatureGenerator(config)
+        self.microstructure_features = LimitedMicrostructureFeatures(config)
         self.model_storage_path = os.path.join(CONFIG['CHECKPOINT_DIR'], 'analyst_models', 'feature_engineering')
         os.makedirs(self.model_storage_path, exist_ok=True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
@@ -41,6 +43,7 @@ class FeatureEngineeringOrchestrator:
         self.enable_advanced_features = get_parameter_value('feature_engineering_parameters.enable_advanced_features', True)
         self.enable_autoencoder_features = get_parameter_value('feature_engineering_parameters.enable_autoencoder_features', True)
         self.enable_legacy_features = get_parameter_value('feature_engineering_parameters.enable_legacy_features', True)
+        self.enable_microstructure_features = get_parameter_value('feature_engineering_parameters.enable_microstructure_features', True)
         self.logger.info('🚀 FeatureEngineeringOrchestrator initialized successfully')
 
     @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), context='orchestrated feature generation')
@@ -71,6 +74,12 @@ class FeatureEngineeringOrchestrator:
                 self.logger.info('🤖 Generating autoencoder features...')
                 features_df = self.autoencoder_generator.generate_features(features_df)
                 self.logger.info(f'✅ Autoencoder features generated. Shape: {features_df.shape}')
+            if self.enable_microstructure_features and (not features_df.empty):
+                self.logger.info('📈 Generating microstructure features...')
+                microstructure_features = await self._generate_microstructure_features(features_df)
+                if not microstructure_features.empty:
+                    features_df = pd.concat([features_df, microstructure_features], axis=1)
+                    self.logger.info(f'✅ Microstructure features generated. Shape: {features_df.shape}')
             if self.enable_legacy_features:
                 self.logger.info('🔧 Generating legacy features...')
                 features_df = self._generate_legacy_features(features_df, agg_trades_df, futures_df, sr_levels)
@@ -94,6 +103,41 @@ class FeatureEngineeringOrchestrator:
         except Exception:
             self.logger.error('❌ Error in feature generation orchestration: {e}')
             return klines_df.copy()
+
+    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), context='microstructure feature generation')
+    async def _generate_microstructure_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate microstructure features from available market data."""
+        try:
+            microstructure_features_df = pd.DataFrame(index=features_df.index)
+            
+            # Extract available market data for microstructure analysis
+            for idx, row in features_df.iterrows():
+                # Create market data dictionary from available features
+                market_data = {
+                    'bid': row.get('close', 0),  # Use close as bid approximation
+                    'ask': row.get('close', 0) * 1.0001,  # Add small spread
+                    'last_price': row.get('close', 0),
+                    'volume': row.get('volume', 0),
+                    'high': row.get('high', 0),
+                    'low': row.get('low', 0)
+                }
+                
+                # Extract microstructure features
+                features = await self.microstructure_features.extract_features(market_data, features_df.head(idx))
+                
+                if features:
+                    # Add features to DataFrame
+                    for feature_name, feature_value in features.items():
+                        if isinstance(feature_value, (int, float)) and not pd.isna(feature_value):
+                            if feature_name not in microstructure_features_df.columns:
+                                microstructure_features_df[feature_name] = 0.0
+                            microstructure_features_df.loc[idx, feature_name] = feature_value
+            
+            return microstructure_features_df
+            
+        except Exception as e:
+            self.logger.error(f"Error generating microstructure features: {e}")
+            return pd.DataFrame()
 
     @handle_data_processing_errors(default_return=pd.DataFrame(), context='legacy feature generation')
     def _generate_legacy_features(self, features_df: pd.DataFrame, agg_trades_df: pd.DataFrame=None, futures_df: pd.DataFrame=None, sr_levels: list=None) -> pd.DataFrame:

@@ -10,6 +10,7 @@ from typing import Any, Callable
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""

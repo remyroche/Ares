@@ -440,6 +440,7 @@ class LeverageSizer:
         """Adjust leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
             import math
+from src.core.decorators.errors import handles_errors
             
             # Start with base leverage in log space
             epsilon = 1e-8

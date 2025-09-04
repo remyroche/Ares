@@ -9,6 +9,7 @@ from sklearn.model_selection import cross_val_score
 from src.core.decorators import handles_errors, log_execution_time
 from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.decorators.errors import handles_errors
 
 class HyperparameterOptimizer:
     """Handles hyperparameter optimization for analyst models."""

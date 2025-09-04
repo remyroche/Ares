@@ -16,6 +16,7 @@ from src.utils.common_operations import (
     safe_read_parquet, validate_dataframe_schema, validate_data_quality
 )
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class DataReadingStep(BaseStep):

@@ -341,6 +341,7 @@ class DataFormattingFramework:
         """
         if strategy == 'intelligent':
             from .enhanced_missing_value_handler import enhanced_missing_value_handler
+from src.core.decorators.errors import handles_errors
             return enhanced_missing_value_handler.handle_missing_values_intelligently(data, 'timestamp', symbol, exchange, timeframe)
         handled_data = data.copy()
         if strategy == 'forward_fill':

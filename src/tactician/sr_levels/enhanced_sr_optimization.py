@@ -21,6 +21,7 @@ from src.utils.logger import system_logger
 from .enhanced_sr_detection import EnhancedSRDetector, SRLevel
 from .enhanced_sr_validation import EnhancedSRValidator, ValidationResult, BacktestResult
 from .enhanced_sr_confluence import EnhancedSRConfluenceDetector, ConfluenceResult, ConfluenceLevel
+from src.core.decorators.errors import handles_errors
 
 
 @dataclass

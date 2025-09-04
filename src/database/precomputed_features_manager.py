@@ -11,6 +11,7 @@ import copy
 import os
 try:
     from src.database.influxdb_manager import InfluxDBManager
+from src.core.decorators.errors import handles_errors
     INFLUXDB_AVAILABLE = True
 except Exception:
     InfluxDBManager = None

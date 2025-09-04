@@ -1,4 +1,4 @@
-# src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py
+# src/training/steps/step06_labeling_components/optimized_triple_barrier_labeling.py
 
 import contextlib
 from typing import Any

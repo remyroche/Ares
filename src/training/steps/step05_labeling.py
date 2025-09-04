@@ -142,7 +142,7 @@ class LabelingStep:
         self.regime_barrier_optimizer = None
         try:
             import copy
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
+            from src.training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
             self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
         except Exception as e:
@@ -421,7 +421,7 @@ class LabelingStep:
                 self.logger.error(f'❌ Missing required columns for triple barrier labeling: {missing_columns}')
                 return None
             try:
-                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+                from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
                 regime_labeler = RegimeAwareTripleBarrierLabeling(default_profit_take_multiplier=0.002, default_stop_loss_multiplier=0.001, default_time_barrier_minutes=self.time_barrier_minutes, default_max_lookahead=self.max_lookahead)
                 labels = regime_labeler.generate_labels(data, regime_column=self.regime_col, time_barrier_minutes=self.time_barrier_minutes, max_lookahead=self.max_lookahead)
                 if labels is not None:

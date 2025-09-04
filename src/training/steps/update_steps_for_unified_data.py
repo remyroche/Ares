@@ -13,7 +13,7 @@ from typing import Any
 TRAINING_STEPS: list[str] = [
     "step2_market_regime_classification",
     "step3_regime_data_splitting",
-    "step4_analyst_labeling_feature_engineering",
+    "step06_labeling_components",
     "step5_hmm_based_training",
     "step6_analyst_enhancement",
     "step7_analyst_ensemble_creation",
@@ -107,7 +107,7 @@ def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
             "timeframe": "1m",
             "notes": "Uses regime classification results from step02",
         },
-        "step4_analyst_labeling_feature_engineering": {
+        "step06_labeling_components": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Needs both OHLCV data and regime labels",

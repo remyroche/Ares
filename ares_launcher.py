@@ -90,7 +90,7 @@ import time
 from pathlib import Path
 
 # Import common operations
-from src.utils.common_operations import (
+from src.utils.common_operations_simple import (
     format_datetime,
     get_current_datetime,
 )
@@ -119,7 +119,7 @@ from src.config.training_modes import (
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
 )
-from src.utils.error_handler import handle_errors
+from src.utils.compat import handle_errors
 from src.utils.logger import (
     ensure_comprehensive_logging_available,
 )

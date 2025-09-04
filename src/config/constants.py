@@ -18,6 +18,7 @@ DEFAULT_COMPUTATION_TIME_THRESHOLD: Final[float] = 0.1  # 100ms
 # Centralized lookback windows to ensure a single source of truth across the project
 # Note: Keep this consistent with usages in config and training steps
 DEFAULT_LOOKBACK_DAYS: Final[int] = 730  # 2 years default lookback window
+FULL_TRAINING_LOOKBACK_DAYS: Final[int] = 730  # Full training lookback window
 
 # Import training mode constants from centralized configuration
 

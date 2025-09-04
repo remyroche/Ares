@@ -12,11 +12,17 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
-from .pipeline_standards import PipelineStandards
+from .pipeline_standards_simple import PipelineStandards
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
-warning_symbols = PipelineStandards.safe_import('src.utils.warning_symbols', None)
+try:
+    from . import structured_logging
+except ImportError:
+    structured_logging = None
+try:
+    from . import warning_symbols
+except ImportError:
+    warning_symbols = None
 
 def create_fallback_correlation_filter() -> Any:
 

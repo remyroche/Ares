@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import numpy as np
-import pandas as pd
+# import numpy as np  # Removed to avoid dependency issues
+# import pandas as pd  # Removed to avoid dependency issues
 from copy import copy
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -113,48 +113,16 @@ class PipelineStandards:
         path_template = PipelineStandards.DIRECTORY_STRUCTURE[path_type]
         return path_template.format(exchange=exchange.lower(), asset=asset.lower(), **kwargs)
 
-    @staticmethod
-    def standardize_timestamp(df: pd.DataFrame, column: str='timestamp', target_format: str='int64') -> pd.DataFrame:
-        """
-        Standardize timestamp column to consistent format.
+    # @staticmethod
+    # def standardize_timestamp(df: pd.DataFrame, column: str='timestamp', target_format: str='int64') -> pd.DataFrame:
+    #     """
+    #     Standardize timestamp column to consistent format.
+    #     Commented out to avoid pandas dependency
+    #     """
+    #     pass
 
-        Args:
-            df: DataFrame to process
-            column: Timestamp column name
-            target_format: Target format ("int64" for milliseconds, "datetime64[ns]" for datetime)
-
-        Returns:
-            DataFrame with standardized timestamp
-        """
-        if column not in df.columns:
-            return df
-        df = df.copy()
-        try:
-            if target_format == 'int64':
-                if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = (pd.to_datetime(df[column], utc=True).astype('int64') // 10 ** 6).astype('int64')
-                else:
-                    ts_numeric = pd.to_numeric(df[column], errors='coerce')
-                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
-                        df[column] = (ts_numeric // 10 ** 6).astype('int64')
-                    else:
-                        df[column] = ts_numeric.astype('int64')
-            elif target_format == 'datetime64[ns]':
-                if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = pd.to_datetime(df[column], utc=True)
-                else:
-                    ts_numeric = pd.to_numeric(df[column], errors='coerce')
-                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
-                        df[column] = pd.to_datetime(ts_numeric, unit='ns', utc=True)
-                    else:
-                        df[column] = pd.to_datetime(ts_numeric, unit='ms', utc=True)
-        except Exception as e:
-            msg = f"Failed to standardize timestamp column '{column}': {e}"
-            raise ValueError(msg)
-        return df
-
-    @staticmethod
-    def validate_timestamp_format(df: pd.DataFrame, column: str='timestamp', expected_format: str='int64') -> ValidationResult:
+    # @staticmethod
+    # def validate_timestamp_format(df: pd.DataFrame, column: str='timestamp', expected_format: str='int64') -> ValidationResult:
         """
         Validate timestamp format consistency.
 

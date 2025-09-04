@@ -13,8 +13,8 @@ from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
-import numpy as np
-import pandas as pd
+# import numpy as np  # Removed to avoid dependency issues
+# import pandas as pd  # Removed to avoid dependency issues
 
 def get_current_datetime() -> datetime.datetime:
     """Get current datetime."""

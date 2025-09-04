@@ -543,7 +543,8 @@ class ModelManager:
         timestamp = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
         backup_path = os.path.join(
             backup_dir,
-            f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
+            f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}"
+        )
 
         # Copy model file
         shutil.copy2(model_path, backup_path)
@@ -571,6 +572,7 @@ class ModelManager:
         exceptions=(Exception,),
         default_return=None,
         context="model manager cleanup",
+    )
     async def stop(self) -> None:
         """Stop the model manager."""
         self.logger.info("🛑 Stopping Model Manager...")
@@ -587,6 +589,7 @@ model_manager: ModelManager | None = None
     exceptions=(Exception,),
     default_return=None,
     context="model manager setup",
+)
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:

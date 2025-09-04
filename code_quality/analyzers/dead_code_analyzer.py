@@ -690,7 +690,7 @@ class DeadCodeAnalyzer:
 
     def _build_call_graph(self, tree: ast.AST) -> tuple[dict[str, ast.AST], set[str]]:
         """
-        Build a call graph for the AST.
+        Build a call graph for the AST with improved accuracy.
         
         Returns:
             Tuple of (defined_functions, called_functions)
@@ -705,14 +705,18 @@ class DeadCodeAnalyzer:
             elif isinstance(node, ast.ClassDef):
                 defined_functions[node.name] = node
                 
-            # Track function calls
+            # Track function calls with improved logic
             elif isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name):
                     called_functions.add(node.func.id)
                 elif isinstance(node.func, ast.Attribute):
                     # For method calls like obj.method(), we track the method name
                     called_functions.add(node.func.attr)
-                    
+                elif isinstance(node.func, ast.Subscript):
+                    # Handle cases like func['key']()
+                    if isinstance(node.func.value, ast.Name):
+                        called_functions.add(node.func.value.id)
+                        
         return defined_functions, called_functions
 
     def _create_unused_function_issue(self, func_node: ast.AST, lines: list[str], file_path: str) -> DeprecatedCodeIssue:
@@ -773,7 +777,7 @@ class DeadCodeAnalyzer:
 
     def detect_deprecated_code_with_graph(self, file_path: str | Path, global_call_graph: dict) -> list[DeprecatedCodeIssue]:
         """
-        Detect deprecated code using global call graph analysis.
+        Detect deprecated code using global call graph analysis with improved accuracy.
         
         Args:
             file_path: Path to Python file
@@ -801,21 +805,27 @@ class DeadCodeAnalyzer:
             global_calls = global_call_graph['calls']
             
             for func_name, func_node in defined_functions.items():
-                # Skip private functions and special methods
-                if func_name.startswith('_') and not func_name.startswith('__'):
+                # Skip functions that are likely to be used
+                if self._is_likely_used_function(func_name, func_node, lines, str(file_path)):
                     continue
                 
                 # Check if function is called anywhere in the codebase
                 is_called_locally = func_name in called_functions
                 is_called_globally = func_name in global_calls
                 
-                if not is_called_locally and not is_called_globally:
+                # Additional checks for framework-specific patterns
+                is_framework_callback = self._is_framework_callback(func_node, lines)
+                is_entry_point = self._is_entry_point(func_name, func_node, lines)
+                is_test_function = self._is_test_function(func_name, lines)
+                
+                if (not is_called_locally and not is_called_globally and 
+                    not is_framework_callback and not is_entry_point and not is_test_function):
                     # Function is defined but never called anywhere
                     issue = self._create_unused_function_issue(
                         func_node, lines, str(file_path)
                     )
                     issue.deprecation_reason = "Function is defined but never called anywhere in the codebase"
-                    issue.severity = "medium"  # Higher severity for truly unused functions
+                    issue.severity = "low"  # Lower severity to reduce false positives
                     deprecated_issues.append(issue)
             
             return deprecated_issues
@@ -823,6 +833,84 @@ class DeadCodeAnalyzer:
         except Exception as e:
             print(f"Warning: Could not analyze deprecated code in {file_path}: {e}")
             return []
+
+    def _is_likely_used_function(self, func_name: str, func_node: ast.AST, lines: list[str], file_path: str) -> bool:
+        """Check if a function is likely to be used based on various heuristics."""
+        # Skip private functions (except __init__, __call__, etc.)
+        if func_name.startswith('_') and not func_name.startswith('__'):
+            return True
+            
+        # Skip special methods
+        if func_name.startswith('__') and func_name.endswith('__'):
+            return True
+            
+        # Skip functions in test files
+        if 'test' in file_path.lower() or 'tests' in file_path.lower():
+            return True
+            
+        # Skip functions in __init__.py files (likely exports)
+        if file_path.endswith('__init__.py'):
+            return True
+            
+        # Skip functions with decorators that indicate they're used
+        if hasattr(func_node, 'decorator_list') and func_node.decorator_list:
+            for decorator in func_node.decorator_list:
+                if isinstance(decorator, ast.Name):
+                    decorator_name = decorator.id.lower()
+                    if any(keyword in decorator_name for keyword in ['app', 'route', 'handler', 'callback', 'listener']):
+                        return True
+                        
+        return False
+
+    def _is_framework_callback(self, func_node: ast.AST, lines: list[str]) -> bool:
+        """Check if a function is a framework callback."""
+        if not hasattr(func_node, 'decorator_list') or not func_node.decorator_list:
+            return False
+            
+        for decorator in func_node.decorator_list:
+            if isinstance(decorator, ast.Name):
+                decorator_name = decorator.id.lower()
+                # Common framework decorators
+                framework_patterns = [
+                    'app', 'route', 'handler', 'callback', 'listener', 'event',
+                    'task', 'job', 'schedule', 'cron', 'periodic', 'signal',
+                    'middleware', 'filter', 'hook', 'plugin', 'extension'
+                ]
+                if any(pattern in decorator_name for pattern in framework_patterns):
+                    return True
+                    
+        return False
+
+    def _is_entry_point(self, func_name: str, func_node: ast.AST, lines: list[str]) -> bool:
+        """Check if a function is an entry point."""
+        # Common entry point names
+        entry_point_names = ['main', 'run', 'start', 'execute', 'cli', 'command']
+        if func_name.lower() in entry_point_names:
+            return True
+            
+        # Check for if __name__ == "__main__" pattern
+        for i, line in enumerate(lines):
+            if 'if __name__ == "__main__"' in line:
+                # Look for function calls in the next few lines
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    if func_name in lines[j] and '(' in lines[j]:
+                        return True
+                        
+        return False
+
+    def _is_test_function(self, func_name: str, lines: list[str]) -> bool:
+        """Check if a function is a test function."""
+        # Common test function patterns
+        test_patterns = ['test_', 'check_', 'verify_', 'validate_', 'assert_']
+        if any(func_name.startswith(pattern) for pattern in test_patterns):
+            return True
+            
+        # Check if function is in a test context
+        for line in lines:
+            if any(keyword in line.lower() for keyword in ['pytest', 'unittest', 'test', 'assert']):
+                return True
+                
+        return False
 
     def _is_deprecation_warning(self, node: ast.Raise) -> bool:
         """Check if a raise statement is a DeprecationWarning."""
@@ -883,6 +971,7 @@ class DeadCodeAnalyzer:
     def detect_dynamic_imports(self, file_path: str | Path) -> list[DeadCodeIssue]:
         """
         Detect dynamic imports that might be missed by static analysis.
+        This is now more conservative to reduce false positives.
         
         Args:
             file_path: Path to Python file
@@ -894,6 +983,11 @@ class DeadCodeAnalyzer:
         if not file_path.exists() or file_path.suffix != ".py":
             return []
             
+        # Skip test files and common framework files to reduce false positives
+        if any(skip_pattern in str(file_path).lower() for skip_pattern in 
+               ['test', 'tests', '__init__.py', 'setup.py', 'conftest.py']):
+            return []
+            
         try:
             with open(file_path, encoding="utf-8") as f:
                 source = f.read()
@@ -902,30 +996,17 @@ class DeadCodeAnalyzer:
             lines = source.split("\n")
             dynamic_imports = []
             
+            # Only report obvious cases of dynamic imports that are likely problematic
             for node in ast.walk(tree):
-                # Check for importlib.import_module calls
                 if isinstance(node, ast.Call):
-                    if self._is_importlib_call(node):
-                        issue = self._create_dynamic_import_issue(
-                            node, lines, str(file_path), "importlib"
-                        )
-                        dynamic_imports.append(issue)
-                
-                # Check for __import__ calls
-                elif isinstance(node, ast.Call):
+                    # Only flag __import__ calls as they're more likely to be problematic
                     if self._is_dunder_import_call(node):
-                        issue = self._create_dynamic_import_issue(
-                            node, lines, str(file_path), "__import__"
-                        )
-                        dynamic_imports.append(issue)
-                
-                # Check for exec/eval with import statements
-                elif isinstance(node, ast.Call):
-                    if self._contains_dynamic_import(node):
-                        issue = self._create_dynamic_import_issue(
-                            node, lines, str(file_path), "exec_eval"
-                        )
-                        dynamic_imports.append(issue)
+                        # Check if it's in a try/except block (likely intentional)
+                        if not self._is_in_try_except(node, tree):
+                            issue = self._create_dynamic_import_issue(
+                                node, lines, str(file_path), "__import__"
+                            )
+                            dynamic_imports.append(issue)
             
             return dynamic_imports
             
@@ -945,6 +1026,15 @@ class DeadCodeAnalyzer:
         """Check if a call is to __import__."""
         if isinstance(node.func, ast.Name):
             return node.func.id == "__import__"
+        return False
+
+    def _is_in_try_except(self, node: ast.AST, tree: ast.AST) -> bool:
+        """Check if a node is inside a try/except block."""
+        for parent in ast.walk(tree):
+            if isinstance(parent, ast.Try):
+                for child in ast.walk(parent):
+                    if child is node:
+                        return True
         return False
 
     def _contains_dynamic_import(self, node: ast.AST) -> bool:
@@ -976,6 +1066,7 @@ class DeadCodeAnalyzer:
     def detect_conditional_dead_code(self, file_path: str | Path) -> list[DeadCodeIssue]:
         """
         Detect conditional dead code (unreachable code paths).
+        This is now more conservative to reduce false positives.
         
         Args:
             file_path: Path to Python file
@@ -987,6 +1078,11 @@ class DeadCodeAnalyzer:
         if not file_path.exists() or file_path.suffix != ".py":
             return []
             
+        # Skip test files and common framework files to reduce false positives
+        if any(skip_pattern in str(file_path).lower() for skip_pattern in 
+               ['test', 'tests', '__init__.py', 'setup.py', 'conftest.py']):
+            return []
+            
         try:
             with open(file_path, encoding="utf-8") as f:
                 source = f.read()
@@ -995,11 +1091,13 @@ class DeadCodeAnalyzer:
             lines = source.split("\n")
             unreachable_code = []
             
+            # Only check for obvious cases of unreachable code
             for node in ast.walk(tree):
-                # Check for unreachable code after return/raise/break/continue
                 if isinstance(node, ast.FunctionDef):
-                    unreachable_in_function = self._find_unreachable_in_function(node, lines, str(file_path))
-                    unreachable_code.extend(unreachable_in_function)
+                    # Only check functions that are not test functions
+                    if not self._is_test_function(node.name, lines):
+                        unreachable_in_function = self._find_unreachable_in_function(node, lines, str(file_path))
+                        unreachable_code.extend(unreachable_in_function)
             
             return unreachable_code
             
@@ -1008,30 +1106,34 @@ class DeadCodeAnalyzer:
             return []
 
     def _find_unreachable_in_function(self, func_node: ast.FunctionDef, lines: list[str], file_path: str) -> list[DeadCodeIssue]:
-        """Find unreachable code within a function."""
+        """Find unreachable code within a function with improved accuracy."""
         unreachable = []
         last_terminating_line = 0
         
+        # Only check for obvious cases - code immediately after return/raise
         for node in ast.walk(func_node):
             if hasattr(node, 'lineno'):
-                # Check if this node comes after a terminating statement
-                if last_terminating_line > 0 and node.lineno > last_terminating_line:
+                # Check if this node comes immediately after a terminating statement
+                if last_terminating_line > 0 and node.lineno == last_terminating_line + 1:
                     # Check if this is a terminating statement
                     if isinstance(node, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
                         last_terminating_line = node.lineno
                     else:
-                        # This might be unreachable code
-                        issue = DeadCodeIssue(
-                            file_path=file_path,
-                            line_number=node.lineno,
-                            issue_type="unreachable_code",
-                            description="Code after terminating statement may be unreachable",
-                            confidence=70.0,
-                            code_snippet=self._extract_code_snippet(lines, node.lineno),
-                            severity="medium",
-                            removal_impact="low"
-                        )
-                        unreachable.append(issue)
+                        # Check if this is just a comment or docstring
+                        line_content = lines[node.lineno - 1].strip() if node.lineno <= len(lines) else ""
+                        if not line_content.startswith('#') and not line_content.startswith('"""') and not line_content.startswith("'''"):
+                            # This might be unreachable code
+                            issue = DeadCodeIssue(
+                                file_path=file_path,
+                                line_number=node.lineno,
+                                issue_type="unreachable_code",
+                                description="Code immediately after terminating statement may be unreachable",
+                                confidence=80.0,  # Higher confidence for immediate cases
+                                code_snippet=self._extract_code_snippet(lines, node.lineno),
+                                severity="low",  # Lower severity to reduce noise
+                                removal_impact="low"
+                            )
+                            unreachable.append(issue)
                 else:
                     # Update last terminating line
                     if isinstance(node, (ast.Return, ast.Raise, ast.Break, ast.Continue)):

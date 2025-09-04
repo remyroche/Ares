@@ -588,22 +588,13 @@ class EnhancedPipelineOrchestrator:
                 'timestamp': format_datetime(get_current_datetime())
             }
             
-            # Save as general report using report manager
+            # Save as human-readable TXT report using report manager
             results_file = report_manager.save_general_report(
                 report_type="pipeline_summary",
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
                 report_data=enhanced_results,
-                file_extension="json"
-            )
-            
-            # Also save as markdown for readability
-            report_manager.save_general_report(
-                report_type="pipeline_summary",
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                report_data=enhanced_results,
-                file_extension="md"
+                file_extension="txt"
             )
             
             # Generate run summary

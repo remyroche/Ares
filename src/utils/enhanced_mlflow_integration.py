@@ -1341,22 +1341,13 @@ def create_detailed_step_report(
         symbol = training_input.get("symbol", "UNKNOWN")
         exchange = training_input.get("exchange", "UNKNOWN")
         
-        # Save as JSON report
+        # Save as human-readable TXT report
         report_path = report_manager.save_step_report(
             step_name=step_name,
             symbol=symbol,
             exchange=exchange,
             report_data=report_data,
-            file_extension="json"
-        )
-        
-        # Also save as markdown for readability
-        report_manager.save_step_report(
-            step_name=step_name,
-            symbol=symbol,
-            exchange=exchange,
-            report_data=report_data,
-            file_extension="md"
+            file_extension="txt"
         )
         
         system_logger.info(f"📄 Step report saved: {report_path}")

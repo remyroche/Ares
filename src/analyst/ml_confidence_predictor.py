@@ -1023,7 +1023,7 @@ class MLConfidencePredictor:
         """Initialize integration with enhanced training manager."""
         try:
             # Import enhanced training manager
-            from src.training.core.training_manager import create_training_manager
+            from src.training.core import create_training_manager
 
             # Initialize enhanced training manager
             self.enhanced_training_manager = await create_training_manager(self.config)

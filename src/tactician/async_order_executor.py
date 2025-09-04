@@ -16,9 +16,15 @@ from uuid import uuid4
 
 import optuna
 
-from src.supervisor.performance_reporter import (
-    PerformanceReporter,
-)
+try:
+    from src.supervisor.performance_reporter import (
+        PerformanceReporter,
+        setup_performance_reporter,
+    )
+except Exception:
+    PerformanceReporter = None  # type: ignore
+    def setup_performance_reporter(*_a, **_k):  # type: ignore
+        return None
 from copy import copy
 from src.tactician.enhanced_order_manager import (
     EnhancedOrderManager,
@@ -30,6 +36,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     missing,
+    invalid,
 )
 from src.core.decorators import handles_errors
 
@@ -281,8 +288,8 @@ class AsyncOrderExecutor:
             self.total_executions += 1
 
             # Update performance metrics
-            if self.performance_reporter:
-                await self.performance_reporter.record_execution(result)
+            if self.performance_reporter and hasattr(self.performance_reporter, 'record_execution'):
+                await self.performance_reporter.record_execution(result)  # type: ignore
 
             return result
 

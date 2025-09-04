@@ -9,18 +9,14 @@ regime detection algorithms.
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 import time
 import json
-import numpy as np
-import pandas as pd
 from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
     comprehensive_data_validation,
     ensure_data_integrity,
     handle_errors,
@@ -35,8 +31,7 @@ from src.core.domain import (
     with_tracing_span,
     validate_pipeline_step
 )
-from src.core.decorators import validates, handles_errors, traced
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 logger = system_logger.getChild("Step3ParameterOptimization")
 
@@ -758,8 +753,8 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
-    from src.core.decorators import handles_errors
-    from src.core.decorators.errors import handles_errors
+    from .core.decorators import handles_errors
+    from .core.decorators.errors import handles_errors
     
     # Load test configuration
     test_config = {
@@ -777,5 +772,5 @@ if __name__ == "__main__":
     }
     
     # Run the step
-    success = asyncio.run(run_step(test_config))
+    success = asyncio.run(await run_step(test_config))
     print(f"Step execution {'successful' if success else 'failed'}")

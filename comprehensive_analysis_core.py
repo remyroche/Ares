@@ -29,16 +29,11 @@ from typing import Any
 from centralized_logging import get_logger
 
 # Import minimal modules
-from minimal_config import get_default_config as get_default_config_minimal_config
 
 # Import only the analyzers we created
 try:
-    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer as AdvancedASTAnalyzer_2
     from code_quality.analyzers.architecture_analyzer import ArchitectureAnalyzer
     from code_quality.analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
-    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer as ConcurrencyAnalyzer_2
-    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer as ErrorHandlingAnalyzer_2
-    from code_quality.analyzers.type_checker import TypeChecker as TypeChecker_code_quality_analyzers_type_checker
     ANALYZERS_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Some analyzers not available: {e}")
@@ -516,4 +511,5 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

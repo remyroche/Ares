@@ -15,23 +15,20 @@ import sys
 import os
 from pathlib import Path
 import time
-import json
-from typing import Dict, Any, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities and decorators
-from src.utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
     ensure_directory, safe_json_dump, safe_json_load
 )
-from src.utils.data_quality_framework import DataQualityFramework
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors, validates, traced, log_execution_time
-from src.training.steps.optimisation import run_optimisation_pipeline
-from src.core.decorators.errors import handles_errors
+from .utils.data_quality_framework import DataQualityFramework
+from .utils.logger import system_logger
+from .core.decorators import handles_errors, validates, traced, log_execution_time
+from .training.steps.optimisation import run_optimisation_pipeline
+from .core.decorators.errors import handles_errors
 
 # Initialize logger
 logger = system_logger.getChild('OptimisationMain')
@@ -295,4 +292,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the enhanced optimization pipeline
-    asyncio.run(main())
+    asyncio.run(await main())

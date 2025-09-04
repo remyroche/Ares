@@ -1,14 +1,11 @@
-"""Ensemble creation component for analyst enhancement."""
-import asyncio
-from typing import Any, Dict, List, Optional
+
 import numpy as np
-import pandas as pd
+"""Ensemble creation component for analyst enhancement."""
+from typing import Any, Dict, List, Optional
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
-from src.core.decorators import handles_errors, log_execution_time
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 class EnsembleCreator:
     """Handles ensemble creation from enhanced analyst models."""

@@ -1,12 +1,9 @@
-from __future__ import annotations
 '\nLive Trading Wavelet Demo\n\nThis script demonstrates the computationally-aware wavelet integration\nfor live trading with performance monitoring and real-time signal generation.\n'
 import asyncio
 import time
-import numpy as np
-import pandas as pd
 import yaml
-from src.trading.live_wavelet_integration import LiveWaveletIntegration
-from src.utils.logger import system_logger
+from .trading.live_wavelet_integration import LiveWaveletIntegration
+from .utils.logger import system_logger
 
 class LiveWaveletDemo:
     """
@@ -198,4 +195,4 @@ async def main() -> None:
     except Exception as e:
         print(f'Error in demo: {e}')
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

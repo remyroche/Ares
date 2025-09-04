@@ -1,3 +1,5 @@
+
+import pandas as pd
 """Enhanced Step 5: Per-Regime Labeling.
 
 This module provides per-HMM regime labeling functionality, ensuring that
@@ -7,20 +9,17 @@ labeling is performed on a per-regime basis for better regime-specific modeling.
 import asyncio
 from pathlib import Path
 from typing import Any, Dict, Optional
-import pandas as pd
-import numpy as np
 
-from src.training.steps.market_analysis.step05_labeling import LabelingStep
-from src.training.steps.regime_handler import regime_handler
+from .training.steps.market_analysis.step05_labeling import LabelingStep
+from .training.steps.regime_handler import regime_handler
 from src.training.steps.regime_processing_decorator import (
     per_regime_processing, 
     aggregate_regime_results,
     RegimeProcessingContext
 )
-from src.utils.logger import getChild as get_logger
-from src.utils.pipeline_standards import pipeline_standards
-from src.core.decorators import traced, validates, handles_errors
-from src.core.decorators.errors import handles_errors
+from .utils.pipeline_standards import pipeline_standards
+from .core.decorators import traced, validates, handles_errors
+from .core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step5LabelingPerRegime')
@@ -364,4 +363,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime labeling result: {success}')
         
-    asyncio.run(test())
+    asyncio.run(await test())

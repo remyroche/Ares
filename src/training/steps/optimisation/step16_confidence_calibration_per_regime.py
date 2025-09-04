@@ -7,30 +7,22 @@ performed specifically for each regime's characteristics and market behavior.
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Tuple
-import pandas as pd
-import numpy as np
 import json
 from datetime import datetime
 
-from src.training.steps.step16_confidence_calibration import Step16ConfidenceCalibration
-from src.training.steps.regime_handler import regime_handler
-from src.training.steps.regime_processing_decorator import (
+from .training.steps.step16_confidence_calibration import Step16ConfidenceCalibration
     per_regime_processing,
     aggregate_regime_results,
     RegimeProcessingContext
 )
-from src.training.steps.regime_continuity_decorator import per_regime_step
-from src.utils.logger import getChild as get_logger
-from src.utils.pipeline_standards import pipeline_standards
-from src.utils.common_operations import (
+from .training.steps.regime_continuity_decorator import per_regime_step
+from .utils.pipeline_standards import pipeline_standards
     format_datetime, get_current_datetime, safe_file_exists, 
     ensure_directory, safe_json_dump, safe_json_load, safe_sleep
 )
-from src.utils.data_quality_framework import DataQualityFramework
-from src.utils.data_formatting_framework import DataFormattingFramework
-from src.core.decorators import traced, validates, handles_errors, log_execution_time
-from src.core.decorators.errors import handles_errors
+from .utils.data_quality_framework import DataQualityFramework
+from .utils.data_formatting_framework import DataFormattingFramework
+from .core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step16ConfidenceCalibrationPerRegime')
@@ -1106,4 +1098,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime confidence calibration result: {success}')
         
-    asyncio.run(test())
+    asyncio.run(await test())

@@ -1,6 +1,7 @@
+
+import pandas as pd
 #!/usr/bin/env python3
 
-from __future__ import annotations
 
 """Comprehensive Gap Filler for Pipeline Integration.
 
@@ -18,8 +19,6 @@ from typing import Any
 
 import aiohttp
 import certifi
-import pandas as pd
-from copy import copy
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -928,7 +927,7 @@ class ComprehensiveGapFiller:
         self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
-        from src.utils.logger import system_logger
+        from .utils.logger import system_logger
 
         logger = system_logger.getChild("ComprehensiveGapFiller")
         
@@ -1103,4 +1102,4 @@ async def run_comprehensive_gap_filling_pipeline(
 
 
 if __name__ == "__main__":
-    asyncio.run(run_comprehensive_gap_filling_pipeline())
+    asyncio.run(await run_comprehensive_gap_filling_pipeline())

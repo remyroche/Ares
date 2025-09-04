@@ -1,15 +1,14 @@
-from __future__ import annotations
 
+
+import pandas as pd
 # src/supervisor/optimizer.py
 import asyncio
 from datetime import datetime
 from typing import Any
 
-import pandas as pd
 
-from src.utils.logger import system_logger
-from copy import copy
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 class Optimizer:

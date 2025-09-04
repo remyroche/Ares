@@ -1,18 +1,15 @@
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
 # Removed error_handler imports - using core decorators instead
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     invalid,
 )
-from copy import copy
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 # src/training/optimization_manager.py
 
@@ -54,7 +51,7 @@ class OptimizationManager:
             True,
         )
 
-    def print(self, message: str) -> None:
+    def print_message(self, message: str) -> None:
         """Proxy print to logger to keep output consistent in terminal."""
         self.logger.info(message)
 
@@ -79,7 +76,7 @@ class OptimizationManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for optimization manager"))
+                self.print_message(invalid("Invalid configuration for optimization manager"))
                 return False
 
             # Initialize optimization components
@@ -89,7 +86,7 @@ class OptimizationManager:
             return True
 
         except Exception as e:
-            self.print(failed(f"❌ Optimization Manager initialization failed: {e}"))
+            self.print_message(failed(f"❌ Optimization Manager initialization failed: {e}"))
             return False
 
     @handles_errors(
@@ -113,13 +110,13 @@ class OptimizationManager:
                     self.enable_ensemble_optimization,
                 ],
             ):
-                self.print(error("At least one optimization type must be enabled"))
+                self.print_message(error("At least one optimization type must be enabled"))
                 return False
 
             return True
 
         except Exception as e:
-            self.print(failed(f"Configuration validation failed: {e}"))
+            self.print_message(failed(f"Configuration validation failed: {e}"))
             return False
 
     @handles_errors(
@@ -223,7 +220,7 @@ class OptimizationManager:
             return optimization_results
 
         except Exception as e:
-            self.print(failed(f"❌ Model optimization failed: {e}"))
+            self.print_message(failed(f"❌ Model optimization failed: {e}"))
             self.is_optimizing = False
             return None
 
@@ -250,25 +247,25 @@ class OptimizationManager:
         try:
             # Validate model results
             if not model_results:
-                self.print(error("Model results are empty"))
+                self.print_message(error("Model results are empty"))
                 return False
 
             # Validate training input
             if not training_input:
-                self.print(error("Training input is empty"))
+                self.print_message(error("Training input is empty"))
                 return False
 
             # Check for required model results
             if not model_results.get("analyst_models") and not model_results.get(
                 "tactician_models",
             ):
-                self.print(error("No trained models found in results"))
+                self.print_message(error("No trained models found in results"))
                 return False
 
             return True
 
         except Exception as e:
-            self.print(failed(f"Optimization inputs validation failed: {e}"))
+            self.print_message(failed(f"Optimization inputs validation failed: {e}"))
             return False
 
     @handles_errors(
@@ -342,7 +339,7 @@ class OptimizationManager:
             return optimization_results
 
         except Exception as e:
-            self.print(failed(f"❌ Hyperparameter optimization failed: {e}"))
+            self.print_message(failed(f"❌ Hyperparameter optimization failed: {e}"))
             return None
 
     @handles_errors(
@@ -442,7 +439,7 @@ class OptimizationManager:
             return feature_selection_results
 
         except Exception as e:
-            self.print(failed(f"❌ Feature selection optimization failed: {e}"))
+            self.print_message(failed(f"❌ Feature selection optimization failed: {e}"))
             return None
 
     @handles_errors(
@@ -505,7 +502,7 @@ class OptimizationManager:
             return ensemble_optimization_results
 
         except Exception as e:
-            self.print(failed(f"❌ Ensemble optimization failed: {e}"))
+            self.print_message(failed(f"❌ Ensemble optimization failed: {e}"))
             return None
 
     @handles_errors(
@@ -546,7 +543,7 @@ class OptimizationManager:
             }
 
         except Exception as e:
-            self.print(failed(f"❌ Failed to optimize analyst ensembles: {e}"))
+            self.print_message(failed(f"❌ Failed to optimize analyst ensembles: {e}"))
             return None
 
     @handles_errors(
@@ -586,7 +583,7 @@ class OptimizationManager:
             }
 
         except Exception as e:
-            self.print(failed(f"❌ Failed to optimize tactician ensembles: {e}"))
+            self.print_message(failed(f"❌ Failed to optimize tactician ensembles: {e}"))
             return None
 
     @handles_errors(
@@ -614,7 +611,7 @@ class OptimizationManager:
             self.logger.info("✅ Optimization results stored successfully")
 
         except Exception as e:
-            self.print(failed(f"❌ Failed to store optimization results: {e}"))
+            self.print_message(failed(f"❌ Failed to store optimization results: {e}"))
 
     def get_optimization_status(self) -> dict[str, Any]:
         """Get current optimization status."
@@ -652,7 +649,7 @@ class OptimizationManager:
             self.is_optimizing = False
             self.logger.info("✅ Optimization Manager stopped successfully")
         except Exception as e:
-            self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
+            self.print_message(failed(f"❌ Failed to stop Optimization Manager: {e}"))
 
 
 @handles_errors(

@@ -1,14 +1,9 @@
-from __future__ import annotations
 '\nEnhanced Multi-Timeframe Optimizer\n\nThis module enhances multi-timeframe and cross-timeframe features by using\noptimized lookback periods from the matrix optimization system instead of\nfixed periods. It integrates with the existing matrix optimization results\nto provide more effective multi-timeframe analysis.\n'
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import pandas as pd
-from copy import copy
-import asyncio
-import numpy as np
 
 @dataclass
 class OptimizedTimeframeConfig:
@@ -29,6 +24,8 @@ class EnhancedMultiTimeframeOptimizer:
     """
     Enhanced Multi-Timeframe Optimizer that uses optimized lookback periods
     from the matrix optimization system instead of fixed periods.
+import pandas as pd
+
     """
 
     def __init__(self, config: OptimizedTimeframeConfig, matrix_optimization_results: dict[str, Any]=None) -> None:

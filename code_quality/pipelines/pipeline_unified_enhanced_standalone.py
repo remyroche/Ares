@@ -8,9 +8,7 @@ without complex import dependencies.
 
 import ast
 import json
-import sys
 import time
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -558,4 +556,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

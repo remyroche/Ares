@@ -5,8 +5,6 @@ Manual syntax fixer for the most common issues in the codebase.
 
 import os
 import re
-import sys
-import json
 from pathlib import Path
 from datetime import datetime
 import shutil
@@ -184,4 +182,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

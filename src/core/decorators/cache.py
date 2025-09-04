@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nCaching decorators with flexible policies.\n\nProvides decorators for caching function results with support for\nper-request caching, cross-request caching, TTL, and invalidation.\n'
 import functools
 import hashlib
@@ -9,9 +8,9 @@ from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Callable
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
-import asyncio
 request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar('request_cache', default=None)
 
 class CachePolicy(Enum):

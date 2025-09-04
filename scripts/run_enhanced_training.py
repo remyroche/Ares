@@ -1,3 +1,4 @@
+from src.utils.logger import logger
 #!/usr/bin/env python3
 # scripts/run_enhanced_training.py
 
@@ -18,14 +19,13 @@ import asyncio
 import sys
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols
+import pandas as pd
+import numpy as np
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -247,9 +247,9 @@ Examples:
 
     # Run appropriate function
     if args.demo:
-        asyncio.run(run_efficiency_demo())
+        asyncio.run(await run_efficiency_demo())
     elif args.checkpoint:
-        asyncio.run(run_checkpoint_demo())
+        asyncio.run(await run_checkpoint_demo())
     else:
         success=asyncio.run(
             run_enhanced_training(
@@ -259,4 +259,4 @@ Examples:
         sys.exit(0 if success else 1)
 
 if __name__== "__main__":
-    main()
+    await main()

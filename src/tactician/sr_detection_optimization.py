@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
+from copy import copy
+
 '\nEnhanced S/R Detection Optimization Module\n\nThis module implements comprehensive optimization strategies for S/R detection\nspecifically optimized for 1-30m timeframes. It includes:\n\n1. Multi-Method Ensemble Optimization\n2. Advanced Strength Scoring Optimization\n3. Multi-Timeframe Confluence Optimization\n4. Advanced S/R Method Optimization\n5. DBSCAN Clustering Optimization with real data testing\n6. Timeframe-specific parameter optimization\n\nThe optimized parameters are then used by the main S/R predictor.\n'
 import json
 import warnings
@@ -295,7 +297,7 @@ class SRDetectionOptimizer:
             if not self.sr_predictor:
                 raise SROptimizationError('S/R predictor not initialized')
             # Monitor memory usage before processing
-            self._monitor_memory_usage()
+            await self._monitor_memory_usage()
             
             self.training_data = market_data
             self.multi_timeframe_data = multi_timeframe_data or {}
@@ -351,7 +353,7 @@ class SRDetectionOptimizer:
                 raise SROptimizationError(f'Invalid target timeframe: {target_timeframe}')
             
             # Memory monitoring
-            self._monitor_memory_usage()
+            self.await _monitor_memory_usage()
             
             # Step 1: Computational optimization for efficiency
             if self.computational_optimizer:
@@ -926,7 +928,7 @@ class SRDetectionOptimizer:
                 chunks.append(chunk)
                 
                 # Monitor memory after each chunk
-                self._monitor_memory_usage()
+                self.await _monitor_memory_usage()
             
             return chunks
             

@@ -1,8 +1,10 @@
+
+from typing import Dict
+from typing import Any
 """BaseValidationStep wrapper for Step 20 A/B Testing."""
 
-from typing import Any, Dict, List, Tuple
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 from .base_validation_step import BaseValidationStep
 
 
@@ -29,7 +31,6 @@ class ABTestingStep(BaseValidationStep):
     async def execute_logic(
         self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        from src.training.steps.validation.step20_ab_testing import ABTestingStep as Impl
 
         impl = Impl(self.config)
         await impl.initialize()

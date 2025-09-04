@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Utils package for data collection pipeline."""
 
-from .data_operations_utils import (
     DataFormat,
     CompressionType,
     DataOperationResult,

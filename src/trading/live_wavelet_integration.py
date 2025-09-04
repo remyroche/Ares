@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Live Trading Wavelet Integration
@@ -10,13 +9,10 @@ into the live trading pipeline with performance monitoring.
 import time
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
-from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
-from src.utils.logger import system_logger
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 class LiveWaveletIntegration:

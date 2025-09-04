@@ -3,8 +3,8 @@ import asyncio
 import shutil
 from datetime import datetime
 from pathlib import Path
-from src.utils.common_operations import ensure_directory
-from src.utils.logger import system_logger
+from .utils.common_operations import ensure_directory
+from .utils.logger import system_logger
 logger = system_logger.getChild('RegimeIntegration')
 
 class RegimeProcessingIntegrator:
@@ -110,4 +110,4 @@ async def main() -> None:
     else:
         print('\n❌ Integration failed. Check logs for details.')
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

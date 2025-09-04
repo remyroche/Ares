@@ -28,6 +28,7 @@ class ReportAggregator:
             "circular_imports": [],
             "security_issues": [],
             "performance_issues": [],
+            "dead_code_issues": [],
             "total_issues": 0,
             "fixed_issues": 0,
             "lines_of_code": 0,
@@ -156,6 +157,33 @@ class ReportAggregator:
                 self.file_issues[file_path]["type_issues"].append(issue)
             else:
                 self.file_issues[file_path]["function_issues"].append(issue)
+
+    def add_dead_code_results(self, results: dict[str, Any]):
+        """Add dead code analysis results."""
+        for issue in results.get("issues", []):
+            file_path = self._normalize_path(issue["file_path"])
+            self.file_issues[file_path]["dead_code_issues"].append({
+                "type": issue["issue_type"],
+                "name": issue["name"],
+                "description": issue["description"],
+                "confidence": issue["confidence"],
+                "severity": issue["severity"],
+                "is_public_api": issue.get("is_public_api", False),
+                "is_used_cross_file": issue.get("is_used_cross_file", False),
+                "is_abstract_interface": issue.get("is_abstract_interface", False),
+            })
+            self.file_issues[file_path]["total_issues"] += 1
+
+        # Update overall summary
+        self.overall_summary["issue_breakdown"]["dead_code"] += results.get("total_issues", 0)
+
+    def add_dead_code_fix_results(self, results: dict[str, Any]):
+        """Add dead code fix results."""
+        for file_result in results.get("file_results", []):
+            file_path = self._normalize_path(file_result["file_path"])
+            if file_result["success"]:
+                self.file_issues[file_path]["fixed_issues"] += file_result["issues_fixed"]
+                self.overall_summary["fixed_issues"] += file_result["issues_fixed"]
 
     def add_enhanced_validation_results(self, results: dict[str, Any]):
         """Add enhanced validation results (argument and data access validation)."""

@@ -14,32 +14,26 @@ This module provides the enhanced main interface for backtesting with:
 import asyncio
 import sys
 import argparse
-import logging
 from pathlib import Path
 import time
-import json
-from typing import Dict, Any, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import enhanced components
-from src.training.steps.backtesting import run_backtesting_pipeline, BacktestingPipelineConfig
-from src.training.steps.backtesting.enhanced_logging import BacktestingLogger, get_backtesting_logger
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
     ensure_directory, safe_json_dump, safe_json_load
 )
-from src.core.decorators import (
+from src.utils.trading_decorators import (
     handles_errors, validates, traced, log_execution_time, 
     timeout, error_boundary, compose
 )
-from src.core.domain.decorators import (
+from src.utils.trading_decorators import (
     validate_data_quality, monitor_step_execution, 
     ensure_data_integrity, validate_pipeline_step
 )
-from src.utils.logger import getChild as get_logger
 
 # Setup logging
 logger = get_logger('Step18BacktestingMain')
@@ -433,4 +427,4 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     # Run the backtesting pipeline
-    asyncio.run(main())
+    asyncio.run(await main())

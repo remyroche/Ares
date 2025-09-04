@@ -237,94 +237,94 @@ if __name__ == "__main__":
         try:
             # Import both production and example plugins
             from code_quality.plugins.production import (
-                ProductionSyntaxFixerPlugin,
-                ProductionImportFixerPlugin
+                            ProductionSyntaxFixerPlugin,
+            ProductionImportFixerPlugin
+        )
+        from code_quality.plugins.example_plugins import (
+            SyntaxFixerPlugin,
+            ImportFixerPlugin
+        )
+        
+        # Compare syntax fixer plugins
+        prod_syntax = ProductionSyntaxFixerPlugin()
+        example_syntax = SyntaxFixerPlugin()
+        
+        prod_metadata = prod_syntax.get_metadata()
+        example_metadata = example_syntax.get_metadata()
+        
+        # Check configuration options
+        prod_config_count = len(prod_metadata.configuration_schema or {})
+        example_config_count = len(example_metadata.configuration_schema or {})
+        
+        if prod_config_count > example_config_count:
+            results["production_plugins_more_configurable"] = True
+            print(f"✓ Production plugins more configurable ({prod_config_count} vs {example_config_count} options)")
+        
+        # Test functionality comparison
+        test_dir = self.setup_test_environment()
+        try:
+            from code_quality.plugins import PluginContext
+            
+            context = PluginContext(
+                project_root=Path(test_dir),
+                target_files=[Path(test_dir) / "syntax_error.py"],
+                configuration={},
+                dry_run=True
             )
-            from code_quality.plugins.examples import (
-                SyntaxFixerPlugin,
-                ImportFixerPlugin
-            )
             
-            # Compare syntax fixer plugins
-            prod_syntax = ProductionSyntaxFixerPlugin()
-            example_syntax = SyntaxFixerPlugin()
+            # Test production plugin
+            prod_result = prod_syntax.process_file(Path(test_dir) / "syntax_error.py", context)
             
-            prod_metadata = prod_syntax.get_metadata()
-            example_metadata = example_syntax.get_metadata()
+            # Test example plugin
+            example_result = example_syntax.process_file(Path(test_dir) / "syntax_error.py", context)
             
-            # Check configuration options
-            prod_config_count = len(prod_metadata.configuration_schema or {})
-            example_config_count = len(example_metadata.configuration_schema or {})
+            # Compare results
+            prod_has_backup = "backup_created" in prod_result
+            example_has_backup = "backup_created" in example_result
             
-            if prod_config_count > example_config_count:
-                results["production_plugins_more_configurable"] = True
-                print(f"✓ Production plugins more configurable ({prod_config_count} vs {example_config_count} options)")
+            if prod_has_backup and not example_has_backup:
+                results["production_plugins_have_backup_system"] = True
+                print("✓ Production plugins have backup system")
             
-            # Test functionality comparison
-            test_dir = self.setup_test_environment()
-            try:
-                from code_quality.plugins import PluginContext
-                
-                context = PluginContext(
-                    project_root=Path(test_dir),
-                    target_files=[Path(test_dir) / "syntax_error.py"],
-                    configuration={},
-                    dry_run=True
-                )
-                
-                # Test production plugin
-                prod_result = prod_syntax.process_file(Path(test_dir) / "syntax_error.py", context)
-                
-                # Test example plugin
-                example_result = example_syntax.process_file(Path(test_dir) / "syntax_error.py", context)
-                
-                # Compare results
-                prod_has_backup = "backup_created" in prod_result
-                example_has_backup = "backup_created" in example_result
-                
-                if prod_has_backup and not example_has_backup:
-                    results["production_plugins_have_backup_system"] = True
-                    print("✓ Production plugins have backup system")
-                
-                prod_has_metrics = "processing_time" in prod_result
-                example_has_metrics = "processing_time" in example_result
-                
-                if prod_has_metrics and not example_has_metrics:
-                    results["production_plugins_have_metrics"] = True
-                    print("✓ Production plugins have performance metrics")
-                
-                prod_has_warnings = "warnings" in prod_result
-                example_has_warnings = "warnings" in example_result
-                
-                if prod_has_warnings and not example_has_warnings:
-                    results["production_plugins_better_error_handling"] = True
-                    print("✓ Production plugins have better error handling")
-                
-                # Overall robustness check
-                prod_features = [
-                    "backup_created" in prod_result,
-                    "processing_time" in prod_result,
-                    "warnings" in prod_result,
-                    "fixes_applied" in prod_result
-                ]
-                
-                example_features = [
-                    "backup_created" in example_result,
-                    "processing_time" in example_result,
-                    "warnings" in example_result,
-                    "fixes_applied" in example_result
-                ]
-                
-                if sum(prod_features) > sum(example_features):
-                    results["production_plugins_more_robust"] = True
-                    print("✓ Production plugins are more robust")
-                
-            finally:
-                self.cleanup_test_environment()
+            prod_has_metrics = "processing_time" in prod_result
+            example_has_metrics = "processing_time" in example_result
             
+            if prod_has_metrics and not example_has_metrics:
+                results["production_plugins_have_metrics"] = True
+                print("✓ Production plugins have performance metrics")
+            
+            prod_has_warnings = "warnings" in prod_result
+            example_has_warnings = "warnings" in example_result
+            
+            if prod_has_warnings and not example_has_warnings:
+                results["production_plugins_better_error_handling"] = True
+                print("✓ Production plugins have better error handling")
+            
+            # Overall robustness check
+            prod_features = [
+                "backup_created" in prod_result,
+                "processing_time" in prod_result,
+                "warnings" in prod_result,
+                "fixes_applied" in prod_result
+            ]
+            
+            example_features = [
+                "backup_created" in example_result,
+                "processing_time" in example_result,
+                "warnings" in example_result,
+                "fixes_applied" in example_result
+            ]
+            
+            if sum(prod_features) > sum(example_features):
+                results["production_plugins_more_robust"] = True
+                print("✓ Production plugins are more robust")
+        
+        finally:
+            self.cleanup_test_environment()
+        
         except Exception as e:
             print(f"✗ Production vs example comparison test failed: {e}")
-            
+        
         return results
     
     def test_plugin_integration(self) -> Dict[str, Any]:
@@ -500,4 +500,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(await main())

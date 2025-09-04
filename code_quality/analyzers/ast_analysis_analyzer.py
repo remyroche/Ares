@@ -14,7 +14,9 @@ try:
     import astroid
     ASTROID_AVAILABLE = True
 except ImportError:
+    astroid = None
     ASTROID_AVAILABLE = False
+    print("Warning: astroid not available")
 
 # Rope integration removed as requested
 ROPE_AVAILABLE = False

@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import A, Callableny
 
 from src.interfaces.base_interfaces import IExchangeClient as IExchangeClient_src_interfaces_base_interfaces, MarketData
 
 
+
+from typing import Any
 class BaseExchange(IExchangeClient, ABC):
     """
     Base class for all exchange implementations.

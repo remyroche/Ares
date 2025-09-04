@@ -1,15 +1,14 @@
-from __future__ import annotations
 '\nService registry for dependency injection container configuration.\n\nThis module provides centralized service registration for all trading components, ensuring proper dependency injection throughout the system.\n'
 from typing import Any
 from exchange.factory import ExchangeFactory
-from src.analyst.analyst import Analyst
-from src.components.modular_analyst import ModularAnalyst
-from src.components.modular_tactician import ModularTactician
-from src.core.dependency_injection import DependencyContainer, ServiceLifetime
-from src.interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
-from src.supervisor.supervisor import Supervisor
-from src.training.training_manager import TrainingManager
-from src.utils.logger import system_logger
+from .analyst.analyst import Analyst
+from .components.modular_analyst import ModularAnalyst
+from .components.modular_tactician import ModularTactician
+from .core.dependency_injection import DependencyContainer, ServiceLifetime
+from .interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
+from .supervisor.supervisor import Supervisor
+from .training.training_manager import TrainingManager
+from .utils.logger import system_logger
 
 class ServiceRegistry:
     """

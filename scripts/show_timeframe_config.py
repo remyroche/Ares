@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 from src.config import CONFIG
-from src.utils.warning_symbols import missing as missing_src_utils_warning_symbols
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -134,4 +133,4 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    await main()

@@ -5,13 +5,11 @@ Thin wrappers around the code_quality ImportAnalyzer to build and visualize
 import dependency graphs for a given directory or list of files.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
 
-import networkx as nx
 
 from code_quality.analyzers.import_analyzer import ImportAnalyzer
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config

@@ -11,7 +11,6 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -245,4 +244,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

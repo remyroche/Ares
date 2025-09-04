@@ -7,7 +7,6 @@ with improved dependency handling and error management.
 
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -822,4 +821,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(await main())

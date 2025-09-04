@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 '\nComprehensive Security Framework\n\nThis module provides centralized security controls including:\n- Credential management and encryption\n- API key security\n- Data encryption/decryption\n- Access control and authentication\n- Audit logging and monitoring\n- Security validation and compliance\n'
 import base64
@@ -8,7 +7,6 @@ import json
 import logging
 import secrets
 import time
-from copy import copy
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -16,7 +14,7 @@ from typing import Any
 
 from cryptography.fernet import Fernet
 
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards

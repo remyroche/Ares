@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/utils/enhanced_mlflow_integration.py
 
@@ -25,9 +24,9 @@ from functools import wraps
 from typing import Any
 
 import mlflow
-import pandas as pd
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 from src.utils.mlflow_utils import (
     extract_training_metadata,
     log_artifacts_with_metadata,
@@ -37,7 +36,6 @@ from src.utils.mlflow_utils import (
     log_params_with_metadata,
     validate_run_metadata,
 )
-import asyncio
 
 
 def with_enhanced_mlflow_logging(step_name: str):
@@ -1095,7 +1093,7 @@ class EnhancedMLflowManager:
             msg = "No active MLflow run"
             raise ValueError(msg)
 
-        from src.utils.mlflow_utils import get_enhanced_run_metadata
+        from .utils.mlflow_utils import get_enhanced_run_metadata
 
         return get_enhanced_run_metadata(self.current_run_id) or {}
 
@@ -1108,7 +1106,7 @@ class EnhancedMLflowManager:
 
 
 @handles_errors(
-    default_return=None, context="enhanced_mlflow_integration.log_step_metadata"
+    Exception, fallback=None
 )
 def log_step_metadata(
     config: dict[str, Any],
@@ -1149,7 +1147,7 @@ def log_step_metadata(
 
 
 @handles_errors(
-    default_return=None, context="enhanced_mlflow_integration.log_model_performance"
+    Exception, fallback=None
 )
 def log_model_performance(
     config: dict[str, Any],
@@ -1192,7 +1190,7 @@ def log_model_performance(
 
 
 @handles_errors(
-    default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion"
+    Exception, fallback=None
 )
 def log_pipeline_completion(
     config: dict[str, Any],
@@ -1335,7 +1333,7 @@ def create_detailed_step_report(
     
     # Save the report using the report manager
     try:
-        from src.utils.report_manager import get_report_manager
+        from .utils.report_manager import get_report_manager
         report_manager = get_report_manager()
         
         symbol = training_input.get("symbol", "UNKNOWN")

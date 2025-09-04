@@ -5,16 +5,14 @@ This module handles various risk metric calculations including VaR, CVaR,
 and other risk measures.
 """
 
-from __future__ import annotations
 
 from typing import Any, Dict
 
-import numpy as np
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 class RiskMetricsCalculator(PnLLossFunctionsBase):

@@ -1,16 +1,14 @@
+
+from datetime import datetime
+import numpy as np
 """
 Bayesian Probability Updates for Continuous Learning
 Continuously updates probability estimates with new market evidence
 """
 
-import asyncio
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import pandas as pd
 from collections import deque
 from dataclasses import dataclass
-from scipy.stats import beta, norm
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors

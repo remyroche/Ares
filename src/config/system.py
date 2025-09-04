@@ -1,9 +1,8 @@
-from __future__ import annotations
 
 import os
 from typing import Any
 
-from src.config.environment import get_environment_settings
+from .environment import get_environment_settings
 
 # src/config/system.py
 

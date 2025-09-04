@@ -1,14 +1,11 @@
-from __future__ import annotations
 
 '\nEnhanced Outlier Handler\n\nThis module provides sophisticated outlier detection and handling including:\n- Outlier detection with detailed logging\n- Error raising instead of silent removal\n- Data schema validation for file operations\n- Root cause analysis and reporting\n- Data integrity preservation\n'
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 

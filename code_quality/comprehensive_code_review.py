@@ -24,23 +24,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import astroid
 
 # Try to import optional dependencies
 try:
-    import astroid
     ASTROID_AVAILABLE = True
 except ImportError:
     ASTROID_AVAILABLE = False
 
 try:
-    import mypy.api
     MYPY_AVAILABLE = True
 except ImportError:
     MYPY_AVAILABLE = False
 
 try:
-    import bandit
     BANDIT_AVAILABLE = True
 except ImportError:
     BANDIT_AVAILABLE = False
@@ -683,4 +679,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

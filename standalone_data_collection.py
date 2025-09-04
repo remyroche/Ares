@@ -13,9 +13,9 @@ import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta, UTC
+import numpy as np
+import pandas as pd
 
 # Enhanced logging setup with emoji support
 logging.basicConfig(
@@ -1457,4 +1457,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the data collection pipeline
-    asyncio.run(main())
+    asyncio.run(await main())

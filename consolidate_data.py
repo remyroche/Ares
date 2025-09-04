@@ -11,7 +11,6 @@ import os
 import sys
 from datetime import datetime
 
-import pandas as pd
 
 
 def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"):
@@ -152,4 +151,4 @@ def main():
 
 
 if __name__== "__main__":
-    sys.exit(main())
+    sys.exit(await main())

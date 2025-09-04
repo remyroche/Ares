@@ -13,25 +13,22 @@ import asyncio
 import sys
 from pathlib import Path
 import time
-import json
 import argparse
-from typing import Dict, Any, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.decorators import handles_errors, validates, log_call, traced
-from src.utils.common_operations import (
+from .core.decorators import handles_errors, validates, log_call, traced
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, validate_dataframe_schema,
     validate_data_quality, safe_copy, safe_file_exists, safe_float, safe_int,
     safe_read_parquet, safe_to_parquet, optimize_dataframe_dtypes,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
-from src.training.steps.model_training import run_model_training_pipeline
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .training.steps.model_training import run_model_training_pipeline
+from .core.decorators.errors import handles_errors
 
 @handles_errors(Exception, fallback=False, log_level="ERROR")
 @validates(strict=True)
@@ -528,7 +525,7 @@ async def main():
 if __name__ == "__main__":
     """Run the enhanced model training pipeline."""
     try:
-        success = asyncio.run(main())
+        success = asyncio.run(await main())
         if success:
             print("\n🎉 Enhanced Model Training Pipeline completed successfully!")
             sys.exit(0)

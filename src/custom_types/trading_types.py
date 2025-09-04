@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/types/trading_types.py
 

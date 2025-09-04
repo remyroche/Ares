@@ -1,3 +1,5 @@
+
+from logging import error
 #!/usr/bin/env python3
 """
 Resume Training Script for Ares Trading Bot
@@ -21,7 +23,7 @@ from pathlib import Path
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.training.steps.step1_data_collection import (
+from src.training.steps.data_collection.step01_data_collection import (
     run_step as run_data_collection_step,
 )
 from src.utils.logger import setup_logging, system_logger

@@ -9,12 +9,9 @@ recovery mechanisms, and detailed error reporting.
 import asyncio
 import logging
 import traceback
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable, Type
 from dataclasses import dataclass, asdict
 from enum import Enum
-import json
 
 from src.utils.common_operations import (
     get_current_datetime,
@@ -350,6 +347,10 @@ class EnhancedErrorHandler:
     def _generate_error_id(self, error: Exception, context: ErrorContext) -> str:
         """Generate a unique error ID."""
         import hashlib
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import Callable
         
         error_info = f"{type(error).__name__}_{context.operation}_{context.step_name}_{context.symbol}_{context.exchange}"
         return hashlib.md5(error_info.encode()).hexdigest()[:12]

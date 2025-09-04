@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/core/enhanced_dependency_injection.py
 
@@ -8,9 +7,8 @@ This module remains for backward compatibility and forwards to the canonical DI 
 """
 from typing import Any, TypeVar
 
-from src.core.dependency_injection import DependencyContainer as _DependencyContainer
-from src.core.dependency_injection import ServiceLifetime as _ServiceLifetime
-import asyncio
+from .core.dependency_injection import DependencyContainer as _DependencyContainer
+from .core.dependency_injection import ServiceLifetime as _ServiceLifetime
 
 T = TypeVar("T")
 

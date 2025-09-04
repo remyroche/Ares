@@ -6,7 +6,6 @@ Script to migrate from centralized_decorators to new domain decorators.
 import re
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Set, Optional
 
 # Update patterns to replace TODO imports with proper domain imports
 UPDATE_PATTERNS = [
@@ -143,4 +142,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

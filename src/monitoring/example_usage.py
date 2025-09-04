@@ -8,11 +8,8 @@ for comprehensive ML model and ensemble monitoring with SHAP/LIME explanations.
 
 import asyncio
 import json
-import numpy as np
 from datetime import datetime
-from typing import Dict, Any
 
-from src.monitoring import (
     MonitoringOrchestrator, create_monitoring_orchestrator,
     TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision,
     TradeDecision, TradingMode, ModelType, ModelPerformanceMetrics,
@@ -443,8 +440,8 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # Run examples
-    asyncio.run(example_enhanced_monitoring())
-    asyncio.run(example_trading_system_integration())
+    asyncio.run(await example_enhanced_monitoring())
+    asyncio.run(await example_trading_system_integration())
     
     print("\n🎉 All examples completed successfully!")
     print("\n📁 Check the 'example_monitoring_exports' directory for exported CSV files")

@@ -1,17 +1,14 @@
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+import pandas as pd
 '\nSR Levels Manager - Comprehensive Support/Resistance Level Management\n\nThis module provides:\n1. SR level calculation based on backtesting data\n2. Continuous updates during live trading\n3. Comprehensive level information (age, strength, volume, etc.)\n4. Price vs VWAP comparison logic\n5. Persistent storage and retrieval\n'
 import json
 import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import asyncio
 warnings.filterwarnings('ignore')
-import numpy as np
-import pandas as pd
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.logger import system_logger
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
+from .utils.logger import system_logger
 logger = system_logger.getChild('SRLevelsManager')
 
 class SRLevel:

@@ -11,16 +11,16 @@ from src.utils.warning_symbols import (
     failed,
     validation_error,
 )
-from src.core.decorators import handles_errors
-from src.utils.common_operations import safe_json_load
+from .core.decorators import handles_errors
+from .utils.common_operations import safe_json_load
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
+from .config import CONFIG
+from .utils.base_validator import BaseValidator
 
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
@@ -174,7 +174,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             Tuple[bool, dict]: (passed, metrics)
 
         """
-        import json
 
         # Load Monte Carlo results
         results_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_results.json"
@@ -491,7 +490,7 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
-    from src.core.decorators.errors import handles_errors
+    from .core.decorators.errors import handles_errors
 
     # Example usage
     async def test_validator() -> None:
@@ -507,4 +506,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( test_validator())
+    _asyncio.run( await test_validator())

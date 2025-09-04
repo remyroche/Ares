@@ -1,3 +1,10 @@
+
+from typing import List
+from typing import Any
+from typing import Dict
+import pandas as pd
+from typing import Optional
+import numpy as np
 #!/usr/bin/env python3
 """SR (Support/Resistance) model explainer for SHAP and LIME integration.
 
@@ -5,26 +12,17 @@ This module provides explainability for SR level detection models, enabling
 traceability of support/resistance decisions back to individual factors.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Any, Union, Tuple
-from datetime import datetime
-import logging
 
-from src.explainability.base_explainer import BaseExplainer, ExplanationResult
-from src.utils.logger import system_logger
+from .explainability.base_explainer import BaseExplainer, ExplanationResult
 
 # SHAP imports with fallback
 try:
-    import shap
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
 
 # LIME imports with fallback
 try:
-    from lime import lime_tabular
-    from lime.lime_tabular import LimeTabularExplainer
     LIME_AVAILABLE = True
 except ImportError:
     LIME_AVAILABLE = False

@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nComprehensive Feature Optimizer\n\nThis module provides a comprehensive optimization system for all feature types:\n- Interaction features\n- Difference/acceleration features\n- Cross-timeframe features\n- Microstructure features\n- Volatility features\n- Momentum features\n- Liquidity features\n- Candlestick patterns\n- OHLCV price features\n\nAll features use optimized lookback periods from the matrix optimization system.\n'
 import asyncio
 import json
@@ -9,6 +8,7 @@ from pathlib import Path
 from typing import Any
 import numpy as np
 import pandas as pd
+
 warnings.filterwarnings('ignore')
 
 @dataclass

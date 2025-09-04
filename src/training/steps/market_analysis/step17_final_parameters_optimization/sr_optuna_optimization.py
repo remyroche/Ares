@@ -1,4 +1,6 @@
-from __future__ import annotations
+
+import pandas as pd
+import numpy as np
 '\nS/R Parameter Optimization with Optuna\n\nThis module provides comprehensive optimization of Support/Resistance parameters\nusing Optuna, integrating with the existing HPO framework. It optimizes:\n    pass\n\n1. S/R Strength Score Weights\n2. S/R Level Detection Parameters\n3. S/R Breakout Thresholds\n4. S/R Zone Multipliers\n5. S/R Confidence Thresholds\n\nThe optimization uses multi-objective optimization to balance:\n    pass\n- Trading performance (Sharpe ratio, win rate, profit factor)\n- Risk management (max drawdown, VaR)\n- Feature quality (signal clarity, noise reduction)\n'
 import asyncio
 import logging
@@ -6,12 +8,11 @@ import time
 from dataclasses import dataclass
 from typing import Any
 import optuna
-import pandas as pd
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
-from src.tactician.sr_breakout_predictor import ensure_optimized_sr_config, setup_sr_breakout_predictor
-from src.tactician.sr_weight_optimizer import SRWeightOptimizer
-from src.utils.logger import setup_logging
+from .tactician.sr_breakout_predictor import ensure_optimized_sr_config, setup_sr_breakout_predictor
+from .tactician.sr_weight_optimizer import SRWeightOptimizer
+from .utils.logger import setup_logging
 setup_logging()
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -379,7 +380,6 @@ if __name__ == '__main__':
         if not optimizer:
             print('❌ Failed to initialize optimizer')
             return
-        import numpy as np
         np.random.seed(42)
         n_samples = 1000
         price_data = pd.DataFrame({'open': 100 + np.cumsum(np.random.randn(n_samples) * 0.1), 'high': 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5, 'low': 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5, 'close': 100 + np.cumsum(np.random.randn(n_samples) * 0.1), 'volume': np.random.lognormal(10, 1, n_samples)})
@@ -390,4 +390,4 @@ if __name__ == '__main__':
             print(report)
         else:
             print('❌ Optimization failed')
-    asyncio.run(main())
+    asyncio.run(await main())

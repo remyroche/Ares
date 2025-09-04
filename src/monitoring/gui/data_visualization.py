@@ -6,21 +6,12 @@ Provides charts and visualizations for monitoring data including
 trade performance, regime analysis, and daily summaries.
 """
 
-from __future__ import annotations
 
-import logging
-import numpy as np
-import pandas as pd
-from datetime import datetime, date, timedelta
-from typing import Any, Dict, List, Optional, Union, Tuple
-import tkinter as tk
 from tkinter import ttk
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import seaborn as sns
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 class MonitoringVisualization:

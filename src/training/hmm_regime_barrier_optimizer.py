@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nHMM Regime Barrier Optimizer\n\nThis module provides an interface for optimizing HMM regime-specific barriers\nand applying regime-aware triple barrier labeling with automatic recalculation.\n\nKey Features:\n- Automatic HMM barrier recalculation\n- Regime-specific barrier optimization\n- Integration with triple barrier labeling\n- Fallback mechanisms for robustness\n'
 import json
 import logging
@@ -6,9 +5,8 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import numpy as np
 import pandas as pd
-import asyncio
+
 warnings.filterwarnings('ignore')
 try:
     pass

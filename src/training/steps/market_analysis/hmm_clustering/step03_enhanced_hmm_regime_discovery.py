@@ -12,18 +12,12 @@ This module integrates all the improvements:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 import time
-import json
-import numpy as np
-import pandas as pd
-from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
     comprehensive_data_validation,
     ensure_data_integrity,
     handle_errors,
@@ -38,8 +32,8 @@ from src.core.domain import (
     with_tracing_span,
     validate_pipeline_step
 )
-from src.core.decorators import validates, handles_errors, traced
-from src.utils.logger import system_logger
+from .core.decorators import validates, handles_errors, traced
+from .utils.logger import system_logger
 
 # Import our new modules
 from .step03_optimized_bayesian_optimization import OptimizedBayesianParameterOptimization
@@ -47,7 +41,7 @@ from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
 from .step03_economic_significance_validator import EconomicSignificanceValidator
 from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
 from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 logger = system_logger.getChild("Step3EnhancedHMMRegimeDiscovery")
 

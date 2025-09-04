@@ -18,9 +18,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import optuna
-import pandas as pd
 from optuna.pruners import MedianPruner
 from optuna.samplers import CmaEsSampler, NSGAIISampler, TPESampler
 from sklearn.ensemble import IsolationForest
@@ -899,4 +897,4 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    await main()

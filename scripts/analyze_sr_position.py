@@ -18,13 +18,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
 from src.utils.logger import system_logger
+import pandas as pd
 
 # Add the src directory to the path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -342,4 +341,4 @@ async def main():
 
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

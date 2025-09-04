@@ -1,16 +1,14 @@
 """
 Base pipeline framework for Ares trading bot (minimal scaffold).
 """
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.core.decorators import cached, handles_errors, log_execution_time
-from src.utils.logger import system_logger
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators import cached, handles_errors, log_execution_time
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

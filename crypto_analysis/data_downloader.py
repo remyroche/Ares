@@ -8,11 +8,17 @@ import time
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
-
 import pandas as pd
+import numpy as np
 import requests
 
-from centralized_logging import get_logger
+# Import centralized logging with fallback
+try:
+    from centralized_logging import get_logger
+except ImportError:
+    import logging
+    def get_logger(name):
+        return logging.getLogger(name)
 
 warnings.filterwarnings("ignore")
 

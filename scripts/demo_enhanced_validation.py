@@ -12,8 +12,6 @@ import asyncio
 import sys
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -312,4 +310,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

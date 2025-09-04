@@ -9,7 +9,6 @@ import json
 import sys
 import tempfile
 import time
-import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -559,4 +558,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(await main())

@@ -5,40 +5,26 @@ This module provides comprehensive visualization capabilities for SHAP/LIME
 explanations and trade decision traces.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Any, Union, Tuple
 from datetime import datetime
-import logging
 from pathlib import Path
-import json
 
-from src.explainability.base_explainer import ExplanationResult, TradeDecisionTrace
-from src.utils.logger import system_logger
+from .explainability.base_explainer import ExplanationResult, TradeDecisionTrace
+from .utils.logger import system_logger
 
 # Visualization imports with fallback
 try:
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    from matplotlib.patches import FancyBboxPatch
-    import seaborn as sns
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
     print("Warning: matplotlib not available, visualization features disabled")
 
 try:
-    import plotly.graph_objects as go
-    import plotly.express as px
-    from plotly.subplots import make_subplots
-    import plotly.offline as pyo
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
     print("Warning: plotly not available, interactive visualization features disabled")
 
 try:
-    import shap
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False

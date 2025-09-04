@@ -20,8 +20,7 @@ from .comprehensive_gap_filler import ComprehensiveGapFiller
 from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

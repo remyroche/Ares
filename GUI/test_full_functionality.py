@@ -10,7 +10,6 @@ This script tests all aspects of the GUI functionality including:
 - Real-time features
 """
 
-import asyncio
 import json
 import subprocess
 import sys
@@ -368,4 +367,4 @@ def main():
     tester.run_all_tests()
 
 if __name__ == "__main__":
-    main()
+    await main()

@@ -95,6 +95,15 @@ from src.utils.common_operations import (
     get_current_datetime,
 )
 
+# Import logging utilities
+try:
+    from src.utils.logger import get_backtesting_logger
+except ImportError:
+    # Fallback if get_backtesting_logger is not available
+    def get_backtesting_logger(name, log_dir="log"):
+        """Fallback logger function."""
+        return logging.getLogger(name)
+
 # Try to import requests for GUI health checks
 try:
     import requests
@@ -869,7 +878,6 @@ class AresLauncher:
         try:
             # Import enhanced backtesting components
             import asyncio
-            from src.training.steps.backtesting import run_backtesting_pipeline, BacktestingPipelineConfig
             from src.training.steps.backtesting.enhanced_logging import get_backtesting_logger
             from src.utils.common_operations import safe_file_exists, format_datetime, get_current_datetime
 
@@ -1595,8 +1603,6 @@ class AresLauncher:
             
             # Check Python environment
             try:
-                import pandas as pd
-                import numpy as np
                 self.logger.info("✅ Required Python packages available")
             except ImportError as e:
                 self.logger.error(f"❌ Missing required Python package: {e}")
@@ -2443,7 +2449,7 @@ class AresLauncher:
         default_return=False,
         context="run_step_based_training",
     )
-    def run_step_based_training(
+    async def run_step_based_training(
         self,
         symbol: str,
         exchange: str,
@@ -2455,7 +2461,7 @@ class AresLauncher:
         self.logger.info(
             f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}",
         )
-        return self._run_step_pipeline(
+        return await self._run_step_pipeline(
             symbol=symbol,
             exchange=exchange,
             start_step=start_step,
@@ -2469,7 +2475,7 @@ class AresLauncher:
         default_return=False,
         context="run_step_based_full_training",
     )
-    def run_step_based_full_training(
+    async def run_step_based_full_training(
         self,
         symbol: str,
         exchange: str,
@@ -2484,7 +2490,7 @@ class AresLauncher:
         self.logger.info(
             "📊 Using full parameters (730 days lookback, full training parameters)",
         )
-        return self._run_step_pipeline(
+        return await self._run_step_pipeline(
             symbol=symbol,
             exchange=exchange,
             start_step=start_step,
@@ -2521,7 +2527,7 @@ class AresLauncher:
             return False
 
         # Run the step pipeline with the specified training mode
-        return self._run_step_pipeline(
+        return await self._run_step_pipeline(
             symbol=symbol,
             exchange=exchange,
             start_step=start_step,
@@ -2611,21 +2617,34 @@ class AresLauncher:
             self.logger.warning(f"⚠️ Could not run existing validators: {e}")
             self.logger.warning("Proceeding with basic file existence check")
 
-            # Fallback to basic check
-            consolidated_file=(
-                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-            )
-            if not os.path.exists(consolidated_file):
+            # Fallback to basic check - look for unified data
+            unified_data_dir = f"data/training/unified/{exchange.lower()}/{symbol}/1m/exchange={exchange.upper()}"
+            if not os.path.exists(unified_data_dir):
                 self.logger.exception(
-                    f"❌ Consolidated data file not found: {consolidated_file}",
+                    f"❌ Unified data directory not found: {unified_data_dir}",
                 )
                 self.logger.exception(
-                    "Please run data loading first or ensure consolidated data exists",
+                    "Please run data loading first or ensure unified data exists",
                 )
                 return False
-            self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+            
+            # Check if there are any parquet files in the unified data directory
+            parquet_files = []
+            for root, dirs, files in os.walk(unified_data_dir):
+                parquet_files.extend([f for f in files if f.endswith('.parquet')])
+            
+            if not parquet_files:
+                self.logger.exception(
+                    f"❌ No parquet files found in unified data directory: {unified_data_dir}",
+                )
+                self.logger.exception(
+                    "Please run data loading first or ensure unified data exists",
+                )
+                return False
+            
+            self.logger.info(f"✅ Found unified data: {unified_data_dir} ({len(parquet_files)} parquet files)")
 
-        return self._run_step_pipeline(
+        return await self._run_step_pipeline(
             symbol=symbol,
             exchange=exchange,
             start_step=start_step,
@@ -2707,8 +2726,7 @@ class AresLauncher:
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
             "step2_data_reading",              # Read and validate data quality
-            "step2_5_sr_optimization",         # S/R detection optimization
-            "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
+            "step03_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
             "step3_5_final_regime_clustering", # Final regime clustering
             "step4_triple_barrier_method",     # Apply triple barrier method
             "step4_regime_data_splitting",     # Regime data splitting (legacy step)
@@ -3105,7 +3123,7 @@ class AresLauncher:
             print(f"❌ Failed to run regime operations: {e}")
             return False
 
-    def _run_step_pipeline(
+    async def _run_step_pipeline(
         self,
         symbol: str,
         exchange: str,
@@ -3183,12 +3201,8 @@ class AresLauncher:
             self.logger.info("🔍 Step validation will be performed by EnhancedTrainingManager")
 
             # Run the step-based training using the orchestrator
-            import asyncio
-
-            success=asyncio.run(
-                orchestrator.execute_from_step(
-                    start_step=start_step, config=CONFIG, force_rerun=force_rerun,
-                ),
+            success = await orchestrator.execute_from_step(
+                start_step=start_step, config=CONFIG, force_rerun=force_rerun,
             )
 
             if success:
@@ -3221,6 +3235,8 @@ Examples:
 
     # New step-based commands with validation
     python ares_launcher.py step01 --symbol ETHUSDT --exchange BINANCE --training-mode light
+    python ares_launcher.py step01_5 --symbol ETHUSDT --exchange BINANCE --training-mode light
+    python ares_launcher.py step02_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step3_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step04 --symbol ETHUSDT --exchange BINANCE --training-mode blank
@@ -3299,7 +3315,7 @@ Examples:
             # New pipeline commands (organized structure)
             "data-collection", "market-analysis", "model-training", "optimisation", "backtesting", "all-pipelines",
             # New step-based commands
-            "step01", "step1_5", "step02", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
+            "step01", "step01_5", "step1_5", "step02", "step02_5", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
             "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
             "step18", "step19", "step20", "step21",
         ],
@@ -3448,7 +3464,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         # New pipeline commands (organized structure)
         "data-collection", "market-analysis", "model-training", "optimisation", "backtesting", "all-pipelines",
         # Step-based commands
-        "step01", "step1_5", "step02", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
+        "step01", "step01_5", "step1_5", "step02", "step02_5", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
         "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
         "step18", "step19", "step20", "step21",
     ]
@@ -3515,7 +3531,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step2_with_existing_data(
                 args.symbol,
                 args.exchange,
-                start_step=normalized_step or "step2_data_reading",
+                start_step=normalized_step or "step02_data_reading",
                 force_rerun=force_flag,
                 with_gui=args.gui,
             ),
@@ -3531,11 +3547,31 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
+        "step01_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step01_5_data_converter",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
         "step1_5": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step1_5_data_converter",
+                start_step="step01_5_data_converter",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step02_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step2_5_sr_optimization",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,

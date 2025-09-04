@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Compatibility shims to forward legacy decorators to core equivalents.
 
@@ -7,7 +6,6 @@ that map old decorator signatures to the new core decorators.
 """
 
 
-from src.core.decorators import handles_errors as _handles_errors
 
 
 def handle_errors(

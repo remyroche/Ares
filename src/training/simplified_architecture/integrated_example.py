@@ -1,4 +1,6 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+from typing import Any
+import pandas as pd
 """
 Integrated Example: Combining All Architectural Improvements
 
@@ -82,7 +84,6 @@ class FeatureEngineeringStep(BasePipelineStep):
 
     async def _execute_impl(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate features using injected calculators."""
-        import pandas as pd
         features = pd.DataFrame(index=data.index)
         for calculator in self.calculators:
             calc_features = calculator.calculate(data)
@@ -218,4 +219,4 @@ async def main() -> None:
         if result.error:
             print(f'  Error: {result.error}')
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

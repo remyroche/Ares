@@ -9,7 +9,6 @@ import os
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 from src.utils.logger import setup_logging, system_logger
 from src.utils.warning_symbols import error as error_src_utils_warning_symbols, invalid, missing, warning

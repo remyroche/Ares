@@ -1,0 +1,27 @@
+2025-09-04 20:54:08,400 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 20:54:08
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_205408.log
+2025-09-04 20:54:08,400 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:54:08,400 - AresTradingSystem - INFO - 🚀 Launcher started: step02_5
+2025-09-04 20:54:08,400 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 20:54:08,401 - AresComponent.AresLauncher - INFO - 🚀 Running step-based training with validation for ETHUSDT on BINANCE
+2025-09-04 20:54:08,401 - AresComponent.AresLauncher - INFO - 📊 Starting from: step1_data_collection
+2025-09-04 20:54:08,401 - AresComponent.AresLauncher - INFO - 🎯 Training mode: blank
+2025-09-04 20:54:08,401 - AresComponent.AresLauncher - INFO - 🔍 Validating previous steps before starting from step1_data_collection
+2025-09-04 20:54:08,419 - AresComponent.AresLauncher - INFO - ✅ No previous steps to validate for step1_data_collection
+2025-09-04 20:54:08,419 - AresComponent.AresLauncher - INFO - Starting from step: step1_data_collection
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - INFO - 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - ERROR - ❌ Cannot use blank mode with step1_data_collection
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - ERROR - Blank mode is designed for quick testing with limited data
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - ERROR - step1_data_collection processes all available data files
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - ERROR - Use one of the following instead:
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - ERROR -   - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - ERROR -   - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering (for blank mode)
+2025-09-04 20:54:08,429 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 20:54:08,429 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

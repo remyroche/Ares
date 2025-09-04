@@ -1,19 +1,15 @@
 # src/training/steps/step06_labeling_components/optimized_triple_barrier_labeling.py
 
 import contextlib
-from typing import Any
 
-from src.core.decorators import handles_errors, traced
+from .core.decorators import handles_errors, traced
 
-import numpy as np
-import pandas as pd
 
-from src.core.domain import (
     guard_dataframe_nulls,
     handle_errors,
     with_tracing_span
 )
-from src.utils.logger import get_logger
+from .utils.logger import get_logger
 
 try:
     import numba  # type: ignore
@@ -460,8 +456,6 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
 if __name__ == "__main__":
     # Example usage
     import numpy as np
-    import asyncio
-    import copy
 
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

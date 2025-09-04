@@ -1,18 +1,20 @@
+
+from typing import Optional
+from typing import Dict
+from typing import Any
 """Step 4: Triple Barrier Method.
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
 """
 import asyncio
-import copy
 import sys
 from pathlib import Path
-from src.utils.common_operations import ensure_directory
-from typing import Any, Dict, List, Optional
+from .utils.common_operations import ensure_directory
 import time
 from datetime import datetime
-from src.core.decorators import handles_errors, traced
-from src.labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
+from .core.decorators import handles_errors, traced
+from .labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
 try:
     import psutil
     PSUTIL_AVAILABLE = True
@@ -20,22 +22,18 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 try:
-    import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.domain import comprehensive_data_validation, handle_errors, memory_efficient, quality_gate, resource_monitor, secure_data_processing, validate_data_structure, with_tracing_span, monitor_feature_engineering
-from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
+from .utils.logger import system_logger
 logger = system_logger.getChild('Step4TripleBarrierMethod')
 
 class TripleBarrierMethodStep:
@@ -326,4 +324,4 @@ if __name__ == '__main__':
     async def test() -> None:
         success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Step 4 result: {success}')
-    asyncio.run(test())
+    asyncio.run(await test())

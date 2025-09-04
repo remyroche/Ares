@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import the standalone enhanced pipeline directly
-from src.training.steps.data_collection.standalone_enhanced_pipeline import run_standalone_enhanced_data_collection_pipeline
+from .training.steps.data_collection.standalone_enhanced_pipeline import run_standalone_enhanced_data_collection_pipeline
 
 async def main():
     """Main function to run data collection pipeline."""
@@ -120,4 +120,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the data collection pipeline
-    asyncio.run(main())
+    asyncio.run(await main())

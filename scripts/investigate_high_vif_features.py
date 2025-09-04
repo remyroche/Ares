@@ -8,8 +8,6 @@ import sys
 import warnings
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 from src.utils.logger import setup_logging, system_logger
 

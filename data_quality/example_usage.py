@@ -12,8 +12,6 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -511,4 +509,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

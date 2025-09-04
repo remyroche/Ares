@@ -9,8 +9,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 from src.utils.logger import system_logger
 
@@ -491,4 +489,4 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    await main()

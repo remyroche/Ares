@@ -14,7 +14,6 @@ Key features:
 - Clear, readable text report with summaries and per-file details
 """
 
-from __future__ import annotations
 
 import argparse
 import json
@@ -446,4 +445,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__== "__main__":
-    raise SystemExit(main())
+    raise SystemExit(await main())

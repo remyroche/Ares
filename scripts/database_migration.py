@@ -18,7 +18,6 @@ Usage:
     python scripts/database_migration.py cleanup [db_path]
 """
 
-from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -347,4 +346,4 @@ async def main() -> None:
 
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

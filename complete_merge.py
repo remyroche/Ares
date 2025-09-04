@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import subprocess
-import os
-import sys
 
 def run_command(cmd):
     """Run a command and return output"""

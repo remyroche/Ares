@@ -1,3 +1,5 @@
+
+import pandas as pd
 """Example: Using the Simplified Training Pipeline
 
 This example demonstrates how to use the new simplified and refactored
@@ -5,9 +7,8 @@ training components to run a complete training pipeline.
 """
 import asyncio
 from pathlib import Path
-import pandas as pd
-from src.training.core.training_manager import create_training_manager
-from src.utils.logger import system_logger
+from .training.core.training_manager import create_training_manager
+from .utils.logger import system_logger
 
 async def run_basic_training_example() -> None:
     """Run a basic training pipeline example."""
@@ -124,4 +125,4 @@ def main() -> None:
         print(f"Available examples: {', '.join(examples.keys())}")
         sys.exit(1)
 if __name__ == '__main__':
-    main()
+    await main()

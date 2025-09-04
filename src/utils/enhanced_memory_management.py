@@ -7,7 +7,6 @@ import functools
 import gc
 import logging
 import time
-from copy import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -17,12 +16,11 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
 try:
-    from src.utils.logger import system_logger
+    from .utils.logger import system_logger
 except ImportError:
     system_logger = logging.getLogger('EnhancedMemoryManagement')
 

@@ -1,21 +1,17 @@
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
 '\nMatrix-Based Diverse Lookback Period Optimizer\n\nThis module uses matrix/vector operations to efficiently find 2-3 lookback periods\nfor each feature that deliver meaningful yet significantly different information.\n'
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import numpy as np
 import optuna
-import pandas as pd
 import shap
 from optuna.samplers import TPESampler
 from scipy.optimize import minimize
 from sklearn.ensemble import RandomForestRegressor
-from src.utils.logger import system_logger
-from copy import copy
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
+import pandas as pd
+import numpy as np
 
 class MatrixDiverseLookbackOptimizer:
     """

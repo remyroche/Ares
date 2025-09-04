@@ -3,7 +3,6 @@
 import os
 from datetime import UTC, datetime
 
-import pandas as pd
 
 
 def check_existing_data():

@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Implementation of per-regime processing for Steps 5-7."""
 
-import pandas as pd
-import numpy as np
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
 import asyncio
 from datetime import datetime
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import pipeline_standards
-from src.utils.common_operations import ensure_directory, safe_json_dump
 
 logger = system_logger.getChild("RegimeStepsImplementation")
 
@@ -466,19 +462,23 @@ class RegimeAwareMatrixOperations:
         """Apply PCA with regime-specific variance threshold."""
         
         from sklearn.decomposition import PCA
-        
-        # Fit PCA
-        pca = PCA(n_components=config['pca_variance_threshold'])
-        transformed = pca.fit_transform(features)
-        
-        # Create DataFrame with PCA components
-        pca_features = pd.DataFrame(
-            transformed,
-            index=features.index,
-            columns=[f'pca_{i}' for i in range(transformed.shape[1])]
-        )
-        
-        return pca_features
+import pandas as pd
+from typing import Any
+from typing import Dict
+import numpy as np
+
+# Fit PCA
+pca = PCA(n_components=config['pca_variance_threshold'])
+transformed = pca.fit_transform(features)
+
+# Create DataFrame with PCA components
+pca_features = pd.DataFrame(
+    transformed,
+    index=features.index,
+    columns=[f'pca_{i}' for i in range(transformed.shape[1])]
+)
+
+return pca_features
 
 
 # ============================================================================

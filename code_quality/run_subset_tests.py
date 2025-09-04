@@ -12,7 +12,11 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
+    print("Warning: pytest not available")
 
 # Add project root to path
 project_root = Path(__file__).parent.parent

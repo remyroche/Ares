@@ -5,22 +5,14 @@ This module provides SHAP (SHapley Additive exPlanations) analysis for understan
 model predictions and feature importance.
 """
 
-import asyncio
-import json
-import logging
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-import time
 
-from src.core.decorators import handles_errors, validates, log_call, traced
+from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 class SHAPAnalyzer:
     """SHAP analyzer for model interpretability."""
@@ -38,6 +30,13 @@ class SHAPAnalyzer:
         """Check if SHAP is available and initialize if possible."""
         try:
             import shap
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+import numpy as np
+import pandas as pd
+
             self.shap = shap
             self.shap_available = True
             self.logger.info("✅ SHAP library available and initialized")
@@ -318,7 +317,6 @@ class SHAPAnalyzer:
             self.logger.info("📊 Creating SHAP summary plot...")
             
             try:
-                import matplotlib.pyplot as plt
                 plt.figure(figsize=(10, 8))
                 self.shap.summary_plot(shap_values_sample, X_test_sample, feature_names=feature_names, show=False)
                 summary_plot_path = f"{output_dir}/shap_summary_plot_{model_name}.png"

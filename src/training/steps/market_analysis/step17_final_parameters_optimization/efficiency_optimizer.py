@@ -1,20 +1,19 @@
+
+from typing import Any
 """Efficiency Optimizer for Hyperparameter Optimization.
 
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
 """
 import asyncio
-import multiprocessing as mp
 import os
 import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union, Tuple
-import numpy as np
 
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
 
 @dataclass
 class EfficiencyConfig:
@@ -517,4 +516,4 @@ async def run_efficiency_test() -> None:
     await optimizer.cleanup()
 
 if __name__ == '__main__':
-    asyncio.run(run_efficiency_test())
+    asyncio.run(await run_efficiency_test())

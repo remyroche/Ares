@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/training/steps/multi_timeframe_training/__init__.py
 
@@ -7,7 +6,6 @@ from __future__ import annotations
 This package contains components for multi-timeframe training and analysis.
 """
 
-from src.utils.warning_symbols import (
     connection_error,
     critical,
     error,
@@ -22,7 +20,6 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-from .multi_timeframe_training_manager import MultiTimeframeTrainingManager
 
 __all__ = [
     "MultiTimeframeTrainingManager",

@@ -305,4 +305,4 @@ async def main():
 
 if __name__== "__main__":
     # Run the demonstration
-    asyncio.run(main())
+    asyncio.run(await main())

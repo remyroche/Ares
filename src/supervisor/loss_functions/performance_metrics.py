@@ -4,11 +4,9 @@ Performance Metrics Calculator Module.
 This module handles various performance metric calculations for trading strategies.
 """
 
-from __future__ import annotations
 
 from typing import Any, Dict, List
 
-import numpy as np
 
 from src.core.decorators import handles_errors
 

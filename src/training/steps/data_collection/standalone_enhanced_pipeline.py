@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Simple logging setup
 logging.basicConfig(
@@ -352,4 +352,4 @@ if __name__ == "__main__":
         )
         print(f"Pipeline result: {result}")
     
-    asyncio.run(main())
+    asyncio.run(await main())

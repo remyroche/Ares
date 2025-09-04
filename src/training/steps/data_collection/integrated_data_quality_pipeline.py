@@ -12,19 +12,18 @@ This script demonstrates the comprehensive data quality management system that:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
+from src.utils.trading_decorators import (
     comprehensive_data_validation,
     handle_errors,
     quality_gate,
     with_tracing_span
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 logger = system_logger.getChild("IntegratedDataQualityPipeline")
 
@@ -209,7 +208,6 @@ class IntegratedDataQualityPipeline:
     async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step01 data collection."""
         try:
-            from .step01_data_collection import run_step as run_step1
             
             success = await run_step1(
                 symbol=symbol,
@@ -480,5 +478,8 @@ if __name__ == "__main__":
     finally:
         # Final cleanup
         import gc
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
+from typing import Any
+from typing import Dict
+
         gc.collect()

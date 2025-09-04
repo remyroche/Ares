@@ -1,21 +1,22 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
+import pandas as pd
+from typing import Optional
+from datetime import datetime
+import numpy as np
 """
 Copula Dependency Models for Price Movement Dependencies
 Models dependencies between different price movements across regimes
 """
 
-import asyncio
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import pandas as pd
-from collections import deque
 from dataclasses import dataclass
 from scipy.stats import multivariate_normal, norm
-from scipy.optimize import minimize
 
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

@@ -1,0 +1,26 @@
+2025-09-04 23:31:21,811 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 23:31:21,812 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:31:21,812 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 23:31:21,812 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:31:21,812 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 23:31:21
+2025-09-04 23:31:21,812 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 23:31:21,813 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 23:31:21,813 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_233121.log
+2025-09-04 23:31:21,813 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:31:21,813 - AresTradingSystem - INFO - 🚀 Launcher started: step02_5
+2025-09-04 23:31:21,813 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 23:31:21,814 - AresComponent.AresLauncher - INFO - 🚀 Running step-based training with validation for ETHUSDT on BINANCE
+2025-09-04 23:31:21,814 - AresComponent.AresLauncher - INFO - 📊 Starting from: step2_5_sr_optimization
+2025-09-04 23:31:21,814 - AresComponent.AresLauncher - INFO - 🎯 Training mode: blank
+2025-09-04 23:31:21,814 - AresComponent.AresLauncher - INFO - 🔍 Validating previous steps before starting from step2_5_sr_optimization
+2025-09-04 23:31:21,816 - AresComponent.AresLauncher - ERROR - ❌ Error in step validation: No module named 'src.utils.utils'
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 2662, in _validate_previous_steps
+    from src.utils.validator_orchestrator import ValidatorOrchestrator
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 12, in <module>
+    from .utils.logger import system_logger
+ModuleNotFoundError: No module named 'src.utils.utils'
+2025-09-04 23:31:21,817 - AresComponent.AresLauncher - ERROR - ❌ Cannot start from step2_5_sr_optimization - previous step validation failed
+2025-09-04 23:31:21,818 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 23:31:21,818 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 23:31:21,818 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

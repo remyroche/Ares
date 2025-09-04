@@ -5,22 +5,15 @@ This module provides comprehensive reporting capabilities for model interpretabi
 including SHAP and LIME analysis outputs.
 """
 
-import asyncio
-import json
-import logging
-import numpy as np
-import pandas as pd
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-import time
 
-from src.core.decorators import handles_errors, validates, log_call, traced
+from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 class InterpretabilityReporter:
     """Reporter for model interpretability results."""
@@ -48,7 +41,7 @@ class InterpretabilityReporter:
         
         try:
             # Use report manager for standardized report organization
-            from src.utils.report_manager import get_report_manager
+            from .utils.report_manager import get_report_manager
             report_manager = get_report_manager()
             
             # Generate different report formats using report manager
@@ -87,6 +80,10 @@ class InterpretabilityReporter:
                         model_type, symbol, exchange, "summary.json"
                     )
                     import shutil
+from typing import Any
+from typing import Dict
+from typing import Optional
+
                     shutil.copy2(summary_report_path, target_summary_path)
                     reports_created.append(str(target_summary_path))
             except Exception as summary_error:

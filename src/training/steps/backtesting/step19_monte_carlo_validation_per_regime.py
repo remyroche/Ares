@@ -2,18 +2,17 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Tuple
-import pandas as pd
-import numpy as np
 import json
-from datetime import datetime
 
-from src.training.steps.step19_monte_carlo_validation import Step19MonteCarloValidation
-from src.training.steps.regime_continuity_decorator import per_regime_step
-from src.utils.logger import getChild as get_logger
-from src.utils.pipeline_standards import pipeline_standards
-from src.core.decorators import traced, validates, handles_errors
-from src.core.decorators.errors import handles_errors
+from .training.steps.step19_monte_carlo_validation import Step19MonteCarloValidation
+from .training.steps.regime_continuity_decorator import per_regime_step
+from .utils.pipeline_standards import pipeline_standards
+from .core.decorators import traced, validates, handles_errors
+from .core.decorators.errors import handles_errors
+from typing import Any
+from typing import Dict
+import numpy as np
+from typing import Optional
 
 logger = get_logger('Step19MonteCarloValidationPerRegime')
 
@@ -170,4 +169,4 @@ if __name__ == '__main__':
     async def test():
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Per-regime Monte Carlo validation result: {success}')
-    asyncio.run(test())
+    asyncio.run(await test())

@@ -1,15 +1,11 @@
-from __future__ import annotations
 
 import json
 from datetime import datetime
 from typing import Any
 
-import lightgbm as lgb
-import numpy as np
-import pandas as pd
 from sklearn.feature_selection import RFE, mutual_info_classif
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 # src/training/feature_selection_manager.py
 
@@ -664,7 +660,7 @@ class FeatureSelectionManager:
             )
 
             # Load regularization configuration from pipeline
-            from src.training.regularization import RegularizationManager
+            from .training.regularization import RegularizationManager
 
             reg_manager = RegularizationManager()
             regularization_config = reg_manager.regularization_config

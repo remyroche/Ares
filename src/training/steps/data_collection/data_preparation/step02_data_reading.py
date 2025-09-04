@@ -4,19 +4,17 @@ This module handles reading the unified data from step1_5 and performs comprehen
 data quality validation before proceeding to HMM regime discovery.
 """
 
-from typing import Any, Dict, Tuple, Optional
 from pathlib import Path
-import pandas as pd
-import numpy as np
 
-from src.training.base_step import BaseStep
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+from ....base_step import BaseStep
+from src.utils.decorators.errors import handles_errors
 from src.utils.common_operations import (
-    safe_read_parquet, validate_dataframe_schema, validate_data_quality
+    validate_dataframe_schema, validate_data_quality
 )
-import asyncio
-from src.core.decorators.errors import handles_errors
+from src.utils.parquet_utils import ParquetUtils
+from typing import Any, Dict, Tuple
+import pandas as pd
+from src.utils.logger import system_logger
 
 
 class DataReadingStep(BaseStep):
@@ -30,6 +28,9 @@ class DataReadingStep(BaseStep):
         """
         super().__init__(config, "02", "data_reading")
         
+        # Initialize logger
+        self.logger = system_logger.getChild("DataReadingStep")
+        
         # Step-specific configuration
         self.data_quality_thresholds = config.get("data_quality_thresholds", {
             "min_rows": 1000,
@@ -40,6 +41,14 @@ class DataReadingStep(BaseStep):
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         self.logger.info("✅ Data reading step initialized")
+    
+    async def initialize(self) -> None:
+        """Initialize the step."""
+        self._initialize_step()
+    
+    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the step."""
+        return await self.execute_logic(training_input, pipeline_state)
     
     def validate_inputs(
         self, 
@@ -57,16 +66,22 @@ class DataReadingStep(BaseStep):
         """
         errors = []
         
-        # Check if unified data path exists from step 1.5
-        if "unified_data_path" not in pipeline_state:
-            # Fall back to raw market data from step 1
-            if "raw_market_data" not in pipeline_state:
-                errors.append("No unified_data_path or raw_market_data in pipeline state")
+        # Check if unified data path exists from step 1.5 or can be constructed
+        data_path = pipeline_state.get("unified_data_path") or pipeline_state.get("raw_market_data")
+        
+        if not data_path:
+            # Try to construct data path from training input parameters
+            symbol = training_input.get("symbol", "").upper()
+            exchange = training_input.get("exchange", "").upper()
+            timeframe = training_input.get("timeframe", "1m")
+            
+            if symbol and exchange and timeframe:
+                data_path = f"data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}"
+                self.logger.info(f"Constructed data path for validation: {data_path}")
             else:
-                self.logger.info("Using raw_market_data as fallback")
+                errors.append("No unified_data_path or raw_market_data in pipeline state, and cannot construct from training input")
         
         # Validate data file exists
-        data_path = pipeline_state.get("unified_data_path") or pipeline_state.get("raw_market_data")
         if data_path and not Path(data_path).exists():
             errors.append(f"Data file does not exist: {data_path}")
         
@@ -78,9 +93,8 @@ class DataReadingStep(BaseStep):
         return len(errors) == 0, errors
     
     @handles_errors(
-        exceptions=(Exception,),
-        default_return={"success": False},
-        context="data reading execution"
+        Exception,
+        fallback={"success": False}
     )
     async def execute_logic(
         self,
@@ -96,14 +110,55 @@ class DataReadingStep(BaseStep):
         Returns:
             Updated pipeline state
         """
-        # Get data path
+        # Get data path - construct if not provided in pipeline state
         data_path = pipeline_state.get("unified_data_path") or pipeline_state.get("raw_market_data")
-        self.logger.info(f"📖 Reading data from: {data_path}")
+        
+        if not data_path:
+            # Construct data path from training input parameters
+            symbol = training_input.get("symbol", "").upper()
+            exchange = training_input.get("exchange", "").upper()
+            timeframe = training_input.get("timeframe", "1m")
+            
+            # Use the same path structure as found by the launcher
+            data_path = f"data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}"
+            self.logger.info(f"📖 Constructed data path: {data_path}")
+        else:
+            self.logger.info(f"📖 Reading data from: {data_path}")
         
         # Read data
         try:
-            data = safe_read_parquet(data_path)
-            if data is None:
+            parquet_utils = ParquetUtils()
+            data_path_obj = Path(data_path)
+            
+            if data_path_obj.is_file():
+                # Single file
+                data = parquet_utils.safe_read_parquet(data_path)
+            elif data_path_obj.is_dir():
+                # Directory with multiple parquet files
+                parquet_files = list(data_path_obj.glob("**/*.parquet"))
+                if not parquet_files:
+                    raise ValueError(f"No parquet files found in directory: {data_path}")
+                
+                self.logger.info(f"📁 Found {len(parquet_files)} parquet files in directory")
+                
+                # Read and concatenate all parquet files
+                dataframes = []
+                for i, file_path in enumerate(parquet_files):
+                    self.logger.info(f"📖 Reading file {i+1}/{len(parquet_files)}: {file_path.name}")
+                    df = parquet_utils.safe_read_parquet(str(file_path))
+                    if df is not None and not df.empty:
+                        dataframes.append(df)
+                
+                if not dataframes:
+                    raise ValueError(f"Failed to read any data from parquet files in {data_path}")
+                
+                # Concatenate all dataframes
+                data = pd.concat(dataframes, ignore_index=True)
+                self.logger.info(f"📊 Concatenated {len(dataframes)} dataframes")
+            else:
+                raise ValueError(f"Path does not exist: {data_path}")
+            
+            if data is None or data.empty:
                 raise ValueError(f"Failed to read data from {data_path}")
             
             self.logger.info(f"✅ Loaded {len(data)} rows with {len(data.columns)} columns")
@@ -152,8 +207,18 @@ class DataReadingStep(BaseStep):
         
         # Store in-memory for next steps
         pipeline_state["dataframe"] = data
+        pipeline_state["validated_data"] = data  # For step 2.5
+        pipeline_state["data_validation_results"] = validation_results
         
-        return pipeline_state
+        return {
+            "success": True,
+            "step02_data_reading_completed": True,
+            "validated_data": data,
+            "data_validation_results": validation_results,
+            "data_info": pipeline_state["data_info"],
+            "dataframe": data,
+            "step_name": "step02_data_reading"
+        }
     
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step outputs.

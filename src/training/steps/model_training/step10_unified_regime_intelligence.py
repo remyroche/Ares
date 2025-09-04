@@ -4,7 +4,7 @@ import logging
 import queue
 import threading
 
-from src.core.decorators import (
+from src.utils.decorators import (
     cached,
     circuit_breaker,
     log_call,
@@ -13,12 +13,9 @@ from src.core.decorators import (
     handles_errors,
     timeout
 )
-from copy import copy
-import asyncio
 import numpy as np
 import pandas as pd
 
-from src.core.domain import (
     artifact_versioning,
     artifact_write_lock,
     deterministic_seed,
@@ -55,10 +52,9 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
 
 # Common utilities
-from src.utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
+from .utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -67,7 +63,7 @@ import sys
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards
+from .utils.pipeline_standards import PipelineStandards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -98,10 +94,7 @@ sklearn = PipelineStandards.safe_import("sklearn", None)
 
 # Import torch components if available
 if torch is not None:
-    import torch.nn as nn
-    import torch.nn.functional as F
     from torch.utils.data import DataLoader, TensorDataset
-    import torch.nn.utils.prune as prune
 else:
     nn = None
     F = None
@@ -1335,7 +1328,7 @@ class UnifiedRegimeIntelligenceStep:
         try:
             # Apply model-specific pruning for Step 6.5
             if "features" in train_data and len(train_data["features"]) > 0:
-                from src.training.model_specific_pruning import ModelSpecificPruning
+                from .training.model_specific_pruning import ModelSpecificPruning
                 pruning_manager = ModelSpecificPruning(self.config)
 
                 # Convert features to DataFrame for pruning
@@ -1909,7 +1902,7 @@ class UnifiedRegimeIntelligenceStep:
         """
         try:
             import optuna  # type: ignore
-            from src.core.decorators.errors import handles_errors
+            from .core.decorators.errors import handles_errors
         except Exception as ex:
             self.logger.warning(
                 f"⚠️ Optuna not available for HPO ({ex}); skipping optimization",

@@ -13,12 +13,13 @@ def check_dependencies():
     missing_deps = []
 
     try:
-        import numpy as np
+        import numpy
     except ImportError:
         missing_deps.append("numpy")
+        print("Warning: numpy not available")
 
     try:
-        import pandas as pd
+        import pandas
     except ImportError:
         missing_deps.append("pandas")
 

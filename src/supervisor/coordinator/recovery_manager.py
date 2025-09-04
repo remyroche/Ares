@@ -5,7 +5,6 @@ This module handles automatic recovery and fallback mechanisms for
 system components when failures occur.
 """
 
-from __future__ import annotations
 
 import asyncio
 import time
@@ -13,11 +12,10 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, warning
-from copy import copy
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, failed, warning
+from .core.decorators.errors import handles_errors
 
 
 class RecoveryManager:

@@ -1,21 +1,17 @@
 # src/transition/multitask_rf.py
 
-from __future__ import annotations
 
 import json
 import os
-import os.path
 import pickle
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, f1_score, mean_absolute_error
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 @dataclass

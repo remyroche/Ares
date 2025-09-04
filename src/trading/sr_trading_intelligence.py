@@ -1,4 +1,5 @@
-from __future__ import annotations
+
+import numpy as np
 '\nSR Trading Intelligence - Comprehensive Access to SR Levels for Trading Decisions\n\nThis module provides:\n1. Real-time access to SR levels with all metadata\n2. Trading decision support based on SR analysis\n3. Integration with live trading systems\n4. Performance tracking and optimization\n'
 import asyncio
 import contextlib
@@ -6,9 +7,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import numpy as np
-from src.tactician.sr_levels_manager import SRLevelsManager
-from src.utils.logger import system_logger
+from .tactician.sr_levels_manager import SRLevelsManager
+from .utils.logger import system_logger
 logger = system_logger.getChild('SRTradingIntelligence')
 
 class SRTradingIntelligence:
@@ -58,7 +58,7 @@ class SRTradingIntelligence:
     async def _create_sr_manager(self) -> SRLevelsManager | None:
         """Create and initialize SR Levels Manager."""
         try:
-            from src.tactician.sr_levels_manager import create_sr_levels_manager
+            from .tactician.sr_levels_manager import create_sr_levels_manager
             return await create_sr_levels_manager(self.config)
         except Exception as e:
             self.logger.exception(f'❌ Error creating SR Levels Manager: {e}')

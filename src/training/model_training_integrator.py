@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """Model Training Integrator for Ares Trading System."
 Enables full functionality with trained models.
@@ -10,25 +9,22 @@ import pickle
 from datetime import datetime
 from typing import Any
 
-import lightgbm as lgb
-import numpy as np
-import pandas as pd
-import xgboost as xgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import cross_val_score
 
-from src.utils.comprehensive_logger import get_component_logger
-from src.utils.data_optimizer import get_data_optimizer
+from .utils.comprehensive_logger import get_component_logger
+from .utils.data_optimizer import get_data_optimizer
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
+import numpy as np
+import pandas as pd
 
 
 class ModelTrainingIntegrator:

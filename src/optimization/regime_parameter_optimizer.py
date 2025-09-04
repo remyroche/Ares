@@ -5,14 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
-import numpy as np
 import optuna
-import pandas as pd
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
-from src.validation.walk_forward_validator import WalkForwardValidator
-from copy import copy
-from typing import Dict, List, Optional, Union, Any, Tuple
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
+from .validation.walk_forward_validator import WalkForwardValidator
 logger = system_logger.getChild('RegimeParameterOptimizer')
 
 @dataclass
@@ -130,7 +126,8 @@ class RegimeParameterOptimizer:
     def _run_strategy_with_params(self, data: pd.DataFrame, params: RegimeParameters) -> Optional[pd.DataFrame]:
         """Run trading strategy with given parameters."""
         try:
-            from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+
             labeler = OptimizedTripleBarrierLabeling()
             labeler.profit_target = params.profit_target
             labeler.stop_loss = params.stop_loss

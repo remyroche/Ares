@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Validator for Step 6: HMM-Based Enhancement."""
 
@@ -11,9 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import numpy as np
 
-from src.utils.common_operations import safe_json_load
+from .utils.common_operations import safe_json_load
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -24,7 +22,7 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
+from .config import CONFIG
 
 
 class Step6HMMBasedEnhancementValidator(BaseValidator):
@@ -548,4 +546,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run(test_validator())
+    _asyncio.run(await test_validator())

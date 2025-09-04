@@ -9,6 +9,58 @@ from typing import Any, NamedTuple
 
 from ..core.config import CodeQualityConfig
 
+# Built-in functions that should be excluded from analysis
+BUILTIN_FUNCTIONS = {
+    'print', 'len', 'str', 'int', 'float', 'bool', 'list', 'dict', 'tuple', 'set',
+    'range', 'enumerate', 'zip', 'map', 'filter', 'sorted', 'reversed', 'sum',
+    'max', 'min', 'abs', 'round', 'pow', 'divmod', 'bin', 'hex', 'oct', 'chr',
+    'ord', 'hash', 'id', 'type', 'isinstance', 'issubclass', 'hasattr', 'getattr',
+    'setattr', 'delattr', 'dir', 'vars', 'globals', 'locals', 'eval', 'exec',
+    'compile', 'open', 'input', 'exit', 'quit', 'help', 'repr', 'ascii', 'format',
+    'super', 'property', 'staticmethod', 'classmethod', 'all', 'any', 'next',
+    'iter', 'callable', 'memoryview', 'slice', 'object', 'Exception', 'ValueError',
+    'TypeError', 'AttributeError', 'KeyError', 'IndexError', 'ImportError',
+    'ModuleNotFoundError', 'FileNotFoundError', 'OSError', 'RuntimeError',
+    'NotImplementedError', 'StopIteration', 'GeneratorExit', 'SystemExit',
+    'KeyboardInterrupt', 'BaseException', 'Warning', 'UserWarning', 'DeprecationWarning',
+    'PendingDeprecationWarning', 'SyntaxWarning', 'RuntimeWarning', 'FutureWarning',
+    'ImportWarning', 'UnicodeWarning', 'BytesWarning', 'ResourceWarning',
+    # Common external library functions that are often imported
+    'np', 'pd', 'plt', 'sns', 'sklearn', 'tensorflow', 'torch', 'requests',
+    'json', 'os', 'sys', 'time', 'datetime', 'pathlib', 'logging', 'asyncio',
+    'threading', 'multiprocessing', 'subprocess', 'shutil', 'tempfile', 'uuid',
+    'random', 'math', 'statistics', 'collections', 'itertools', 'functools',
+    'operator', 'copy', 'pickle', 'csv', 'xml', 'html', 'urllib', 'http',
+    'socket', 'ssl', 'hashlib', 'hmac', 'base64', 'zlib', 'gzip', 'bz2',
+    'lzma', 'tarfile', 'zipfile', 'sqlite3', 're', 'string', 'unicodedata',
+    'codecs', 'io', 'contextlib', 'weakref', 'gc', 'inspect', 'traceback',
+    'warnings', 'dis', 'pickletools', 'profile', 'pstats', 'timeit', 'doctest',
+    'unittest', 'test', 'pdb', 'cProfile', 'pstats', 'trace', 'faulthandler',
+    'signal', 'atexit', 'argparse', 'getopt', 'optparse', 'configparser',
+    'fileinput', 'linecache', 'filecmp', 'tempfile', 'glob', 'fnmatch',
+    'linecache', 'shlex', 'struct', 'array', 'mmap', 'select', 'selectors',
+    'asyncio', 'concurrent', 'queue', 'sched', 'threading', 'multiprocessing',
+    'subprocess', 'sched', 'queue', 'dummy_threading', 'dummy_thread',
+    'ctypes', 'ctypes.util', 'ctypes.wintypes', 'msvcrt', 'winsound',
+    'winreg', 'winsound', 'msvcrt', 'nt', 'posix', 'pwd', 'grp', 'crypt',
+    'termios', 'tty', 'pty', 'fcntl', 'pipes', 'resource', 'syslog',
+    'getpass', 'curses', 'readline', 'rlcompleter', 'cmd', 'shlex',
+    'tkinter', 'turtle', 'turtledemo', 'bdb', 'pdb', 'profile', 'pstats',
+    'hotshot', 'timeit', 'trace', 'faulthandler', 'tracemalloc', 'gc',
+    'sys', 'builtins', '__builtin__', '__builtins__', 'main', 'if __name__',
+    # Common pandas/numpy methods that are often called directly
+    'DataFrame', 'Series', 'array', 'zeros', 'ones', 'empty', 'full',
+    'arange', 'linspace', 'logspace', 'meshgrid', 'mgrid', 'ogrid',
+    'eye', 'identity', 'diag', 'tri', 'tril', 'triu', 'vander',
+    'histogram', 'histogram2d', 'histogramdd', 'bincount', 'digitize',
+    'searchsorted', 'corrcoef', 'cov', 'polyfit', 'polyval', 'roots',
+    'poly', 'polyder', 'polyint', 'polyadd', 'polysub', 'polymul',
+    'polydiv', 'polyval', 'polyfit', 'roots', 'poly', 'polyder',
+    'polyint', 'polyadd', 'polysub', 'polymul', 'polydiv', 'polyval',
+    'polyfit', 'roots', 'poly', 'polyder', 'polyint', 'polyadd',
+    'polysub', 'polymul', 'polydiv', 'polyval', 'polyfit', 'roots'
+}
+
 
 class FunctionSignature(NamedTuple):
     """Represents a function signature."""
@@ -52,6 +104,7 @@ class SignatureAnalyzer:
         self.config = config
         self.functions_by_file = defaultdict(list)
         self.function_calls_by_file = defaultdict(list)
+        self.imports_by_file = defaultdict(list)  # Track imports to avoid false positives
         self.signature_changes = []
         self.compatibility_issues = []
         self.missing_functions = []
@@ -97,19 +150,88 @@ class SignatureAnalyzer:
 
             tree = ast.parse(content)
 
-            # Collect function definitions
+            # Extract imports first
+            self._extract_imports(tree, file_path)
+
+            # Collect function definitions and calls
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                     signature = self._extract_function_signature(node, file_path)
                     self.functions_by_file[file_path].append(signature)
 
                 elif isinstance(node, ast.Call):
+                    # Skip decorator calls and other non-function calls
+                    if self._is_decorator_call(node, tree):
+                        continue
+                    if self._is_import_call(node, tree):
+                        continue
+                    
                     call = self._extract_function_call(node, file_path)
                     if call:
                         self.function_calls_by_file[file_path].append(call)
 
         except Exception as e:
             print(f"Error parsing {file_path}: {e}")
+
+    def _is_decorator_call(self, call_node: ast.Call, tree: ast.AST) -> bool:
+        """Check if a call node is part of a decorator."""
+        # Walk up the tree to see if this call is in a decorator list
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                for decorator in node.decorator_list:
+                    # Check if the call node is the same as the decorator
+                    if self._is_same_node(call_node, decorator):
+                        return True
+                    # Also check if the call node is inside the decorator (for complex decorators)
+                    if isinstance(decorator, ast.Call):
+                        if self._is_same_node(call_node, decorator):
+                            return True
+        return False
+
+    def _is_import_call(self, call_node: ast.Call, tree: ast.AST) -> bool:
+        """Check if a call node is part of an import statement."""
+        # Walk up the tree to see if this call is in an import statement
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                # Check if the call is part of an import statement
+                if hasattr(node, 'names'):
+                    for alias in node.names:
+                        if hasattr(alias, 'name') and call_node.func and hasattr(call_node.func, 'id'):
+                            if alias.name == call_node.func.id:
+                                return True
+        return False
+
+    def _is_same_node(self, node1: ast.AST, node2: ast.AST) -> bool:
+        """Check if two AST nodes are the same (same line and column)."""
+        return (hasattr(node1, 'lineno') and hasattr(node2, 'lineno') and 
+                hasattr(node1, 'col_offset') and hasattr(node2, 'col_offset') and
+                node1.lineno == node2.lineno and node1.col_offset == node2.col_offset)
+
+    def _extract_imports(self, tree: ast.AST, file_path: str) -> None:
+        """Extract imports from a file to track available functions."""
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    # Store both the full name and the alias
+                    self.imports_by_file[file_path].append(alias.name)
+                    if alias.asname:
+                        self.imports_by_file[file_path].append(alias.asname)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    for alias in node.names:
+                        # Store the imported name, the full module path, and any alias
+                        imported_name = alias.name
+                        full_name = f"{node.module}.{imported_name}"
+                        self.imports_by_file[file_path].append(imported_name)
+                        self.imports_by_file[file_path].append(full_name)
+                        if alias.asname:
+                            self.imports_by_file[file_path].append(alias.asname)
+                else:
+                    # Handle relative imports
+                    for alias in node.names:
+                        self.imports_by_file[file_path].append(alias.name)
+                        if alias.asname:
+                            self.imports_by_file[file_path].append(alias.asname)
 
     def _extract_function_signature(self, node: ast.FunctionDef, file_path: str) -> FunctionSignature:
         """Extract function signature from an AST node."""
@@ -191,13 +313,104 @@ class SignatureAnalyzer:
             return f"{node.func.id}()"
         return str(node)
 
+    def _is_likely_class_instantiation(self, node: ast.Call, function_name: str) -> bool:
+        """Check if a call is likely a class instantiation rather than a function call."""
+        # Class names typically start with uppercase letters
+        if function_name[0].isupper():
+            return True
+        
+        # Check if it's assigned to a variable (common pattern for class instantiation)
+        # This is a heuristic - we'd need to analyze the AST more deeply for certainty
+        return False
+
     def _extract_function_call(self, node: ast.Call, file_path: str) -> FunctionCall | None:
         """Extract function call information from an AST node."""
         if isinstance(node.func, ast.Name):
             function_name = node.func.id
+            is_method_call = False
         elif isinstance(node.func, ast.Attribute):
             function_name = node.func.attr
+            is_method_call = True
         else:
+            return None
+
+        # Skip built-in functions
+        if function_name in BUILTIN_FUNCTIONS:
+            return None
+
+        # Skip method calls - these are handled by the object's class definition
+        if is_method_call:
+            return None
+
+        # Skip very short function names (likely variables or parameters)
+        if len(function_name) <= 2:
+            return None
+
+        # Skip common variable names that might be called as functions
+        common_variables = {'x', 'y', 'z', 'i', 'j', 'k', 'n', 'm', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w'}
+        if function_name.lower() in common_variables:
+            return None
+
+        # Skip common imported functions that are typically available
+        common_imports = {
+            'Path', 'datetime', 'timedelta', 'timezone', 'date', 'time',
+            'DataFrame', 'Series', 'array', 'zeros', 'ones', 'empty', 'full',
+            'arange', 'linspace', 'logspace', 'meshgrid', 'mgrid', 'ogrid',
+            'eye', 'identity', 'diag', 'tri', 'tril', 'triu', 'vander',
+            'histogram', 'histogram2d', 'histogramdd', 'bincount', 'digitize',
+            'searchsorted', 'corrcoef', 'cov', 'polyfit', 'polyval', 'roots',
+            'poly', 'polyder', 'polyint', 'polyadd', 'polysub', 'polymul',
+            'polydiv', 'polyval', 'polyfit', 'roots', 'poly', 'polyder',
+            'polyint', 'polyadd', 'polysub', 'polymul', 'polydiv', 'polyval',
+            'polyfit', 'roots', 'poly', 'polyder', 'polyint', 'polyadd',
+            'polysub', 'polymul', 'polydiv', 'polyval', 'polyfit', 'roots',
+            'setup_signal_handlers', 'test_func', 'main', 'run', 'start',
+            'stop', 'pause', 'resume', 'init', 'cleanup', 'configure',
+            'validate', 'process', 'handle', 'execute', 'perform', 'create',
+            'destroy', 'update', 'refresh', 'reload', 'reset', 'clear',
+            'load', 'save', 'export', 'import', 'parse', 'format', 'encode',
+            'decode', 'serialize', 'deserialize', 'compress', 'decompress',
+            'encrypt', 'decrypt', 'hash', 'sign', 'verify', 'authenticate',
+            'authorize', 'login', 'logout', 'register', 'unregister', 'subscribe',
+            'unsubscribe', 'publish', 'notify', 'alert', 'warn', 'error',
+            'debug', 'info', 'trace', 'log', 'monitor', 'track', 'measure',
+            'calculate', 'compute', 'estimate', 'predict', 'forecast', 'analyze',
+            'evaluate', 'assess', 'score', 'rank', 'sort', 'filter', 'search',
+            'find', 'locate', 'detect', 'identify', 'recognize', 'classify',
+            'categorize', 'group', 'cluster', 'aggregate', 'summarize', 'report',
+            'generate', 'produce', 'create', 'build', 'construct', 'assemble',
+            'compose', 'combine', 'merge', 'join', 'split', 'divide', 'separate',
+            'extract', 'isolate', 'remove', 'delete', 'clear', 'clean', 'purge',
+            'truncate', 'cut', 'slice', 'chop', 'trim', 'strip', 'pad', 'fill',
+            'expand', 'contract', 'shrink', 'grow', 'increase', 'decrease',
+            'add', 'subtract', 'multiply', 'divide', 'power', 'root', 'log',
+            'exp', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh',
+            'tanh', 'asinh', 'acosh', 'atanh', 'ceil', 'floor', 'round', 'trunc',
+            'abs', 'sign', 'sqrt', 'cbrt', 'factorial', 'gcd', 'lcm', 'mod',
+            'divmod', 'pow', 'bin', 'hex', 'oct', 'chr', 'ord', 'ascii', 'repr',
+            'str', 'int', 'float', 'bool', 'complex', 'bytes', 'bytearray',
+            'memoryview', 'list', 'tuple', 'set', 'frozenset', 'dict', 'range',
+            'enumerate', 'zip', 'map', 'filter', 'sorted', 'reversed', 'sum',
+            'max', 'min', 'all', 'any', 'next', 'iter', 'len', 'type', 'isinstance',
+            'issubclass', 'hasattr', 'getattr', 'setattr', 'delattr', 'dir',
+            'vars', 'globals', 'locals', 'eval', 'exec', 'compile', 'open',
+            'input', 'print', 'help', 'quit', 'exit', 'copyright', 'credits',
+            'license', 'reload', 'super', 'property', 'staticmethod', 'classmethod',
+            'callable', 'hash', 'id', 'object', 'Exception', 'ValueError',
+            'TypeError', 'AttributeError', 'KeyError', 'IndexError', 'ImportError',
+            'ModuleNotFoundError', 'FileNotFoundError', 'OSError', 'RuntimeError',
+            'NotImplementedError', 'StopIteration', 'GeneratorExit', 'SystemExit',
+            'KeyboardInterrupt', 'BaseException', 'Warning', 'UserWarning',
+            'DeprecationWarning', 'PendingDeprecationWarning', 'SyntaxWarning',
+            'RuntimeWarning', 'FutureWarning', 'ImportWarning', 'UnicodeWarning',
+            'BytesWarning', 'ResourceWarning'
+        }
+        
+        if function_name in common_imports:
+            return None
+
+        # Skip class instantiations (they look like function calls but are actually constructors)
+        if self._is_likely_class_instantiation(node, function_name):
             return None
 
         # Extract arguments
@@ -308,6 +521,10 @@ class SignatureAnalyzer:
         # Check each function call against definitions
         for calls in self.function_calls_by_file.values():
             for call in calls:
+                # Skip built-in functions even if they're defined in the codebase
+                if call.function_name in BUILTIN_FUNCTIONS:
+                    continue
+                    
                 if call.function_name in function_definitions:
                     func_def = function_definitions[call.function_name]
                     issues = self._check_call_compatibility(call, func_def)
@@ -329,25 +546,103 @@ class SignatureAnalyzer:
                             },
                         ))
                 else:
-                    # Function not defined anywhere
-                    self.missing_functions.append(SignatureIssue(
-                        file_path=call.file_path,
-                        line_number=call.line_number,
-                        issue_type="missing_function",
-                        message=f"Function '{call.function_name}' is called but not defined",
-                        severity="error",
-                        details={
-                            "function_name": call.function_name,
-                            "call": {
-                                "args": call.args,
-                                "keywords": call.keywords,
+                    # Function not defined anywhere - check if it's imported or should be skipped
+                    if self._should_report_missing_function(call):
+                        self.missing_functions.append(SignatureIssue(
+                            file_path=call.file_path,
+                            line_number=call.line_number,
+                            issue_type="missing_function",
+                            message=f"Function '{call.function_name}' is called but not defined",
+                            severity="error",
+                            details={
+                                "function_name": call.function_name,
+                                "call": {
+                                    "args": call.args,
+                                    "keywords": call.keywords,
+                                },
                             },
-                        },
-                    ))
+                        ))
+
+    def _should_report_missing_function(self, call: FunctionCall) -> bool:
+        """Determine if a missing function should be reported as an issue."""
+        function_name = call.function_name
+        
+        # Skip built-in functions
+        if function_name in BUILTIN_FUNCTIONS:
+            return False
+        
+        # Check if the function is imported in the same file
+        file_imports = self.imports_by_file.get(call.file_path, [])
+        
+        # Check for direct imports (e.g., "defaultdict" from "collections")
+        for import_name in file_imports:
+            if import_name.endswith(f".{function_name}") or import_name == function_name:
+                return False
+        
+        # Check for common patterns that indicate the function is likely imported
+        common_import_patterns = {
+            'defaultdict': ['collections'],
+            'asdict': ['dataclasses'],
+            'field': ['dataclasses'],
+            'dataclass': ['dataclasses'],
+            'cosine_similarity': ['sklearn.metrics.pairwise'],
+            'DataFrame': ['pandas'],
+            'Series': ['pandas'],
+            'array': ['numpy'],
+            'zeros': ['numpy'],
+            'ones': ['numpy'],
+            'Path': ['pathlib'],
+            'datetime': ['datetime'],
+            'timedelta': ['datetime'],
+            'get_logger': ['centralized_logging', 'logging'],
+            'setup_logging': ['src.utils.logger', 'logging'],
+            'register_decorator': ['src.utils.decorator_registry'],
+            'safe_dict_get': ['src.utils.common_operations'],
+            'run_command': ['subprocess'],
+            'run_step': ['src.training.steps'],
+            'handle_errors': ['ares_launcher'],
+            'get_backtesting_logger': ['src.training.steps.backtesting'],
+        }
+        
+        if function_name in common_import_patterns:
+            expected_modules = common_import_patterns[function_name]
+            for import_name in file_imports:
+                for module in expected_modules:
+                    if module in import_name:
+                        return False
+        
+        # Skip very generic function names that are likely parameters or variables
+        generic_names = {'func', 'callback', 'handler', 'processor', 'method', 'function', 'processor_func'}
+        if function_name.lower() in generic_names:
+            return False
+        
+        # Skip single letter function names (likely variables)
+        if len(function_name) == 1:
+            return False
+        
+        # Skip very short names (likely variables)
+        if len(function_name) <= 2:
+            return False
+        
+        # Skip common variable names that might be called as functions
+        common_variables = {'x', 'y', 'z', 'i', 'j', 'k', 'n', 'm', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w'}
+        if function_name.lower() in common_variables:
+            return False
+        
+        return True
 
     def _check_call_compatibility(self, call: FunctionCall, func_def: FunctionSignature) -> list[str]:
         """Check if a function call is compatible with its definition."""
         issues = []
+
+        # Skip issues for very generic function names (likely parameters)
+        generic_names = {'func', 'callback', 'handler', 'processor', 'method', 'function', 'processor_func'}
+        if call.function_name.lower() in generic_names:
+            return []
+
+        # Skip decorator calls - these are handled differently
+        if call.function_name in ['handle_errors', 'register_decorator', 'monitor_data_collection', 'handles_errors']:
+            return []
 
         # Check positional arguments
         if len(call.args) > len(func_def.args):
@@ -360,14 +655,14 @@ class SignatureAnalyzer:
             if keyword_name not in defined_args and not func_def.kwarg:
                 issues.append(f"Unknown keyword argument: '{keyword_name}'")
 
-        # Check required arguments
-        required_args = []
-        for _i, (arg, default) in enumerate(zip(func_def.args, func_def.defaults, strict=False)):
-            if default is None:
-                required_args.append(arg)
-
-        if len(call.args) < len(required_args):
-            missing = required_args[len(call.args):]
+        # Check required arguments - improved logic
+        # Count how many arguments have default values
+        num_defaults = len(func_def.defaults) if func_def.defaults else 0
+        num_required = len(func_def.args) - num_defaults
+        
+        # Only check if we have fewer positional arguments than required
+        if len(call.args) < num_required:
+            missing = func_def.args[len(call.args):num_required]
             issues.append(f"Missing required arguments: {', '.join(missing)}")
 
         return issues

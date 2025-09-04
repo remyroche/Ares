@@ -10,10 +10,7 @@ from typing import Any, Dict, Optional, List, Callable
 import importlib
 import inspect
 
-from src.utils.logger import getChild as get_logger
-from src.training.steps.regime_handler import regime_handler
-from src.training.steps.regime_continuity_manager import regime_continuity_manager
-from src.utils.pipeline_standards import pipeline_standards
+from .training.steps.regime_handler import regime_handler
 
 
 logger = get_logger('PerRegimePipelineIntegration')
@@ -304,7 +301,7 @@ def create_per_regime_wrapper(original_step_func: Callable) -> Callable:
     Returns:
         Wrapped function with per-regime processing
     """
-    from src.training.steps.regime_processing_decorator import per_regime_processing
+    from .training.steps.regime_processing_decorator import per_regime_processing
     
     # Get function signature
     sig = inspect.signature(original_step_func)
@@ -399,4 +396,4 @@ if __name__ == '__main__':
         
         print(f"\n✅ Regime data verified: {verified}")
         
-    asyncio.run(test())
+    asyncio.run(await test())

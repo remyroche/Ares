@@ -5,21 +5,16 @@ This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
 """
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
-import warnings
 
-import numpy as np
-import pandas as pd
 
 # Import essential decorators
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 # Import Numba for performance optimization
 try:
-    import numba
     from numba import jit
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -701,7 +696,6 @@ if __name__ == "__main__":
     # Example usage
     import numpy as np
     import pandas as pd
-    import copy
     
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

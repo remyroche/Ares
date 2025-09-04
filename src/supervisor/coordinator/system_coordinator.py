@@ -5,24 +5,22 @@ This is the main coordinator that orchestrates all the coordinator components
 for system-level supervision.
 """
 
-from __future__ import annotations
 
 import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.core.decorators import handles_errors
-from src.core.domain import handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed
-from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
+from .core.decorators import handles_errors
+from .core.domain import handle_specific_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, failed
+from .supervisor.enhanced_prediction_service import EnhancedPredictionService
 
 from .circuit_breaker import CircuitBreaker
 from .component_monitor import ComponentMonitor
 from .health_monitor import HealthMonitor
 from .online_learning_manager import OnlineLearningManager
 from .recovery_manager import RecoveryManager
-from copy import copy
 
 
 class SystemCoordinator:

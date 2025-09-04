@@ -1,3 +1,9 @@
+
+from typing import Any
+import pandas as pd
+from typing import Optional
+from typing import Tuple
+import numpy as np
 # src/training/steps/step08_advanced_feature_selection.py
 
 """Step 8: Advanced Feature Selection with Two-Phase Approach.
@@ -11,24 +17,14 @@ with regime-aware selection, time-series validation, and interpretability analys
 import asyncio
 import json
 import os
-import pickle
 import warnings
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-import numpy as np
-import pandas as pd
-from scipy.stats import rankdata
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
-import lightgbm as lgb
 
 # Computational optimization imports
 try:
-    import numba
     from numba import jit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -59,16 +55,15 @@ except ImportError:
 
 try:
     import lime
-    import lime.lime_tabular
     LIME_AVAILABLE = True
 except ImportError:
     LIME_AVAILABLE = False
     warnings.warn("LIME not available - interpretability features will be limited")
 
-from src.core.decorators import handles_errors
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
+from .core.decorators import handles_errors
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
+from .utils.pipeline_standards import pipeline_standards
 
 
 # Numba-optimized functions for performance
@@ -284,7 +279,7 @@ class Step08AdvancedFeatureSelection:
                 hmm_data = pd.read_parquet(hmm_path)
                 # Use shared regime accessor for coherent detection
                 try:
-                    from src.utils.regime_data_access import get_regime_column
+                    from .utils.regime_data_access import get_regime_column
                     regime_col = get_regime_column(hmm_data)
                 except Exception:
                     regime_col = "composite_cluster_id" if "composite_cluster_id" in hmm_data.columns else None
@@ -959,7 +954,7 @@ class Step08AdvancedFeatureSelection:
         """
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
         
         # Calculate correlation matrix
         corr_matrix = X.corr().abs()

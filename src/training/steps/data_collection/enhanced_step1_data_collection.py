@@ -11,20 +11,14 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
-import numpy as np
-import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
-    from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator, QualityThresholds, QualityResult
-    from src.utils.enhanced_config_management import Step1Config
-    from src.utils.logger import system_logger
-    from src.training.steps.data_downloader import download_all_data_with_consolidation
-    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
-    from src.core.decorators import handles_errors, error_boundary
-    from src.utils.enhanced_memory_management import retry_with_backoff, circuit_breaker, categorize_errors, RetryableError, NonRetryableError, DATA_OPERATION_ERRORS, MemoryMonitor, memory_efficient, optimize_dataframe_dtypes, MemoryOptimizedProcessor, MemoryConfig
+    from .utils.enhanced_config_management import Step1Config
+    from .utils.logger import system_logger
+    from .training.steps.data_downloader import download_all_data_with_consolidation
+    from .training.steps.data_downloader import download_all_data_with_consolidation as _dl
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1')
@@ -265,7 +259,12 @@ async def run_enhanced_step1(training_input: Dict[str, Any], pipeline_state: Dic
     return await step01.execute(training_input, pipeline_state)
 if __name__ == '__main__':
     import asyncio
-    import os.path
+import pandas as pd
+from typing import Dict
+from typing import Any
+import numpy as np
+from typing import Optional
+
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     async def main() -> None:
@@ -283,4 +282,4 @@ if __name__ == '__main__':
             print('=' * 60)
         except Exception as e:
             print(f'❌ Enhanced Step1 execution failed: {e}')
-    asyncio.run(main())
+    asyncio.run(await main())

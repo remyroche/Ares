@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Data Type Optimization Utilities
@@ -8,10 +7,7 @@ and improve computational efficiency in feature engineering.
 """
 
 import logging
-from copy import copy
 
-import numpy as np
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 

@@ -5,9 +5,8 @@ This module provides linear confidence scaling functions to replace
 threshold-based approaches with smooth, continuous scaling.
 """
 
-import numpy as np
 from typing import Dict, Any, Tuple
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 class LinearConfidenceScaler:

@@ -1,11 +1,8 @@
-from __future__ import annotations
 '\nProbabilistic Model Integration for Tactician and Analyst\n\nThis module provides seamless integration between the probabilistic Bayesian optimizer\nand your existing Tactician and Analyst models, enabling end-to-end optimization\nof probabilistic outputs and uncertainty quantification.\n'
 import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
-import numpy as np
-import pandas as pd
 from .probabilistic_bayesian_optimizer import ProbabilisticBayesianOptimizer, ProbabilisticOptimizationConfig
 try:
     pass
@@ -129,6 +126,9 @@ class ProbabilisticModelIntegrator:
 
         def factory(params: dict[str, Any]) -> None:
             from sklearn.ensemble import RandomForestClassifier
+import numpy as np
+import pandas as pd
+
             return RandomForestClassifier(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
         return factory
 
@@ -245,4 +245,4 @@ async def main() -> None:
     print(f'Results: {results}')
     print(f'Status: {status}')
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

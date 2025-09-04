@@ -3,15 +3,13 @@
 """
 Enhanced trading system protocols with comprehensive type safety (minimal scaffold).
 """
-from __future__ import annotations
 
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
-import asyncio
 
 if TYPE_CHECKING:
-    from src.custom_types.base_types import Symbol, Timestamp
-    from src.custom_types.ml_types import PredictionResult
+    from .custom_types.base_types import Symbol, Timestamp
+    from .custom_types.ml_types import PredictionResult
     from src.custom_types.trading_types import (
         PositionInfo,
         RegimeClassification,

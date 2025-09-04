@@ -1,22 +1,13 @@
 """Refactored Data Converter Step
 This is a refactored version of step01_5_data_converter.py that uses the extracted components.
 """
-from __future__ import annotations
 
 import asyncio
-import contextlib
-import glob
-import logging
 import os
-import os.path
 import sys
 import time
-from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
 
-import numpy as np
-import pandas as pd
 import psutil
 
 # Import the extracted components
@@ -27,18 +18,17 @@ from src.training.steps.data_preparation_components import (
 )
 
 # Ensure project root is on path
-from src.core.decorators import traced, validates
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import pipeline_standards
+from .utils.pipeline_standards import pipeline_standards
 
 # Import other utilities
-from src.utils.logger import system_logger
-from src.training.steps.data_downloader import download_all_data_with_consolidation
-from src.utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
+from .utils.logger import system_logger
+import pandas as pd
+from datetime import datetime
 
 
 # ----------------------------------------------------------------------------

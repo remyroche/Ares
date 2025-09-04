@@ -37,8 +37,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    import numpy as np
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -53,7 +51,6 @@ except ImportError:
     print("Warning: sklearn not available, some functionality will be limited")
 
 try:
-    import networkx as nx
     NETWORKX_AVAILABLE = True
 except ImportError:
     NETWORKX_AVAILABLE = False
@@ -61,7 +58,7 @@ except ImportError:
 
 # Import project-specific modules
 try:
-    from src.utils.enhanced_mlflow_integration import (
+    from src.utils.enhanced_logger import (
         create_detailed_step_report,
         log_step_metrics,
         log_step_report,
@@ -71,7 +68,6 @@ try:
         enhanced_outlier_handler,
     )
     from src.utils.logger import system_logger
-    from src.utils.pipeline_standards import PipelineStandards as PipelineStandards_src_utils_pipeline_standards, pipeline_standards
 except ImportError:
     # Fallback logger if project modules aren't available
     system_logger = logging.getLogger("UnifiedQualityOrchestrator")
@@ -1287,4 +1283,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

@@ -1,8 +1,5 @@
 # Performance Optimizations for Location Classifier
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional
 from functools import lru_cache
 import numba
 
@@ -193,7 +190,6 @@ class LocationClassifierOptimized:
         """
         Analyze multiple timeframes in parallel using multiprocessing.
         """
-        import multiprocessing as mp
         from concurrent.futures import ProcessPoolExecutor
         
         with ProcessPoolExecutor(max_workers=len(timeframes)) as executor:

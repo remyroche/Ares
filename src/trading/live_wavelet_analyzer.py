@@ -1,5 +1,7 @@
-from __future__ import annotations
 
+
+import pandas as pd
+import numpy as np
 """
 Live Trading Wavelet Analyzer - Computationally Aware Implementation
 
@@ -14,14 +16,12 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-import pandas as pd
 import pywt
 
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import warning, initialization_error
-from src.core.decorators import handles_errors
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import warning, initialization_error
+from .core.decorators import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

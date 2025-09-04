@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/training/steps/analyst_training_components/__init__.py
 
@@ -7,7 +6,6 @@ from __future__ import annotations
 This package contains specialized components for analyst model training.
 """
 
-from src.utils.warning_symbols import (
     connection_error,
     critical,
     error,
@@ -22,7 +20,6 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 
 __all__ = [
     "RegimeSpecificTPSLOptimizer",

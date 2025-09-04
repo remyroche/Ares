@@ -1,6 +1,5 @@
 'Standardized Configuration Management System.\n\nThis module provides centralized configuration management with validation,\nversioning, and standardized access patterns across all pipeline steps.\n'
 import json
-from copy import copy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -156,7 +155,7 @@ def get_standardized_config(step_name: str, config_overrides: dict[str, Any] | N
     Returns:
         Standardized configuration dictionary
     """
-    base_config = config_manager.load_config('pipeline')
+    base_config = await config_manager.load_config('pipeline')
     if config_overrides:
         base_config.update(config_overrides)
     return config_manager.create_step_config(step_name, base_config)

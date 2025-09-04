@@ -5,27 +5,17 @@ Implements feature selection based on fractional label alignment, multicollinear
 and feature importance ranking.
 """
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-import numpy as np
-import pandas as pd
-from scipy import stats
-from sklearn.feature_selection import (
     SelectKBest, f_regression, mutual_info_regression,
     RFE, SelectFromModel
 )
-import datetime
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LassoCV
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 
-from src.utils.logger import get_logger
-from src.core.domain import (
+from .utils.logger import get_logger
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

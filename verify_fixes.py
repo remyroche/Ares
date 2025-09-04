@@ -5,9 +5,6 @@ Script to verify the fixes applied to import conflicts and signature issues.
 
 import os
 import json
-from pathlib import Path
-from datetime import datetime
-import subprocess
 
 
 def count_python_files(exclude_dirs=None):
@@ -150,4 +147,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

@@ -7,9 +7,7 @@ to enable actual execution of launcher commands from the web interface.
 """
 
 import asyncio
-import json
 import logging
-import os
 import subprocess
 import sys
 import time
@@ -346,4 +344,4 @@ if __name__ == "__main__":
             stop_result = await stop_process(process_key)
             print(f"Stop result: {stop_result}")
     
-    asyncio.run(test())
+    asyncio.run(await test())

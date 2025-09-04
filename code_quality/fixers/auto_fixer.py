@@ -8,11 +8,13 @@ import subprocess
 import sys
 import tempfile
 from typing import Any
+from pathlib import Path
 
 try:
-    import tomllib as toml  # Python 3.11+
+    import toml
 except Exception:  # pragma: no cover
     toml = None
+    print("Warning: toml not available")
 
 from ..core.config import CodeQualityConfig, get_default_config
 from ..core.plugins import PluginManager
@@ -144,7 +146,6 @@ class AutoFixer:
                 Autopep8Fixer as Autopep8Fixer_code_quality_plugins_autopep8_fixer,
             )
             from code_quality.plugins.black_fixer import BlackFixer
-            from code_quality.plugins.docformatter_fixer import DocformatterFixer as DocformatterFixer_2
             from code_quality.plugins.flynt_fixer import FlyntFixer
             from code_quality.plugins.future_annotations_fixer import FutureAnnotationsFixer
             from code_quality.plugins.import_hygiene_fixer import ImportHygieneFixer
@@ -620,4 +621,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

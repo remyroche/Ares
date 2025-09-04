@@ -20,43 +20,36 @@ def _lazy_import_fixers():
 
 
 def _lazy_import_analyzers():
-    from .analyzers.call_graph_analyzer import CallGraphAnalyzer  # noqa: F401
-    from .analyzers.complexity_analyzer import ComplexityAnalyzer  # noqa: F401
     from .analyzers.complexity_analyzer import (
+        ComplexityAnalyzer,  # noqa: F401
         ClassComplexity,
         ComplexityMetrics,
         FunctionComplexity,
         ModuleComplexity,
     )
-    from .analyzers.dead_code_analyzer import DeadCodeAnalyzer  # noqa: F401
     from .analyzers.dead_code_analyzer import (
+        DeadCodeAnalyzer,  # noqa: F401
         DeadCodeIssue,
         DeadCodeReport,
     )
-    from .analyzers.dependency_analyzer import DependencyAnalyzer  # noqa: F401
-    from .analyzers.import_analyzer import ImportAnalyzer, ImportIssue  # noqa: F401
-    from .analyzers.linter_analyzer import LinterAnalyzer  # noqa: F401
-    from .analyzers.signature_analyzer import SignatureAnalyzer  # noqa: F401
     from .analyzers.signature_analyzer import (
+        SignatureAnalyzer,  # noqa: F401
         FunctionCall,
         FunctionSignature,
         SignatureIssue,
     )
-    from .analyzers.syntax_validator import SyntaxValidator  # noqa: F401
     return locals()
 
 
 def _lazy_import_reporters():
-    from .reporters.error_reporter import ErrorReporter  # noqa: F401
     from .reporters.error_reporter import (
+        ErrorReporter,  # noqa: F401
         ErrorCategory,
         ErrorReport,
         ErrorSummary,
         FileErrorSummary,
     )
-    from .reporters.html_reporter import HTMLReportConfig, HTMLReporter  # noqa: F401
-    from .reporters.quality_reporter import QualityReporter  # noqa: F401
-    from .reporters.trend_reporter import (  # noqa: F401
+    from .reporters.trend_reporter import (
         TrendAnalysis,
         TrendPoint,
         TrendReport,

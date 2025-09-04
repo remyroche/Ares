@@ -1,6 +1,9 @@
 """Unit tests for Step 10: Unified Regime Intelligence."""
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 import numpy as np
 import pandas as pd
 import torch

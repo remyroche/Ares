@@ -1,14 +1,12 @@
-from __future__ import annotations
 '\nAuthentication and authorization decorators.\n\nProvides decorators for enforcing authentication and permission\npolicies in a framework-agnostic way.\n'
 from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
-from src.core.errors.base import AuthenticationError, AuthorizationError
+from typing import Optional, Any, Callable
+from ..errors.base import AuthenticationError, AuthorizationError
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
-import asyncio
 current_user_var: ContextVar[Optional['User']] = ContextVar('current_user', default=None)
 
 class PermissionType(Enum):
@@ -331,7 +329,7 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
         if len(call_times[key]) >= calls:
             oldest_call = min(call_times[key])
             retry_after = int(period - (current_time - oldest_call))
-            from src.core.errors.base import RateLimitError
+            from .core.errors.base import RateLimitError
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
             raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})
         call_times[key].append(current_time)
@@ -344,7 +342,7 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
         if len(call_times[key]) >= calls:
             oldest_call = min(call_times[key])
             retry_after = int(period - (current_time - oldest_call))
-            from src.core.errors.base import RateLimitError
+            from .core.errors.base import RateLimitError
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
             raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})
         call_times[key].append(current_time)

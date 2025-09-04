@@ -10,8 +10,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
 from datetime import datetime
+from typing import Set
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import List
 
 
 class PluginCategory(Enum):

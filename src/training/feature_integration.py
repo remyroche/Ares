@@ -1,19 +1,14 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """Feature Integration Module for ML Training Pipeline.
 
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
 """
-import asyncio
-import copy
 from typing import Any
-import numpy as np
-import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, initialization_error
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, initialization_error
 
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
@@ -38,7 +33,10 @@ class FeatureIntegrationManager:
         try:
             self.logger.info('🚀 Initializing feature integration manager...')
             if self.enable_advanced_features:
-                from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
+                from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
+import pandas as pd
+import numpy as np
+
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(self.config)
                 await self.advanced_feature_engineering.initialize()
             self.is_initialized = True

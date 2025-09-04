@@ -62,6 +62,11 @@ class UnifiedStandalonePipeline:
                 "description": "Comprehensive Code Review",
                 "args": ["--project-root", str(self.project_root)],
             },
+            "comprehensive_import_undefined_check": {
+                "script": "../simple_import_undefined_checker.py",
+                "description": "Comprehensive Import and Undefined Checker",
+                "args": ["--project-root", str(self.project_root)],
+            },
         }
 
         self.results = {}
@@ -134,6 +139,7 @@ class UnifiedStandalonePipeline:
             "circular_imports": "circular_imports_*.json",
             "function_validator": "function_validation_*.json",
             "comprehensive_review": "comprehensive_review_*.json",
+            "comprehensive_import_undefined_check": "import_undefined_check_report_*.json",
         }
 
         pattern = report_patterns.get(tool_name)
@@ -157,7 +163,7 @@ class UnifiedStandalonePipeline:
     def run_category(self, category: str) -> dict[str, Any]:
         """Run all tools in a specific category."""
         categories = {
-            "syntax_imports": ["syntax_fixer", "import_fixer", "circular_imports"],
+            "syntax_imports": ["syntax_fixer", "import_fixer", "circular_imports", "comprehensive_import_undefined_check"],
             "async_types": ["async_fixer", "type_hints"],
             "analysis": ["function_validator", "comprehensive_review"],
         }
@@ -269,7 +275,7 @@ def main():
     parser.add_argument("--tool", choices=[
                         "syntax_fixer", "import_fixer", "async_fixer",
                         "type_hints", "circular_imports", "function_validator",
-                        "comprehensive_review",
+                        "comprehensive_review", "comprehensive_import_undefined_check",
                         ], help="Run a specific tool only")
     parser.add_argument("--timeout", type=int, default=300,
                         help="Timeout for each tool in seconds")
@@ -288,4 +294,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

@@ -4,14 +4,12 @@ This module provides a unified interface for downloading data
 using either the optimized or clean downloader.
 """
 
-from __future__ import annotations
 
 from typing import Any
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
-import asyncio
+from src.utils.decorators.errors import handles_errors
 
 
 @handles_errors(fallback=False)
@@ -43,8 +41,7 @@ async def download_all_data_with_consolidation(
 
     # Preferred path: optimized downloader
     try:
-        from backtesting.ares_data_downloader_optimized import DownloadConfig as OptimizedDownloadConfig
-        from backtesting.ares_data_downloader_optimized import (
+        from src.backtesting.ares_data_downloader_optimized import (
             OptimizedDataDownloader,
         )
 
@@ -64,10 +61,10 @@ async def download_all_data_with_consolidation(
 
     # Fallback: clean downloader
     try:
-        from backtesting.ares_data_downloader_clean import (
+        from src.backtesting.ares_data_downloader_clean import (
             CleanDataDownloader,
         )
-        from backtesting.ares_data_downloader_clean import DownloadConfig as CleanDownloadConfig
+        from src.backtesting.ares_data_downloader_clean import DownloadConfig as CleanDownloadConfig
 
         clean_cfg = CleanDownloadConfig(
             symbol=symbol,

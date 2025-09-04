@@ -6,12 +6,10 @@ comprehensive analysis, intelligent fixing strategies, and detailed reporting.
 """
 
 import ast
-import re
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Set, List, Optional, Tuple
 from datetime import datetime
-from collections import defaultdict
 
 from code_quality.plugins.base_plugin import FileProcessorPlugin, PluginMetadata, PluginCategory, PluginPriority
 

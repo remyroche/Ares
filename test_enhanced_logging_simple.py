@@ -6,11 +6,9 @@ This script tests the core logging functionality without requiring external depe
 like numpy and pandas.
 """
 
-import asyncio
 import logging
 import sys
 import traceback
-from datetime import datetime
 from pathlib import Path
 
 # Add src to path for imports
@@ -28,7 +26,7 @@ def test_enhanced_logger():
         )
         
         # Setup logging
-        logger = setup_logging()
+        logger = setup_logging(config={})
         if logger:
             print("✅ Enhanced logger setup successful")
         else:
@@ -72,7 +70,6 @@ def test_decorator_system():
     print("🧪 Testing Enhanced Decorator System...")
     
     try:
-        from src.utils.decorator_config import DecoratorConfig, global_config
         from src.utils.decorator_registry import DecoratorRegistry, register_decorator
         
         # Test DecoratorConfig
@@ -287,5 +284,5 @@ def main():
         return False
 
 if __name__ == "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

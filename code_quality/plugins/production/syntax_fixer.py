@@ -6,7 +6,6 @@ comprehensive error handling, configuration options, and detailed reporting.
 """
 
 import ast
-import tempfile
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Set, List, Optional

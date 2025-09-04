@@ -1,17 +1,17 @@
+
+from typing import Dict
+import pandas as pd
+from typing import Any
 #!/usr/bin/env python3
 """Validator for Step 5: Labeling.
 
 This module validates the labeling step outputs.
 """
 
-import pandas as pd
 from src.core.decorators import validates
-from src.core.domain import smart_validation_cache, validate_step5_comprehensive
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 
 from src.utils.base_validator import BaseValidator
@@ -366,7 +366,6 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    import datetime
     
     test_input = {
         "symbol": "ETHUSDT",

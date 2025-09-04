@@ -111,4 +111,5 @@ def main():
     print("\n✅ Syntax fixing completed!")
 
 if __name__== "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

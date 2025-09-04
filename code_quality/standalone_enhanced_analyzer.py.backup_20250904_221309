@@ -1,0 +1,355 @@
+"""
+Standalone Enhanced Dead Code Analyzer
+
+A standalone version that can be imported without package dependencies.
+"""
+
+import ast
+import json
+from pathlib import Path
+from typing import Dict, List, Set, Tuple, Any, Optional, Union
+from dataclasses import dataclass, field
+from collections import defaultdict, Counter
+import logging
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+
+@dataclass
+class AnalysisConfig:
+    """Configuration for analysis."""
+    max_workers: int = 4
+    exclude_patterns: List[str] = field(default_factory=lambda: [
+        "*/__pycache__/*",
+        "*/.*/*",
+        "*/venv/*",
+        "*/env/*",
+        "*/node_modules/*",
+        "*.pyc",
+        "*.pyo",
+        "*.pyd",
+        "*.so",
+        "*.dll",
+        "*.dylib",
+    ])
+    include_patterns: List[str] = field(default_factory=lambda: ["*.py"])
+    timeout: int = 30
+
+
+def find_python_files(directory: Path, exclude_patterns: List[str] = None) -> List[Path]:
+    """Find Python files in directory."""
+    if exclude_patterns is None:
+        exclude_patterns = [
+            "*/__pycache__/*",
+            "*/.*/*",
+            "*/venv/*",
+            "*/env/*",
+            "*/node_modules/*",
+            "*.pyc",
+            "*.pyo",
+            "*.pyd",
+            "*.so",
+            "*.dll",
+            "*.dylib",
+        ]
+    
+    python_files = []
+    for file_path in directory.rglob("*.py"):
+        # Check if file should be excluded
+        should_exclude = False
+        for pattern in exclude_patterns:
+            if file_path.match(pattern):
+                should_exclude = True
+                break
+        
+        if not should_exclude:
+            python_files.append(file_path)
+    
+    return python_files
+
+
+@dataclass
+class EnhancedDeadCodeIssue:
+    """Enhanced container for dead code analysis results."""
+    file_path: str
+    line_number: int
+    issue_type: str  # "dead_code", "unreachable_code", "unused_import", "unused_dependency"
+    severity: str    # "error", "warning", "info"
+    message: str
+    suggestion: str = ""
+    confidence: float = 0.0
+    context: Dict[str, Any] = field(default_factory=dict)
+
+
+class SimplifiedEnhancedDeadCodeAnalyzer:
+    """Simplified Enhanced Dead Code Analyzer - Standalone Version."""
+
+    def __init__(self, config: AnalysisConfig = None):
+        self.config = config or AnalysisConfig()
+        self.issues: List[EnhancedDeadCodeIssue] = []
+        self.stats = {
+            "files_analyzed": 0,
+            "total_issues": 0,
+            "dead_code_issues": 0,
+            "unreachable_code_issues": 0,
+            "unused_import_issues": 0,
+            "unused_dependency_issues": 0,
+            "processing_time": 0.0,
+        }
+        
+        # Global dependency tracking
+        self.global_imports: Dict[str, Set[str]] = defaultdict(set)
+        self.global_exports: Dict[str, Set[str]] = defaultdict(set)
+        self.global_function_calls: Dict[str, Set[str]] = defaultdict(set)
+        self.global_class_usage: Dict[str, Set[str]] = defaultdict(set)
+
+    def analyze_project(self, project_root: str) -> Dict[str, Any]:
+        """Analyze the entire project for dead code."""
+        start_time = datetime.now()
+        project_path = Path(project_root)
+        
+        print(f"🔍 Analyzing project: {project_path}")
+        
+        # Find all Python files
+        python_files = find_python_files(project_path, self.config.exclude_patterns)
+        print(f"📁 Found {len(python_files)} Python files")
+        
+        # Analyze files
+        self._analyze_files(python_files)
+        
+        # Perform global analysis
+        self._perform_global_analysis()
+        
+        # Calculate final statistics
+        end_time = datetime.now()
+        self.stats["processing_time"] = (end_time - start_time).total_seconds()
+        self.stats["total_issues"] = len(self.issues)
+        
+        # Categorize issues
+        for issue in self.issues:
+            if issue.issue_type == "dead_code":
+                self.stats["dead_code_issues"] += 1
+            elif issue.issue_type == "unreachable_code":
+                self.stats["unreachable_code_issues"] += 1
+            elif issue.issue_type == "unused_import":
+                self.stats["unused_import_issues"] += 1
+            elif issue.issue_type == "unused_dependency":
+                self.stats["unused_dependency_issues"] += 1
+        
+        return {
+            "project_root": str(project_path),
+            "stats": self.stats,
+            "issues": [
+                {
+                    "file_path": issue.file_path,
+                    "line_number": issue.line_number,
+                    "issue_type": issue.issue_type,
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "suggestion": issue.suggestion,
+                    "confidence": issue.confidence,
+                    "context": issue.context,
+                }
+                for issue in self.issues
+            ],
+            "global_analysis": {
+                "imports": dict(self.global_imports),
+                "exports": dict(self.global_exports),
+                "function_calls": dict(self.global_function_calls),
+                "class_usage": dict(self.global_class_usage),
+            }
+        }
+
+    def _analyze_files(self, python_files: List[Path]) -> None:
+        """Analyze multiple files."""
+        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+            futures = []
+            for file_path in python_files:
+                future = executor.submit(self._analyze_file, file_path)
+                futures.append(future)
+            
+            for future in futures:
+                try:
+                    future.result(timeout=self.config.timeout)
+                except Exception as e:
+                    print(f"⚠️ Error analyzing file: {e}")
+
+    def _analyze_file(self, file_path: Path) -> None:
+        """Analyze a single file."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = ast.parse(content, filename=str(file_path))
+            
+            # Track imports and exports
+            self._track_imports_and_exports(file_path, tree)
+            
+            # Analyze for dead code
+            self._analyze_dead_code(file_path, tree, content)
+            
+            self.stats["files_analyzed"] += 1
+            
+        except Exception as e:
+            print(f"⚠️ Error parsing {file_path}: {e}")
+
+    def _track_imports_and_exports(self, file_path: Path, tree: ast.AST) -> None:
+        """Track imports and exports for global analysis."""
+        file_key = str(file_path)
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    self.global_imports[file_key].add(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    self.global_imports[file_key].add(node.module)
+            elif isinstance(node, ast.FunctionDef):
+                self.global_exports[file_key].add(node.name)
+            elif isinstance(node, ast.ClassDef):
+                self.global_exports[file_key].add(node.name)
+
+    def _analyze_dead_code(self, file_path: Path, tree: ast.AST, content: str) -> None:
+        """Analyze for dead code patterns."""
+        lines = content.split('\n')
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                self._check_unused_function(file_path, node, lines)
+            elif isinstance(node, ast.ClassDef):
+                self._check_unused_class(file_path, node, lines)
+            elif isinstance(node, ast.Import):
+                self._check_unused_import(file_path, node, lines)
+            elif isinstance(node, ast.ImportFrom):
+                self._check_unused_import_from(file_path, node, lines)
+
+    def _check_unused_function(self, file_path: Path, node: ast.FunctionDef, lines: List[str]) -> None:
+        """Check if function is unused."""
+        if node.name.startswith('_'):
+            return  # Skip private functions
+        
+        # Simple heuristic: check if function is called elsewhere
+        function_calls = 0
+        for line in lines:
+            if f"{node.name}(" in line and line.strip() != lines[node.lineno - 1].strip():
+                function_calls += 1
+        
+        if function_calls == 0:
+            self.issues.append(EnhancedDeadCodeIssue(
+                file_path=str(file_path),
+                line_number=node.lineno,
+                issue_type="dead_code",
+                severity="warning",
+                message=f"Function '{node.name}' appears to be unused",
+                suggestion="Consider removing if truly unused, or add usage if needed",
+                confidence=0.7,
+                context={"function_name": node.name}
+            ))
+
+    def _check_unused_class(self, file_path: Path, node: ast.ClassDef, lines: List[str]) -> None:
+        """Check if class is unused."""
+        if node.name.startswith('_'):
+            return  # Skip private classes
+        
+        # Simple heuristic: check if class is instantiated elsewhere
+        class_usage = 0
+        for line in lines:
+            if f"{node.name}(" in line and line.strip() != lines[node.lineno - 1].strip():
+                class_usage += 1
+        
+        if class_usage == 0:
+            self.issues.append(EnhancedDeadCodeIssue(
+                file_path=str(file_path),
+                line_number=node.lineno,
+                issue_type="dead_code",
+                severity="warning",
+                message=f"Class '{node.name}' appears to be unused",
+                suggestion="Consider removing if truly unused, or add usage if needed",
+                confidence=0.7,
+                context={"class_name": node.name}
+            ))
+
+    def _check_unused_import(self, file_path: Path, node: ast.Import, lines: List[str]) -> None:
+        """Check if import is unused."""
+        for alias in node.names:
+            import_name = alias.asname or alias.name
+            if import_name.startswith('_'):
+                continue
+            
+            # Check if import is used
+            usage_count = 0
+            for line in lines:
+                if import_name in line and not line.strip().startswith('import'):
+                    usage_count += 1
+            
+            if usage_count == 0:
+                self.issues.append(EnhancedDeadCodeIssue(
+                    file_path=str(file_path),
+                    line_number=node.lineno,
+                    issue_type="unused_import",
+                    severity="warning",
+                    message=f"Import '{import_name}' appears to be unused",
+                    suggestion="Remove unused import to clean up code",
+                    confidence=0.8,
+                    context={"import_name": import_name}
+                ))
+
+    def _check_unused_import_from(self, file_path: Path, node: ast.ImportFrom, lines: List[str]) -> None:
+        """Check if import from is unused."""
+        if not node.module:
+            return
+        
+        for alias in node.names:
+            import_name = alias.asname or alias.name
+            if import_name.startswith('_'):
+                continue
+            
+            # Check if import is used
+            usage_count = 0
+            for line in lines:
+                if import_name in line and not line.strip().startswith('from'):
+                    usage_count += 1
+            
+            if usage_count == 0:
+                self.issues.append(EnhancedDeadCodeIssue(
+                    file_path=str(file_path),
+                    line_number=node.lineno,
+                    issue_type="unused_import",
+                    severity="warning",
+                    message=f"Import '{import_name}' from '{node.module}' appears to be unused",
+                    suggestion="Remove unused import to clean up code",
+                    confidence=0.8,
+                    context={"import_name": import_name, "module": node.module}
+                ))
+
+    def _perform_global_analysis(self) -> None:
+        """Perform global analysis across all files."""
+        # This is a simplified version - in a full implementation,
+        # we would cross-reference imports and exports across files
+        pass
+
+    def export_results(self, output_file: str) -> None:
+        """Export results to JSON file."""
+        results = {
+            "project_root": self.stats.get("project_root", ""),
+            "stats": self.stats,
+            "issues": [
+                {
+                    "file_path": issue.file_path,
+                    "line_number": issue.line_number,
+                    "issue_type": issue.issue_type,
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "suggestion": issue.suggestion,
+                    "confidence": issue.confidence,
+                    "context": issue.context,
+                }
+                for issue in self.issues
+            ],
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        
+        print(f"📊 Results exported to: {output_file}")

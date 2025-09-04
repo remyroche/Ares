@@ -9,11 +9,9 @@ import asyncio
 import json
 import time
 from datetime import datetime
-from pathlib import Path
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any
 import logging
+from typing import Any
+from typing import Dict
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -561,4 +559,4 @@ async def main():
         raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

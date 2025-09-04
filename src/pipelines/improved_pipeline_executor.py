@@ -1,15 +1,12 @@
 # src/pipelines/improved_pipeline_executor.py
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
-import asyncio
 
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
+from .utils.logger import system_logger
     error,
     failed,
     warning,
@@ -151,9 +148,7 @@ class ImprovedPipelineExecutor:
 
     def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
         """Generate mock market data for testing."""
-        import numpy as np
-        import copy
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
         
         # Generate realistic mock data
         base_price = 100.0

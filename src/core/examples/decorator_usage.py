@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Examples of using the core decorator system.
@@ -10,7 +9,7 @@ import asyncio
 import time
 
 # Import decorators
-from src.core.decorators import (
+from src.utils.decorators import (
     CachePolicy,
     authenticated,
     cached,
@@ -25,7 +24,6 @@ from src.core.decorators import (
     validate_schema,
     validates,
 )
-import numpy as np
 
 # Import errors
 from src.core.errors import (
@@ -130,7 +128,6 @@ def create_user(user_data: dict) -> dict:
 
 # Example 6: DataFrame processing with validation
 try:
-    import pandas as pd
 
     @validate_dataframe(
         columns=["id", "value", "category"],
@@ -183,8 +180,8 @@ async def get_user_from_db(user_id: str) -> dict:
     await asyncio.sleep(0.05)
 
     # Add trace events
-    from src.core.decorators import span_event
-    from src.core.decorators.errors import handles_errors
+    from .core.decorators import span_event
+    from .core.decorators.errors import handles_errors
 
     span_event("query_started", {"user_id": user_id})
 

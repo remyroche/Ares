@@ -4,11 +4,10 @@ Dependency Injection Container for Supervisor Module.
 This module provides a clean way to manage component dependencies
 and their initialization, reducing coupling and improving testability.
 """
-from __future__ import annotations
 from typing import Any, Dict
-from src.config import CONFIG
-from src.utils.logger import system_logger
-from src.utils.state_manager import StateManager
+from .config import CONFIG
+from .utils.logger import system_logger
+from .utils.state_manager import StateManager
 
 class DependencyContainer:
     """
@@ -100,7 +99,7 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from src.utils.model_manager import ModelManager
+            from .utils.model_manager import ModelManager
             model_manager = ModelManager(self.container.config)
             analyst = model_manager.get_analyst()
             if hasattr(analyst, 'exchange'):
@@ -123,7 +122,7 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from src.utils.model_manager import ModelManager
+            from .utils.model_manager import ModelManager
             model_manager = ModelManager(self.container.config)
             strategist = model_manager.get_strategist()
             if hasattr(strategist, 'exchange'):
@@ -147,7 +146,7 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from src.utils.model_manager import ModelManager
+            from .utils.model_manager import ModelManager
             model_manager = ModelManager(self.container.config)
             tactician = model_manager.get_tactician()
             if hasattr(tactician, 'exchange'):
@@ -172,6 +171,6 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from src.sentinel.sentinel import Sentinel
+            from .sentinel.sentinel import Sentinel
             return Sentinel(exchange_client, state_manager)
         return factory

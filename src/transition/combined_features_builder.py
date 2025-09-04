@@ -1,15 +1,11 @@
 # src/transition/combined_features_builder.py
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
-from src.utils.logger import system_logger
-from copy import copy
+from .utils.logger import system_logger
 
 REQUIRED_FEATURES = [
     "log_returns",

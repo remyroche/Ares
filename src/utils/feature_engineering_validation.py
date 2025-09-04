@@ -1,11 +1,8 @@
-from __future__ import annotations
 
 '\nFeature Engineering Validation Module\n\nThis module provides comprehensive validation for engineered features,\nincluding value range checks, NaN propagation analysis, and feature correctness verification.\n'
-import numpy as np
-import pandas as pd
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
+from .utils.logger import system_logger
+from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 
 
 class FeatureEngineeringValidator:

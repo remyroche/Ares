@@ -1,10 +1,7 @@
-from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 '\nCentralized logging configuration with Standardized Import Management.\n\nThis module provides a unified logging system with JSON formatting,\nfile rotation, and console output capabilities.\n'
 import logging
-import logging.handlers
 import os
 import sys
 import sys as _sys
@@ -13,9 +10,9 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Any
 
-from .pipeline_standards import PipelineStandards
+from src.utils.pipeline_standards import PipelineStandards
 
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
@@ -443,7 +440,6 @@ def setup_logging(config: dict[str, Any] | None=None) -> logging.Logger | None:
         try:
             try:
                 loop = asyncio.get_running_loop()
-                import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(asyncio.run, enhanced_logger.initialize())
                     success = future.result()
@@ -512,7 +508,7 @@ def get_logger(name: str) -> logging.Logger:
     if system_logger is None:
         system_logger = setup_logging()
     try:
-        from src.utils.comprehensive_logger import get_comprehensive_logger
+        from .utils.comprehensive_logger import get_comprehensive_logger
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             return comprehensive_logger.get_component_logger(name)
@@ -543,7 +539,7 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
             self.base_logger = base_logger
             self.comprehensive_logger = None
             try:
-                from src.utils.comprehensive_logger import get_comprehensive_logger
+                from .utils.comprehensive_logger import get_comprehensive_logger
                 self.comprehensive_logger = get_comprehensive_logger()
             except ImportError:
                 pass
@@ -569,7 +565,7 @@ def initialize_comprehensive_integration() -> None:
 def ensure_comprehensive_logging_available() -> bool:
     """Ensure comprehensive logging is available for all logging calls."""
     try:
-        from src.utils.comprehensive_logger import get_comprehensive_logger
+        from .utils.comprehensive_logger import get_comprehensive_logger
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             initialize_comprehensive_integration()
@@ -1012,3 +1008,19 @@ def log_system_status(logger: logging.Logger, component: str, status: str,
             
     except Exception as e:
         logger.error(f"❌ Failed to log system status: {e}")
+
+def heartbeat(message: str = "Heartbeat"):
+    """Log a heartbeat message."""
+    system_logger.info(f"💓 {message}")
+
+def log_validation_result(result: dict):
+    """Log validation result."""
+    system_logger.info(f"Validation result: {result}")
+
+def log_data_quality_check(check: dict):
+    """Log data quality check."""
+    system_logger.info(f"Data quality check: {check}")
+
+def setup_logging():
+    """Setup logging configuration."""
+    pass

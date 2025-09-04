@@ -6,13 +6,17 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 from src.tactician import Tactician, setup_tactician
 from src.tactician.leverage_sizer import LeverageSizer
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.sr_breakout_predictor_refactored import SRBreakoutPredictor
 from src.tactician.tactics_orchestrator import TacticsOrchestrator
+from copy import copy
 
 
 class TestTacticianIntegration:

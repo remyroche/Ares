@@ -1,3 +1,7 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
 #!/usr/bin/env python3
 """Enhanced Multi-Timeframe S/R Confluence Detection Module.
 
@@ -5,17 +9,13 @@ This module provides advanced multi-timeframe S/R confluence detection
 with sophisticated weighting and validation algorithms.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

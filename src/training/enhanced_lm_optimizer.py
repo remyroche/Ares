@@ -15,12 +15,9 @@ import time
 from datetime import datetime
 from typing import Any
 
-import lightgbm as lgb
 
 # Suppress specific warnings only where needed - removed global suppression
-import numpy as np
 import optuna
-import pandas as pd
 import shap
 import torch
 from optuna.samplers import TPESampler
@@ -30,13 +27,12 @@ from sklearn.feature_selection import (
     mutual_info_classif,
     mutual_info_regression,
 )
-from copy import copy
 from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 # Import Pydantic configuration
 try:
@@ -818,7 +814,7 @@ class EnhancedLMOptimizer:
             if hasattr(self, "mlflow_available") and self.mlflow_available:
                 try:
                     import mlflow
-                    from src.utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
+                    from .utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
                     
                     # Extract metadata from config
                     config = getattr(self, 'config', {})
@@ -1346,6 +1342,9 @@ class EnhancedFeatureSelector:
         """Analyze feature stability across multiple CV folds."""
         try:
             from sklearn.model_selection import TimeSeriesSplit
+import pandas as pd
+import numpy as np
+
         except Exception as e:
             pass  # TODO: Handle exception properly
         feature_stability = dict.fromkeys(features_df.columns, 0)

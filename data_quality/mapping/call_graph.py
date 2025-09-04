@@ -5,7 +5,6 @@ Advanced call graph analysis and mapping utilities that provide comprehensive
 function call relationship analysis and dead code detection through call patterns.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path

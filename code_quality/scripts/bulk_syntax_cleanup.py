@@ -13,7 +13,6 @@ This script is intentionally conservative and only applies localized line edits
 without reformatting or re-indenting unrelated code.
 """
 
-from __future__ import annotations
 
 import argparse
 import os
@@ -176,5 +175,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(await main())
 

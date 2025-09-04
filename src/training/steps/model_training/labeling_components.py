@@ -1,14 +1,15 @@
+
+from typing import Dict
+from typing import Any
+import pandas as pd
+from typing import Optional
+import numpy as np
 """Labeling components for the labeling step.
 
 This module contains specialized labeling components including
 triple barrier labeling with regime awareness.
 """
-from typing import Any, Dict, Optional, List, Tuple
-import pandas as pd
-import numpy as np
-from src.utils.logger import system_logger
-from copy import copy
-import asyncio
+from .utils.logger import system_logger
 
 class TripleBarrierLabeler:
     """Implements triple barrier labeling method."""

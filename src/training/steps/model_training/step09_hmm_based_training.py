@@ -5,53 +5,32 @@ This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
 """
-import json
 import os
-import pickle
-import sys
 import warnings
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
-import lightgbm as lgb
-import numpy as np
-import pandas as pd
-import torch
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-import asyncio
-from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_read_parquet, safe_to_parquet, safe_copy
 )
-from copy import copy
-from sklearn.feature_selection import (
     f_classif,
     f_regression,
     mutual_info_classif,
     mutual_info_regression,
 )
-from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score,
     average_precision_score
 )
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from torch import nn, optim
-from torch.utils.data import DataLoader, TensorDataset
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.feature_selection import SelectFromModel
-from sklearn.pipeline import Pipeline
 
 # Multi-output training will be imported when needed
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
     ProfitBasedFeatureEngineering
 )
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.core.domain import (
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
     PerformanceLevel,
     ValidationLevel,
     adaptive_resource_allocation,
@@ -63,8 +42,8 @@ from src.core.domain import (
     pipeline_checkpoint,
     validate_feature_engineering_with_lookahead_bias_detection
 )
-from src.utils.logger import system_logger
-from src.utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
+from .utils.common_operations import ensure_directory, safe_json_dump
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -232,15 +211,15 @@ class EnhancedHMMBasedTrainingStep:
         
         try:
             # Initialize data quality validator
-            from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+            from .utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
             self.data_quality_validator = EnhancedDataQualityValidator(self.config)
             
             # Initialize feature validator
-            from src.utils.feature_engineering_validation import FeatureEngineeringValidator
+            from .utils.feature_engineering_validation import FeatureEngineeringValidator
             self.feature_validator = FeatureEngineeringValidator(self.config)
             
             # Initialize model validator
-            from src.utils.model_performance_monitor import ModelPerformanceMonitor
+            from .utils.model_performance_monitor import ModelPerformanceMonitor
             self.model_validator = ModelPerformanceMonitor(self.config)
             
             self.logger.info("✅ Validation components initialized successfully")
@@ -881,7 +860,7 @@ class EnhancedHMMBasedTrainingStep:
         # Use enhanced feature selection if multi-output is enabled
         if has_profit and self.enable_multi_output:
             try:
-                from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
+                from .training.enhanced_matrix_operations import EnhancedMatrixOperations
                 
                 self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
                 
@@ -1034,7 +1013,7 @@ class EnhancedHMMBasedTrainingStep:
             price_action_probabilities = self.multi_output_trainer.predict_probabilities(
                 X_test, market_data.iloc[split_idx:]
             )
-            from src.utils.common_operations import standardize_price_action_probabilities
+            from .utils.common_operations import standardize_price_action_probabilities
             price_action_probabilities = standardize_price_action_probabilities(price_action_probabilities)
 
             # Compute PR-AUC for primary head if available
@@ -1548,8 +1527,8 @@ async def run_enhanced_step(
         # If regime column present, run per-regime training as well (using shared accessor)
         per_regime_results: dict[str, Any] = {}
         try:
-            from src.utils.regime_data_access import get_regime_column, split_train_val_test_by_regime
-            from src.core.decorators.errors import handles_errors
+            from .utils.regime_data_access import get_regime_column, split_train_val_test_by_regime
+            from .core.decorators.errors import handles_errors
             regime_col = get_regime_column(data)
             if regime_col is not None:
                 logger.info(f"🔁 Running per-regime enhanced training based on '{regime_col}'")

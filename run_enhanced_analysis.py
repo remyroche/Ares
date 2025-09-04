@@ -4,7 +4,6 @@ Working version of the enhanced dead code analysis
 """
 
 import sys
-import os
 from pathlib import Path
 from datetime import datetime
 
@@ -20,9 +19,6 @@ def run_enhanced_analysis():
     
     # Test dependencies
     try:
-        import matplotlib.pyplot as plt
-        import numpy as np
-        import networkx as nx
         print("✅ All visualization dependencies available")
     except ImportError as e:
         print(f"⚠️  Missing dependency: {e}")

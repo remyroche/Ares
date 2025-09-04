@@ -1,4 +1,7 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+from datetime import datetime
+import pandas as pd
+import numpy as np
 """
 Optimized Step17 Implementation
 
@@ -10,20 +13,13 @@ This module implements advanced optimization strategies for step17:
 
 These strategies dramatically improve optimization efficiency while maintaining quality.
 """
-import asyncio
 import logging
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
-import json
 import warnings
 from dataclasses import dataclass
 from enum import Enum
 warnings.filterwarnings('ignore')
 try:
-    import mlflow
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
@@ -32,7 +28,6 @@ try:
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
-import copy
 
 class OptimizationPhase(Enum):
     """Enumeration of optimization phases."""

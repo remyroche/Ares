@@ -1,20 +1,17 @@
 """
 Monitoring manager for pipeline components (minimal scaffold).
 """
-from __future__ import annotations
 
 from typing import Any
 
-from src.core.decorators import (
     handles_errors,
     cached,
     retry_on_failure,
     log_execution_time,
 )
-import asyncio
-from src.core.domain import PerformanceLevel
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .core.domain import PerformanceLevel
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 class MonitoringManager:

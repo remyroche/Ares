@@ -1,21 +1,21 @@
-from __future__ import annotations
-import ast
 import contextlib
 import os
-import os.path
 from typing import TYPE_CHECKING, Any
 import numpy as np
-import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from src.utils.logger import system_logger
-import asyncio
+import pandas as pd
 if TYPE_CHECKING:
-    import pandas as pd
-try:
     pass
+else:
+    # Runtime implementation
+    pass
+
+try:
+    import pytorch_lightning as pl
 except Exception:
     pl = None
 with contextlib.suppress(Exception):

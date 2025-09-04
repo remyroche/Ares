@@ -1228,8 +1228,6 @@ class CodeInteractionMapper:
     def _create_dead_code_type_chart(self, dead_code_report):
         """Create a chart showing dead code issues by type."""
         try:
-            import matplotlib.pyplot as plt
-            import matplotlib.patches as mpatches
             
             if not dead_code_report.issues_by_type:
                 return None
@@ -1533,8 +1531,6 @@ class CodeInteractionMapper:
         """Create a comprehensive function usage mapping visualization."""
         try:
             import matplotlib.pyplot as plt
-            import matplotlib.patches as mpatches
-            import numpy as np
             from collections import defaultdict, Counter
             
             # Collect function usage data from call graph and dead code analysis
@@ -2475,4 +2471,4 @@ For comprehensive complexity analysis, use the separate complexity pipeline:
 
 
 if __name__ == "__main__":
-    main()
+    await main()

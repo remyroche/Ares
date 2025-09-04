@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """Data Quality Dashboard Web Interface.
 
 This module provides a web-based dashboard for monitoring and managing data quality.
@@ -12,8 +11,8 @@ from pathlib import Path
 from typing import Any
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.decorators import traced
-from src.utils.logger import system_logger
+from .core.decorators import traced
+from .utils.logger import system_logger
 logger = system_logger.getChild('DataQualityDashboard')
 try:
     from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -326,4 +325,4 @@ if __name__ == '__main__':
             await asyncio.sleep(float('inf'))
         except KeyboardInterrupt:
             await dashboard.stop_dashboard()
-    asyncio.run(main())
+    asyncio.run(await main())

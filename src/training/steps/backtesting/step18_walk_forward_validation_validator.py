@@ -7,22 +7,21 @@ from pathlib import Path
 from typing import Any, Tuple
 
 
-import numpy as np
 from src.utils.warning_symbols import (
     error,
     failed,
     validation_error,
 )
-from src.core.decorators import handles_errors
-from src.utils.common_operations import safe_json_load
+from .core.decorators import handles_errors
+from .utils.common_operations import safe_json_load
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
+from .config import CONFIG
+from .utils.base_validator import BaseValidator
 
 class Step13WalkForwardValidationValidator(BaseValidator):
     """Validator for Step 13: Walk Forward Validation."""
@@ -178,7 +177,6 @@ class Step13WalkForwardValidationValidator(BaseValidator):
             Tuple[bool, dict]: (passed, metrics)
 
         """
-        import json
 
         # Load walk forward performance results
         performance_file = (
@@ -422,7 +420,7 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
-    from src.core.decorators.errors import handles_errors
+    from .core.decorators.errors import handles_errors
 
     # Example usage
     async def test_validator() -> None:
@@ -438,4 +436,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( test_validator())
+    _asyncio.run( await test_validator())

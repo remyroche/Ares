@@ -1,5 +1,5 @@
-from src.core.decorators import handles_errors
-from src.core.domain import PipelineStage, PipelineValidationLevel, ensure_data_integrity, monitor_pipeline_performance, monitor_pipeline_step, monitor_step_execution, secure_step_execution, validate_pipeline_input, validate_pipeline_step
+from .core.decorators import handles_errors
+from .core.domain import PipelineStage, PipelineValidationLevel, ensure_data_integrity, monitor_pipeline_performance, monitor_pipeline_step, monitor_step_execution, secure_step_execution, validate_pipeline_input, validate_pipeline_step
 import gc
 import json
 import os
@@ -10,29 +10,27 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import numpy as np
-import pandas as pd
 import psutil
-import asyncio
-from src.utils.common_operations import get_current_datetime, format_datetime, ensure_directory, safe_json_dump, safe_json_load, safe_read_parquet, safe_to_parquet, generate_cache_key, safe_copy
-from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     import pyarrow.parquet as pq
 except ImportError:
     pq = None
 warnings.filterwarnings('once', category=UserWarning)
 from contextlib import contextmanager
-from src.config.computational_optimization import get_computational_optimization_config
-from src.training.enhanced_training_manager_optimized import AdaptiveSampler, CachedBacktester, EnhancedTrainingManagerOptimized, IncrementalTrainer, MemoryEfficientDataManager, MemoryManager, ParallelBacktester, ProgressiveEvaluator, StreamingDataProcessor, _make_hashable
-from src.training.optimization.computational_optimization_manager import create_computational_optimization_manager
-from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
-from src.utils.model_performance_monitor import ModelPerformanceMonitor
-from src.utils.logger import system_logger
-from src.utils.step_dependency_validator import step_dependency_validator
-from src.utils.validator_orchestrator import validator_orchestrator
-from src.utils.cross_step_validation import CrossStepValidator
-from src.utils.statistical_distribution_validation import StatisticalValidator
-from src.utils.feature_engineering_validation import FeatureEngineeringValidator
+from .config.computational_optimization import get_computational_optimization_config
+from .training.enhanced_training_manager_optimized import AdaptiveSampler, CachedBacktester, EnhancedTrainingManagerOptimized, IncrementalTrainer, MemoryEfficientDataManager, MemoryManager, ParallelBacktester, ProgressiveEvaluator, StreamingDataProcessor, _make_hashable
+from .training.optimization.computational_optimization_manager import create_computational_optimization_manager
+from .training.steps.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
+from .utils.model_performance_monitor import ModelPerformanceMonitor
+from .utils.logger import system_logger
+from .utils.step_dependency_validator import step_dependency_validator
+from .utils.validator_orchestrator import validator_orchestrator
+from .utils.cross_step_validation import CrossStepValidator
+from .utils.statistical_distribution_validation import StatisticalValidator
+from .utils.feature_engineering_validation import FeatureEngineeringValidator
+from .utils.common_operations import format_datetime, get_current_datetime
+import pandas as pd
+import numpy as np
 
 def _is_relative_to(path: Path, base: Path) -> bool:
     """Return True if path is within base when resolved; False otherwise."""
@@ -1176,8 +1174,8 @@ class TrainingManager:
                         return False
                     step_start_1_5 = time.time()
                     try:
-                        from src.training.steps.step01_5_data_converter import run_step as step1_5_run_step
-                        step1_5_success = await self._execute_step1_5_with_qa(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir='data_cache', force_rerun=self.force_rerun, step1_5_run_step=step1_5_run_step)
+                        from .training.steps.data_collection.enhanced_step1_5_data_converter import run_enhanced_step1_5
+                        step1_5_success = await self._execute_step1_5_with_qa(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir='data_cache', force_rerun=self.force_rerun, step1_5_run_step=run_enhanced_step1_5)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 1.5: {e}')
                         step1_5_success = False
@@ -1268,7 +1266,7 @@ class TrainingManager:
                         return False
                     step_start_2_5 = time.time()
                     try:
-                        from src.training.steps import step2_5_sr_optimization
+                        from .training.steps import step2_5_sr_optimization
                         step2_5_success = await step2_5_sr_optimization.run_step(config=self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 2.5: {e}')
@@ -1282,9 +1280,9 @@ class TrainingManager:
                 if not step2_5_success:
                     return False
                 self.logger.info('➡️ Proceeding to Step 3: Enhanced HMM Clustering')
-                from src.training.steps import step03_hmm_clustering as _step3
                 step3_args = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'lookback_days': self.lookback_days, 'force_rerun': self.force_rerun}
-                step3_success = await self._execute_pipeline_step(step_name='step03_hmm_clustering', step_function=_step3.run_step, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: Enhanced HMM Clustering')
+                from .training.steps.market_analysis.step03_hmm_clustering import run_step as step3_run_step
+                step3_success = await self._execute_pipeline_step(step_name='step03_hmm_clustering', step_function=step3_run_step, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: Enhanced HMM Clustering')
                 if not step3_success:
                     return False
                 self.logger.info('➡️ Proceeding to Step 4: Processing & Labeling')
@@ -1303,7 +1301,7 @@ class TrainingManager:
                         return False
                     step_start_4 = time.time()
                     try:
-                        from src.training.steps import step4_regime_data_splitting
+                        from .training.steps import step4_regime_data_splitting
                         step4_success = await step4_regime_data_splitting.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 4: {e}')
@@ -1345,7 +1343,7 @@ class TrainingManager:
                         return False
                     step_start_5 = time.time()
                     try:
-                        from src.training.steps import step5_triple_barrier_method
+                        from .training.steps import step5_triple_barrier_method
                         step5_success = await step5_triple_barrier_method.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 5: {e}')
@@ -1386,7 +1384,7 @@ class TrainingManager:
                         return False
                     step_start_6 = time.time()
                     try:
-                        from src.training.steps import step6_labeling
+                        from .training.steps import step6_labeling
                         step6_success = await step6_labeling.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 6: {e}')
@@ -1427,7 +1425,7 @@ class TrainingManager:
                         return False
                     step_start_7 = time.time()
                     try:
-                        from src.training.steps import step7_feature_engineering
+                        from .training.steps import step7_feature_engineering
                         step7_success = await step7_feature_engineering.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 7: {e}')
@@ -1463,7 +1461,7 @@ class TrainingManager:
                         return False
                     step_start_7 = time.time()
                     try:
-                        from src.training.steps import step7_regime_data_splitting
+                        from .training.steps import step7_regime_data_splitting
                         step7_success = await step7_regime_data_splitting.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 7: {e}')
@@ -1499,10 +1497,10 @@ class TrainingManager:
                         return False
                     step_start_8 = time.time()
                     try:
-                        from src.training.steps import step9_hmm_based_training
                         method_a_cfg = self.config.get('method_a_mixture_of_experts', {})
                         enable_multi_output = self.config.get('enable_multi_output', True)
-                        step08_success = await step09_hmm_based_training_enhanced.run_enhanced_regime_specific_step(symbol=symbol, data_dir=data_dir, method_a_mixture_of_experts=method_a_cfg, enable_multi_output=enable_multi_output)
+                        from .training.steps.model_training.step09_hmm_based_training import run_enhanced_regime_specific_step
+                        step08_success = await run_enhanced_regime_specific_step(symbol=symbol, data_dir=data_dir, method_a_mixture_of_experts=method_a_cfg, enable_multi_output=enable_multi_output)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 8: {e}')
                         step8_success = False
@@ -1531,7 +1529,7 @@ class TrainingManager:
                     self._heartbeat('Step 9.5: Multi-Timeframe HMM Ensemble Training')
                     step_start_9_5 = time.time()
                     try:
-                        from src.training.steps import step9_5_multi_timeframe_hmm_ensemble
+                        from .training.steps import step9_5_multi_timeframe_hmm_ensemble
                         regimes: list[str] = []
                         try:
                             rf_dir = os.path.join(data_dir, 'regime_forecasting')
@@ -1579,29 +1577,27 @@ class TrainingManager:
                     self._heartbeat('Step 6_5: Unified Regime Intelligence')
                     step_start_6_5 = time.time()
                     try:
-                        from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
-                        from src.training.steps import step8_tactician_labeling
-                        from src.training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
-                        from src.training.steps.validation.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
-                        from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+                        from .training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
+                        from .training.steps import step8_tactician_labeling
+                        from .training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
+                        from .training.steps.validation.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
+                        from .analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
                         import pandas as _pd
-                        from src.training.steps import step12_walk_forward_validation
-                        from src.training.steps import step13_monte_carlo_validation
-                        from src.training.steps import step14_ab_testing
-                        from src.training.steps import step15_saving
-                        from src.training.steps import step16_confidence_calibration
-                        from src.training.steps import step17_final_parameters_optimization
-                        from src.training.steps import step18_walk_forward_validation
-                        from src.training.steps import step19_monte_carlo_validation
-                        from src.training.steps import step20_ab_testing
-                        from src.training.steps import step21_saving
-                        from src.training.steps import step2_feature_engineering
+                        from .training.steps import step12_walk_forward_validation
+                        from .training.steps import step13_monte_carlo_validation
+                        from .training.steps import step14_ab_testing
+                        from .training.steps import step15_saving
+                        from .training.steps import step16_confidence_calibration
+                        from .training.steps import step17_final_parameters_optimization
+                        from .training.steps import step18_walk_forward_validation
+                        from .training.steps import step19_monte_carlo_validation
+                        from .training.steps import step20_ab_testing
+                        from .training.steps import step21_saving
+                        from .training.steps import step2_feature_engineering
                         from pathlib import Path
                         import glob
-                        import copy
-                        import os.path
-                        from src.training.steps import step5_5_unified_regime_intelligence as _step6_5
-                        step6_5_success = await _step6_5.run_step(symbol=symbol, exchange=exchange, data_dir=data_dir, timeframe=timeframe, lookback_days=self.lookback_days)
+                        from .training.steps.model_training.step10_unified_regime_intelligence import run_step as step6_5_run_step
+                        step6_5_success = await step6_5_run_step(symbol=symbol, exchange=exchange, data_dir=data_dir, timeframe=timeframe, lookback_days=self.lookback_days)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 6_5: {e}')
                         step6_5_success = False
@@ -1631,9 +1627,9 @@ class TrainingManager:
                     if not step07_result or step07_result.get('status') != 'SUCCESS':
                         self.logger.error('❌ Step 7: Regime-Aware Analyst Enhancement failed')
                         return False
-                    step7_validation = await self._run_step_validator('step7_analyst_enhancement', {**training_input, 'timeframe': tf}, pipeline_state)
+                    step7_validation = await self._run_step_validator('step7_analyst_enhancement', {**training_input, 'timeframe': timeframe}, pipeline_state)
                     if step7_validation and step7_validation.get('validation_passed', False):
-                        self.logger.info(f'🎉 Step 7: Analyst Enhancement ({tf}) completed successfully and validation passed')
+                        self.logger.info(f'🎉 Step 7: Analyst Enhancement ({timeframe}) completed successfully and validation passed')
                         self.logger.info('➡️ Proceeding to Step 8: Tactician Labeling')
                     else:
                         self.logger.warning(f"⚠️ Step 7 validation failed: {step7_validation.get('error', 'Unknown error')}")
@@ -1762,7 +1758,7 @@ class TrainingManager:
                     if self.computational_optimization_manager:
                         return await self._run_optimized_parameters_optimization(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                     else:
-                        from src.training.steps import step11_final_parameters_optimization
+                        from .training.steps import step11_final_parameters_optimization
                         return await step11_final_parameters_optimization.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                 
                 step11_success = await self._execute_pipeline_step_with_validation(
@@ -1782,7 +1778,7 @@ class TrainingManager:
                     return False
                 # Step 12: Walk Forward Validation
                 async def _execute_step12():
-                    from src.training.steps import step12_walk_forward_validation
+                    from .training.steps import step12_walk_forward_validation
                     return await step12_walk_forward_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                 
                 step12_success = await self._execute_pipeline_step_with_validation(
@@ -1802,8 +1798,8 @@ class TrainingManager:
                     return False
                 # Step 13: Monte Carlo Validation
                 async def _execute_step13():
-                    from src.training.steps import step13_monte_carlo_validation
-                    return await step13_monte_carlo_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    from .training.steps.model_training.validation.step19_monte_carlo_validation import run_step as step13_run_step
+                    return await step13_run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                 
                 step13_success = await self._execute_pipeline_step_with_validation(
                     step_name='step13_monte_carlo_validation',

@@ -9,12 +9,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
 
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import missing as missing_src_utils_warning_symbols, warning
+import pandas as pd
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -97,8 +97,8 @@ def main():
     parser.add_argument("--hours", type=int, default=24, help="Lookback hours")
     args=parser.parse_args()
 
-    asyncio.run(compare_agg_trades_formats(args.symbol, args.hours))
+    asyncio.run(await compare_agg_trades_formats(args.symbol, args.hours))
 
 
 if __name__== "__main__":
-    main()
+    await main()

@@ -1,6 +1,6 @@
 # src/training/optimized_feature_selection_manager.py
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 import json
 import time
@@ -8,13 +8,9 @@ import warnings
 from datetime import datetime
 from typing import Any
 
-import numpy as np
-import pandas as pd
-from copy import copy
 
 warnings.filterwarnings("ignore")
 
-import lightgbm as lgb
 import shap
 from sklearn.covariance import LedoitWolf
 from sklearn.ensemble import RandomForestClassifier
@@ -22,7 +18,7 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 class OptimizedFeatureSelectionManager:
     """Optimized Feature Selection Manager for ML Training Steps."
@@ -299,7 +295,7 @@ class OptimizedFeatureSelectionManager:
     def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
         
         vif_scores = []
         for i, _col in enumerate(features_df.columns):

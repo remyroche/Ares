@@ -8,18 +8,16 @@ improvements while using only standard library modules.
 
 import ast
 import json
-import re
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Any, Optional, Union
 from dataclasses import dataclass, field
-from collections import defaultdict, Counter
 import logging
-from datetime import datetime
-import multiprocessing
-from concurrent.futures import ThreadPoolExecutor
 
 from ..core.config import AnalysisConfig
 from ..utils.file_utils import find_python_files
+from typing import Set
+from typing import Any
+from typing import Dict
+from typing import List
 
 
 @dataclass

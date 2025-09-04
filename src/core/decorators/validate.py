@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Request and DTO validation decorators.
@@ -8,10 +7,9 @@ validation strategies (pydantic, dataclasses, custom validators).
 """
 
 import inspect
-from typing import get_type_hints
+from typing import get_type_hints, Callable, Any
 
 from .compose import P, R, uniform_wrapper
-import asyncio
 
 # Try to import optional validation libraries
 try:
@@ -23,7 +21,6 @@ except ImportError:
     PYDANTIC_AVAILABLE = False
 
 try:
-    import pandas as pd
 
     PANDAS_AVAILABLE = True
 except ImportError:

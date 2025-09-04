@@ -93,4 +93,4 @@ def main():
     print("   - Higher barrier levels capture less frequent but larger profits")
 
 if __name__ == "__main__":
-    main()
+    await main()

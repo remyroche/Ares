@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/training/steps/step7_enhanced_matrix_operations_validator.py
 
@@ -8,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.utils.common_operations import safe_json_load
-from src.utils.logger import system_logger
+from .utils.common_operations import safe_json_load
+from .utils.logger import system_logger
 
 
 class Step7EnhancedMatrixOperationsValidator(BaseValidator):

@@ -1,0 +1,5 @@
+{"asctime": "2025-09-04 20:54:54,185", "levelname": "INFO", "name": "AresTradingSystem", "message": "✅ Enhanced Logger initialization completed successfully", "correlation_id": "-", "session_id": "-", "timestamp": "2025-09-04T18:54:54.185620+00:00"}
+{"asctime": "2025-09-04 20:54:54,386", "levelname": "INFO", "name": "AresTradingSystem", "message": "🚀 Launcher started: INITIALIZATION", "correlation_id": "-", "session_id": "-", "timestamp": "2025-09-04T18:54:54.386004+00:00"}
+{"asctime": "2025-09-04 20:54:54,386", "levelname": "INFO", "name": "AresTradingSystem", "message": "🚀 Launcher started: step02_5", "correlation_id": "-", "session_id": "-", "timestamp": "2025-09-04T18:54:54.386510+00:00"}
+{"asctime": "2025-09-04 20:54:54,386", "levelname": "INFO", "name": "AresTradingSystem", "message": "📊 Symbol: ETHUSDT, Exchange: BINANCE", "correlation_id": "-", "session_id": "-", "timestamp": "2025-09-04T18:54:54.386607+00:00"}
+{"asctime": "2025-09-04 20:54:54,408", "levelname": "INFO", "name": "AresTradingSystem", "message": "🏁 Launcher ended: FAILED (exit code: 1)", "correlation_id": "-", "session_id": "-", "timestamp": "2025-09-04T18:54:54.408824+00:00"}

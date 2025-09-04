@@ -4,7 +4,6 @@ Simple test script for enhanced dead code analysis without vulture dependency
 """
 
 import sys
-import os
 from pathlib import Path
 from datetime import datetime
 
@@ -20,8 +19,6 @@ def test_enhanced_analysis():
     
     # Test matplotlib availability
     try:
-        import matplotlib.pyplot as plt
-        import numpy as np
         print("✅ Matplotlib and NumPy available")
         matplotlib_available = True
     except ImportError as e:
@@ -30,7 +27,6 @@ def test_enhanced_analysis():
     
     # Test networkx availability
     try:
-        import networkx as nx
         print("✅ NetworkX available")
         networkx_available = True
     except ImportError as e:

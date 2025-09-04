@@ -87,7 +87,6 @@ if __name__ == "__main__":
         
         try:
             # Test imports
-            from code_quality.plugins import PluginRegistry, BasePlugin
             from code_quality.plugins.examples import SyntaxFixerPlugin
             results["imports_work"] = True
             print("✓ Plugin imports successful")
@@ -487,4 +486,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(await main())

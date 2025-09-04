@@ -1,19 +1,15 @@
 # src/analyst/meta_label_relevance.py
 
-from __future__ import annotations
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 from typing import Any
 
 import json
 import os
-import numpy as np
-import pandas as pd
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 import logging
-from copy import copy
 
 
 @handles_errors(
@@ -83,7 +79,7 @@ def compute_shap_importance(
     """
     import shap  # type: ignore
     from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
-    from src.core.decorators.errors import handles_errors
+    from .core.decorators.errors import handles_errors
 
     Xn = X.select_dtypes(include=[np.number]).fillna(0.0)
     if len(Xn) == 0:

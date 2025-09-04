@@ -1,6 +1,6 @@
 # src/training/di_training_manager.py
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 """Dependency injection-aware training manager."
 
@@ -9,11 +9,10 @@ patterns for managing the training pipeline and its components.
 """
 from typing import Any
 
-from src.core.dependency_injection import DependencyContainer
-from src.core.injectable_base import InjectableBase
-from src.interfaces.base_interfaces import IExchangeClient, IStateManager
+from .core.dependency_injection import DependencyContainer
+from .core.injectable_base import InjectableBase
+from .interfaces.base_interfaces import IExchangeClient, IStateManager
 
-import asyncio
 from src.utils.warning_symbols import (
 
     failed,
@@ -96,7 +95,7 @@ class DITrainingManager(InjectableBase):
         try:
             # Create training pipeline
             if self.container:
-                from src.training.core.pipeline_base import TrainingPipeline
+                from .training.core.pipeline_base import TrainingPipeline
 
                 # Register training manager instance
                 self.container.register_instance(DITrainingManager, self)
@@ -105,7 +104,7 @@ class DITrainingManager(InjectableBase):
                 self.training_pipeline = self.container.resolve(TrainingPipeline)
             else:
                 # Fallback to manual creation
-                from src.training.core.pipeline_base import TrainingPipeline
+                from .training.core.pipeline_base import TrainingPipeline
         except Exception as e:
             pass  # TODO: Handle exception properly
         self.training_pipeline = TrainingPipeline(self.training_config)

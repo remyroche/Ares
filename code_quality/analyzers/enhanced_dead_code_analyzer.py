@@ -12,34 +12,22 @@ and better understanding of code interactions.
 """
 
 import ast
-import astor
-import networkx as nx
-import matplotlib.pyplot as plt
-import graphviz
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Any, Optional, Union
 from dataclasses import dataclass, field
-from collections import defaultdict, Counter
-import re
 import json
 import logging
-from datetime import datetime
-import multiprocessing
-from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import tempfile
 import shutil
 
 # Try to import optional dependencies
 try:
-    import pycg
     PYCG_AVAILABLE = True
 except ImportError:
     PYCG_AVAILABLE = False
     print("Warning: PyCG not available. Install with: pip install pycg")
 
 try:
-    import deadcode
     DEADCODE_AVAILABLE = True
 except ImportError:
     DEADCODE_AVAILABLE = False
@@ -47,6 +35,10 @@ except ImportError:
 
 from ..core.config import AnalysisConfig
 from ..utils.file_utils import find_python_files
+from typing import Set
+from typing import Any
+from typing import Dict
+from typing import List
 
 
 @dataclass

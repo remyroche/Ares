@@ -27,7 +27,6 @@ Notes:
   - Existing partitioned data will be appended/overwritten per dataset manager behavior.
 """
 
-from __future__ import annotations
 
 import argparse
 import os
@@ -561,4 +560,4 @@ def main() -> int:
 
 
 if __name__== "__main__":
-    raise SystemExit(main())
+    raise SystemExit(await main())

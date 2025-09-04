@@ -6,11 +6,9 @@ comprehensive error handling, result aggregation, and detailed reporting.
 """
 
 import subprocess
-import tempfile
 import shutil
 import json
 from pathlib import Path
-from typing import Dict, Any, Set, List, Optional, Tuple
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 

@@ -19,14 +19,12 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
-import numpy as np
 import optuna
-import pandas as pd
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+
 from sklearn.metrics import (
     calinski_harabasz_score,
     davies_bouldin_score,

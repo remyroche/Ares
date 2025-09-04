@@ -5,7 +5,6 @@
 This script provides guidance and templates for updating the training steps
 to use the new unified Parquet partitioned data format.
 """
-from __future__ import annotations
 
 from typing import Any
 
@@ -244,4 +243,4 @@ def main() -> None:
 if __name__ == "__main__":
     import asyncio
 
-    asyncio.run(main())
+    asyncio.run(await main())

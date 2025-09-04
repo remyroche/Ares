@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import matplotlib.patches as mpatches  # type: ignore
-    import matplotlib.pyplot as plt  # type: ignore
     HAS_MATPLOTLIB = True
 except Exception:
     plt = None  # type: ignore
@@ -18,7 +16,6 @@ except Exception:
     HAS_MATPLOTLIB = False
 
 try:
-    import networkx as nx  # type: ignore
     HAS_NETWORKX = True
 except Exception:
     nx = None  # type: ignore
@@ -682,4 +679,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

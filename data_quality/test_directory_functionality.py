@@ -10,8 +10,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 # Add the parent directory to the path to import the orchestrator
 sys.path.append(str(Path(__file__).parent))
@@ -195,4 +193,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

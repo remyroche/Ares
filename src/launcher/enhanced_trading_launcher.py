@@ -5,7 +5,7 @@ Enhanced Trading Launcher
 Provides a comprehensive launcher for paper trading, live trading, and
 backtesting with integrated detailed reporting capabilities.
 """
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 from src.core.domain import (
     PerformanceLevel,
@@ -16,16 +16,16 @@ from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
 import os
-import asyncio
 
 try:
     import pandas as pd
 except Exception:  # Fallback for environments without pandas
     class _PD:
+        pass
         DataFrame = Any  # type: ignore
     pd = _PD()  # type: ignore
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
        error,
    execution_error,
@@ -39,7 +39,7 @@ from src.integration.paper_trading_integration import (
     setup_paper_trading_integration,
 )
 if TYPE_CHECKING:
-    from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
+    pass
 
 class EnhancedTradingLauncher:
     """
@@ -161,7 +161,7 @@ class EnhancedTradingLauncher:
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
-                    from src.backtesting.enhanced_backtester import (
+                    from src.training.enhanced_backtester import (
                         setup_enhanced_backtester as _setup_backtester,
                     )
                     self.enhanced_backtester = await _setup_backtester(self.config)

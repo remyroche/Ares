@@ -11,7 +11,7 @@ from functools import wraps
 import asyncio
 from datetime import datetime
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 class SRError(Exception):

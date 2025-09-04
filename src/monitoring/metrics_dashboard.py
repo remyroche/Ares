@@ -5,18 +5,17 @@ Real-time Metrics Dashboard
 Provides real-time metrics visualization scaffolding for the Ares trading bot.
 """
 
-from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 class MetricType(Enum):

@@ -10,13 +10,12 @@ from typing import Any, Dict
 
 
 
-from src.core.domain import ParquetDatasetManager
-from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import (
+from .core.domain import ParquetDatasetManager
+from .utils.logger import system_logger
     log_step_metrics,
     log_step_report,
 )
-from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
@@ -138,8 +137,6 @@ class MonteCarloValidationStep:
 
             # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
             try:
-                import pandas as pd  # local optional import
-                from src.training.enhanced_training_manager_optimized import (
                     EnhancedTrainingManagerOptimized
                 )
                 
@@ -197,7 +194,6 @@ class MonteCarloValidationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.training.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -216,7 +212,6 @@ from src.training.decorators import (
 )
 import os
 
-from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -333,4 +328,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(test())
+    asyncio.run(await test())

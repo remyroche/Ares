@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 #!/usr/bin/env python3
 """S/R Market Regime Optimizer.
 
@@ -5,17 +8,11 @@ This module optimizes market regime detection and adaptation through backtesting
 ensuring that regime-specific logic is validated and optimized for performance.
 """
 
-import asyncio
-import numpy as np
-import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-import logging
 
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
+from .utils.logger import system_logger
+from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
 
 
 @dataclass

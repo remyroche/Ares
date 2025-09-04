@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/types/data_types.py
 

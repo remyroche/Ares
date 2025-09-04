@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Strategist module for trading strategy generation.
@@ -9,16 +8,15 @@ This module provides the Strategist class which is responsible for:
 - Strategy History Management: Track and store strategy performance
 """
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable
 
-import pandas as pd
 
-from src.core.decorators import handles_errors
-from src.utils.compat import handle_specific_errors
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors
+from .utils.compat import handle_specific_errors
+from .utils.logger import system_logger
 
 # Import Pydantic models and utilities
 from .config import MarketIndicators, StrategistConfig, StrategyResult
+
 from .utils import (
     CalculationError,
     PerformanceOptimizer,
@@ -31,8 +29,10 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from src.analyst.analyst import Analyst
-    from src.tactician.tactician import Tactician
+    from .analyst.analyst import Analyst
+    from .tactician.tactician import Tactician
+import pandas as pd
+from typing import Any
 
 
 class Strategist:
@@ -112,7 +112,6 @@ class Strategist:
             if self.enable_regime_detection:
                 regime_config = self.config.get("strategist", {}).get("regime_classifier", {})
                 try:
-                    from .enhanced_regime_classifier import EnhancedRegimeClassifier as _EnhancedRegimeClassifier
 
                     self.regime_classifier = _EnhancedRegimeClassifier(regime_config)
                     await self.regime_classifier.initialize()

@@ -7,12 +7,8 @@ CSV files for backtesting, paper trading, and live trading modes.
 """
 
 import asyncio
-import json
-import numpy as np
 from datetime import datetime, date, timedelta
-from typing import Dict, Any
 
-from src.monitoring import (
     MonitoringOrchestrator, create_monitoring_orchestrator,
     TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision,
     TradeDecision, TradingMode, ModelType, ModelPerformanceMetrics,
@@ -296,7 +292,7 @@ async def example_gui_mode_loading():
     print("\n🖥️ Launching Enhanced Monitoring Dashboard GUI with Mode-Specific Loading...")
     
     try:
-        from src.monitoring.gui import launch_dashboard
+        from .monitoring.gui import launch_dashboard
         
         # Launch the GUI (this will block until GUI is closed)
         exit_code = launch_dashboard()
@@ -318,13 +314,13 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Run mode-specific monitoring example
-    asyncio.run(example_mode_specific_monitoring())
+    asyncio.run(await example_mode_specific_monitoring())
     
     # Ask user if they want to launch GUI
     try:
         response = input("\n🖥️ Would you like to launch the GUI dashboard to view mode-specific data? (y/n): ")
         if response.lower() in ['y', 'yes']:
-            asyncio.run(example_gui_mode_loading())
+            asyncio.run(await example_gui_mode_loading())
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
     

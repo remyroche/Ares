@@ -8,10 +8,8 @@ dependency handling and reduced redundancy.
 """
 
 import ast
-import json
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import base pipeline and dependency manager
 from pipelines.base_pipeline import BasePipeline
-from utils.dependency_manager import dependency_manager, safe_import
 
 # Safe imports with fallbacks
 try:
@@ -80,9 +77,10 @@ except ImportError:
     AdvancedSyntaxFixer = None
 
 try:
-    from scripts.detect_circular_imports import ImportAnalyzer as CircularImportDetector
+    from ..analyzers.circular_import_detector import CircularImportDetector
 except ImportError:
     CircularImportDetector = None
+    print("Warning: CircularImportDetector not available")
 
 try:
     from scripts.enhanced_type_hints import TypeHintEnhancer
@@ -810,4 +808,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

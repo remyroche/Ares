@@ -8,14 +8,11 @@ gradient flow and more nuanced risk management.
 
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import get_logger
+from .core.decorators import handles_errors, traced
+from .utils.logger import get_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-from copy import copy
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 

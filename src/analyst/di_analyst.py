@@ -1,6 +1,6 @@
 # src/analyst/di_analyst.py
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 """
 Dependency injection-aware Analyst implementation.
@@ -12,12 +12,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-import pandas as pd
 
-from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
-from src.analyst.liquidation_risk_model import LiquidationRiskModel
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-from src.core.injectable_base import AnalystBase
+from .analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+from .analyst.liquidation_risk_model import LiquidationRiskModel
+from .analyst.market_health_analyzer import MarketHealthAnalyzer
+from .core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
     AnalysisResult,
     IAnalyst,
@@ -26,8 +25,7 @@ from src.interfaces.base_interfaces import (
     IStateManager,
     MarketData,
 )
-import asyncio
-from src.training.dual_model_system import DualModelSystem
+from .training.dual_model_system import DualModelSystem
 from src.utils.warning_symbols import (
     failed,
     initialization_error,
@@ -126,7 +124,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
     async def _setup_event_subscriptions(self) -> None:
         """Set up event subscriptions for market data."""
-        from src.interfaces.event_bus import EventType
+        from .interfaces.event_bus import EventType
 
         # Subscribe uses string event types in EventBus implementation
         self.event_bus.subscribe(
@@ -162,7 +160,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
                 # Publish analysis completed event (uses string event type)
                 if self.event_bus:
-                    from src.interfaces.event_bus import EventType
+                    from .interfaces.event_bus import EventType
 
                     await self.event_bus.publish(
                         EventType.ANALYSIS_COMPLETED.value,

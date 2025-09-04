@@ -3,9 +3,6 @@ Test script to verify Tactician coherence and functionality.
 Ensures probabilities, analyst inputs, and decision logic work together properly.
 """
 import asyncio
-import numpy as np
-import pandas as pd
-from datetime import datetime
 from src.tactician.tactician import Tactician
 from src.tactician.enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
 from src.utils.confidence import normalize_dual_confidence
@@ -324,4 +321,4 @@ async def main():
         raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

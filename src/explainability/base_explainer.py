@@ -1,3 +1,10 @@
+
+from typing import List
+from typing import Any
+from typing import Dict
+import pandas as pd
+from typing import Optional
+import numpy as np
 #!/usr/bin/env python3
 """Base explainer classes for SHAP and LIME integration.
 
@@ -5,17 +12,13 @@ This module provides the foundation for model explainability across all ML model
 in the trading system, enabling traceability of trade decisions back to individual factors.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Any, Union, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 from pathlib import Path
 import json
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 # SHAP imports with fallback
 try:
@@ -27,7 +30,6 @@ except ImportError:
 
 # LIME imports with fallback
 try:
-    from lime import lime_tabular
     from lime.lime_tabular import LimeTabularExplainer
     LIME_AVAILABLE = True
 except ImportError:

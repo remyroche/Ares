@@ -5,15 +5,9 @@ This module implements regime persistence modeling and forecasting capabilities,
 integrating with existing analyst forecasting logic for regime transition prediction.
 """
 
-import ast
-import numpy as np
-import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
-import asyncio
-from datetime import datetime, timedelta
 from scipy.stats import expon, gamma, weibull_min
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -428,7 +422,7 @@ class RegimePersistenceForecaster:
         """Integrate with existing analyst forecasting logic."""
         try:
             # Import analyst forecasting components
-            from src.analyst.enhanced_regime_predictor import EnhancedRegimePredictor
+            from .analyst.enhanced_regime_predictor import EnhancedRegimePredictor
             
             # Initialize analyst predictor
             analyst_config = {

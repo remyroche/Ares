@@ -1,12 +1,12 @@
-from __future__ import annotations
 
+
+import numpy as np
 # src/types/ml_types.py
 
 """Machine learning type definitions for model inputs = outputs, and metrics."""
 
 from typing import Literal, TypedDict
 
-import numpy as np
 
 from .base_types import ConfidenceLevel, ModelId, Score, Symbol, Timestamp
 

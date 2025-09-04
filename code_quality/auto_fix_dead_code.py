@@ -1,0 +1,291 @@
+"""
+Automatic Dead Code Fixer
+
+This script automatically fixes obvious dead code issues like unused imports
+and truly unused functions/classes with high confidence.
+"""
+
+import ast
+import json
+import re
+from dataclasses import dataclass
+import logging
+from datetime import datetime
+
+
+@dataclass
+class FixResult:
+    """Result of a fix operation."""
+    file_path: str
+    fixes_applied: List[str]
+    errors: List[str]
+    success: bool
+
+
+class AutoDeadCodeFixer:
+    """Automatically fix dead code issues."""
+    
+    def __init__(self, dry_run: bool = True):
+        self.dry_run = dry_run
+        self.logger = logging.getLogger(__name__)
+        self.fixes_applied = 0
+        self.errors = 0
+        
+    def load_analysis_report(self, report_path: str) -> Dict[str, Any]:
+        """Load the improved analysis report."""
+        with open(report_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    
+    def fix_all_issues(self, report_path: str) -> List[FixResult]:
+        """Fix all high-confidence issues from the report."""
+        report = self.load_analysis_report(report_path)
+        results = []
+        
+        # Group issues by file
+        issues_by_file = {}
+        for issue in report['issues']:
+            file_path = issue['file_path']
+            if file_path not in issues_by_file:
+                issues_by_file[file_path] = []
+            issues_by_file[file_path].append(issue)
+        
+        self.logger.info(f"🔧 Fixing issues in {len(issues_by_file)} files...")
+        
+        for file_path, issues in issues_by_file.items():
+            try:
+                result = self.fix_file_issues(file_path, issues)
+                results.append(result)
+                
+                if result.success:
+                    self.fixes_applied += len(result.fixes_applied)
+                else:
+                    self.errors += len(result.errors)
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Error fixing {file_path}: {e}")
+                results.append(FixResult(
+                    file_path=file_path,
+                    fixes_applied=[],
+                    errors=[str(e)],
+                    success=False
+                ))
+        
+        return results
+    
+    def fix_file_issues(self, file_path: str, issues: List[Dict[str, Any]]) -> FixResult:
+        """Fix issues in a single file."""
+        fixes_applied = []
+        errors = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            original_content = content
+            
+            # Parse the file
+            tree = ast.parse(content)
+            lines = content.split('\n')
+            
+            # Sort issues by line number (descending) to avoid line number shifts
+            issues.sort(key=lambda x: x['line_number'], reverse=True)
+            
+            for issue in issues:
+                try:
+                    if issue['issue_type'] == 'unused_import':
+                        content = self._fix_unused_import(content, issue, lines)
+                        fixes_applied.append(f"Removed unused import: {issue['message']}")
+                    elif issue['issue_type'] == 'dead_code':
+                        if issue['confidence'] >= 0.95:  # Only fix very high confidence issues
+                            content = self._fix_dead_code(content, issue, lines)
+                            fixes_applied.append(f"Removed dead code: {issue['message']}")
+                except Exception as e:
+                    errors.append(f"Failed to fix {issue['message']}: {e}")
+            
+            # Write the fixed content if not dry run
+            if not self.dry_run and content != original_content:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                self.logger.info(f"✅ Fixed {len(fixes_applied)} issues in {file_path}")
+            elif self.dry_run and content != original_content:
+                self.logger.info(f"🔍 Would fix {len(fixes_applied)} issues in {file_path}")
+            
+            return FixResult(
+                file_path=file_path,
+                fixes_applied=fixes_applied,
+                errors=errors,
+                success=len(errors) == 0
+            )
+            
+        except Exception as e:
+            return FixResult(
+                file_path=file_path,
+                fixes_applied=[],
+                errors=[str(e)],
+                success=False
+            )
+    
+    def _fix_unused_import(self, content: str, issue: Dict[str, Any], lines: List[str]) -> str:
+        """Fix unused import by removing the import line."""
+        line_number = issue['line_number'] - 1  # Convert to 0-based index
+        
+        if line_number >= len(lines):
+            return content
+        
+        line = lines[line_number]
+        
+        # Check if this is a single import or part of a multi-line import
+        if line.strip().startswith('import '):
+            # Single line import
+            lines.pop(line_number)
+        elif line.strip().startswith('from '):
+            # Check if it's a single item import or multi-item
+            if ',' in line:
+                # Multi-item import - remove just this item
+                import_name = issue['context'].get('import_name', '')
+                module = issue['context'].get('module', '')
+                
+                if module:
+                    # from module import item1, item2, item3
+                    pattern = rf'from\s+{re.escape(module)}\s+import\s+(.+?)(?:\n|$)'
+                    match = re.search(pattern, content, re.MULTILINE)
+                    if match:
+                        items = [item.strip() for item in match.group(1).split(',')]
+                        items = [item for item in items if item != import_name]
+                        
+                        if items:
+                            # Replace with remaining items
+                            new_import = f"from {module} import {', '.join(items)}"
+                            content = content.replace(match.group(0), new_import)
+                        else:
+                            # Remove entire import line
+                            content = content.replace(match.group(0), '')
+                else:
+                    # import item1, item2, item3
+                    pattern = rf'import\s+(.+?)(?:\n|$)'
+                    match = re.search(pattern, content, re.MULTILINE)
+                    if match:
+                        items = [item.strip() for item in match.group(1).split(',')]
+                        items = [item for item in items if item != import_name]
+                        
+                        if items:
+                            new_import = f"import {', '.join(items)}"
+                            content = content.replace(match.group(0), new_import)
+                        else:
+                            content = content.replace(match.group(0), '')
+            else:
+                # Single item import - remove entire line
+                lines.pop(line_number)
+        
+        return '\n'.join(lines)
+    
+    def _fix_dead_code(self, content: str, issue: Dict[str, Any], lines: List[str]) -> str:
+        """Fix dead code by removing unused functions/classes."""
+        line_number = issue['line_number'] - 1  # Convert to 0-based index
+        
+        if line_number >= len(lines):
+            return content
+        
+        # Find the start and end of the function/class
+        start_line = line_number
+        
+        # Find the end of the function/class by looking for the next function/class at same indentation
+        base_indent = len(lines[start_line]) - len(lines[start_line].lstrip())
+        end_line = start_line
+        
+        for i in range(start_line + 1, len(lines)):
+            line = lines[i]
+            if line.strip() == '':
+                continue
+            
+            current_indent = len(line) - len(line.lstrip())
+            if current_indent <= base_indent and line.strip():
+                end_line = i
+                break
+        else:
+            end_line = len(lines)
+        
+        # Remove the function/class
+        lines = lines[:start_line] + lines[end_line:]
+        
+        return '\n'.join(lines)
+    
+    def generate_fix_report(self, results: List[FixResult]) -> Dict[str, Any]:
+        """Generate a report of all fixes applied."""
+        total_files = len(results)
+        successful_files = sum(1 for r in results if r.success)
+        total_fixes = sum(len(r.fixes_applied) for r in results)
+        total_errors = sum(len(r.errors) for r in results)
+        
+        return {
+            "summary": {
+                "total_files_processed": total_files,
+                "successful_files": successful_files,
+                "failed_files": total_files - successful_files,
+                "total_fixes_applied": total_fixes,
+                "total_errors": total_errors,
+                "dry_run": self.dry_run,
+                "timestamp": datetime.now().isoformat()
+            },
+            "files": [
+                {
+                    "file_path": r.file_path,
+                    "success": r.success,
+                    "fixes_applied": r.fixes_applied,
+                    "errors": r.errors
+                }
+                for r in results
+            ]
+        }
+
+
+def main():
+    """Main function to run the auto-fixer."""
+    import argparse
+from typing import List
+
+parser = argparse.ArgumentParser(description='Automatically fix dead code issues')
+parser.add_argument('--report', default='code_quality/improved_dead_code_analysis_report.json',
+                   help='Path to the analysis report')
+parser.add_argument('--dry-run', action='store_true', default=True,
+                   help='Show what would be fixed without making changes')
+parser.add_argument('--apply', action='store_true',
+                   help='Actually apply the fixes (overrides --dry-run)')
+parser.add_argument('--output', default='code_quality/dead_code_fix_report.json',
+                   help='Output file for fix report')
+
+args = parser.parse_args()
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+# Create fixer
+dry_run = not args.apply
+fixer = AutoDeadCodeFixer(dry_run=dry_run)
+
+print(f"🔧 Starting dead code fixer (dry_run={dry_run})...")
+print("=" * 60)
+
+# Fix issues
+results = fixer.fix_all_issues(args.report)
+
+# Generate report
+report = fixer.generate_fix_report(results)
+    
+    # Save report
+    with open(args.output, 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    
+    # Print summary
+    print(f"\n📊 Fix Summary:")
+    print(f"  Files processed: {report['summary']['total_files_processed']}")
+    print(f"  Successful: {report['summary']['successful_files']}")
+    print(f"  Failed: {report['summary']['failed_files']}")
+    print(f"  Fixes applied: {report['summary']['total_fixes_applied']}")
+    print(f"  Errors: {report['summary']['total_errors']}")
+    print(f"  Mode: {'DRY RUN' if dry_run else 'APPLIED'}")
+    print(f"\n💾 Report saved to: {args.output}")
+
+
+if __name__ == '__main__':
+    main()

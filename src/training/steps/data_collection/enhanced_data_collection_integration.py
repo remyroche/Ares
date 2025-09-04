@@ -13,23 +13,18 @@ Features:
 - Integration with existing pipeline
 """
 
-from __future__ import annotations
 
 import asyncio
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
-from .enhanced_data_validation_framework import DataType, ValidationSeverity
-from .enhanced_data_collector import EnhancedDataCollectionManager, collect_all_data_with_validation
+from .utils.logger import system_logger
 from .enhanced_step01_data_collection import run_enhanced_step01_data_collection
 from .enhanced_step01_5_data_converter import run_enhanced_step01_5_data_converter
 
@@ -187,7 +182,6 @@ async def validate_existing_data(
     
     try:
         from .enhanced_data_validation_framework import get_validator
-        import pandas as pd
         import os
         
         validation_results = {}
@@ -356,6 +350,9 @@ async def demonstrate_enhanced_validation():
     logger.info("📋 Example 3: Testing different data types")
     
     from .enhanced_data_validation_framework import get_validator
+import pandas as pd
+from typing import Any
+from typing import Dict
     
     # Test klines validation
     klines_validator = get_validator(DataType.KLINES)
@@ -406,4 +403,4 @@ async def demonstrate_enhanced_validation():
 
 if __name__ == "__main__":
     # Run demonstration
-    asyncio.run(demonstrate_enhanced_validation())
+    asyncio.run(await demonstrate_enhanced_validation())

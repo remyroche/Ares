@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 from src.utils.warning_symbols import (
     error,
@@ -23,8 +21,8 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG  # noqa: E402
-from src.utils.base_validator import BaseValidator  # noqa: E402
+from .config import CONFIG  # noqa: E402
+from .utils.base_validator import BaseValidator  # noqa: E402
 
 
 class Step8TacticianLabelingValidator(BaseValidator):
@@ -187,8 +185,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 if os.path.exists(signals_parquet):
                     # Prefer dataset scan if labeled partition exists
                     try:
-                        from src.utils.logger import log_io_operation, log_dataframe_overview
-                        from src.data.parquet_dataset_manager import ParquetDatasetManager
+                        from .utils.logger import log_io_operation, log_dataframe_overview
+                        from .data.parquet_dataset_manager import ParquetDatasetManager
 
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
@@ -352,7 +350,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
                 if os.path.exists(labels_parquet):
                     try:
-                        from src.data.parquet_dataset_manager import ParquetDatasetManager
+                        from .data.parquet_dataset_manager import ParquetDatasetManager
 
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
@@ -669,7 +667,6 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
-    import os.path
 
     # Example usage
     async def test_validator() -> None:
@@ -685,4 +682,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run(test_validator())
+    _asyncio.run(await test_validator())

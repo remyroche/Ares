@@ -1,11 +1,10 @@
-from __future__ import annotations
 
 import asyncio
 from datetime import datetime
 from typing import Any
 
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
 
 # src/training/steps/step20_ab_testing.py
 
@@ -77,4 +76,4 @@ if __name__ == "__main__":
     async def _test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(_test())
+    asyncio.run(await _test())

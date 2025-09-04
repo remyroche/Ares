@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Configuration-Driven Architecture for ML Pipeline
 
@@ -13,7 +12,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Union
 import yaml
-import asyncio
 
 class ConfigFormat(Enum):
     """Supported configuration file formats."""
@@ -264,4 +262,4 @@ def example_usage() -> None:
 if __name__ == '__main__':
     with open('config/example_pipeline.yaml', 'w') as f:
         f.write(EXAMPLE_YAML_CONFIG)
-    example_usage()
+    await example_usage()

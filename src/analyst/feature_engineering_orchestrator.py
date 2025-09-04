@@ -1,19 +1,14 @@
 import logging
 import os
 from typing import Any
-import numpy as np
-import pandas as pd
 import pywt
-from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
-from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
-from src.analytics.limited_microstructure_features import LimitedMicrostructureFeatures
-from src.config import CONFIG
-from src.core.decorators import handles_errors
-from src.core.domain import handle_data_processing_errors, handle_file_operations
-from src.utils.logger import system_logger
-from copy import copy
-import asyncio
-from typing import Dict, List, Optional, Union, Any, Tuple
+from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
+from .analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+from .analytics.limited_microstructure_features import LimitedMicrostructureFeatures
+from .config import CONFIG
+from .core.decorators import handles_errors
+from .core.domain import handle_data_processing_errors, handle_file_operations
+from .utils.logger import system_logger
 
 class FeatureEngineeringOrchestrator:
     """
@@ -38,7 +33,7 @@ class FeatureEngineeringOrchestrator:
         os.makedirs(self.model_storage_path, exist_ok=True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, 'der_scaler.joblib')
-        from src.config_optuna import get_parameter_value
+        from .config_optuna import get_parameter_value
         self.orchestrator_config = config.get('feature_engineering_orchestrator', {})
         self.enable_advanced_features = get_parameter_value('feature_engineering_parameters.enable_advanced_features', True)
         self.enable_autoencoder_features = get_parameter_value('feature_engineering_parameters.enable_autoencoder_features', True)
@@ -158,7 +153,7 @@ class FeatureEngineeringOrchestrator:
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
         """Calculate multi-timeframe features."""
         try:
-            from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
+            from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
             advanced_fe = AdvancedFeatureEngineering(self.config)
             await advanced_fe.initialize()
             multi_timeframe_features = await advanced_fe._engineer_multi_timeframe_features(price_data, volume_data, order_flow_data)
@@ -171,7 +166,8 @@ class FeatureEngineeringOrchestrator:
     async def _calculate_meta_labeling_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
         """Calculate meta-labeling features."""
         try:
-            from src.analyst.meta_labeling_system import MetaLabelingSystem
+            from .analyst.meta_labeling_system import MetaLabelingSystem
+
             meta_labeling = MetaLabelingSystem(self.config)
             await meta_labeling.initialize()
             analyst_labels = await meta_labeling._generate_analyst_labels(price_data, volume_data, order_flow_data)
@@ -186,7 +182,6 @@ class FeatureEngineeringOrchestrator:
     def _calculate_standard_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate standard technical indicators using price differences."""
         try:
-            import pandas_ta as ta
             
             close_diff = df['close'].diff().fillna(0)
             high_diff = df['high'].diff().fillna(0)

@@ -27,18 +27,17 @@ from analyzers.performance_analyzer import PerformanceAnalyzer
 from analyzers.test_coverage_analyzer import TestCoverageAnalyzer
 from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
 from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
+from analyzers.improved_dead_code_analyzer import ImprovedDeadCodeAnalyzer
 from comprehensive_code_review import CodeQualityReviewer
 from enhanced_validator import EnhancedValidator
 from function_validator import FunctionValidator
 
 from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
-from scripts.detect_circular_imports import ImportAnalyzer as CircularImportDetector
 from scripts.enhanced_type_hints import TypeHintEnhancer
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.safe_import_fixer import SafeImportFixer
-from scripts.simple_interaction_mapper import extract_interactions, generate_interaction_summary
 from utils.report_aggregator import ReportAggregator
-from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
+from ..simple_import_undefined_checker import SimpleImportAndUndefinedChecker
 
 
 class UnifiedEnhancedPipeline:
@@ -628,6 +627,125 @@ class UnifiedEnhancedPipeline:
 
         return result
 
+    def run_dead_code_analysis(self) -> dict[str, Any]:
+        """Run improved dead code analysis."""
+        print("\n" + "="*60)
+        print("Running Improved Dead Code Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        analyzer = ImprovedDeadCodeAnalyzer()
+        result = analyzer.analyze_directory(str(self.project_root))
+        
+        # Save individual report
+        report_path = self.reports_dir / f"dead_code_analysis_{self.timestamp}.json"
+        analyzer.save_report(report_path)
+
+        analysis_result = {
+            "issues": [
+                {
+                    "file_path": issue.file_path,
+                    "line_number": issue.line_number,
+                    "issue_type": issue.issue_type,
+                    "name": issue.name,
+                    "description": issue.description,
+                    "confidence": issue.confidence,
+                    "severity": issue.severity,
+                    "is_public_api": issue.is_public_api,
+                    "is_used_cross_file": issue.is_used_cross_file,
+                    "is_abstract_interface": issue.is_abstract_interface
+                }
+                for issue in result.issues
+            ],
+            "total_issues": result.total_issues,
+            "files_analyzed": result.files_analyzed,
+            "issues_by_type": result.issues_by_type,
+            "issues_by_confidence": result.issues_by_confidence,
+            "issues_by_severity": result.issues_by_severity,
+            "high_confidence_issues": result.global_analysis["high_confidence_issues"],
+            "public_api_issues": result.global_analysis["public_api_issues"],
+            "cross_file_usage_issues": result.global_analysis["cross_file_usage_issues"],
+            "abstract_interface_issues": result.global_analysis["abstract_interface_issues"],
+            "execution_time": time.time() - start_time,
+            "report_path": str(report_path)
+        }
+
+        # Add to aggregator
+        self.report_aggregator.add_dead_code_results(analysis_result)
+
+        return analysis_result
+
+    def run_dead_code_fixes(self) -> dict[str, Any]:
+        """Run automated dead code fixes."""
+        print("\n" + "="*60)
+        print("Running Automated Dead Code Fixes")
+        print("="*60)
+
+        start_time = time.time()
+        
+        # Import the plugin
+        from plugins.production.dead_code_fixer import DeadCodeFixerPlugin
+        
+        # Create and configure plugin
+        plugin = DeadCodeFixerPlugin()
+        config = {
+            "dry_run": False,  # Set to True for dry run
+            "min_confidence": 0.95,
+            "create_backups": True
+        }
+        plugin.configure(config)
+        
+        # Execute plugin
+        context = {
+            "project_root": str(self.project_root),
+            "dead_code_report_path": self.reports_dir / f"dead_code_analysis_{self.timestamp}.json"
+        }
+        
+        result = plugin.execute(context)
+        
+        # Save individual report
+        report_path = self.reports_dir / f"dead_code_fixes_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+        fix_result = {
+            "total_files_processed": result["total_files_processed"],
+            "successful_files": result["successful_files"],
+            "failed_files": result["failed_files"],
+            "total_fixes_applied": result["total_fixes_applied"],
+            "total_errors": result["total_errors"],
+            "execution_time": time.time() - start_time,
+            "dry_run": result["dry_run"],
+            "file_results": result["file_results"],
+            "summary": result["summary"]
+        }
+
+        # Add to aggregator
+        self.report_aggregator.add_dead_code_fix_results(fix_result)
+
+        return fix_result
+
+    def run_comprehensive_import_undefined_check(self) -> dict[str, Any]:
+        """Run comprehensive import and undefined variable checker."""
+        print("\n" + "="*60)
+        print("Running Comprehensive Import and Undefined Checker")
+        print("="*60)
+
+        start_time = time.time()
+        checker = SimpleImportAndUndefinedChecker(str(self.project_root))
+        result = checker.run_comprehensive_check(str(self.project_root))
+        result["execution_time"] = time.time() - start_time
+
+        # Add to aggregator
+        self.report_aggregator.add_comprehensive_checker_results(result)
+
+        # Save individual report
+        report_path = self.reports_dir / f"comprehensive_import_undefined_check_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+        return result
+
     def run_all(self) -> dict[str, Any]:
         """Run all code quality tools with unified reporting."""
         print(f"\n{'='*80}")
@@ -643,6 +761,8 @@ class UnifiedEnhancedPipeline:
             "syntax_fixes": self.run_syntax_fixes(),
             "import_fixes": self.run_import_fixes(),
             "circular_imports": self.detect_circular_imports(),
+            "dead_code_fixes": self.run_dead_code_fixes(),
+            "comprehensive_import_undefined_check": self.run_comprehensive_import_undefined_check(),
         }
 
         # Async and Types
@@ -667,6 +787,7 @@ class UnifiedEnhancedPipeline:
             "data_flow": self.run_data_flow_analysis(),
             "static_analysis": self.run_static_analysis(),
             "ast_analysis": self.run_ast_analysis(),
+            "dead_code_analysis": self.run_dead_code_analysis(),
         }
 
         # Generate summary

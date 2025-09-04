@@ -1,18 +1,14 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+import numpy as np
 """HMM training components for model training.
 
 This module contains specialized components for HMM-based model training,
 including regime-specific training, multi-output models, and optimization.
 """
 from typing import Any, Dict, List, Optional, Tuple
-import pandas as pd
-import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.metrics import accuracy_score, f1_score, mean_squared_error, r2_score
-import lightgbm as lgb
-from src.utils.logger import system_logger
-import asyncio
+from .utils.logger import system_logger
 
 class HMMModelTrainer:
     """Trains HMM-based models with various algorithms."""
@@ -128,7 +124,6 @@ class HMMModelTrainer:
             Model results
         """
         try:
-            import xgboost as xgb
             return {'model': None, 'performance': {}, 'feature_importance': {}}
         except ImportError:
             self.logger.warning('XGBoost not available')

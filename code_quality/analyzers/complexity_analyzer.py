@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    import radon.metrics as radon_metrics
     from radon.visitors import ComplexityVisitor, HalsteadVisitor
     RADON_AVAILABLE = True
 except ImportError:

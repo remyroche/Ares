@@ -1,3 +1,8 @@
+
+import numpy as np
+from typing import Dict
+import pandas as pd
+from typing import Any
 #!/usr/bin/env python3
 """Streaming Regime Discovery with Memory Optimization.
 
@@ -5,14 +10,11 @@ This module implements chunked processing and memory-efficient regime discovery
 to handle large datasets without loading everything into memory.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Iterator, Generator
-import asyncio
 import gc
 from collections import deque
 import psutil
 import warnings
+
 warnings.filterwarnings('ignore')
 
 class StreamingRegimeDiscovery:

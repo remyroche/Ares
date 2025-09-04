@@ -1,18 +1,16 @@
-from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any
-from src.config import CONFIG, get_environment_settings
-from src.paper_trader import PaperTrader
-from src.supervisor.ab_tester import ABTester
-from src.supervisor.dependency_container import ComponentBuilder, DependencyContainer
-from src.supervisor.monitoring import Monitoring
-from src.supervisor.performance_reporter import PerformanceReporter
-from src.utils.logger import system_logger
-from src.utils.model_manager import ModelManager
-from src.utils.state_manager import StateManager
-from copy import copy
-from src.core.decorators.errors import handles_errors
+from .config import CONFIG, get_environment_settings
+from .paper_trader import PaperTrader
+from .supervisor.ab_tester import ABTester
+from .supervisor.dependency_container import ComponentBuilder, DependencyContainer
+from .supervisor.monitoring import Monitoring
+from .supervisor.performance_reporter import PerformanceReporter
+from .utils.logger import system_logger
+from .utils.model_manager import ModelManager
+from .utils.state_manager import StateManager
+from .core.decorators.errors import handles_errors
 
 class Supervisor:
     """

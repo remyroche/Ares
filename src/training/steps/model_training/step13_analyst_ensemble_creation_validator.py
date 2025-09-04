@@ -1,13 +1,11 @@
-from __future__ import annotations
 
 import os
-import os.path
 from typing import Any
 
-from src.utils.common_operations import safe_json_load
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, missing, success, warning
-from src.core.decorators.errors import handles_errors
+from .utils.common_operations import safe_json_load
+from .utils.logger import system_logger
+from .utils.warning_symbols import failed, missing, success, warning
+from .core.decorators.errors import handles_errors
 
 # src/training/steps/step13_*.py
 
@@ -65,12 +63,12 @@ class Step7AnalystEnsembleCreationValidator:
 
             if overall_passed:
                 logger.info("✅ Step 7: Analyst Ensemble Creation validation passed")
-                self.print(
+                self.print_message(
                     success("✅ Step 7: Analyst Ensemble Creation validation passed"),
                 )
             else:
                 logger.warning("⚠️ Step 7: Analyst Ensemble Creation validation failed")
-                self.print(
+                self.print_message(
                     failed("⚠️ Step 7: Analyst Ensemble Creation validation failed"),
                 )
 
@@ -78,7 +76,7 @@ class Step7AnalystEnsembleCreationValidator:
 
         except Exception as e:
             logger.exception(f"❌ Error in Step 7 validation: {e}")
-            self.print(error(f"❌ Error in Step 7 validation: {e}"))
+            self.print_message(error(f"❌ Error in Step 7 validation: {e}"))
             return False
 
     def _validate_ensemble_files(
@@ -110,7 +108,7 @@ class Step7AnalystEnsembleCreationValidator:
                 self.logger.error(
                     missing(f"❌ Missing ensemble files: {missing_files}"),
                 )
-                self.print(missing(f"❌ Missing ensemble files: {missing_files}"))
+                self.print_message(missing(f"❌ Missing ensemble files: {missing_files}"))
                 return False
 
             self.logger.info("✅ All ensemble files exist")
@@ -159,7 +157,7 @@ class Step7AnalystEnsembleCreationValidator:
                         f"❌ Missing required fields in ensemble summary: {missing_fields}",
                     ),
                 )
-                self.print(
+                self.print_message(
                     failed(
                         f"❌ Missing required fields in ensemble summary: {missing_fields}",
                     ),
@@ -174,7 +172,7 @@ class Step7AnalystEnsembleCreationValidator:
                         f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {metadata.get('exchange')}_{metadata.get('symbol')}",
                     ),
                 )
-                self.print(
+                self.print_message(
                     failed(
                         f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {metadata.get('exchange')}_{metadata.get('symbol')}",
                     ),
@@ -188,7 +186,7 @@ class Step7AnalystEnsembleCreationValidator:
                         "⚠️ Ensemble is a placeholder (no enhanced models from Step 6)",
                     ),
                 )
-                self.print(
+                self.print_message(
                     warning(
                         "⚠️ Ensemble is a placeholder (no enhanced models from Step 6)",
                     ),
@@ -201,7 +199,7 @@ class Step7AnalystEnsembleCreationValidator:
             self.logger.exception(error(f"❌ Error validating ensemble structure: {e}"))
             return False
 
-    def print(self, message: str) -> None:
+    def print_message(self, message: str) -> None:
         """Print validation message."""
         self.logger.info(message)
 

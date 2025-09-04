@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """Step 1 Runner Script."
 
@@ -15,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.training.steps.step01 import (
+from src.training.steps.market_analysis.step1 import (
     AggtradesValidator,
     DataGapDetector,
     DataPreparation,
@@ -227,5 +226,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     import asyncio
-
     asyncio.run(main())

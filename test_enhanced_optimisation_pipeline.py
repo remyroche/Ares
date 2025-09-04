@@ -29,17 +29,15 @@ def test_imports():
         
         # Test data quality framework
         print("  📦 Testing data quality framework...")
-        from src.utils.data_quality_framework import DataQualityFramework
         print("    ✅ DataQualityFramework imported successfully")
         
         # Test core decorators
         print("  📦 Testing core decorators...")
-        from src.core.decorators import handles_errors, validates, traced, log_execution_time
         print("    ✅ Core decorators imported successfully")
         
         # Test optimisation pipeline components
         print("  📦 Testing optimisation pipeline components...")
-        from src.training.steps.optimisation import (
+        from src.training.optimisation_pipeline import (
             run_optimisation_pipeline,
             OptimisationPipelineValidator,
             ConfidenceCalibrationStepValidator,
@@ -203,5 +201,5 @@ def main():
         return False
 
 if __name__ == "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

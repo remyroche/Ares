@@ -5,10 +5,8 @@ This module provides backward compatibility for the refactored system coordinato
 The actual implementation is now split across modules in src/supervisor/coordinator/.
 """
 
-from __future__ import annotations
 
 # Import all the components from the new structure
-from .coordinator import (
     CircuitBreaker,
     ComponentMonitor,
     HealthMonitor,

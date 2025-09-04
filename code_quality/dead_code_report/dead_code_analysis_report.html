@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dead Code Analysis Report - Ares Project</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #2c3e50;
+            margin-top: 25px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        .issue-type {
+            background: #ecf0f1;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #e74c3c;
+        }
+        .issue-type.dead-code {
+            border-left-color: #e74c3c;
+        }
+        .issue-type.unused-import {
+            border-left-color: #f39c12;
+        }
+        .file-list {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-path {
+            font-family: 'Courier New', monospace;
+            color: #495057;
+        }
+        .issue-count {
+            background: #dc3545;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .recommendations {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .recommendation {
+            margin: 10px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        .recommendation::before {
+            content: "💡";
+            position: absolute;
+            left: 0;
+        }
+        .chart-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .chart-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+        .summary-box {
+            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .summary-box h3 {
+            color: white;
+            margin-top: 0;
+        }
+        .impact-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .impact-metric {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .impact-metric .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #856404;
+        }
+        .impact-metric .metric-label {
+            font-size: 0.9em;
+            color: #856404;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Dead Code Analysis Report</h1>
+        <h2>Ares Project</h2>
+        
+        <div class="summary-box">
+            <h3>Executive Summary</h3>
+            <p>Comprehensive dead code analysis of the Ares trading system project, identifying unused code, imports, and potential cleanup opportunities.</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">1,041</div>
+                <div class="stat-label">Files Analyzed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">5,374</div>
+                <div class="stat-label">Total Issues Found</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">3,300</div>
+                <div class="stat-label">Dead Code Issues</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">2,074</div>
+                <div class="stat-label">Unused Imports</div>
+            </div>
+        </div>
+
+        <h2>📊 Analysis Overview</h2>
+        <p><strong>Project Root:</strong> /Users/remyroche/Documents/Ares</p>
+        <p><strong>Processing Time:</strong> 7.76 seconds</p>
+        <p><strong>Analysis Date:</strong> $(date)</p>
+
+        <h2>📋 Issue Breakdown</h2>
+        <div class="issue-type dead-code">
+            <h3>Dead Code Issues: 3,300</h3>
+            <p>Functions, classes, and methods that appear to be defined but never used.</p>
+        </div>
+        <div class="issue-type unused-import">
+            <h3>Unused Imports: 2,074</h3>
+            <p>Import statements that are not referenced anywhere in the code.</p>
+        </div>
+
+        <h2>📁 Top Files with Issues</h2>
+        <div class="file-list">
+            <div class="file-item">
+                <span class="file-path">src/training/simplified_architecture/modular_components.py</span>
+                <span class="issue-count">52 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/utils/common_operations.py</span>
+                <span class="issue-count">47 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/training/simplified_architecture/enhanced_interfaces.py</span>
+                <span class="issue-count">44 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/core/domain/decorators_extended.py</span>
+                <span class="issue-count">35 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/training/enhanced_training_manager.py</span>
+                <span class="issue-count">32 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">code_quality/run_real_subset_tests.py</span>
+                <span class="issue-count">31 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">code_quality/tests/test_enhanced_pipelines.py</span>
+                <span class="issue-count">30 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/core/generic_base.py</span>
+                <span class="issue-count">28 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/interfaces/base_interfaces.py</span>
+                <span class="issue-count">27 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/training/steps/market_analysis/step17_final_parameters_optimization/advanced_optimization_engine.py</span>
+                <span class="issue-count">27 issues</span>
+            </div>
+        </div>
+
+        <h2>📦 Most Common Unused Imports</h2>
+        <div class="file-list">
+            <div class="file-item">
+                <span class="file-path">annotations from __future__</span>
+                <span class="issue-count">341 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">asyncio</span>
+                <span class="issue-count">275 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">Tuple from typing</span>
+                <span class="issue-count">156 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">Union from typing</span>
+                <span class="issue-count">127 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">Optional from typing</span>
+                <span class="issue-count">124 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">List from typing</span>
+                <span class="issue-count">120 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">Dict from typing</span>
+                <span class="issue-count">52 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">timedelta from datetime</span>
+                <span class="issue-count">44 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">logging</span>
+                <span class="issue-count">43 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">np (numpy)</span>
+                <span class="issue-count">34 occurrences</span>
+            </div>
+        </div>
+
+        <h2>⚙️ Most Common Unused Functions</h2>
+        <div class="file-list">
+            <div class="file-item">
+                <span class="file-path">decorator</span>
+                <span class="issue-count">56 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">wrapper</span>
+                <span class="issue-count">41 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">objective</span>
+                <span class="issue-count">28 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">get_name</span>
+                <span class="issue-count">17 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">forward</span>
+                <span class="issue-count">17 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">get_required_inputs</span>
+                <span class="issue-count">17 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">get_produced_outputs</span>
+                <span class="issue-count">17 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">get_dependencies</span>
+                <span class="issue-count">17 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">get_status</span>
+                <span class="issue-count">16 occurrences</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">get_description</span>
+                <span class="issue-count">16 occurrences</span>
+            </div>
+        </div>
+
+        <h2>📂 Issues by Directory</h2>
+        <div class="file-list">
+            <div class="file-item">
+                <span class="file-path">src/utils</span>
+                <span class="issue-count">491 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/training</span>
+                <span class="issue-count">457 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">root</span>
+                <span class="issue-count">224 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/config</span>
+                <span class="issue-count">203 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/training/steps/model_training</span>
+                <span class="issue-count">196 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/monitoring</span>
+                <span class="issue-count">190 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/training/steps/market_analysis</span>
+                <span class="issue-count">181 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">src/analyst</span>
+                <span class="issue-count">170 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">code_quality/analyzers</span>
+                <span class="issue-count">164 issues</span>
+            </div>
+            <div class="file-item">
+                <span class="file-path">code_quality/plugins</span>
+                <span class="issue-count">161 issues</span>
+            </div>
+        </div>
+
+        <h2>📊 Visualizations</h2>
+        <div class="chart-container">
+            <h3>Issues by Type</h3>
+            <img src="issues_by_type.png" alt="Issues by Type Chart">
+        </div>
+        
+        <div class="chart-container">
+            <h3>Top Files with Issues</h3>
+            <img src="top_files_with_issues.png" alt="Top Files with Issues Chart">
+        </div>
+        
+        <div class="chart-container">
+            <h3>Issues by Directory</h3>
+            <img src="issues_by_directory.png" alt="Issues by Directory Chart">
+        </div>
+        
+        <div class="chart-container">
+            <h3>Top Unused Imports</h3>
+            <img src="top_unused_imports.png" alt="Top Unused Imports Chart">
+        </div>
+
+        <h2>💡 Recommendations</h2>
+        <div class="recommendations">
+            <div class="recommendation">
+                <strong>Clean up unused imports:</strong> Remove 2,074 unused imports to improve startup time and reduce memory usage.
+            </div>
+            <div class="recommendation">
+                <strong>Review dead code:</strong> Investigate 3,300 potentially unused functions and classes for removal or documentation.
+            </div>
+            <div class="recommendation">
+                <strong>Focus on high-impact files:</strong> Start with files having the most issues for maximum cleanup impact.
+            </div>
+            <div class="recommendation">
+                <strong>Automate cleanup:</strong> Use automated tools like autoflake or unimport to remove obvious unused imports.
+            </div>
+            <div class="recommendation">
+                <strong>Fix syntax errors:</strong> Address syntax errors in 51 files that couldn't be parsed during analysis.
+            </div>
+            <div class="recommendation">
+                <strong>Implement CI checks:</strong> Add dead code detection to continuous integration to prevent future accumulation.
+            </div>
+        </div>
+
+        <h2>📈 Potential Impact</h2>
+        <div class="impact-metrics">
+            <div class="impact-metric">
+                <div class="metric-value">5,374</div>
+                <div class="metric-label">Lines to Remove</div>
+            </div>
+            <div class="impact-metric">
+                <div class="metric-value">537.4</div>
+                <div class="metric-label">Hours to Clean</div>
+            </div>
+            <div class="impact-metric">
+                <div class="metric-value">860</div>
+                <div class="metric-label">Files Affected</div>
+            </div>
+            <div class="impact-metric">
+                <div class="metric-value">51</div>
+                <div class="metric-label">Syntax Errors</div>
+            </div>
+        </div>
+
+        <h2>🔧 Next Steps</h2>
+        <ol>
+            <li><strong>Immediate Actions:</strong>
+                <ul>
+                    <li>Run automated import cleanup tools (autoflake, unimport)</li>
+                    <li>Fix syntax errors in the 51 problematic files</li>
+                    <li>Review and remove obvious unused imports</li>
+                </ul>
+            </li>
+            <li><strong>Short-term (1-2 weeks):</strong>
+                <ul>
+                    <li>Focus on files with 20+ issues</li>
+                    <li>Review unused functions in core modules</li>
+                    <li>Implement dead code detection in CI/CD</li>
+                </ul>
+            </li>
+            <li><strong>Long-term (1-2 months):</strong>
+                <ul>
+                    <li>Systematic review of all dead code candidates</li>
+                    <li>Refactor or remove unused components</li>
+                    <li>Establish code quality standards</li>
+                </ul>
+            </li>
+        </ol>
+
+        <div class="footer">
+            <p>Generated by Enhanced Dead Code Analyzer | Ares Project</p>
+            <p>For detailed analysis data, see: <code>dead_code_analysis_report.json</code></p>
+        </div>
+    </div>
+</body>
+</html>

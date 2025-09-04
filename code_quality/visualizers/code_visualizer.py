@@ -5,13 +5,9 @@ Provides base functionality for all visualization tools.
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 from matplotlib.patches import Rectangle
-import numpy as np
 
 
 class CodeVisualizer:

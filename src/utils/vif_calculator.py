@@ -4,16 +4,11 @@ VIF Calculator
 This module provides robust VIF (Variance Inflation Factor) calculation functions
 with comprehensive error handling and validation.
 """
-from copy import copy
-from typing import Dict, List, Optional, Tuple
 
-import numpy as np
-import pandas as pd
 from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
 
-from src.core.decorators import validates as comprehensive_vif_validation
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:

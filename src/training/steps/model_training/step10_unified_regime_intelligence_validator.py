@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 # src/training/steps/step10_unified_regime_intelligence_validator.py
 
 """Step 10 Unified Regime Intelligence Validator.
@@ -5,22 +8,18 @@
 This validator ensures quality insurance for the Unified Regime Intelligence step.
 """
 
-from src.core.decorators import handles_errors
-import json
+from .core.decorators import handles_errors
 import os
 import pickle
 import warnings
 from datetime import datetime
 from typing import Any, Dict
 
-import numpy as np
-import pandas as pd
 import torch
 from sklearn.preprocessing import LabelEncoder
 
-from src.utils.logger import system_logger
-import asyncio
-from src.utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
+from .utils.common_operations import ensure_directory, safe_json_dump
 
 warnings.filterwarnings("ignore")
 
@@ -544,7 +543,6 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Check if SRBreakoutPredictor is available
 			try:
-				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
 				validation_results["sr_predictor_initialization"] = True
 			except ImportError:
 				self.logger.warning("SRBreakoutPredictor not available")

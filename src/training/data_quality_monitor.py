@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nData Quality Monitor for Enhanced Training Pipeline.\n\nThis module provides comprehensive data quality monitoring throughout the training pipeline,\nensuring data compatibility, quality, format compatibility, and proper indexing at every step.\n'
 import asyncio
 import json
@@ -8,12 +7,12 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import numpy as np
-import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.enhanced_mlflow_integration import log_step_metrics
-from src.utils.logger import system_logger
+from .utils.enhanced_mlflow_integration import log_step_metrics
+from .utils.logger import system_logger
+import numpy as np
+import pandas as pd
 
 class QualityLevel(Enum):
     """Quality level enumeration."""
@@ -570,4 +569,4 @@ async def main() -> None:
     print('\nQuality Summary:')
     print(json.dumps(report['quality_summary'], indent=2))
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

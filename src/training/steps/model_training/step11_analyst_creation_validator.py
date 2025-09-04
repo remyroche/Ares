@@ -6,9 +6,9 @@ from typing import Any
 
 import joblib
 
-from src.core.decorators import validates
-from src.utils.common_operations import safe_json_load
-from src.utils.logger import system_logger
+from .core.decorators import validates
+from .utils.common_operations import safe_json_load
+from .utils.logger import system_logger
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
 

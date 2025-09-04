@@ -12,16 +12,15 @@ Primary responsibilities:
 import os
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-import pandas as pd
 
 try:
-    from src.utils.logger import system_logger
+    from .utils.logger import system_logger
 except Exception:  # pragma: no cover - fallback
     import logging
     system_logger = logging.getLogger(__name__)
 
 try:
-    from src.utils.hmm_composite_manager import get_hmm_composite_manager
+    from .utils.hmm_composite_manager import get_hmm_composite_manager
 except Exception:  # pragma: no cover - fallback
     get_hmm_composite_manager = None  # type: ignore
 

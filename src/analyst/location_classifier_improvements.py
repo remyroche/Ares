@@ -1,8 +1,5 @@
 # Improvements for the Fractal Location Classifier
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Tuple
 
 class LocationClassifierEnhancements:
     """Enhanced methods for the fractal location classifier."""

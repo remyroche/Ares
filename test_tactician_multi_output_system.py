@@ -12,9 +12,8 @@ import os
 import sys
 from datetime import datetime
 from typing import Any
-
-import numpy as np
 import pandas as pd
+
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -471,5 +470,5 @@ async def test_integration_with_position_sizing():
 
 if __name__ == "__main__":
     # Run tests
-    asyncio.run(test_multi_output_system())
-    asyncio.run(test_integration_with_position_sizing())
+    asyncio.run(await test_multi_output_system())
+    asyncio.run(await test_integration_with_position_sizing())

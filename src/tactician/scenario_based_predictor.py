@@ -7,20 +7,15 @@ Streamlined implementation:
 - Minimal training and prediction interfaces
 """
 
-from __future__ import annotations
 
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import lightgbm as lgb
-import numpy as np
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
-import asyncio
 
 if TYPE_CHECKING:
-    import pandas as pd
 
 logger = logging.getLogger(__name__)
 

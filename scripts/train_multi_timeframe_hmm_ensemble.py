@@ -13,7 +13,6 @@ import os
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 from src.training.steps.multi_timeframe_hmm_ensemble import (
     EnsembleConfig,
@@ -281,5 +280,5 @@ def main() -> bool:
 
 
 if __name__== "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

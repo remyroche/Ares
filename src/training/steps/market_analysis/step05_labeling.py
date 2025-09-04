@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """Step 5: Labeling with Standardized Data Quality Management.
 
 This module creates comprehensive labels for the training data, combining triple barrier
@@ -11,7 +10,7 @@ Key Enhancements:
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
 import logging
-from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time
+from .core.decorators import handles_errors, traced, validates, cached, log_execution_time
 import asyncio
 import sys
 from pathlib import Path
@@ -24,12 +23,12 @@ import numpy as np
 import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.analyst.meta_labeling_system']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 meta_labeling_system = PipelineStandards.safe_import('src.analyst.meta_labeling_system', None)
 psutil = PipelineStandards.safe_import('psutil', None)
@@ -127,7 +126,7 @@ class LabelingStep:
         self.auto_recalculate_hmm_barriers = bool(labeling_cfg.get('auto_recalculate_hmm_barriers', True))
         # Prefer detected HMM regime column for coherence
         try:
-            from src.utils.regime_data_access import get_regime_column
+            from .utils.regime_data_access import get_regime_column
             detected = get_regime_column(pd.DataFrame(columns=['composite_cluster_id'])) or 'hmm_regime'
         except Exception:
             detected = 'hmm_regime'
@@ -141,8 +140,7 @@ class LabelingStep:
         self.logger.info(f'   - Max lookahead: {self.max_lookahead}')
         self.regime_barrier_optimizer = None
         try:
-            import copy
-            from src.training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
+            from .training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
             self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
         except Exception as e:
@@ -208,7 +206,7 @@ class LabelingStep:
             data = pd.read_parquet(triple_barrier_path)
             # Ensure regime labels are present/consistent
             try:
-                from src.utils.regime_data_access import ensure_regime_labels, get_regime_column
+                from .utils.regime_data_access import ensure_regime_labels, get_regime_column
                 data = ensure_regime_labels(
                     data,
                     exchange=exchange,
@@ -426,7 +424,7 @@ class LabelingStep:
     def _create_regime_labeler(self):
         """Create and configure the regime labeler."""
         try:
-            from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+            from .training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
             return RegimeAwareTripleBarrierLabeling(
                 default_profit_take_multiplier=0.002,
                 default_stop_loss_multiplier=0.001,
@@ -505,4 +503,4 @@ if __name__ == '__main__':
     async def test() -> None:
         success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Step 5 result: {success}')
-    asyncio.run(test())
+    asyncio.run(await test())

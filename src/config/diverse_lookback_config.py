@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/config/diverse_lookback_config.py
 

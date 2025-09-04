@@ -10,23 +10,18 @@ This module provides enhanced data collection with:
 - Integration with existing pipeline
 """
 
-from __future__ import annotations
 
 import asyncio
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
-from .enhanced_data_collector import EnhancedDataCollectionManager, collect_all_data_with_validation
-from .enhanced_data_validation_framework import DataType, ValidationSeverity
+from .utils.logger import system_logger
+from .utils.pipeline_standards import pipeline_standards
 
 logger = system_logger.getChild("EnhancedStep01DataCollection")
 
@@ -174,7 +169,7 @@ class EnhancedDataCollectionStep:
             
             # Try to use existing downloader
             try:
-                from src.training.steps.data_collection.data_downloader import download_all_data_with_consolidation
+                from .training.steps.data_collection.data_downloader import download_all_data_with_consolidation
                 
                 # Download data
                 success = await download_all_data_with_consolidation(
@@ -201,7 +196,6 @@ class EnhancedDataCollectionStep:
     async def _load_and_format_downloaded_data(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, List[List[Dict[str, Any]]]]:
         """Load downloaded data and format for validation."""
         try:
-            import pandas as pd
             import os
             
             data_dir = self.standards.build_path('raw_data', exchange, symbol)
@@ -265,7 +259,6 @@ class EnhancedDataCollectionStep:
         
         try:
             from datetime import datetime, timedelta
-            import numpy as np
             
             # Generate mock data for testing
             end_date = datetime.now()
@@ -420,6 +413,11 @@ class EnhancedDataCollectionStep:
                 
                 try:
                     import pandas as pd
+from typing import Any
+from typing import Dict
+import numpy as np
+from typing import List
+
                     df = pd.read_parquet(filepath)
                     
                     # Basic quality checks
@@ -602,4 +600,4 @@ if __name__ == "__main__":
         else:
             print("❌ Enhanced data collection failed")
     
-    asyncio.run(main())
+    asyncio.run(await main())

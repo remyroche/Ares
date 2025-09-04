@@ -10,8 +10,6 @@ import asyncio
 import json
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
@@ -353,13 +351,16 @@ async def main():
     # Cleanup test data
     try:
         import shutil
+        import numpy as np
+
         if Path("test_data").exists():
             shutil.rmtree("test_data")
         if Path("test_reports").exists():
             shutil.rmtree("test_reports")
-        print("🧹 Test data cleaned up")
     except Exception as e:
         print(f"⚠️ Cleanup failed: {e}")
+    else:
+        print("🧹 Test data cleaned up")
 
 
 if __name__ == "__main__":

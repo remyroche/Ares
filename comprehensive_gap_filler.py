@@ -9,13 +9,11 @@ import ssl
 import certifi
 import zipfile
 import io
-import traceback
-import pandas as pd
-import glob
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 import sys
+import pandas as pd
+from datetime import datetime
 
 # Add project root to path
 project_root=Path(__file__).parent

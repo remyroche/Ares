@@ -5,7 +5,10 @@ This module tests all components of the explainability framework including
 SHAP/LIME explanations, decision tracing, and visualization.
 """
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 import numpy as np
 import pandas as pd
 from datetime import datetime

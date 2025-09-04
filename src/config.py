@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Legacy configuration module for backward compatibility.
 This module now uses the new modular configuration structure.
@@ -6,12 +5,8 @@ This module now uses the new modular configuration structure.
 from dataclasses import dataclass
 from typing import Any
 
-from copy import copy
-import asyncio
 
-from src.config.environment import get_env_settings, get_environment_settings
-from src.config.modular_config import CONFIG, AresConfig, get_complete_config, get_dual_model_config, get_enhanced_training_config, get_environment_config, get_leverage_sizing_config, get_lookback_window, get_ml_confidence_predictor_config, get_position_closing_config, get_position_division_config, get_position_monitoring_config, get_position_sizing_config, get_system_config_section, get_trading_config_section, get_training_config_section
-from src.utils.logger import system_logger
+from logger import system_logger
 __all__ = ['get_complete_config', 'get_environment_config', 'get_system_config_section', 'get_trading_config_section', 'get_training_config_section', 'get_lookback_window', 'AresConfig', 'CONFIG', 'get_dual_model_config', 'get_ml_confidence_predictor_config', 'get_position_sizing_config', 'get_leverage_sizing_config', 'get_position_closing_config', 'get_position_division_config', 'get_position_monitoring_config', 'get_enhanced_training_config']
 
 def get_config() -> dict[str, Any]:
@@ -77,9 +72,9 @@ class RiskConfig:
     stop_loss_pct: float = 0.05
     take_profit_pct: float = 0.1
     max_leverage: int = 10
-from src.core.decorators import handles_errors
-from src.utils.warning_symbols import failed, invalid, warning
-from src.core.decorators.errors import handles_errors
+from decorators import handles_errors
+from warning_symbols import failed, invalid, warning
+from errors import handles_errors
 
 class ConfigurationManager:
     """

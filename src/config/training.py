@@ -1,9 +1,8 @@
-from __future__ import annotations
 
 from typing import Any
 
-from src.config.constants import DEFAULT_LOOKBACK_DAYS
-from src.config.environment import get_environment_settings
+from .constants import DEFAULT_LOOKBACK_DAYS
+from .environment import get_environment_settings
 
 # src/config/training.py
 
@@ -67,6 +66,8 @@ def get_training_config() -> dict[str, Any]:
             "default_lookback_days": DEFAULT_LOOKBACK_DAYS,  # Default lookback period for all timeframes (3 years)
             "exclude_recent_days": 2,  # Exclude the most recent N days from the lookback window
         },
+        # --- Data Directory Configuration ---
+        "data_dir": "data",  # Data directory for storing training data
         # --- Enhanced Training Configuration ---
         "ENHANCED_TRAINING": {
             "enable_efficiency_optimizations": True,

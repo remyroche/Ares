@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Advanced syntax error fixer for Python files."""
 
-import ast
-import json
 import re
 from pathlib import Path
-from typing import Optional, Tuple, List
 import subprocess
 
 
@@ -246,4 +243,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

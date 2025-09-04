@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Validator for Step 16: Saving."""
 
@@ -9,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.utils.common_operations import safe_json_load
+from .utils.common_operations import safe_json_load
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -23,7 +22,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
+from .config import CONFIG
 
 
 class Step21SavingValidator(BaseValidator):
@@ -520,4 +519,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run(test_validator())
+    _asyncio.run(await test_validator())

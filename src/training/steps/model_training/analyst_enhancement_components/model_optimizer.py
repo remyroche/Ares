@@ -1,13 +1,12 @@
-"""Model optimization component for analyst enhancement."""
-import asyncio
-from typing import Any, Dict, Optional
+
 import numpy as np
+from typing import Any
 import pandas as pd
-from sklearn.model_selection import learning_curve
+from typing import Dict
+"""Model optimization component for analyst enhancement."""
 from sklearn.metrics import accuracy_score
-from src.core.decorators import handles_errors, log_execution_time
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 class ModelOptimizer:
     """Handles model-specific optimizations for analyst models."""

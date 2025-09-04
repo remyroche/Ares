@@ -269,4 +269,4 @@ from src.utils.common_operations import (
 
 if __name__ == "__main__":
     import datetime
-    main()
+    await main()

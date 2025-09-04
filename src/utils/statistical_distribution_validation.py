@@ -2,15 +2,13 @@
 import warnings
 from typing import Any
 
-import numpy as np
-import pandas as pd
 from scipy import stats
 from scipy.stats import anderson, jarque_bera, kstest, normaltest, shapiro
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tsa.stattools import adfuller, kpss
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
+from .utils.logger import system_logger
+from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 
 
 class StatisticalValidator:

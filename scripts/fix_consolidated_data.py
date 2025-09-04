@@ -9,7 +9,6 @@ import os
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols, warning
 
@@ -86,4 +85,4 @@ def main():
     return 0
 
 if __name__== "__main__":
-    sys.exit(main())
+    sys.exit(await main())

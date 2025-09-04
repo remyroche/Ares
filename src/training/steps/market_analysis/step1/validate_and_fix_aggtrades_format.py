@@ -8,15 +8,14 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.decorators import handles_errors, traced
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors, traced
+from .core.decorators.errors import handles_errors
 
 logger = system_logger.getChild("AggtradesFormatValidator")
 
@@ -176,7 +175,7 @@ class AggtradesFormatValidator:
             result['issues'].extend(step4_issues)
             
             # Step 7: Data quality checks
-            quality_issues = self._validate_data_quality(df)
+            quality_issues = await self._validate_data_quality(df)
             result['issues'].extend(quality_issues)
             
             # Step 8: Memory optimization warnings

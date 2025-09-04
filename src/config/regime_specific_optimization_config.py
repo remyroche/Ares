@@ -1,9 +1,8 @@
-from __future__ import annotations
 '\nRegime-Specific Optimization Configuration\n\nThis module extends the existing Optuna configuration to include regime-specific\ntriple barrier thresholds and TPSL parameters optimization. It provides a comprehensive\nconfiguration system for regime-aware parameter tuning.\n'
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-from src.config.config_optuna import HyperparameterOptimizationConfig
+from .config_optuna import HyperparameterOptimizationConfig
 
 class RegimeType(Enum):
     """Enum for different regime types."""

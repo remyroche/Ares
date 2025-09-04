@@ -12,21 +12,12 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from concurrent.futures import ThreadPoolExecutor
-import contextlib
-import numpy as np
-import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
-    from src.utils.enhanced_data_quality_validator import UnifiedDataQualityValidator, QualityThresholds, QualityResult
-    from src.utils.enhanced_config_management import Step1_5Config
-    from src.utils.logger import system_logger
+    from .utils.enhanced_config_management import Step1_5Config
+    from .utils.logger import system_logger
     import shutil
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    from src.core.decorators import handles_errors, error_boundary
-    from src.utils.enhanced_memory_management import retry_with_backoff, circuit_breaker, categorize_errors, RetryableError, NonRetryableError, DATA_OPERATION_ERRORS, MemoryMonitor, memory_efficient, optimize_dataframe_dtypes, MemoryOptimizedProcessor, MemoryConfig
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1_5')
@@ -320,7 +311,8 @@ async def run_enhanced_step1_5(training_input: Dict[str, Any], pipeline_state: D
     return await step1_5.execute(training_input, pipeline_state)
 if __name__ == '__main__':
     import asyncio
-    import os.path
+import pandas as pd
+
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     async def main() -> None:
@@ -338,4 +330,4 @@ if __name__ == '__main__':
             print('=' * 60)
         except Exception as e:
             print(f'❌ Enhanced Step1_5 execution failed: {e}')
-    asyncio.run(main())
+    asyncio.run(await main())

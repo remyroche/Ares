@@ -9,7 +9,6 @@ Usage:
 Exits with non-zero if any import or YAML parse fails.
 """
 
-from __future__ import annotations
 
 import argparse
 import importlib
@@ -108,7 +107,6 @@ def main() -> int:
         "src/config/step17_optimization_structure.yaml",
     ]
     try:
-        import yaml as yaml_mod  # type: ignore
         have_yaml = True
     except Exception:
         have_yaml = False
@@ -167,5 +165,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import asyncio
+    raise SystemExit(asyncio.run(main()))
 

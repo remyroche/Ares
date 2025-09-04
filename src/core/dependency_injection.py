@@ -1,9 +1,7 @@
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TypeVar, Any, Callable
 
-import asyncio
 
 from src.interfaces import (
     IAnalyst,
@@ -11,7 +9,7 @@ from src.interfaces import (
     ISupervisor,
     ITactician,
 )
-from src.utils.logger import system_logger
+from ..utils.logger import system_logger
 
 # src/core/dependency_injection.py
 

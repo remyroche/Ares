@@ -3,14 +3,12 @@
 import warnings
 from datetime import datetime
 from typing import Any, Number
-import asyncio
-from copy import copy
 
 warnings.filterwarnings("ignore")
 
 # Import the new RegularizationManager
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -193,7 +191,7 @@ class TrainingManager:
     async def _initialize_feature_integration(self) -> None:
         """Initialize feature integration manager."""
         try:
-            from src.training.feature_integration import FeatureIntegrationManager
+            from .training.feature_integration import FeatureIntegrationManager
             
             self.feature_integration_manager = FeatureIntegrationManager(self.config)
             await self.feature_integration_manager.initialize()

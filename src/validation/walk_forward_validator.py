@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 """Walk-Forward Validation System for preventing overfitting."""
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
@@ -5,11 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
-import numpy as np
-import pandas as pd
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
-from typing import Dict, List, Optional, Union, Any, Tuple
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
 logger = system_logger.getChild('WalkForwardValidator')
 
 @dataclass
@@ -271,4 +271,4 @@ if __name__ == '__main__':
         config = {'train_period_days': 365, 'test_period_days': 30, 'step_days': 30, 'regime_aware': True, 'adaptive_windows': True}
         validator = WalkForwardValidator(config)
         print('Walk-forward validation system initialized')
-    asyncio.run(main())
+    asyncio.run(await main())

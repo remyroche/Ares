@@ -10,10 +10,6 @@ import os
 import pickle
 import warnings
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
 
 from src.utils.warning_symbols import (
     warning,
@@ -805,4 +801,5 @@ def main():
     analyzer.save_report()
 
 if __name__== "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

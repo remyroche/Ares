@@ -9,7 +9,6 @@ This script verifies the complete GUI workflow by:
 4. Verifying all components work together
 """
 
-import json
 import subprocess
 import sys
 import time
@@ -283,4 +282,4 @@ def main():
             frontend_process.wait()
 
 if __name__ == "__main__":
-    main()
+    await main()

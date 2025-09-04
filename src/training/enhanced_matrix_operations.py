@@ -1,6 +1,6 @@
 # src/training/enhanced_matrix_operations.py
 
-from src.core.decorators import (
+from src.utils.decorators import (
     cached,
     circuit_breaker,
     handles_errors,
@@ -8,7 +8,6 @@ from src.core.decorators import (
     log_execution_time,
     validates,
 )
-from copy import copy
 
 from src.core.domain import (
     prevent_data_leakage,
@@ -27,25 +26,19 @@ from datetime import datetime
 from typing import Any
 
 try:
-    import lightgbm as lgb
     _LIGHTGBM_AVAILABLE = True
 except ImportError:
     _LIGHTGBM_AVAILABLE = False
     lgb = None
-import numpy as np
-import pandas as pd
-import scipy.linalg as la
-import scipy.sparse as sp
 from sklearn.cluster import DBSCAN, KMeans, SpectralClustering
 from sklearn.decomposition import FactorAnalysis, FastICA, KernelPCA
-from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.feature_selection import RFE, mutual_info_classif
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import Lasso, Ridge
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 try:
 
@@ -1083,7 +1076,7 @@ class EnhancedMatrixOperations:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
             
             # Import autoencoder feature generator
-            from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+            from .analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
             
             # Create autoencoder generator
             autoencoder_generator = AutoencoderFeatureGenerator()
@@ -1314,7 +1307,7 @@ class EnhancedMatrixOperations:
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
             
             # Load regularization configuration from pipeline
-            from src.training.regularization import RegularizationManager
+            from .training.regularization import RegularizationManager
             reg_manager = RegularizationManager()
             regularization_config = reg_manager.regularization_config
             

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Training steps module with explicit imports.
 

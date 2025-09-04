@@ -3,7 +3,6 @@
 
 import glob
 
-import pandas as pd
 
 
 def consolidate_aggtrades():

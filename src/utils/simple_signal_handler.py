@@ -5,11 +5,10 @@ Simple Signal Handler for Ares Trading System
 This module provides basic signal handling functionality without complex decorators.
 """
 
-import asyncio
 import logging
 import signal
 import sys
-from typing import Callable, Optional
+from typing import Callable
 
 
 class SimpleSignalHandler:

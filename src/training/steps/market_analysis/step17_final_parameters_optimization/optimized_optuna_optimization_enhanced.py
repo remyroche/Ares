@@ -21,16 +21,12 @@ Key Optimizations:
 7. Parallel Processing: Optimize parallel execution
 8. Data Structures: Use efficient data structures
 """
-from __future__ import annotations
 import asyncio
 import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable
-import numpy as np
 import optuna
-import pandas as pd
 try:
     import xgboost as xgb
 except Exception:
@@ -63,8 +59,8 @@ try:
 except Exception:
     gc = None
 import contextlib
-from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
-from src.utils.logger import setup_logging
+from .config_optuna import SROptimizationParameters, validate_sr_optimization_config
+from .utils.logger import setup_logging
 
 @dataclass
 class OptimizationCache:
@@ -154,7 +150,6 @@ class VectorizedOptunaOptimizer:
     @staticmethod
     def _safe_rf_class(**kwargs: Any) -> None:
         try:
-            from sklearn.ensemble import RandomForestClassifier as _RFC
             return _RFC(**kwargs)
         except Exception as exc:
             msg = 'scikit-learn is required for random_forest model'
@@ -389,6 +384,9 @@ class VectorizedOptunaOptimizer:
                 y = y[idx]
             try:
                 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
+from typing import Any
+import numpy as np
+
             except Exception as exc:
                 msg = 'scikit-learn is required for ML evaluation'
                 raise RuntimeError(msg) from exc

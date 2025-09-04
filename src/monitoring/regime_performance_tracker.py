@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 """Regime Performance Tracking System.
 
 This module provides comprehensive tracking of trading performance segmented by market regime.
@@ -9,10 +12,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
-import numpy as np
-import pandas as pd
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
 logger = system_logger.getChild('RegimePerformanceTracker')
 
 class RegimePerformanceTracker:
@@ -183,4 +184,4 @@ if __name__ == '__main__':
         await tracker.track_trade(trade)
         report = await tracker.generate_regime_report('BTCUSDT')
         print(json.dumps(report, indent=2))
-    asyncio.run(main())
+    asyncio.run(await main())

@@ -8,17 +8,17 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from src.core.decorators import handles_errors
-from src.training.progress_manager import ProgressManager
+from ..core.decorators import handles_errors
+from .progress_manager import ProgressManager
 from src.training.step_config import (
     get_all_steps,
     get_step_config,
-    get_step_execution_order,
+    get_step_execution_order_full_names,
+    get_step_number_from_full_name,
     validate_step_sequence,
 )
-import asyncio
-from src.utils.logger import system_logger
-from src.utils.step_dependency_validator import StepDependencyValidator
+from ..utils.logger import system_logger
+from ..utils.step_dependency_validator import StepDependencyValidator
 
 
 class SimplifiedTrainingManager:
@@ -65,9 +65,8 @@ class SimplifiedTrainingManager:
         self.logger.info(f"Initialized SimplifiedTrainingManager for {self.symbol} on {self.exchange}")
     
     @handles_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="training manager initialization"
+        Exception,
+        fallback=False
     )
     async def initialize(self) -> bool:
         """Initialize the training manager and validate configuration.
@@ -89,11 +88,9 @@ class SimplifiedTrainingManager:
                 f"{validation_result['enabled_steps']} enabled"
             )
             
-            # Initialize progress tracking
-            self.progress_manager.initialize()
-            
+            # Initialize progress tracking (ProgressManager doesn't need explicit initialization)
             # Load previous pipeline state if resuming
-            latest_step = self.progress_manager.get_latest_completed_step()
+            latest_step = self.progress_manager.get_latest_step()
             if latest_step:
                 self.logger.info(f"📂 Found previous execution, latest step: {latest_step}")
                 self._load_pipeline_state()
@@ -127,7 +124,7 @@ class SimplifiedTrainingManager:
         
         try:
             # Get execution order
-            execution_order = get_step_execution_order()
+            execution_order = get_step_execution_order_full_names()
             
             # Filter steps based on start/end
             if start_step:
@@ -147,7 +144,8 @@ class SimplifiedTrainingManager:
                     return {"success": False, "error": f"Invalid end step: {end_step}"}
             
             # Execute steps in order
-            for step_num in execution_order:
+            for step_full_name in execution_order:
+                step_num = get_step_number_from_full_name(step_full_name)
                 step_config = get_step_config(step_num)
                 
                 # Check if step is enabled

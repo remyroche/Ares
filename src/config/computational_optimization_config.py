@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/config/computational_optimization_config.py
 
@@ -7,7 +6,6 @@ Based on the computational_optimization_strategies.md document.
 """
 
 from typing import Any
-from copy import copy
 
 # Default computational optimization configuration
 COMPUTATIONAL_OPTIMIZATION_CONFIG = {

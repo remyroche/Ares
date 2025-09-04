@@ -1,8 +1,6 @@
-from __future__ import annotations
 
 import gc
 import os
-import os.path
 import threading
 import time
 import tracemalloc
@@ -10,11 +8,9 @@ from collections import defaultdict, deque
 from datetime import datetime
 from typing import Any
 
-import numpy as np
 import psutil
 
-from src.utils.logger import system_logger
-import asyncio
+from .utils.logger import system_logger
 
 # src/training/memory_profiler.py
 

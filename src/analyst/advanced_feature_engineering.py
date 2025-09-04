@@ -1,6 +1,6 @@
 # src/analyst/advanced_feature_engineering.py
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 """
 Advanced Feature Engineering for enhanced financial performance.
@@ -10,12 +10,8 @@ and adaptive indicators for improved prediction accuracy.
 import logging
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
-from src.utils.logger import system_logger
-from copy import copy
-import asyncio
+from .utils.logger import system_logger
 
 
 class CandlestickPatternAnalyzer:
@@ -74,7 +70,7 @@ class CandlestickPatternAnalyzer:
         """
         try:
             if not self.is_initialized:
-                self.print(
+                self.print_message(
                     initialization_error("Candlestick pattern analyzer not initialized")
                 )
                 return {}
@@ -782,7 +778,7 @@ class FeatureInteractionEngine:
         """
         try:
             if not self.is_initialized:
-                self.print(
+                self.print_message(
                     initialization_error("Feature interaction engine not initialized")
                 )
                 return features
@@ -1137,7 +1133,7 @@ class FeatureInteractionEngine:
             self.logger.warning(f"Error filtering interactions: {e}")
             return features
 
-    def print(self, message: str) -> None:
+    def print_message(self, message: str) -> None:
         """Print message with proper formatting."""
         print(message)
 
@@ -1274,7 +1270,7 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 try:
-                    from src.analyst.meta_labeling_system import MetaLabelingSystem
+                    from .analyst.meta_labeling_system import MetaLabelingSystem
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()
@@ -1316,7 +1312,7 @@ class AdvancedFeatureEngineering:
         """
         try:
             if not self.is_initialized:
-                self.print(
+                self.print_message(
                     initialization_error("Advanced feature engineering not initialized")
                 )
                 return {}
@@ -2259,7 +2255,7 @@ class CorrelationAnalyzer:
             return True
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.print(
+            self.print_message(
                 initialization_error("Error initializing correlation analyzer: {e}")
             )
             return False
@@ -2311,7 +2307,7 @@ class MomentumAnalyzer:
             return True
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.print(
+            self.print_message(
                 initialization_error("Error initializing momentum analyzer: {e}")
             )
             return False
@@ -2378,7 +2374,7 @@ class LiquidityAnalyzer:
             return True
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.print(
+            self.print_message(
                 initialization_error("Error initializing liquidity analyzer: {e}")
             )
             return False

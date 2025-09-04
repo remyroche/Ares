@@ -8,18 +8,14 @@ using Optuna for more efficient and effective parameter tuning.
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 import time
 import json
-import numpy as np
-import pandas as pd
 from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
     comprehensive_data_validation,
     ensure_data_integrity,
     handle_errors,
@@ -34,8 +30,7 @@ from src.core.domain import (
     with_tracing_span,
     validate_pipeline_step,
 )
-from src.core.decorators import validates, handles_errors, traced
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 logger = system_logger.getChild("Step3BayesianParameterOptimization")
 
@@ -52,7 +47,6 @@ except ImportError:
 # Try to import HMM components
 try:
     from hmmlearn import hmm
-    from sklearn.cluster import KMeans, DBSCAN, SpectralClustering
     from sklearn.mixture import GaussianMixture
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score

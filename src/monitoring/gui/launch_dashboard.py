@@ -6,9 +6,6 @@ A launcher script for the enhanced monitoring dashboard GUI.
 """
 
 import sys
-import os
-import asyncio
-import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
 from typing import Dict, Any
@@ -16,8 +13,8 @@ from typing import Dict, Any
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.monitoring.gui.enhanced_dashboard import create_enhanced_monitoring_dashboard
-from src.utils.logger import system_logger
+from .monitoring.gui.enhanced_dashboard import create_enhanced_monitoring_dashboard
+from .utils.logger import system_logger
 
 
 def check_dependencies():
@@ -117,5 +114,6 @@ def main():
 
 
 if __name__ == "__main__":
-    exit_code = main()
+    import asyncio
+    exit_code = asyncio.run(main())
     sys.exit(exit_code)

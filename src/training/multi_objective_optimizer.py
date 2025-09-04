@@ -1,17 +1,14 @@
 # src/training/multi_objective_optimizer.py
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import optuna
-import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-from src.utils.logger import system_logger
-import datetime
+from .utils.logger import system_logger
 
 @dataclass
 class OptimizationMetrics:
@@ -61,8 +58,8 @@ class MultiObjectiveOptimizer:
         # Initialize optimized backtester if market data is provided
         self.optimized_backtester = None
         if "market_data" in config:
-            from src.training.optimized_backtester import OptimizedBacktester
-            from src.core.decorators.errors import handles_errors
+            from .training.optimized_backtester import OptimizedBacktester
+            from .core.decorators.errors import handles_errors
 
             self.optimized_backtester = OptimizedBacktester(
                 config["market_data"],

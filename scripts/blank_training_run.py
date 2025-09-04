@@ -9,7 +9,6 @@ Usage:
     python scripts/blank_training_run.py --symbol BTCUSDT --exchange BINANCE
 """
 
-from __future__ import annotations
 
 import argparse
 import asyncio
@@ -20,7 +19,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 
 from src.config import CONFIG
 from src.training.enhanced_training_manager import EnhancedTrainingManager
@@ -164,6 +162,7 @@ async def main() -> bool:
     pickle_file=pickle_dir / f"{args.exchange}_{args.symbol}_collected_data.pkl"
     try:
         import pickle  # local import to avoid overhead if unused
+import pandas as pd
 
         with open(pickle_file, "wb") as f:
             pickle.dump({"klines": klines_df}, f)
@@ -200,4 +199,4 @@ async def main() -> bool:
 
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

@@ -131,11 +131,17 @@ class BasePipeline:
     def _discover_plugins(self) -> None:
         """Discover and register available plugins."""
         try:
-            # Discover plugins in the examples directory
+            # Discover plugins in the production directory first
+            production_dir = Path(__file__).parent.parent / "plugins" / "production"
+            if production_dir.exists():
+                discovered = self.plugin_registry.discover_plugins(production_dir)
+                self.logger.info(f"Discovered {discovered} production plugins")
+            
+            # Also discover plugins in the examples directory as fallback
             examples_dir = Path(__file__).parent.parent / "plugins" / "examples"
             if examples_dir.exists():
                 discovered = self.plugin_registry.discover_plugins(examples_dir)
-                self.logger.info(f"Discovered {discovered} plugins")
+                self.logger.info(f"Discovered {discovered} example plugins")
             
             # Log plugin status
             available = self.plugin_registry.get_available_plugins()

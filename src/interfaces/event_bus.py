@@ -71,9 +71,11 @@ class EventBus:
         self.event_history: list[dict[str, Any]] = []
 
     @handles_errors(
-        ValueError, AttributeError, KeyError,
+        ValueError,
+        AttributeError,
+        KeyError,
         fallback=False,
-        log_level="ERROR"
+        log_level="ERROR",
     )
     async def initialize(self) -> bool:
         try:

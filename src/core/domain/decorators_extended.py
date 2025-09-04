@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from functools import wraps
-from typing import Callable, Dict, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 import numpy as np
 import pandas as pd
 from src.core.decorators import cached, compose, handles_errors, traced, validates
@@ -171,7 +171,7 @@ def monitor_feature_engineering(track_importance: bool=True, track_correlations:
     """Monitor feature engineering process and results."""
 
     def decorator(func: F) -> F:
-        return compose(traced(name='feature_engineering'), cached(ttl=3600), validates)(func)
+        return compose(traced(span_name='feature_engineering'), cached(ttl=3600), validates())(func)
     return decorator
 
 def validate_feature_engineering_pipeline(max_features: int=1000, min_feature_importance: float=0.001, check_multicollinearity: bool=True, vif_threshold: float=10.0) -> Callable[[F], F]:
@@ -247,5 +247,5 @@ def deterministic_seed(seed: int=42) -> Callable[[F], F]:
 
 def smart_validation_cache(cache_key_params: Optional[List[str]]=None, ttl_seconds: int=3600, max_size: int=100) -> Callable[[F], F]:
     """Smart caching for validation results."""
-    return cached(ttl=ttl_seconds, maxsize=max_size)
+    return cached(ttl=ttl_seconds)
 __all__ = ['validate_ohlcv_data_quality', 'validate_wavelet_data_quality', 'validate_hmm_data_requirements', 'validate_hmm_regime_discovery', 'validate_step_comprehensive', 'validate_step2_operation', 'validate_step3_comprehensive', 'validate_step3_5_comprehensive', 'validate_step4_comprehensive', 'validate_step5_comprehensive', 'validate_step6_comprehensive', 'optimize_memory_usage', 'monitor_feature_engineering', 'validate_feature_engineering_pipeline', 'secure_step_execution', 'monitor_pipeline_performance', 'artifact_versioning', 'deterministic_seed', 'smart_validation_cache']

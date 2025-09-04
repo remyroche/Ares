@@ -32,37 +32,53 @@ class DataConverterStep(BaseStep):
     async def execute_logic(
         self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        # Defer to the existing conversion entrypoint and then expose standard outputs
-        from src.training.steps.data_preparation.step01_5_data_converter import (
-            run_step as run_step_15,
-            UnifiedDataConverter,
-        )
-
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange = training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir = training_input.get("data_dir")
-        force_rerun = training_input.get("force_rerun", False)
-
-        self.logger.info("🔄 Running unified data converter (Step 01_5)...")
-        ok = await run_step_15(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            data_dir=data_dir,
-            force_rerun=force_rerun,
-        )
-
-        # Retrieve produced paths via the converter's helpers for standardized outputs
-        converter = UnifiedDataConverter({})
-        unified_path = converter.get_unified_data_path(symbol, exchange, timeframe)
-        unified_config_path = converter.get_unified_config_path(symbol, exchange, timeframe)
-
-        pipeline_state["unified_data_path"] = unified_path
-        pipeline_state["unified_config_path"] = unified_config_path
-        pipeline_state["unified_data_ok"] = ok
-
+        # Extract parameters with defaults
+        params = self._extract_conversion_parameters(training_input)
+        
+        # Run the conversion step
+        conversion_success = await self._run_conversion_step(params)
+        
+        # Update pipeline state with results
+        self._update_pipeline_state(pipeline_state, params, conversion_success)
+        
         return pipeline_state
+
+    def _extract_conversion_parameters(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract and validate conversion parameters from training input."""
+        return {
+            "symbol": training_input.get("symbol", "ETHUSDT"),
+            "exchange": training_input.get("exchange", "BINANCE"),
+            "timeframe": training_input.get("timeframe", "1m"),
+            "data_dir": training_input.get("data_dir"),
+            "force_rerun": training_input.get("force_rerun", False)
+        }
+
+    async def _run_conversion_step(self, params: Dict[str, Any]) -> bool:
+        """Run the actual conversion step."""
+        from src.training.steps.data_preparation.step01_5_data_converter import run_step as run_step_15
+        
+        self.logger.info("🔄 Running unified data converter (Step 01_5)...")
+        return await run_step_15(
+            symbol=params["symbol"],
+            exchange=params["exchange"],
+            timeframe=params["timeframe"],
+            data_dir=params["data_dir"],
+            force_rerun=params["force_rerun"],
+        )
+
+    def _update_pipeline_state(self, pipeline_state: Dict[str, Any], params: Dict[str, Any], conversion_success: bool):
+        """Update pipeline state with conversion results."""
+        from src.training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
+        
+        converter = UnifiedDataConverter({})
+        unified_path = converter.get_unified_data_path(params["symbol"], params["exchange"], params["timeframe"])
+        unified_config_path = converter.get_unified_config_path(params["symbol"], params["exchange"], params["timeframe"])
+
+        pipeline_state.update({
+            "unified_data_path": unified_path,
+            "unified_config_path": unified_config_path,
+            "unified_data_ok": conversion_success
+        })
 
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         errors: list = []

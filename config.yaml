@@ -437,6 +437,98 @@ data:
     outlier_threshold: 3.0
 
 # =============================================================================
+# STEP17 FINAL PARAMETERS OPTIMIZATION
+# =============================================================================
+step17_optimization:
+  # Position Sizing (Logarithmic Computations)
+  position_sizing:
+    kelly_multiplier: 0.25      # Range: [0.1, 1.5] - Kelly criterion multiplier
+    max_position_size: 0.3      # Range: [0.2, 0.3] - Hard cap, cannot be overridden
+    min_position_size: 0.01     # Range: [0.001, 0.1] - Minimum position size
+    ml_weight: 0.7              # Range: [0.4, 0.9] - Used in log(position) = (1-ml_weight)*log(kelly) + ml_weight*log(ml)
+
+  # Leverage Sizing (Logarithmic Computations)
+  leverage:
+    min_leverage: 1.0           # Range: [1.0, 2.0] - Minimum leverage
+    max_leverage: 3.0           # Range: [2.0, 5.0] - Maximum leverage
+    ml_weight: 0.6              # Range: [0.3, 0.8] - ML weight in log space
+    liquidation_weight: 0.4     # Range: [0.2, 0.7] - Liquidation weight in log space
+    confidence_threshold: 0.7   # Range: [0.5, 0.9] - Minimum confidence for leverage
+
+  # Decision Thresholds (Logarithmic Computations)
+  decision_thresholds:
+    entry_profit_threshold: 0.6     # Range: [0.4, 0.8] - Minimum profit probability for entry
+    entry_risk_threshold: 0.2       # Range: [0.1, 0.4] - Maximum risk probability for entry
+    entry_profit_risk_ratio: 2.0    # Range: [1.5, 3.0] - Minimum profit/risk ratio for entry
+    entry_scenario_dominance: 0.4   # Range: [0.3, 0.6] - Minimum scenario dominance for entry
+    exit_confidence_drop: 0.2       # Range: [0.1, 0.3] - Confidence drop threshold for exit
+    position_size_multiplier: 1.0   # Range: [0.5, 2.0] - Applied in log space
+    leverage_multiplier: 1.0        # Range: [0.5, 2.0] - Applied in log space
+
+  # ML Tactics (Logarithmic Computations)
+  ml_tactics:
+    confidence_threshold: 0.7   # Range: [0.5, 0.9] - ML confidence threshold
+    regime_threshold: 0.6       # Range: [0.4, 0.8] - Regime confidence threshold
+    ml_weight: 0.8              # Range: [0.5, 0.95] - ML weight in log space
+    regime_weight: 0.2          # Range: [0.05, 0.5] - Regime weight in log space
+
+  # A/B Testing Configs (20 HMM Clusters)
+  ab_testing_configs:
+    # Conservative regime configs for 20 HMM clusters
+    conservative_regime_configs:
+      profit_take_multiplier: 0.0018  # Range: [0.0013, 0.0028] - Conservative profit take
+      stop_loss_multiplier: 0.0013    # Range: [0.0010, 0.0023] - Conservative stop loss
+      confidence_threshold: 0.7       # Range: [0.6, 0.8] - Conservative confidence
+      timeframe_weights:
+        "5m": 0.2                     # Range: [0.1, 0.3] - 5m weight
+        "15m": 0.3                    # Range: [0.2, 0.4] - 15m weight
+        "30m": 0.3                    # Range: [0.2, 0.4] - 30m weight
+        "1h": 0.2                     # Range: [0.1, 0.3] - 1h weight
+
+    # Aggressive regime configs for 20 HMM clusters
+    aggressive_regime_configs:
+      profit_take_multiplier: 0.0038  # Range: [0.0028, 0.0058] - Aggressive profit take
+      stop_loss_multiplier: 0.0028    # Range: [0.0023, 0.0038] - Aggressive stop loss
+      confidence_threshold: 0.5       # Range: [0.4, 0.6] - Aggressive confidence
+      timeframe_weights:
+        "5m": 0.4                     # Range: [0.3, 0.5] - 5m weight
+        "15m": 0.3                    # Range: [0.2, 0.4] - 15m weight
+        "30m": 0.2                    # Range: [0.1, 0.3] - 30m weight
+        "1h": 0.1                     # Range: [0.05, 0.2] - 1h weight
+
+  # ML-Optimized Barriers
+  ml_optimized_barriers:
+    optimization_weights:
+      pnl_weight: 0.5              # Range: [0.4, 0.6] - PnL weight in optimization
+      win_rate_weight: 0.25        # Range: [0.2, 0.3] - Win rate weight in optimization
+      sharpe_weight: 0.25          # Range: [0.2, 0.3] - Sharpe ratio weight in optimization
+
+    optimization_bounds:
+      profit_take_multiplier: [0.0013, 0.0058]  # Range bounds for profit take
+      stop_loss_multiplier: [0.0010, 0.0038]    # Range bounds for stop loss
+      confidence_threshold: [0.4, 0.8]          # Range bounds for confidence
+
+  # Performance Attribution
+  performance_attribution:
+    attribution_weights:
+      regime_weight: 0.4           # Range: [0.3, 0.5] - Regime attribution weight
+      timeframe_weight: 0.3        # Range: [0.2, 0.4] - Timeframe attribution weight
+      barrier_type_weight: 0.3     # Range: [0.2, 0.4] - Barrier type attribution weight
+
+    performance_metrics:
+      sharpe_ratio_threshold: 1.0  # Range: [0.8, 1.5] - Sharpe ratio threshold
+      max_drawdown_threshold: 0.1  # Range: [0.05, 0.15] - Max drawdown threshold
+      win_rate_threshold: 0.6      # Range: [0.5, 0.7] - Win rate threshold
+      profit_factor_threshold: 1.5 # Range: [1.2, 2.0] - Profit factor threshold
+
+  # System Monitoring
+  system_monitoring:
+    health_check_interval: 30      # Range: [15, 60] - Health check interval
+    performance_threshold: 0.8     # Range: [0.7, 0.9] - Performance threshold
+    alert_threshold: 0.6           # Range: [0.5, 0.7] - Alert threshold
+    max_alert_frequency: 10        # Range: [5, 20] - Max alerts per hour
+
+# =============================================================================
 # SECURITY CONFIGURATION
 # =============================================================================
 security:

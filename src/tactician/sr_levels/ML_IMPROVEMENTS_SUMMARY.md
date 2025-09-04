@@ -17,13 +17,13 @@
 ### 3. **Enhanced Multi-Factor Analysis: ALL Features (230+)**
 - **Expanded**: From 12 to 230+ features (ALL step06 features + S/R specific features)
 - **Categories**: 
-  - **S/R Specific Features (31)**: Proximity, level strength, touch count, age bars, bounce ratios, volume confirmation, consistency, failure count, technical indicators (RSI, MACD, Bollinger, ATR, Stochastic, Williams %R, CCI, ADX, OBV), candlestick patterns, volatility proxy, level density, confluence, time since touch, volume at touch, price action score, microstructure score
+  - **S/R Specific Features (45)**: Core S/R features (15), HVN features (5), Fibonacci features (6), Psychological features (5), Pivot features (4), Trend line features (4), S/R specific features (6)
   - **ALL Step06 Features (200+)**: Price features, volume features, microstructure features, technical features, regime features, wavelet features, cross-timeframe features, interaction features
 - **Integration**: Complete step06 feature integration for comprehensive market analysis
 
-### 4. **Step06 Feature Integration: 230+ Features**
-- **Expanded**: From 31 to 230+ features
-- **Integration**: Combines S/R specific features (31) with step06 features (200+)
+### 4. **Step06 Feature Integration: 245+ Features**
+- **Expanded**: From 31 to 245+ features (45 S/R + 200+ step06)
+- **Integration**: Combines S/R specific features (45) with step06 features (200+)
 - **Categories**: Price, Volume, Microstructure, Technical, Regime, Wavelet, Cross-timeframe, Interaction features
 - **Benefits**: 7x more features, leverages existing infrastructure, better predictions
 
@@ -31,7 +31,7 @@
 - **Replaced**: Simple SelectKBest with comprehensive feature selection
 - **Methods**: Random Forest importance, Permutation importance, Correlation analysis, SHAP analysis
 - **Combination**: Weighted combination of all importance measures
-- **Selection**: Top 50 features from 230+ with S/R prioritization (60% S/R, 40% step06)
+- **Selection**: Top 50 features from 245+ with S/R prioritization (70% S/R, 30% step06)
 - **S/R Prioritization**: Ensures S/R features are not overlooked in selection
 - **Logging**: Comprehensive feature analysis with detailed logging and feature type identification
 
@@ -39,8 +39,8 @@
 
 | Aspect | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| **Features** | 31 | 230+ | **+640%** |
-| **Breakout Factors** | 12 | 230+ | **+1817%** |
+| **Features** | 31 | 245+ | **+690%** |
+| **Breakout Factors** | 12 | 245+ | **+1942%** |
 | **Feature Selection** | Simple F-test | RF + SHAP + Correlation + S/R Priority | **Advanced** |
 | **Regime Detection** | Heavy SVM | Step03 LGBM | **10x faster** |
 | **Regularization** | Basic | Comprehensive | **Robust** |

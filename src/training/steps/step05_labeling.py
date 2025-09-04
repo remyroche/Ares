@@ -125,7 +125,13 @@ class LabelingStep:
         self.logger.info('🔧 Initializing labeling components...')
         labeling_cfg = self.config.get('vectorized_labelling_orchestrator', {})
         self.auto_recalculate_hmm_barriers = bool(labeling_cfg.get('auto_recalculate_hmm_barriers', True))
-        self.regime_col = str(labeling_cfg.get('hmm_barrier_regime_column', 'hmm_regime'))
+        # Prefer detected HMM regime column for coherence
+        try:
+            from src.utils.regime_data_access import get_regime_column
+            detected = get_regime_column(pd.DataFrame(columns=['composite_cluster_id'])) or 'hmm_regime'
+        except Exception:
+            detected = 'hmm_regime'
+        self.regime_col = str(labeling_cfg.get('hmm_barrier_regime_column', detected))
         self.time_barrier_minutes = int(labeling_cfg.get('time_barrier_minutes', 30))
         self.max_lookahead = int(labeling_cfg.get('max_lookahead', 100))
         self.logger.info(f'📋 Regime-aware labeling configuration:')
@@ -200,6 +206,22 @@ class LabelingStep:
                 except Exception as e:
                     self.logger.warning(f'⚠️ Failed to read existing labeling metadata: {e}')
             data = pd.read_parquet(triple_barrier_path)
+            # Ensure regime labels are present/consistent
+            try:
+                from src.utils.regime_data_access import ensure_regime_labels, get_regime_column
+                data = ensure_regime_labels(
+                    data,
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    data_dir=data_dir,
+                )
+                detected_col = get_regime_column(data)
+                if detected_col and detected_col != self.regime_col:
+                    self.logger.info(f"🔁 Using detected regime column '{detected_col}' instead of '{self.regime_col}'")
+                    self.regime_col = detected_col
+            except Exception:
+                pass
             self.logger.info(f'✅ Loaded data with shape: {data.shape}')
             float_cols = [c for c in data.columns if data[c].dtype == np.float64]
             for c in float_cols:

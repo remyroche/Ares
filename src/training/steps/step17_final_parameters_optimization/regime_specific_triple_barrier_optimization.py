@@ -183,13 +183,12 @@ class RegimeSpecificTripleBarrierOptimizer:
             self.storage_url = None
 
     def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
-        """Extract regime names from data."""
-        regime_column = None
-        possible_regime_columns = ['composite_cluster_id', 'regime', 'hmm_regime', 'market_regime', 'cluster_id', 'regime_id']
-        for col in possible_regime_columns:
-            if col in data.columns:
-                regime_column = col
-                break
+        """Extract regime names from data using shared regime accessor."""
+        try:
+            from src.utils.regime_data_access import get_regime_column
+            regime_column = get_regime_column(data)
+        except Exception:
+            regime_column = None
         if regime_column is None:
             self.logger.warning('⚠️ No regime column found, using default regimes')
             return list(self.optimization_config.regime_constraints.keys())

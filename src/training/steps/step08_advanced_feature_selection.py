@@ -282,8 +282,14 @@ class Step08AdvancedFeatureSelection:
             if os.path.exists(hmm_path):
                 self.logger.info(f"🎭 Loading regime labels from: {hmm_path}")
                 hmm_data = pd.read_parquet(hmm_path)
-                if "composite_cluster_id" in hmm_data.columns:
-                    regime_labels = hmm_data["composite_cluster_id"].iloc[:len(df)]
+                # Use shared regime accessor for coherent detection
+                try:
+                    from src.utils.regime_data_access import get_regime_column
+                    regime_col = get_regime_column(hmm_data)
+                except Exception:
+                    regime_col = "composite_cluster_id" if "composite_cluster_id" in hmm_data.columns else None
+                if regime_col and regime_col in hmm_data.columns:
+                    regime_labels = hmm_data[regime_col].iloc[:len(df)]
             
             # Phase 1: mRMR and Random Forest Selection
             self.logger.info("📊 Starting Phase 1: mRMR/RF Selection...")

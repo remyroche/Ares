@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Time utilities for Ares Trading System
 """

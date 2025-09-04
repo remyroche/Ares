@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Centralized configuration for all decorators with comprehensive error handling."""
 
 import logging

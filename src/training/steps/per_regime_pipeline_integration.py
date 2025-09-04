@@ -49,15 +49,15 @@ PER_REGIME_IMPLEMENTATION_STATUS = {
     'step09_hmm_based_training': 'implemented',
     'step10_unified_regime_intelligence': 'implemented',
     'step11_analyst_creation': 'implemented',
-    'step12_analyst_enhancement': 'pending',
-    'step13_analyst_ensemble_creation': 'pending',
-    'step14_tactician_labeling': 'pending',
-    'step15_tactician_specialist_training': 'pending',
-    'step16_confidence_calibration': 'pending',
+    'step12_analyst_enhancement': 'implemented',
+    'step13_analyst_ensemble_creation': 'implemented',
+    'step14_tactician_labeling': 'implemented',
+    'step15_tactician_specialist_training': 'implemented',
+    'step16_confidence_calibration': 'implemented',
     'step17_final_parameters_optimization': 'implemented',
-    'step18_walk_forward_validation': 'pending',
-    'step19_monte_carlo_validation': 'pending',
-    'step20_ab_testing': 'pending',
+    'step18_walk_forward_validation': 'implemented',
+    'step19_monte_carlo_validation': 'implemented',
+    'step20_ab_testing': 'implemented',
     'step21_saving': 'implemented'
 }
 

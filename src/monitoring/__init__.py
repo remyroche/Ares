@@ -17,7 +17,20 @@ from .ml_monitor import MLMonitor
 from .report_scheduler import ReportScheduler
 from .tracking_system import TrackingSystem
 
+# Enhanced ML Monitoring Components
+from .enhanced_ml_monitoring import (
+    EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision,
+    EnsembleDecision, TradeDecision, TradingMode, ModelType,
+    ModelPerformanceMetrics, EnsemblePerformanceMetrics
+)
+from .explainability_integration import ExplainabilityIntegrator
+from .ensemble_monitor import EnsembleMonitor, ModelContribution
+from .csv_export_manager import CSVExportManager
+from .trading_integration import TradingSystemIntegrator
+from .monitoring_orchestrator import MonitoringOrchestrator, create_monitoring_orchestrator
+
 __all__ = [
+    # Original monitoring components
     "AdvancedTracer",
     "CorrelationManager",
     "MonitoringIntegrationManager",
@@ -25,4 +38,23 @@ __all__ = [
     "MLMonitor",
     "ReportScheduler",
     "TrackingSystem",
+    
+    # Enhanced ML Monitoring components
+    "EnhancedMLMonitor",
+    "TradeContext",
+    "TradingIndicator", 
+    "MLModelDecision",
+    "EnsembleDecision",
+    "TradeDecision",
+    "TradingMode",
+    "ModelType",
+    "ModelPerformanceMetrics",
+    "EnsemblePerformanceMetrics",
+    "ExplainabilityIntegrator",
+    "EnsembleMonitor",
+    "ModelContribution",
+    "CSVExportManager",
+    "TradingSystemIntegrator",
+    "MonitoringOrchestrator",
+    "create_monitoring_orchestrator",
 ]

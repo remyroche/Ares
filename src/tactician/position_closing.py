@@ -10,6 +10,9 @@ Handles position closure based on dual model confidence scores and ATR-based exi
 from datetime import datetime
 from typing import Any
 
+from copy import copy
+import asyncio
+
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,

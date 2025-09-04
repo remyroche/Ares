@@ -1,0 +1,9 @@
+{
+  "dry_run": true,
+  "files_with_errors": 9,
+  "error_types": {
+    "invalid syntax": 4,
+    "unmatched ')'": 4,
+    "unexpected indent": 1
+  }
+}

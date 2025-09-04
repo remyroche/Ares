@@ -9,11 +9,12 @@ This module provides the Strategist class which is responsible for:
 - Strategy History Management: Track and store strategy performance
 """
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 
-from src.core.domain import handle_specific_errors
+from src.core.decorators import handles_errors
+from src.utils.compat import handle_specific_errors
 from src.utils.logger import system_logger
 
 # Import Pydantic models and utilities
@@ -31,6 +32,7 @@ from .utils import (
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
+    from src.tactician.tactician import Tactician
 
 
 class Strategist:
@@ -76,6 +78,10 @@ class Strategist:
         # Component references (will be set during initialization)
         self.analyst: Analyst | None = None
         self.tactician: Tactician | None = None
+        
+        # Enhanced regime classifier (lazily imported during initialize)
+        self.regime_classifier: "EnhancedRegimeClassifier" | None = None
+        self.enable_regime_detection = self.strategist_config.dict().get("enable_regime_detection", True)
 
     @handle_specific_errors(
         error_handlers={
@@ -101,6 +107,22 @@ class Strategist:
 
             # Initialize strategy components
             await self._initialize_strategy_components()
+            
+            # Initialize regime classifier if enabled
+            if self.enable_regime_detection:
+                regime_config = self.config.get("strategist", {}).get("regime_classifier", {})
+                try:
+                    from .enhanced_regime_classifier import EnhancedRegimeClassifier as _EnhancedRegimeClassifier
+
+                    self.regime_classifier = _EnhancedRegimeClassifier(regime_config)
+                    await self.regime_classifier.initialize()
+                    self.logger.info("✅ Enhanced regime classifier initialized")
+                except Exception as e:
+                    self.logger.warning(
+                        f"Regime classifier unavailable or failed to initialize ({e}); disabling regime detection"
+                    )
+                    self.enable_regime_detection = False
+                    self.regime_classifier = None
 
             self.logger.info("✅ Strategist initialized successfully")
             return True
@@ -161,12 +183,33 @@ class Strategist:
                 market_data,
                 current_price,
             )
+            
+            # Detect market regime if enabled
+            regime = "MODERATE_BULL"  # Default
+            regime_confidence = 0.5
+            regime_metadata = {}
+            regime_params = {}
+            
+            if self.enable_regime_detection and self.regime_classifier:
+                regime, regime_confidence, regime_metadata = await self.regime_classifier.predict_regime(market_data)
+                regime_params = self.regime_classifier.get_regime_strategy_params(regime)
+                self.logger.info(f"Detected regime: {regime} (confidence: {regime_confidence:.2%})")
 
             # Generate base strategy
             base_strategy = self._generate_base_strategy_simplified(
                 market_indicators,
                 current_price,
             )
+            
+            # Apply regime-specific adjustments
+            if self.enable_regime_detection:
+                base_strategy = self._apply_regime_adjustments(
+                    base_strategy,
+                    regime,
+                    regime_confidence,
+                    regime_params,
+                    regime_metadata
+                )
 
             # Integrate analysis results if available
             if analysis_results:
@@ -463,12 +506,74 @@ class Strategist:
     def get_strategy_history(self) -> list[dict[str, Any]]:
         """Get strategy history."""
         return self.strategy_history.copy()
+    
+    def _apply_regime_adjustments(
+        self,
+        strategy: dict[str, Any],
+        regime: str,
+        regime_confidence: float,
+        regime_params: dict[str, Any],
+        regime_metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Apply regime-specific adjustments to strategy.
+        
+        Args:
+            strategy: Base strategy
+            regime: Detected market regime
+            regime_confidence: Confidence in regime detection
+            regime_params: Regime-specific parameters
+            regime_metadata: Additional regime metadata
+            
+        Returns:
+            Strategy adjusted for market regime
+        """
+        try:
+            # Add regime information to strategy
+            strategy["regime"] = regime
+            strategy["regime_confidence"] = regime_confidence
+            strategy["regime_metadata"] = regime_metadata
+            
+            # Adjust confidence based on regime alignment
+            if regime in ["STRONG_BULL", "MODERATE_BULL"] and strategy["direction"] == "BUY":
+                strategy["confidence"] *= regime_params.get("momentum_weight", 0.6)
+                strategy["reasoning"].append(f"Bullish regime alignment ({regime})")
+            elif regime in ["STRONG_BEAR", "MODERATE_BEAR"] and strategy["direction"] == "SELL":
+                strategy["confidence"] *= regime_params.get("momentum_weight", 0.6)
+                strategy["reasoning"].append(f"Bearish regime alignment ({regime})")
+            elif regime in ["RANGING_HIGH", "RANGING_LOW"]:
+                # Mean reversion in ranging markets
+                if (regime == "RANGING_HIGH" and strategy["direction"] == "SELL") or \
+                   (regime == "RANGING_LOW" and strategy["direction"] == "BUY"):
+                    strategy["confidence"] *= regime_params.get("mean_reversion_weight", 0.7)
+                    strategy["reasoning"].append(f"Mean reversion in {regime}")
+                else:
+                    strategy["confidence"] *= 0.8  # Reduce confidence for trend following in ranging markets
+            elif regime in ["BREAKOUT_UP", "BREAKOUT_DOWN"]:
+                # Favor breakout direction
+                if (regime == "BREAKOUT_UP" and strategy["direction"] == "BUY") or \
+                   (regime == "BREAKOUT_DOWN" and strategy["direction"] == "SELL"):
+                    strategy["confidence"] *= 1.2
+                    strategy["reasoning"].append(f"Breakout confirmation ({regime})")
+            
+            # Apply regime-specific thresholds
+            strategy["entry_confidence_threshold"] = regime_params.get("entry_confidence_threshold", 0.65)
+            strategy["position_size_multiplier"] = regime_params.get("position_size_multiplier", 1.0)
+            strategy["stop_loss_multiplier"] = regime_params.get("stop_loss_multiplier", 1.0)
+            strategy["take_profit_multiplier"] = regime_params.get("take_profit_multiplier", 1.2)
+            
+            # Ensure confidence stays within bounds
+            strategy["confidence"] = max(0.0, min(1.0, strategy["confidence"]))
+            
+            return strategy
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply regime adjustments: {e}")
+            return strategy
 
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="strategist stop",
-    )
+
+    @handles_errors(Exception, fallback=False)
+
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:

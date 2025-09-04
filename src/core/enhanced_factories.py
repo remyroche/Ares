@@ -15,6 +15,8 @@ from src.core.dependency_injection import DependencyContainer
 from src.database.firestore_manager import FirestoreManager
 from src.database.influxdb_manager import InfluxDBManager
 from src.interfaces.base_interfaces import (
+import asyncio
+
     IAnalyst,
     IExchangeClient,
     IPerformanceReporter,

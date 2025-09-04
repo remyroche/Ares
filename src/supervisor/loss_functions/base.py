@@ -12,6 +12,8 @@ from typing import Any, Dict, List
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+from copy import copy
+import asyncio
 
 
 class PnLLossFunctionsBase:

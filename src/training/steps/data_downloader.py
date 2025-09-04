@@ -10,6 +10,7 @@ from typing import Any
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+import asyncio
 
 
 @handles_errors(fallback=False)

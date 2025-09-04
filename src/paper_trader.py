@@ -10,8 +10,12 @@ from datetime import datetime
 # Removed trading_decorators imports - using core decorators instead
 from enum import Enum
 from typing import Any
+from copy import copy
+import asyncio
 
 import numpy as np
+from copy import copy
+import asyncio
 
 from src.config.constants import (
     DEFAULT_COMMISSION_RATE,

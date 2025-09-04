@@ -11,6 +11,7 @@ import logging
 
 import numpy as np
 import pandas as pd
+from copy import copy
 
 logger = logging.getLogger(__name__)
 

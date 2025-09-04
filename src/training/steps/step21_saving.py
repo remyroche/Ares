@@ -1,6 +1,8 @@
 # src/training/steps/step21_saving.py
 
 from src.core.domain import (
+import pandas as pd
+
     enhanced_mlflow_integration,
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,
@@ -21,14 +23,19 @@ import asyncio
 import json
 import os
 import pickle
+import tempfile
 from datetime import datetime
 from typing import Any
 from pathlib import Path
+
+import mlflow  # type: ignore
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
+
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -239,12 +246,7 @@ class SavingStep:
         try:
             # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
-        except Exception as e:
-            pass  # TODO: Handle exception
-import mlflow  # type: ignore
-import tempfile
-
-from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+            from src.utils.mlflow_utils import (
                 log_step_report,
                 log_step_artifact_with_standardized_name
             )
@@ -253,6 +255,7 @@ from src.core.decorators import cached, circuit_breaker, log_call, log_execution
 
             # Attempt to import mlflow; if unavailable, raise a hard error
             try:
+                import mlflow  # Verify mlflow is available
             except Exception:
                 self.logger.exception(
                     "🚨 MLflow is required but not installed. Install it with: 'poetry add mlflow'",
@@ -433,7 +436,7 @@ from src.core.decorators import cached, circuit_breaker, log_call, log_execution
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-
+from src.training.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -469,11 +472,10 @@ from src.core.decorators import cached, circuit_breaker, log_call, log_execution
         "required_columns": ["timestamp", "features", "targets"],
     },
     context="Saving Results",
-)
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
-# @prevent_data_leakage - removed, handled by validates
+    backup_before=True, 
+    integrity_checks=True, 
+    memory_cleanup=True, 
+    data_validation=True,
     temporal_validation=True,
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
@@ -508,8 +510,6 @@ from src.core.decorators import cached, circuit_breaker, log_call, log_execution
     },
     performance_thresholds={"saving_time_minutes": 30.0},
     format_validation=True,
-)
-# @quality_gate - removed, handled by validates
     model_performance_thresholds={"saving_success_rate": 0.9},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"saving_score": 0.8},

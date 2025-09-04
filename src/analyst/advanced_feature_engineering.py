@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
+from copy import copy
+import asyncio
 
 
 class CandlestickPatternAnalyzer:

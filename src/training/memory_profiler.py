@@ -14,6 +14,7 @@ import numpy as np
 import psutil
 
 from src.utils.logger import system_logger
+import asyncio
 
 # src/training/memory_profiler.py
 

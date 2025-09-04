@@ -3,6 +3,8 @@ from collections.abc import Callable
 import pandas as pd
 
 from src.core.decorators import (
+import numpy as np
+
     traced,
     validates,
 )

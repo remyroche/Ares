@@ -160,7 +160,6 @@ class AnalystEnsembleCreationStep:
                 import datetime as datetime
                 import os
                 from src.training.optimized_feature_selection_manager import (
-from src.core.decorators.errors import handles_errors
                     OptimizedFeatureSelectionManager,
                 )
 

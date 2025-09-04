@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-09-04T08:53:00.607666",
+  "workspace": "/workspace",
+  "analysis_type": "enhanced_dead_code_analysis",
+  "summary": {
+    "total_issues": 3,
+    "deprecated_items": 1,
+    "high_priority": 1,
+    "impact_score": 85
+  },
+  "issues": [
+    {
+      "issue_type": "unused_function",
+      "file_path": "src/utils.py",
+      "line_number": 45,
+      "description": "Unused function 'calculate_metrics'",
+      "confidence": 95,
+      "severity": "high"
+    },
+    {
+      "issue_type": "unused_import",
+      "file_path": "src/analysis.py",
+      "line_number": 12,
+      "description": "Unused import 'pandas'",
+      "confidence": 100,
+      "severity": "medium"
+    },
+    {
+      "issue_type": "dead_code",
+      "file_path": "src/processing.py",
+      "line_number": 78,
+      "description": "Unreachable code after return statement",
+      "confidence": 90,
+      "severity": "low"
+    }
+  ],
+  "deprecated": [
+    {
+      "deprecated_type": "decorator",
+      "file_path": "src/legacy.py",
+      "line_number": 23,
+      "reason": "Function marked as deprecated in v2.0",
+      "alternative": "Use new_process_data() instead"
+    }
+  ],
+  "visualizations": {
+    "function_usage_map": "function_usage_map_test.png",
+    "dead_code_types": "dead_code_types_test.png"
+  },
+  "files_generated": [
+    "test_output/enhanced_dead_code_report.html",
+    "test_output/function_usage_map_test.png",
+    "test_output/dead_code_types_test.png"
+  ]
+}

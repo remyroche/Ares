@@ -14,8 +14,8 @@ A "good" S/R level is one that **consistently provides profitable trading opport
 ### **Trading Performance Metrics**
 
 #### **Primary Metrics (Most Important)**
-- **Bounce Rate**: Percentage of times price bounces off the level
-- **False Breakout Rate**: Percentage of times price breaks the level but quickly returns
+- **Volume/Momentum Qualified Bounce Rate**: Bounce rate weighted by test strength (volume, momentum, duration, penetration)
+- **Volume/Momentum Qualified False Breakout Rate**: False breakout rate weighted by breakout strength (volume, momentum, duration)
 - **Volume Confirmation**: Volume spikes when level is tested
 - **Timeframe Consistency**: Level holds across multiple timeframes
 
@@ -24,6 +24,8 @@ A "good" S/R level is one that **consistently provides profitable trading opport
 - **Level Strength**: Calculated strength based on multiple factors
 - **Confluence Score**: How many other levels align at same price
 - **Retest Success Rate**: Success rate when level is retested after breakout
+- **Average Test Strength**: Average strength of tests (volume/momentum qualified)
+- **Average Breakout Strength**: Average strength of breakouts (volume/momentum qualified)
 
 ## **Optimized Target Calculation**
 
@@ -32,11 +34,11 @@ A "good" S/R level is one that **consistently provides profitable trading opport
 #### **Core Performance Aspects (60% weight)**
 ```python
 # Most important factors for trading success
-bounce_rate: 20%              # Primary success metric
-false_breakout_rate: 15%      # Primary failure metric (penalty)
-volume_confirmation: 10%      # Volume validation
-timeframe_consistency: 10%    # Multi-timeframe reliability
-touch_count: 5%               # Level validation through testing
+volume_qualified_bounce_rate: 20%      # Primary success metric (volume/momentum qualified)
+volume_qualified_false_breakout_rate: 15%  # Primary failure metric (penalty, volume/momentum qualified)
+volume_confirmation: 10%               # Volume validation
+timeframe_consistency: 10%             # Multi-timeframe reliability
+touch_count: 5%                        # Level validation through testing
 ```
 
 #### **Technical Strength Aspects (25% weight)**

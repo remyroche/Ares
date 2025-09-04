@@ -1828,11 +1828,11 @@ class AresLauncher:
             print("   • Check log files for detailed error information")
             return False
         finally:
-                    # Cleanup environment variables
-        import os
-        os.environ.pop("MODEL_TRAINING_MODE", None)
-        os.environ.pop("SYMBOL", None)
-        os.environ.pop("EXCHANGE", None)
+            # Cleanup environment variables
+            import os
+            os.environ.pop("MODEL_TRAINING_MODE", None)
+            os.environ.pop("SYMBOL", None)
+            os.environ.pop("EXCHANGE", None)
 
     def _validate_model_training_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for model training pipeline execution."""
@@ -2360,8 +2360,17 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run all pipelines in sequence."""
+        """Run all pipelines in sequence with organized report management."""
         self.logger.info(f"📊 Running all pipelines for {symbol} on {exchange}")
+
+        # Initialize report manager for this run
+        try:
+            from src.utils.report_manager import initialize_report_manager
+            report_manager = initialize_report_manager()
+            self.logger.info(f"📁 Report directory initialized: {report_manager.get_run_directory()}")
+            print(f"📁 Report directory: {report_manager.get_run_directory()}")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize report manager: {e}")
 
         if with_gui and not self.launch_gui("all-pipelines", symbol, exchange):
             return False
@@ -2369,6 +2378,15 @@ class AresLauncher:
         try:
             # Run the all pipelines orchestrator
             print(f"🚀 Starting all pipelines for {symbol} on {exchange}...")
+            print(f"📊 All reports will be organized in: {report_manager.get_run_directory()}")
+            
+            # Set environment variables for report management
+            import os
+            env = os.environ.copy()
+            env['SYMBOL'] = symbol
+            env['EXCHANGE'] = exchange
+            env['REPORT_RUN_TIMESTAMP'] = report_manager.get_run_timestamp()
+            
             process=subprocess.Popen(
                 [
                     sys.executable,
@@ -2379,6 +2397,7 @@ class AresLauncher:
                 text=True,
                 bufsize=1,  # Line buffered
                 universal_newlines=True,
+                env=env,
             )
             self.processes.append(process)
 

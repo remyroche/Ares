@@ -172,9 +172,17 @@ class ModelExplainer:
             
             # Generate comprehensive report
             if self.reporter:
+                # Extract symbol and exchange from config or results
+                symbol = self.config.get("symbol", results.get("symbol", "UNKNOWN"))
+                exchange = self.config.get("exchange", results.get("exchange", "UNKNOWN"))
+                model_type = self.config.get("model_type", results.get("model_type", "general"))
+                
                 report_path = await self.reporter.generate_report(
                     results=results,
-                    output_dir=output_dir
+                    output_dir=output_dir,
+                    model_type=model_type,
+                    symbol=symbol,
+                    exchange=exchange
                 )
                 results["report_path"] = report_path
                 print(f"📄 Comprehensive report generated: {report_path}")

@@ -1,8 +1,11 @@
 from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 '\nPrometheus metrics collection utility for training step validators.\n'
 import logging
 from collections import Counter
+
 try:
     from prometheus_client import Counter, Gauge, Histogram, generate_latest
     from prometheus_client.exposition import start_http_server

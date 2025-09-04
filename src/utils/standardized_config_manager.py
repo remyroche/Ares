@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 'Standardized Configuration Management System.\n\nThis module provides centralized configuration management with validation,\nversioning, and standardized access patterns across all pipeline steps.\n'
 import json
+from copy import copy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
 from .pipeline_standards import pipeline_standards
-from copy import copy
+
 
 class StandardizedConfigManager:
     """Centralized configuration manager with validation and versioning."""

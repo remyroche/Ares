@@ -1399,19 +1399,37 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run data collection pipeline."""
-        self.logger.info(f"📊 Running data collection pipeline for {symbol} on {exchange}")
+        """Run enhanced data collection pipeline with comprehensive logging and monitoring."""
+        self.logger.info(f"📊 Running enhanced data collection pipeline for {symbol} on {exchange}")
+        print("=" * 80)
+        print("🚀 ENHANCED DATA COLLECTION PIPELINE")
+        print("=" * 80)
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print(f"🖥️ GUI Mode: {with_gui}")
+        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        # Pre-flight validation
+        validation_success = self._validate_data_collection_prerequisites(symbol, exchange)
+        if not validation_success:
+            self.logger.error("❌ Pre-flight validation failed")
+            print("❌ Pre-flight validation failed - cannot proceed with data collection")
+            return False
 
         if with_gui and not self.launch_gui("data-collection", symbol, exchange):
             return False
 
         try:
-            # Run the data collection pipeline
-            print(f"🚀 Starting data collection pipeline for {symbol} on {exchange}...")
+            # Run the enhanced data collection pipeline
+            print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}...")
             
-            # Set up environment with correct Python path
+            # Set up environment with correct Python path and enhanced logging
             env = os.environ.copy()
             env['PYTHONPATH'] = str(project_root)
+            env['DATA_COLLECTION_MODE'] = 'enhanced'
+            env['SYMBOL'] = symbol
+            env['EXCHANGE'] = exchange
             
             process=subprocess.Popen(
                 [
@@ -1428,30 +1446,134 @@ class AresLauncher:
             )
             self.processes.append(process)
 
-            # Read output in real-time
+            # Enhanced real-time output monitoring with progress tracking
+            line_count = 0
+            error_count = 0
+            warning_count = 0
+            success_count = 0
+            progress_indicators = []
+            
+            print("📊 Monitoring pipeline execution...")
+            print("=" * 80)
+            
             while True:
                 output=process.stdout.readline()
                 if output== "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
-                    self.logger.info(output.strip())  # Also log it
+                    line_count += 1
+                    output_stripped = output.strip()
+                    
+                    # Monitor for different types of messages
+                    if "ERROR" in output_stripped or "❌" in output_stripped:
+                        error_count += 1
+                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
+                        warning_count += 1
+                    elif "SUCCESS" in output_stripped or "✅" in output_stripped:
+                        success_count += 1
+                    elif "Progress:" in output_stripped:
+                        progress_indicators.append(output_stripped)
+                    
+                    print(output_stripped)  # Print to terminal in real-time
+                    self.logger.info(output_stripped)  # Also log it
+                    
+                    # Progress indicator every 25 lines
+                    if line_count % 25 == 0:
+                        print(f"📊 Progress: {line_count} lines processed, {success_count} successes, {warning_count} warnings, {error_count} errors")
 
             # Get the final return code
             return_code=process.poll()
+            
+            # Enhanced result reporting
+            print("=" * 80)
+            print("📊 DATA COLLECTION PIPELINE RESULTS")
+            print("=" * 80)
+            print(f"📈 Total lines processed: {line_count}")
+            print(f"✅ Total successes: {success_count}")
+            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"❌ Total errors: {error_count}")
+            print(f"🔢 Return code: {return_code}")
+            print("=" * 80)
 
             if return_code== 0:
-                self.logger.info("✅ Data collection pipeline completed successfully")
-                print("✅ Data collection pipeline completed successfully")
+                self.logger.info("✅ Enhanced data collection pipeline completed successfully")
+                print("✅ Enhanced data collection pipeline completed successfully")
+                print("🎉 All data collection steps completed with validation!")
+                
+                # Show final progress summary
+                if progress_indicators:
+                    print("📊 Final Progress Summary:")
+                    for indicator in progress_indicators[-3:]:  # Show last 3 progress indicators
+                        print(f"   {indicator}")
+                
                 return True
-            self.logger.error(
-                f"❌ Data collection pipeline failed with return code: {return_code}",
-            )
-            print(f"❌ Data collection pipeline failed with return code: {return_code}")
-            return False
+            else:
+                self.logger.error(
+                    f"❌ Enhanced data collection pipeline failed with return code: {return_code}",
+                )
+                print(f"❌ Enhanced data collection pipeline failed with return code: {return_code}")
+                if error_count > 0:
+                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                return False
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run data collection pipeline: {e}")
+            self.logger.exception(f"❌ Failed to run enhanced data collection pipeline: {e}")
+            print(f"❌ Failed to run enhanced data collection pipeline: {e}")
+            return False
+        finally:
+            # Cleanup environment variables
+            import os
+            os.environ.pop("DATA_COLLECTION_MODE", None)
+            os.environ.pop("SYMBOL", None)
+            os.environ.pop("EXCHANGE", None)
+
+    def _validate_data_collection_prerequisites(self, symbol: str, exchange: str) -> bool:
+        """Validate prerequisites for data collection pipeline execution."""
+        self.logger.info("🔍 Validating data collection prerequisites...")
+        print("🔍 Validating data collection prerequisites...")
+        
+        try:
+            from src.utils.common_operations import safe_file_exists, ensure_directory
+            
+            # Check required directories
+            required_dirs = [
+                "data_cache",
+                "log"
+            ]
+            
+            for dir_path in required_dirs:
+                if not safe_file_exists(dir_path):
+                    self.logger.warning(f"⚠️ Creating missing directory: {dir_path}")
+                    ensure_directory(dir_path)
+                else:
+                    self.logger.info(f"✅ Directory exists: {dir_path}")
+            
+            # Check for standalone data collection script
+            script_path = "standalone_data_collection.py"
+            if not safe_file_exists(script_path):
+                self.logger.error(f"❌ Data collection script not found: {script_path}")
+                print(f"❌ Data collection script not found: {script_path}")
+                return False
+            else:
+                self.logger.info(f"✅ Data collection script found: {script_path}")
+            
+            # Check Python environment
+            try:
+                import pandas as pd
+                import numpy as np
+                self.logger.info("✅ Required Python packages available")
+            except ImportError as e:
+                self.logger.error(f"❌ Missing required Python package: {e}")
+                print(f"❌ Missing required Python package: {e}")
+                return False
+            
+            self.logger.info("✅ Data collection prerequisites validation completed")
+            print("✅ Data collection prerequisites validation completed")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Prerequisites validation failed: {e}")
+            print(f"❌ Prerequisites validation failed: {e}")
             return False
 
     @handle_errors(

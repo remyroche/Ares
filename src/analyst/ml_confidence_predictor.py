@@ -2611,6 +2611,7 @@ class MLConfidencePredictor:
 
             # Import required components
             from src.tactician.enhanced_order_manager import (
+from src.core.decorators.errors import handles_errors
                 ExecutionRequest,
                 ExecutionStrategy,
                 OrderSide,

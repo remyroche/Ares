@@ -9,6 +9,7 @@ from statsmodels.tsa.stattools import adfuller
 from src.core.decorators import handles_errors, traced
 from src.utils.logger import get_logger
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 class FractionalDifferentiation:
     """Fractional differentiation for enhanced feature engineering.

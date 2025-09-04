@@ -29,6 +29,7 @@ from src.training.multi_output_model_trainer import (
     MultiOutputModelTrainer,
 )
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 
 class ComprehensiveSRTrainingPipeline:

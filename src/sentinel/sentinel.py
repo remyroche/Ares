@@ -13,6 +13,7 @@ from src.utils.warning_symbols import (
     missing,
 )
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 
 class Sentinel:

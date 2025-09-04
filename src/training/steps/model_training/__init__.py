@@ -175,6 +175,7 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
         
         try:
             import pandas as pd
+from src.core.decorators.errors import handles_errors
             
             # Load and validate main data file using safe utilities
             data_file = f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet"

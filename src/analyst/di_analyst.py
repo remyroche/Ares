@@ -163,6 +163,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 # Publish analysis completed event (uses string event type)
                 if self.event_bus:
                     from src.interfaces.event_bus import EventType
+from src.core.decorators.errors import handles_errors
 
                     await self.event_bus.publish(
                         EventType.ANALYSIS_COMPLETED.value,

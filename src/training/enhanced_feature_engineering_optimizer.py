@@ -385,6 +385,7 @@ class EnhancedFeatureEngineeringOptimizer:
     def _generate_param_combinations(self, params: dict[str, list]) -> list[dict[str, Any]]:
         """Generate all parameter combinations."""
         import itertools
+from src.core.decorators.errors import handles_errors
         param_names = list(params.keys())
         param_values = list(params.values())
         combinations = []

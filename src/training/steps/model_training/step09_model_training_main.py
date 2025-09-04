@@ -31,6 +31,7 @@ from src.utils.common_operations import (
 )
 from src.utils.logger import system_logger
 from src.training.steps.model_training import run_model_training_pipeline
+from src.core.decorators.errors import handles_errors
 
 @handles_errors(Exception, fallback=False, log_level="ERROR")
 @validates(strict=True)

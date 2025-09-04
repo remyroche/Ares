@@ -323,6 +323,7 @@ class EnhancedStepValidator:
         
         try:
             import pandas as pd
+from src.core.decorators.errors import handles_errors
             
             # Read the file
             if file_path.endswith('.parquet'):

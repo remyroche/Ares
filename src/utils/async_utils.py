@@ -10,6 +10,7 @@ from typing import Any
 import aiofiles
 
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 # src/utils/async_utils.py
 

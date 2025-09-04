@@ -883,6 +883,7 @@ class FeatureSelectionManager:
         try:
             from sklearn.linear_model import LogisticRegression
             from sklearn.model_selection import cross_val_score
+from src.core.decorators.errors import handles_errors
 
             for feature in features_df.columns:
                 try:

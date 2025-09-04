@@ -13,6 +13,8 @@ from ..analyzers.import_analyzer import ImportAnalyzer
 from ..analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer as SignatureAnalyzer
 from ..analyzers.linter_analyzer import LinterAnalyzer
 from ..analyzers.syntax_validator import SyntaxValidator
+from ..analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
+from ..analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
 from ..core.config import CodeQualityConfig, get_default_config
 from ..fixers.auto_fixer import AutoFixer
 from ..utils.file_utils import find_python_files
@@ -22,13 +24,15 @@ class SequentialFixer:
     """
     Sequential auto-fix pipeline that runs multiple quality tools in sequence.
 
-    Pipeline:
+    Enhanced Pipeline:
     1. Auto-fix syntax and style issues
     2. Run linter analysis and error reporting
     3. Validate AST parsing and compilation
     4. Analyze imports for conflicts and circular dependencies
     5. Analyze function signatures for compatibility issues
-    6. Generate comprehensive report
+    6. Run comprehensive static analysis (Pylint, Flake8, MyPy, Bandit)
+    7. Run advanced AST analysis (Astroid, Rope, Jedi)
+    8. Generate comprehensive report
     """
 
     def __init__(self, config: CodeQualityConfig | None = None):
@@ -151,6 +155,20 @@ class SequentialFixer:
             signature_results = self._run_signature_analysis(target_files)
             self.results["step_results"]["signature_analysis"] = signature_results
 
+            # Step 6: Comprehensive static analysis
+            print("\n" + "-"*50)
+            print("STEP 6: COMPREHENSIVE STATIC ANALYSIS")
+            print("-"*50)
+            static_results = self._run_static_analysis(target_files)
+            self.results["step_results"]["static_analysis"] = static_results
+
+            # Step 7: Advanced AST analysis
+            print("\n" + "-"*50)
+            print("STEP 7: ADVANCED AST ANALYSIS")
+            print("-"*50)
+            ast_results = self._run_ast_analysis(target_files)
+            self.results["step_results"]["ast_analysis"] = ast_results
+
             # Optional: Pre-commit integration
             if run_pre_commit:
                 print("\n" + "-"*50)
@@ -159,9 +177,9 @@ class SequentialFixer:
                 pre_commit_results = self._run_pre_commit(target_files)
                 self.results["step_results"]["pre_commit"] = pre_commit_results
 
-            # Step 6: Generate comprehensive summary
+            # Step 8: Generate comprehensive summary
             print("\n" + "-"*50)
-            print("STEP 6: GENERATING COMPREHENSIVE SUMMARY")
+            print("STEP 8: GENERATING COMPREHENSIVE SUMMARY")
             print("-"*50)
             summary = self._generate_comprehensive_summary()
             self.results["summary"] = summary
@@ -520,6 +538,131 @@ class SequentialFixer:
             print(f"Error running signature analysis: {e}")
             return {"status": "error", "error": str(e)}
 
+    def _run_static_analysis(self, files: list[str]) -> dict[str, Any]:
+        """Run comprehensive static analysis on the target files."""
+        print(f"Running static analysis on {len(files)} files...")
+
+        if not self.config.analysis.static_analysis.enabled:
+            print("Static analysis is disabled in configuration.")
+            return {"status": "disabled", "reason": "Static analysis disabled in config"}
+
+        try:
+            # Find the common parent directory
+            if len(files) == 1:
+                target_dir = str(Path(files[0]).parent)
+            else:
+                # Find common ancestor directory
+                paths = [Path(f) for f in files]
+                common_prefix = Path(os.path.commonpath([str(p) for p in paths]))
+                target_dir = str(common_prefix)
+
+            static_analyzer = StaticAnalysisAnalyzer(self.config)
+            static_results = static_analyzer.analyze_directory(target_dir)
+
+            # Filter results to only include our target files
+            filtered_results = {
+                "summary": {
+                    "total_files_analyzed": len(files),
+                    "total_issues_found": 0,
+                    "critical_issues": 0,
+                    "security_issues": 0,
+                    "tools_summary": {}
+                },
+                "files": {},
+                "tools_availability": {
+                    "pylint": True,  # Assume available, will be checked during execution
+                    "flake8": True,
+                    "mypy": True,
+                    "bandit": True
+                }
+            }
+
+            # Filter file results to only include our target files
+            for file_path in files:
+                if file_path in static_results.get("files", {}):
+                    file_result = static_results["files"][file_path]
+                    filtered_results["files"][file_path] = file_result
+                    
+                    # Update summary
+                    file_summary = file_result.get("summary", {})
+                    filtered_results["summary"]["total_issues_found"] += file_summary.get("total_issues", 0)
+                    filtered_results["summary"]["critical_issues"] += file_summary.get("critical_issues", 0)
+                    filtered_results["summary"]["security_issues"] += file_summary.get("security_issues", 0)
+
+            # Update tools summary
+            for tool_name in ["pylint", "flake8", "mypy", "bandit"]:
+                tool_summary = static_results.get("summary", {}).get("tools_summary", {}).get(tool_name, {})
+                filtered_results["summary"]["tools_summary"][tool_name] = tool_summary
+
+            return {
+                "status": "success",
+                "results": filtered_results,
+                "full_results": static_results,
+            }
+
+        except Exception as e:
+            print(f"Error running static analysis: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _run_ast_analysis(self, files: list[str]) -> dict[str, Any]:
+        """Run advanced AST analysis on the target files."""
+        print(f"Running AST analysis on {len(files)} files...")
+
+        if not self.config.analysis.ast_analysis.enabled:
+            print("AST analysis is disabled in configuration.")
+            return {"status": "disabled", "reason": "AST analysis disabled in config"}
+
+        try:
+            # Find the common parent directory
+            if len(files) == 1:
+                target_dir = str(Path(files[0]).parent)
+            else:
+                # Find common ancestor directory
+                paths = [Path(f) for f in files]
+                common_prefix = Path(os.path.commonpath([str(p) for p in paths]))
+                target_dir = str(common_prefix)
+
+            ast_analyzer = ASTAnalysisAnalyzer(self.config)
+            ast_results = ast_analyzer.analyze_directory(target_dir)
+
+            # Filter results to only include our target files
+            filtered_results = {
+                "summary": {
+                    "total_files_analyzed": len(files),
+                    "total_issues_found": 0,
+                    "complexity_issues": 0,
+                    "refactoring_opportunities": 0,
+                    "code_completion_issues": 0,
+                    "ast_analysis_issues": 0,
+                    "tools_availability": ast_results.get("summary", {}).get("tools_availability", {})
+                },
+                "files": {}
+            }
+
+            # Filter file results to only include our target files
+            for file_path in files:
+                if file_path in ast_results.get("files", {}):
+                    file_result = ast_results["files"][file_path]
+                    filtered_results["files"][file_path] = file_result
+                    
+                    # Update summary
+                    file_summary = file_result.get("summary", {})
+                    filtered_results["summary"]["total_issues_found"] += file_summary.get("total_issues", 0)
+                    filtered_results["summary"]["complexity_issues"] += file_summary.get("complexity_issues", 0)
+                    filtered_results["summary"]["refactoring_opportunities"] += file_summary.get("refactoring_opportunities", 0)
+                    filtered_results["summary"]["code_completion_issues"] += file_summary.get("code_completion_issues", 0)
+                    filtered_results["summary"]["ast_analysis_issues"] += file_summary.get("ast_analysis_issues", 0)
+
+            return {
+                "status": "success",
+                "results": filtered_results,
+                "full_results": ast_results,
+            }
+
+        except Exception as e:
+            print(f"Error running AST analysis: {e}")
+            return {"status": "error", "error": str(e)}
+
     def _generate_comprehensive_summary(self) -> dict[str, Any]:
         """Generate a comprehensive summary of all pipeline steps."""
         summary = {
@@ -546,6 +689,8 @@ class SequentialFixer:
         syntax = self.results["step_results"].get("syntax_validation", {})
         imports = self.results["step_results"].get("import_analysis", {})
         signatures = self.results["step_results"].get("signature_analysis", {})
+        static_analysis = self.results["step_results"].get("static_analysis", {})
+        ast_analysis = self.results["step_results"].get("ast_analysis", {})
 
         summary["metrics"] = {
             "files_processed": auto_fix.get("total_files_processed", 0),
@@ -557,6 +702,12 @@ class SequentialFixer:
             "invalid_files": syntax.get("results", {}).get("summary", {}).get("invalid_files", 0) if syntax.get("status") == "success" else 0,
             "import_issues": imports.get("results", {}).get("summary", {}).get("total_issues", 0) if imports.get("status") == "success" else 0,
             "signature_issues": signatures.get("results", {}).get("summary", {}).get("total_issues", 0) if signatures.get("status") == "success" else 0,
+            "static_analysis_issues": static_analysis.get("results", {}).get("summary", {}).get("total_issues_found", 0) if static_analysis.get("status") == "success" else 0,
+            "static_analysis_critical": static_analysis.get("results", {}).get("summary", {}).get("critical_issues", 0) if static_analysis.get("status") == "success" else 0,
+            "static_analysis_security": static_analysis.get("results", {}).get("summary", {}).get("security_issues", 0) if static_analysis.get("status") == "success" else 0,
+            "ast_analysis_issues": ast_analysis.get("results", {}).get("summary", {}).get("total_issues_found", 0) if ast_analysis.get("status") == "success" else 0,
+            "ast_analysis_complexity": ast_analysis.get("results", {}).get("summary", {}).get("complexity_issues", 0) if ast_analysis.get("status") == "success" else 0,
+            "ast_analysis_refactoring": ast_analysis.get("results", {}).get("summary", {}).get("refactoring_opportunities", 0) if ast_analysis.get("status") == "success" else 0,
             "pre_commit_return_code": self.results.get("step_results", {}).get("pre_commit", {}).get("return_code"),
         }
 
@@ -601,6 +752,34 @@ class SequentialFixer:
                 "priority": "high",
                 "category": "syntax",
                 "message": f"{summary['metrics']['invalid_files']} files have syntax errors that prevent execution",
+            })
+
+        if summary["metrics"]["static_analysis_critical"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "static_analysis",
+                "message": f"Address {summary['metrics']['static_analysis_critical']} critical static analysis issues",
+            })
+
+        if summary["metrics"]["static_analysis_security"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "security",
+                "message": f"Fix {summary['metrics']['static_analysis_security']} security vulnerabilities found by Bandit",
+            })
+
+        if summary["metrics"]["ast_analysis_complexity"] > 0:
+            summary["recommendations"].append({
+                "priority": "medium",
+                "category": "complexity",
+                "message": f"Refactor {summary['metrics']['ast_analysis_complexity']} functions with high complexity",
+            })
+
+        if summary["metrics"]["ast_analysis_refactoring"] > 0:
+            summary["recommendations"].append({
+                "priority": "medium",
+                "category": "refactoring",
+                "message": f"Consider {summary['metrics']['ast_analysis_refactoring']} refactoring opportunities identified by AST analysis",
             })
 
         return summary
@@ -673,6 +852,12 @@ class SequentialFixer:
         print(f"  Invalid files: {metrics['invalid_files']}")
         print(f"  Import issues: {metrics['import_issues']}")
         print(f"  Signature issues: {metrics['signature_issues']}")
+        print(f"  Static analysis issues: {metrics['static_analysis_issues']}")
+        print(f"  Static analysis critical: {metrics['static_analysis_critical']}")
+        print(f"  Static analysis security: {metrics['static_analysis_security']}")
+        print(f"  AST analysis issues: {metrics['ast_analysis_issues']}")
+        print(f"  AST analysis complexity: {metrics['ast_analysis_complexity']}")
+        print(f"  AST analysis refactoring: {metrics['ast_analysis_refactoring']}")
 
         if summary["recommendations"]:
             print("\nRecommendations:")

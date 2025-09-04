@@ -1,7 +1,8 @@
-"""Step 16: Confidence Calibration - Per-Regime Implementation.
+"""Step 16: Enhanced Confidence Calibration - Per-Regime Implementation.
 
-This module provides per-HMM regime confidence calibration functionality, ensuring that
-confidence calibration is performed specifically for each regime's characteristics and market behavior.
+This module provides per-HMM regime confidence calibration functionality with comprehensive
+data protection, validation, and error handling, ensuring that confidence calibration is 
+performed specifically for each regime's characteristics and market behavior.
 """
 
 import asyncio
@@ -22,20 +23,219 @@ from src.training.steps.regime_processing_decorator import (
 from src.training.steps.regime_continuity_decorator import per_regime_step
 from src.utils.logger import getChild as get_logger
 from src.utils.pipeline_standards import pipeline_standards
-from src.core.decorators import traced, validates, handles_errors
+from src.utils.common_operations import (
+    format_datetime, get_current_datetime, safe_file_exists, 
+    ensure_directory, safe_json_dump, safe_json_load, safe_sleep
+)
+from src.utils.data_quality_framework import DataQualityFramework
+from src.utils.data_formatting_framework import DataFormattingFramework
+from src.core.decorators import traced, validates, handles_errors, log_execution_time
 
 
 logger = get_logger('Step16ConfidenceCalibrationPerRegime')
 
 
 class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
-    """Confidence calibration step that processes each regime separately."""
+    """Enhanced confidence calibration step that processes each regime separately with comprehensive data protection."""
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.per_regime_enabled = config.get('per_regime_confidence_calibration', True)
         self.regime_specific_configs = config.get('regime_specific_calibration_configs', {})
         self.adaptive_calibration_parameters = config.get('adaptive_calibration_parameters_per_regime', True)
+        
+        # Initialize data protection frameworks
+        self.dq_framework = DataQualityFramework()
+        self.df_framework = DataFormattingFramework()
+        
+        # Enhanced logging
+        self.logger = logger.getChild('PerRegimeConfidenceCalibration')
+        self.logger.info("🔧 Enhanced Per-Regime Confidence Calibration initialized with data protection")
+    
+    @validates()
+    async def validate_tactician_data(self, tactician_data: pd.DataFrame, regime_id: Optional[int] = None) -> Tuple[bool, Dict[str, Any]]:
+        """Validate tactician specialist data with comprehensive quality checks."""
+        self.logger.info(f"🔍 Validating tactician data for regime {regime_id}...")
+        
+        validation_metrics = {
+            'data_shape': tactician_data.shape,
+            'data_completeness': 0.0,
+            'quality_issues': [],
+            'critical_issues': 0,
+            'warnings': 0
+        }
+        
+        try:
+            # Check data is not empty
+            if tactician_data.empty:
+                validation_metrics['quality_issues'].append({
+                    'type': 'empty_data',
+                    'severity': 'critical',
+                    'message': 'Tactician data is empty'
+                })
+                validation_metrics['critical_issues'] += 1
+                return False, validation_metrics
+            
+            # Calculate data completeness
+            total_cells = tactician_data.size
+            non_null_cells = tactician_data.count().sum()
+            validation_metrics['data_completeness'] = non_null_cells / total_cells if total_cells > 0 else 0.0
+            
+            # Check for required columns
+            required_columns = ['timestamp', 'confidence', 'prediction']
+            missing_columns = [col for col in required_columns if col not in tactician_data.columns]
+            
+            if missing_columns:
+                validation_metrics['quality_issues'].append({
+                    'type': 'missing_columns',
+                    'severity': 'critical',
+                    'missing_columns': missing_columns
+                })
+                validation_metrics['critical_issues'] += 1
+            
+            # Data quality validation
+            quality_result = self.dq_framework.validate_data(tactician_data, ['features_schema'])
+            if not quality_result.get('overall_passed', False):
+                for issue in quality_result.get('errors', []):
+                    validation_metrics['quality_issues'].append({
+                        'type': 'data_quality',
+                        'severity': 'high',
+                        'issue': issue
+                    })
+                    validation_metrics['warnings'] += 1
+            
+            # Check for extreme values in confidence scores
+            if 'confidence' in tactician_data.columns:
+                confidence_values = tactician_data['confidence'].dropna()
+                if len(confidence_values) > 0:
+                    min_conf = confidence_values.min()
+                    max_conf = confidence_values.max()
+                    
+                    if min_conf < 0 or max_conf > 1:
+                        validation_metrics['quality_issues'].append({
+                            'type': 'invalid_confidence_range',
+                            'severity': 'high',
+                            'min_confidence': min_conf,
+                            'max_confidence': max_conf
+                        })
+                        validation_metrics['warnings'] += 1
+            
+            validation_passed = validation_metrics['critical_issues'] == 0
+            
+            if validation_passed:
+                self.logger.info(f"✅ Tactician data validation passed for regime {regime_id}")
+            else:
+                self.logger.error(f"❌ Tactician data validation failed for regime {regime_id}: {validation_metrics['critical_issues']} critical issues")
+            
+            return validation_passed, validation_metrics
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Tactician data validation failed with exception: {e}")
+            validation_metrics['quality_issues'].append({
+                'type': 'validation_error',
+                'severity': 'critical',
+                'error': str(e)
+            })
+            validation_metrics['critical_issues'] += 1
+            return False, validation_metrics
+    
+    @handles_errors(fallback=None, context="load_tactician_data_with_protection")
+    async def _load_tactician_data_with_protection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: Optional[int] = None) -> Optional[pd.DataFrame]:
+        """Load tactician specialist data with comprehensive data protection."""
+        self.logger.info(f"📊 Loading tactician data with protection for regime {regime_id}...")
+        
+        try:
+            # Construct file path
+            if regime_id is not None:
+                file_path = f"{data_dir}/tactician_specialist_{symbol}_{exchange}_{timeframe}_regime_{regime_id}.parquet"
+            else:
+                file_path = f"{data_dir}/tactician_specialist_{symbol}_{exchange}_{timeframe}.parquet"
+            
+            # Check file existence
+            if not safe_file_exists(file_path):
+                self.logger.error(f"❌ Tactician data file not found: {file_path}")
+                return None
+            
+            # Load data with error handling
+            try:
+                tactician_data = pd.read_parquet(file_path)
+                self.logger.info(f"✅ Loaded tactician data: {tactician_data.shape}")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load tactician data from {file_path}: {e}")
+                return None
+            
+            # Validate loaded data
+            validation_passed, validation_metrics = await self.validate_tactician_data(tactician_data, regime_id)
+            
+            if not validation_passed:
+                self.logger.error(f"❌ Tactician data validation failed for regime {regime_id}")
+                return None
+            
+            # Apply data formatting protection
+            try:
+                formatted_data = self.df_framework.format_dataframe(tactician_data, 'features')
+                self.logger.info(f"✅ Applied data formatting protection")
+                return formatted_data
+            except Exception as e:
+                self.logger.warning(f"⚠️ Data formatting failed, using original data: {e}")
+                return tactician_data
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to load tactician data with protection: {e}")
+            return None
+    
+    @handles_errors(fallback=False, context="save_calibration_results_with_protection")
+    async def _save_calibration_results_with_protection(
+        self, 
+        calibration_results: Dict[str, Any], 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        regime_id: Optional[int] = None
+    ) -> bool:
+        """Save calibration results with comprehensive data protection."""
+        self.logger.info(f"💾 Saving calibration results with protection for regime {regime_id}...")
+        
+        try:
+            # Ensure output directory exists
+            output_dir = Path("models")
+            ensure_directory(output_dir)
+            
+            # Construct output file path
+            if regime_id is not None:
+                output_file = output_dir / f"{symbol}_{exchange}_confidence_calibration_regime_{regime_id}.json"
+            else:
+                output_file = output_dir / f"{symbol}_{exchange}_confidence_calibration.json"
+            
+            # Add metadata to results
+            enhanced_results = {
+                'calibration_results': calibration_results,
+                'metadata': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'regime_id': regime_id,
+                    'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                    'version': '1.0',
+                    'data_protection_enabled': True
+                }
+            }
+            
+            # Save with error handling
+            safe_json_dump(enhanced_results, output_file, indent=2)
+            
+            # Verify file was created
+            if safe_file_exists(output_file):
+                self.logger.info(f"✅ Calibration results saved successfully: {output_file}")
+                return True
+            else:
+                self.logger.error(f"❌ Failed to save calibration results: {output_file}")
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to save calibration results with protection: {e}")
+            return False
         
     @traced(span_name='execute_per_regime_confidence_calibration')
     @per_regime_step('step16_confidence_calibration')

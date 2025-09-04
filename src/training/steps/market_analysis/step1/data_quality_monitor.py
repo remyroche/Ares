@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 import pandas as pd
 from src.core.decorators import handles_errors, traced
+from src.core.decorators.errors import handles_errors
 from copy import copy
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -132,14 +133,34 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-from src.core.decorators.errors import handles_errors
+            
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
-            quality_results = await manager.comprehensive_quality_check(symbol=symbol, exchange=exchange, timeframe=timeframe, check_gaps=True, fill_gaps=False, validate_format=True)
+            quality_results = await manager.comprehensive_quality_check(
+                symbol=symbol, 
+                exchange=exchange, 
+                timeframe=timeframe, 
+                check_gaps=True, 
+                fill_gaps=False, 
+                validate_format=True
+            )
             await self._evaluate_quality_results(quality_results, symbol, exchange, timeframe)
         except Exception as e:
-            logger.exception(f'❌ Error checking data quality for {exchange}_{symbol}_{timeframe}: {e}')
-            alert = DataQualityAlert(alert_type='monitoring_error', severity='high', message=f'Failed to check data quality: {str(e)}', symbol=symbol, exchange=exchange, timeframe=timeframe, timestamp=datetime.now(), details={'error': str(e)})
-            await self._generate_alert(alert)
+            await self._handle_quality_check_error(e, symbol, exchange, timeframe)
+    
+    async def _handle_quality_check_error(self, error: Exception, symbol: str, exchange: str, timeframe: str) -> None:
+        """Handle errors during quality check."""
+        logger.exception(f'❌ Error checking data quality for {exchange}_{symbol}_{timeframe}: {error}')
+        alert = DataQualityAlert(
+            alert_type='monitoring_error', 
+            severity='high', 
+            message=f'Failed to check data quality: {str(error)}', 
+            symbol=symbol, 
+            exchange=exchange, 
+            timeframe=timeframe, 
+            timestamp=datetime.now(), 
+            details={'error': str(error)}
+        )
+        await self._generate_alert(alert)
 
     @traced(span_name='evaluate_quality_results')
     async def _evaluate_quality_results(self, quality_results: Dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:

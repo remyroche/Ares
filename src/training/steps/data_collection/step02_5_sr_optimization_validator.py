@@ -359,14 +359,9 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         logger.error(f"Failed to run S/R optimization validation: {e}")
         return False
 
-if __name__ == "__main__":
-    # Test the validator
-    import asyncio
-    from src.core.decorators import handles_errors
-    from src.core.decorators.errors import handles_errors
-    
-    # Test configuration
-    test_config = {
+def _create_test_config() -> Dict[str, Any]:
+    """Create test configuration for validation."""
+    return {
         "sr_breakout_predictor": {
             "use_optimized_params": True,
             "optimization_results_file": "optimization_results.json"
@@ -379,7 +374,13 @@ if __name__ == "__main__":
             "optimized_advanced_params": {"fibonacci_sensitivity": 0.8}
         }
     }
-    
-    # Run validation
-    success = asyncio.run(run_validation(test_config, "ETHUSDT", "BINANCE", "1m"))
+
+async def _run_test_validation() -> bool:
+    """Run test validation with test configuration."""
+    test_config = _create_test_config()
+    return await run_validation(test_config, "ETHUSDT", "BINANCE", "1m")
+
+if __name__ == "__main__":
+    # Test the validator
+    success = asyncio.run(_run_test_validation())
     print(f"Validation {'successful' if success else 'failed'}")

@@ -126,6 +126,31 @@ class CodeInteractionMapper:
         print("  - Building comprehensive dependency map...")
         dependency_map = self._build_comprehensive_dependency_map()
         
+        # Validate dependency map is not empty
+        total_items = (len(dependency_map['function_definitions']) + 
+                      len(dependency_map['function_calls']) + 
+                      len(dependency_map['class_definitions']) + 
+                      len(dependency_map['class_usage']) + 
+                      len(dependency_map['import_statements']))
+        
+        if total_items == 0:
+            print("  ❌ ERROR: Dependency map is empty! This indicates a critical issue with the analysis.")
+            print("  - Check if Python files are being found and parsed correctly")
+            print("  - Verify AST parsing is working")
+            print("  - Ensure file permissions allow reading")
+            print("  - Many files may have syntax errors preventing AST parsing")
+            raise RuntimeError("Dependency map is empty - analysis cannot proceed safely")
+        
+        print(f"  ✅ Dependency map built successfully: {total_items} items found")
+        print(f"    - Function definitions: {len(dependency_map['function_definitions'])}")
+        print(f"    - Function calls: {len(dependency_map['function_calls'])}")
+        print(f"    - Class definitions: {len(dependency_map['class_definitions'])}")
+        print(f"    - Class usage: {len(dependency_map['class_usage'])}")
+        print(f"    - Import statements: {len(dependency_map['import_statements'])}")
+        
+        # Store dependency map in results
+        self.results["dependency_map"] = dependency_map
+        
         # Analyze dead code with dependency awareness
         self.results["dead_code"] = analyzer.analyze_directory(str(self.project_root))
         
@@ -307,8 +332,9 @@ class CodeInteractionMapper:
         
         # Generate dependency map visualization
         dependency_map_file = reports_dir / f"dependency_map_{timestamp}.json"
+        dependency_map = self.results.get("dependency_map", {})
         with open(dependency_map_file, "w") as f:
-            json.dump(self._build_comprehensive_dependency_map(), f, indent=2, default=str)
+            json.dump(dependency_map, f, indent=2, default=str)
         print(f"  - Saved dependency map: {dependency_map_file}")
 
         # Generate visual diagrams
@@ -1834,6 +1860,10 @@ class CodeInteractionMapper:
         
         # Find all Python files
         python_files = list(self.project_root.rglob("*.py"))
+        print(f"  - Found {len(python_files)} Python files to analyze")
+        
+        successful_files = 0
+        failed_files = 0
         
         for file_path in python_files:
             try:
@@ -1850,8 +1880,18 @@ class CodeInteractionMapper:
                 # Analyze string patterns for dynamic usage
                 self._analyze_string_patterns(content, file_path, dependency_map)
                 
+                successful_files += 1
+                
             except Exception as e:
-                print(f"Warning: Could not analyze {file_path}: {e}")
+                failed_files += 1
+                # Only print warning for first 10 failed files to avoid spam
+                if failed_files <= 10:
+                    print(f"  Warning: Could not analyze {file_path}: {e}")
+                elif failed_files == 11:
+                    print(f"  ... and {len(python_files) - successful_files - 10} more files failed to parse")
+        
+        print(f"  - Successfully analyzed: {successful_files} files")
+        print(f"  - Failed to analyze: {failed_files} files")
         
         return dependency_map
 
@@ -1993,7 +2033,8 @@ class CodeInteractionMapper:
         is_used_in_code = (
             issue_name in dependency_map['function_calls'] or
             issue_name in dependency_map['class_usage'] or
-            self._check_dynamic_usage(issue_name, dependency_map)
+            self._check_dynamic_usage(issue_name, dependency_map) or
+            self._check_cross_file_usage(issue_name, dependency_map, issue)
         )
         
         # Check if it's only referenced in documentation/config
@@ -2039,6 +2080,58 @@ class CodeInteractionMapper:
                 # For now, return False to be conservative
                 pass
         return False
+
+    def _check_cross_file_usage(self, name, dependency_map, issue):
+        """Check if a function/class is used in other files."""
+        # Get the file where the issue is located
+        issue_file = getattr(issue, 'file_path', '')
+        if not issue_file:
+            return False
+        
+        # Check if the name is called from other files
+        if name in dependency_map['function_calls']:
+            for file_path, line_num in dependency_map['function_calls'][name]:
+                if str(file_path) != str(issue_file):
+                    print(f"    ✅ Found cross-file usage: {name} called from {file_path}:{line_num}")
+                    return True
+        
+        # Check if the class is used in other files
+        if name in dependency_map['class_usage']:
+            for file_path, line_num in dependency_map['class_usage'][name]:
+                if str(file_path) != str(issue_file):
+                    print(f"    ✅ Found cross-file usage: {name} used from {file_path}:{line_num}")
+                    return True
+        
+        # Check for import statements that might reference this function/class
+        # Look for imports from the module containing this function
+        issue_module = self._get_module_from_file_path(issue_file)
+        if issue_module:
+            for module_name, imports in dependency_map['import_statements'].items():
+                if issue_module in module_name or module_name in issue_module:
+                    for file_path, line_num in imports:
+                        if str(file_path) != str(issue_file):
+                            print(f"    ✅ Found cross-file import: {module_name} imported in {file_path}:{line_num}")
+                            return True
+        
+        return False
+
+    def _get_module_from_file_path(self, file_path):
+        """Extract module name from file path."""
+        try:
+            # Convert file path to module name
+            # e.g., /workspace/src/training/probabilistic_bayesian_optimizer.py -> src.training.probabilistic_bayesian_optimizer
+            path_parts = Path(file_path).parts
+            if 'workspace' in path_parts:
+                # Find workspace index and take everything after it
+                workspace_idx = path_parts.index('workspace')
+                module_parts = path_parts[workspace_idx + 1:]
+                # Remove .py extension
+                if module_parts[-1].endswith('.py'):
+                    module_parts[-1] = module_parts[-1][:-3]
+                return '.'.join(module_parts)
+        except Exception:
+            pass
+        return None
 
     def _check_documentation_only_references(self, name, dependency_map):
         """Check if a name is only referenced in documentation or config files."""

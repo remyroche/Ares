@@ -71,7 +71,7 @@ from sklearn.multioutput import MultiOutputRegressor, MultiOutputClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+from src.training.steps.step06_labeling_components.profit_based_feature_engineering import (
     ProfitBasedFeatureEngineering
 )
 

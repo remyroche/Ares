@@ -520,6 +520,7 @@ class ModelManager:
     @handle_file_operations(
         default_return=None,
         context="model backup creation",
+    )
     async def create_backup(self, model_name: str) -> None:
         """
         Create backup of a model.

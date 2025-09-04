@@ -749,7 +749,8 @@ class BinanceExchange:
                 if response.status == 200:
                     return await response.json()
                 self.logger.error(
-                    f"Failed to get aggregate trades: {response.status}",
+                    f"Failed to get aggregate trades: {response.status}"
+                )
                 return None
 
         except Exception:

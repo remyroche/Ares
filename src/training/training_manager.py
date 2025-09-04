@@ -66,11 +66,10 @@ class TrainingManager:
         context="training manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training manager with enhanced error handling."""
-
+        """Initialize training manager with enhanced error handling.
+        
         Returns:
             bool: True if initialization successful, False otherwise
-
         """
         try:
             self.logger.info("Initializing Training Manager...")
@@ -124,11 +123,10 @@ class TrainingManager:
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate training configuration."""
-
+        """Validate training configuration.
+        
         Returns:
             bool: True if configuration is valid, False otherwise
-
         """
         try:
             # Validate training interval
@@ -375,7 +373,7 @@ class TrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform model training."
+        """Perform model training."""
 
         Args:
             training_input: Training input dictionary
@@ -427,7 +425,7 @@ class TrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform hyperparameter optimization."
+        """Perform hyperparameter optimization."""
 
         Args:
             training_input: Training input dictionary
@@ -489,7 +487,7 @@ class TrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform model evaluation."
+        """Perform model evaluation."""
 
         Args:
             training_input: Training input dictionary
@@ -539,7 +537,7 @@ class TrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform model persistence."
+        """Perform model persistence."""
 
         Args:
             training_input: Training input dictionary
@@ -939,7 +937,7 @@ class TrainingManager:
         self,
         training_type: str | None = None,
     ) -> dict[str, Any]:
-        """Get training results."
+        """Get training results."""
 
         Args:
             training_type: Optional training type filter
@@ -961,7 +959,7 @@ class TrainingManager:
 
     @handles_errors(fallback=None)
     def get_training_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get training history."
+        """Get training history."""
 
         Args:
             limit: Optional limit on number of records
@@ -985,7 +983,7 @@ class TrainingManager:
             return []
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get training status information."
+        """Get training status information."""
 
         Returns:
             Dict[str, Any]: Training status
@@ -1037,7 +1035,7 @@ training_manager: TrainingManager | None = None
 async def setup_training_manager(
     config: dict[str, Any] | None = None,
 ) -> TrainingManager | None:
-    """Setup global training manager."
+    """Setup global training manager."""
 
     Args:
         config: Optional configuration dictionary

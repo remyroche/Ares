@@ -130,7 +130,7 @@ class CodeAnalyzer:
     def _is_import_used(self, tree: ast.AST, import_name: str) -> bool:
         """Check if an import is used in the AST."""
         for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and node.id, , import_name:
+            if isinstance(node, ast.Name) and node.id == import_name:
                 return True
             if isinstance(node, ast.Attribute) and hasattr(node, "value"):
                 if isinstance(node.value, ast.Name) and node.value.id== import_name:
@@ -285,7 +285,7 @@ def main():
     # Generate report
     report=analyzer.generate_report()
 
-    with open(args.output="w") as f:
+    with open(args.output, "w") as f:
         f.write(report)
 
     print(f"Report generated: {args.output}")

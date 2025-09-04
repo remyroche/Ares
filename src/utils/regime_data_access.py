@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Unified helpers to access and operate on per-HMM regime data consistently across steps.
 

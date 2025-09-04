@@ -27,8 +27,8 @@ class RegimePersistenceForecaster:
         self.max_regime_duration = self.config.get('max_regime_duration', 1000)
         self.persistence_models = {}
         
-        # Forecasting parameters
-        self.forecast_horizon = self.config.get('forecast_horizon', 24)  # hours
+        # Forecasting parameters (max 1h)
+        self.forecast_horizon = self.config.get('forecast_horizon', 1)  # hours (max 1h)
         self.confidence_threshold = self.config.get('confidence_threshold', 0.7)
         self.prediction_window = self.config.get('prediction_window', 10)
         
@@ -254,10 +254,25 @@ class RegimePersistenceForecaster:
         if features is None or len(features) == 0:
             return {}
         
-        # Build models for different forecasting horizons
+        # Build models for different forecasting horizons (max 1h)
         forecast_models = {}
         
-        for horizon in [1, 3, 6, 12, 24]:  # Different forecast horizons in hours
+        # Convert timeframes to periods based on data frequency
+        # Assuming 1m data: 1h = 60 periods, 30m = 2 periods, 15m = 4 periods, 5m = 12 periods
+        data_frequency_minutes = self._estimate_data_frequency(data)
+        
+        if data_frequency_minutes <= 1:  # 1m or less data
+            horizons = [5, 15, 30, 60]  # 5m, 15m, 30m, 1h
+        elif data_frequency_minutes <= 5:  # 5m data
+            horizons = [3, 6, 12]  # 15m, 30m, 1h
+        elif data_frequency_minutes <= 15:  # 15m data
+            horizons = [2, 4]  # 30m, 1h
+        elif data_frequency_minutes <= 30:  # 30m data
+            horizons = [2]  # 1h
+        else:  # 1h or higher data
+            horizons = [1]  # 1h only
+        
+        for horizon in horizons:
             try:
                 model = self._train_forecast_model(features, regimes, horizon)
                 if model is not None:
@@ -689,6 +704,30 @@ class RegimePersistenceForecaster:
         }
     
     # Helper methods
+    
+    def _estimate_data_frequency(self, data: pd.DataFrame) -> int:
+        """Estimate data frequency in minutes."""
+        if len(data) < 2:
+            return 1  # Default to 1 minute
+        
+        # Calculate time differences
+        if hasattr(data.index, 'to_pydatetime'):
+            time_diffs = data.index.to_series().diff().dropna()
+        else:
+            # If index is not datetime, assume 1 minute intervals
+            return 1
+        
+        # Get median time difference in minutes
+        if len(time_diffs) > 0:
+            median_diff = time_diffs.median()
+            if hasattr(median_diff, 'total_seconds'):
+                frequency_minutes = int(median_diff.total_seconds() / 60)
+            else:
+                frequency_minutes = 1
+        else:
+            frequency_minutes = 1
+        
+        return max(1, frequency_minutes)  # Ensure at least 1 minute
     
     def _calculate_aic(self, data: np.ndarray, distribution, params: Tuple) -> float:
         """Calculate AIC for distribution fit."""

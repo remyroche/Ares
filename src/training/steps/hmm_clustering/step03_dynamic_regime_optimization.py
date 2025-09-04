@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class DynamicRegimeCountOptimizer:
-    """Automatically optimize the number of regimes using multiple criteria."""
+    """Automatically optimize the number of regimes using multiple criteria with enhanced optimization."""
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
@@ -27,17 +27,31 @@ class DynamicRegimeCountOptimizer:
         self.cv_folds = self.config.get('cv_folds', 5)
         self.stability_threshold = self.config.get('stability_threshold', 0.7)
         
-        # Criteria weights
+        # Enhanced optimization parameters
+        self.adaptive_search = self.config.get('adaptive_search', True)
+        self.regime_stability_window = self.config.get('regime_stability_window', 50)
+        self.min_regime_samples = self.config.get('min_regime_samples', 20)
+        self.regime_balance_threshold = self.config.get('regime_balance_threshold', 0.1)
+        
+        # Criteria weights with enhanced metrics
         self.criteria_weights = self.config.get('criteria_weights', {
-            'information_criteria': 0.25,
-            'cross_validation': 0.25,
-            'economic_significance': 0.25,
-            'regime_persistence': 0.25
+            'information_criteria': 0.20,
+            'cross_validation': 0.20,
+            'economic_significance': 0.20,
+            'regime_persistence': 0.15,
+            'regime_balance': 0.10,
+            'regime_stability': 0.10,
+            'regime_separation': 0.05
         })
         
         # Market condition parameters
         self.volatility_threshold = self.config.get('volatility_threshold', 0.02)
         self.trend_threshold = self.config.get('trend_threshold', 0.001)
+        
+        # Enhanced optimization settings
+        self.use_elbow_method = self.config.get('use_elbow_method', True)
+        self.use_gap_statistic = self.config.get('use_gap_statistic', True)
+        self.use_silhouette_analysis = self.config.get('use_silhouette_analysis', True)
         
     def optimize_regime_count(self, data: pd.DataFrame, features: np.ndarray) -> Dict[str, Any]:
         """Optimize the number of regimes using multiple criteria."""
@@ -63,10 +77,23 @@ class DynamicRegimeCountOptimizer:
         print("  🌊 Adapting to market conditions...")
         market_adaptation = self._adapt_to_market_conditions(data)
         
-        # Step 6: Combine Results
+        # Step 6: Enhanced Optimization Methods
+        print("  🔍 Running enhanced optimization methods...")
+        enhanced_results = self._run_enhanced_optimization_methods(features)
+        
+        # Step 7: Regime Balance Analysis
+        print("  ⚖️ Analyzing regime balance...")
+        balance_results = self._analyze_regime_balance(features)
+        
+        # Step 8: Regime Stability Analysis
+        print("  🎯 Analyzing regime stability...")
+        stability_results = self._analyze_regime_stability(features)
+        
+        # Step 9: Combine Results
         print("  🎯 Combining optimization results...")
         optimal_regimes = self._combine_optimization_results(
-            ic_results, cv_results, economic_results, persistence_results, market_adaptation
+            ic_results, cv_results, economic_results, persistence_results, 
+            market_adaptation, enhanced_results, balance_results, stability_results
         )
         
         return {
@@ -77,6 +104,9 @@ class DynamicRegimeCountOptimizer:
             'economic_significance': economic_results,
             'regime_persistence': persistence_results,
             'market_adaptation': market_adaptation,
+            'enhanced_optimization': enhanced_results,
+            'regime_balance': balance_results,
+            'regime_stability': stability_results,
             'all_scores': optimal_regimes['all_scores'],
             'recommendation': optimal_regimes['recommendation']
         }
@@ -371,9 +401,241 @@ class DynamicRegimeCountOptimizer:
             'trend': trend
         }
     
+    def _run_enhanced_optimization_methods(self, features: np.ndarray) -> Dict[str, Any]:
+        """Run enhanced optimization methods (Elbow, Gap Statistic, Silhouette)."""
+        results = {
+            'elbow_method': None,
+            'gap_statistic': None,
+            'silhouette_analysis': None
+        }
+        
+        # Elbow Method
+        if self.use_elbow_method:
+            results['elbow_method'] = self._elbow_method_analysis(features)
+        
+        # Gap Statistic
+        if self.use_gap_statistic:
+            results['gap_statistic'] = self._gap_statistic_analysis(features)
+        
+        # Silhouette Analysis
+        if self.use_silhouette_analysis:
+            results['silhouette_analysis'] = self._silhouette_analysis(features)
+        
+        return results
+    
+    def _elbow_method_analysis(self, features: np.ndarray) -> Dict[str, Any]:
+        """Perform elbow method analysis for optimal regime count."""
+        from sklearn.cluster import KMeans
+        
+        inertias = []
+        n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
+        
+        for n_regimes in n_regimes_range:
+            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans.fit(features)
+            inertias.append(kmeans.inertia_)
+        
+        # Calculate elbow point using second derivative
+        if len(inertias) >= 3:
+            # Calculate second derivative
+            second_derivatives = []
+            for i in range(1, len(inertias) - 1):
+                second_deriv = inertias[i-1] - 2*inertias[i] + inertias[i+1]
+                second_derivatives.append(second_deriv)
+            
+            # Find elbow point (maximum second derivative)
+            elbow_idx = np.argmax(second_derivatives) + 1  # +1 because we start from index 1
+            elbow_n_regimes = n_regimes_range[elbow_idx]
+        else:
+            elbow_n_regimes = self.min_regimes
+        
+        return {
+            'optimal_n_regimes': elbow_n_regimes,
+            'inertias': inertias,
+            'n_regimes_tested': list(n_regimes_range),
+            'elbow_index': elbow_idx if len(inertias) >= 3 else 0
+        }
+    
+    def _gap_statistic_analysis(self, features: np.ndarray) -> Dict[str, Any]:
+        """Perform gap statistic analysis for optimal regime count."""
+        from sklearn.cluster import KMeans
+        
+        gap_scores = []
+        n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
+        
+        for n_regimes in n_regimes_range:
+            # Fit clustering to actual data
+            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans.fit(features)
+            log_inertia_actual = np.log(kmeans.inertia_)
+            
+            # Generate reference data (uniform random)
+            n_samples, n_features = features.shape
+            reference_inertias = []
+            
+            for _ in range(10):  # 10 reference datasets
+                reference_data = np.random.uniform(
+                    features.min(axis=0), 
+                    features.max(axis=0), 
+                    (n_samples, n_features)
+                )
+                kmeans_ref = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+                kmeans_ref.fit(reference_data)
+                reference_inertias.append(kmeans_ref.inertia_)
+            
+            log_inertia_reference = np.log(np.mean(reference_inertias))
+            gap_score = log_inertia_reference - log_inertia_actual
+            gap_scores.append(gap_score)
+        
+        # Find optimal number of regimes (maximum gap)
+        optimal_idx = np.argmax(gap_scores)
+        optimal_n_regimes = n_regimes_range[optimal_idx]
+        
+        return {
+            'optimal_n_regimes': optimal_n_regimes,
+            'gap_scores': gap_scores,
+            'n_regimes_tested': list(n_regimes_range),
+            'optimal_index': optimal_idx
+        }
+    
+    def _silhouette_analysis(self, features: np.ndarray) -> Dict[str, Any]:
+        """Perform silhouette analysis for optimal regime count."""
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import silhouette_score
+        
+        silhouette_scores = []
+        n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
+        
+        for n_regimes in n_regimes_range:
+            if n_regimes >= len(features):  # Can't have more clusters than samples
+                break
+                
+            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(features)
+            
+            if len(np.unique(labels)) > 1:  # Need at least 2 clusters
+                score = silhouette_score(features, labels)
+                silhouette_scores.append(score)
+            else:
+                silhouette_scores.append(-1)  # Invalid score
+        
+        # Find optimal number of regimes (maximum silhouette score)
+        valid_scores = [(i, score) for i, score in enumerate(silhouette_scores) if score > -1]
+        if valid_scores:
+            optimal_idx, optimal_score = max(valid_scores, key=lambda x: x[1])
+            optimal_n_regimes = n_regimes_range[optimal_idx]
+        else:
+            optimal_n_regimes = self.min_regimes
+            optimal_score = -1
+        
+        return {
+            'optimal_n_regimes': optimal_n_regimes,
+            'silhouette_scores': silhouette_scores,
+            'n_regimes_tested': list(n_regimes_range),
+            'optimal_score': optimal_score,
+            'optimal_index': optimal_idx if valid_scores else 0
+        }
+    
+    def _analyze_regime_balance(self, features: np.ndarray) -> Dict[str, Any]:
+        """Analyze regime balance for different regime counts."""
+        from sklearn.cluster import KMeans
+        
+        balance_scores = []
+        n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
+        
+        for n_regimes in n_regimes_range:
+            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(features)
+            
+            # Calculate regime sizes
+            regime_sizes = [np.sum(labels == i) for i in range(n_regimes)]
+            total_samples = len(labels)
+            
+            # Calculate balance score (inverse of coefficient of variation)
+            if len(regime_sizes) > 1:
+                mean_size = np.mean(regime_sizes)
+                std_size = np.std(regime_sizes)
+                balance_score = 1.0 - (std_size / mean_size) if mean_size > 0 else 0.0
+            else:
+                balance_score = 1.0
+            
+            # Check if any regime is too small
+            min_regime_ratio = min(regime_sizes) / total_samples
+            if min_regime_ratio < self.regime_balance_threshold:
+                balance_score *= 0.5  # Penalty for unbalanced regimes
+            
+            balance_scores.append(balance_score)
+        
+        # Find optimal number of regimes (maximum balance score)
+        optimal_idx = np.argmax(balance_scores)
+        optimal_n_regimes = n_regimes_range[optimal_idx]
+        
+        return {
+            'optimal_n_regimes': optimal_n_regimes,
+            'balance_scores': balance_scores,
+            'n_regimes_tested': list(n_regimes_range),
+            'optimal_index': optimal_idx
+        }
+    
+    def _analyze_regime_stability(self, features: np.ndarray) -> Dict[str, Any]:
+        """Analyze regime stability across different regime counts."""
+        from sklearn.cluster import KMeans
+        
+        stability_scores = []
+        n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
+        
+        for n_regimes in n_regimes_range:
+            # Run clustering multiple times with different random seeds
+            stability_results = []
+            
+            for seed in range(5):  # 5 different random seeds
+                kmeans = KMeans(n_clusters=n_regimes, random_state=seed, n_init=10)
+                labels = kmeans.fit_predict(features)
+                stability_results.append(labels)
+            
+            # Calculate stability as consistency across runs
+            if len(stability_results) > 1:
+                # Calculate pairwise consistency
+                consistencies = []
+                for i in range(len(stability_results)):
+                    for j in range(i + 1, len(stability_results)):
+                        consistency = self._calculate_label_consistency(
+                            stability_results[i], stability_results[j]
+                        )
+                        consistencies.append(consistency)
+                
+                stability_score = np.mean(consistencies)
+            else:
+                stability_score = 1.0
+            
+            stability_scores.append(stability_score)
+        
+        # Find optimal number of regimes (maximum stability score)
+        optimal_idx = np.argmax(stability_scores)
+        optimal_n_regimes = n_regimes_range[optimal_idx]
+        
+        return {
+            'optimal_n_regimes': optimal_n_regimes,
+            'stability_scores': stability_scores,
+            'n_regimes_tested': list(n_regimes_range),
+            'optimal_index': optimal_idx
+        }
+    
+    def _calculate_label_consistency(self, labels1: np.ndarray, labels2: np.ndarray) -> float:
+        """Calculate consistency between two label assignments."""
+        from sklearn.metrics import adjusted_rand_score
+        
+        if len(labels1) != len(labels2):
+            return 0.0
+        
+        # Use adjusted rand index for consistency
+        consistency = adjusted_rand_score(labels1, labels2)
+        return max(0.0, consistency)  # Ensure non-negative
+    
     def _combine_optimization_results(self, ic_results: Dict, cv_results: Dict, 
                                     economic_results: Dict, persistence_results: Dict,
-                                    market_adaptation: Dict) -> Dict[str, Any]:
+                                    market_adaptation: Dict, enhanced_results: Dict,
+                                    balance_results: Dict, stability_results: Dict) -> Dict[str, Any]:
         """Combine all optimization results to determine optimal regime count."""
         
         # Collect recommendations from each method
@@ -415,12 +677,55 @@ class DynamicRegimeCountOptimizer:
                 'weight': self.criteria_weights['regime_persistence']
             })
         
+        # Enhanced optimization methods
+        if enhanced_results['elbow_method']:
+            recommendations.append({
+                'n_regimes': enhanced_results['elbow_method']['optimal_n_regimes'],
+                'score': 0.8,  # High confidence in elbow method
+                'method': 'elbow_method',
+                'weight': 0.15
+            })
+        
+        if enhanced_results['gap_statistic']:
+            recommendations.append({
+                'n_regimes': enhanced_results['gap_statistic']['optimal_n_regimes'],
+                'score': 0.9,  # Very high confidence in gap statistic
+                'method': 'gap_statistic',
+                'weight': 0.15
+            })
+        
+        if enhanced_results['silhouette_analysis']:
+            recommendations.append({
+                'n_regimes': enhanced_results['silhouette_analysis']['optimal_n_regimes'],
+                'score': enhanced_results['silhouette_analysis']['optimal_score'],
+                'method': 'silhouette_analysis',
+                'weight': 0.10
+            })
+        
+        # Regime balance recommendation
+        if balance_results:
+            recommendations.append({
+                'n_regimes': balance_results['optimal_n_regimes'],
+                'score': balance_results['balance_scores'][balance_results['optimal_index']],
+                'method': 'regime_balance',
+                'weight': self.criteria_weights['regime_balance']
+            })
+        
+        # Regime stability recommendation
+        if stability_results:
+            recommendations.append({
+                'n_regimes': stability_results['optimal_n_regimes'],
+                'score': stability_results['stability_scores'][stability_results['optimal_index']],
+                'method': 'regime_stability',
+                'weight': self.criteria_weights['regime_stability']
+            })
+        
         # Market adaptation recommendation
         recommendations.append({
             'n_regimes': market_adaptation['recommended_regimes'],
             'score': 0.8,  # High confidence in market adaptation
             'method': 'market_adaptation',
-            'weight': 0.2  # Additional weight for market conditions
+            'weight': 0.1  # Reduced weight to balance with other methods
         })
         
         # Calculate weighted scores for each regime count

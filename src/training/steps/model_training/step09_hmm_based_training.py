@@ -143,6 +143,20 @@ class HmmBasedTrainingStep(BaseStep):
         # Check for selected features
         if "selected_features" not in pipeline_state:
             self.logger.warning("No selected features, will use all features")
+        else:
+            # Sanity check that selected features exist in the data
+            try:
+                sample = None
+                if "engineered_data" in pipeline_state:
+                    sample = next(iter(pipeline_state["engineered_data"].values()))
+                elif "train_data" in pipeline_state:
+                    sample = pipeline_state["train_data"]
+                if isinstance(sample, pd.DataFrame):
+                    missing = [f for f in pipeline_state["selected_features"] if f not in sample.columns]
+                    if missing:
+                        self.logger.warning(f"Missing selected features in data: {missing[:10]}{'...' if len(missing)>10 else ''}")
+            except Exception:
+                pass
         
         return len(errors) == 0, errors
     
@@ -176,6 +190,9 @@ class HmmBasedTrainingStep(BaseStep):
         prepared_data = self._prepare_training_data(
             data_splits, 
             selected_features
+        )
+        self.logger.info(
+            f"✅ Prepared splits: {', '.join([f'{k}:{len(v.get('features', []))}' for k,v in prepared_data.items()])}"
         )
         
         # Initialize results storage

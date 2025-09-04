@@ -94,6 +94,23 @@ class HMMRegimeDiscoveryStep(BaseStep):
         # Check if validated data exists
         if "validated_data" not in pipeline_state and "dataframe" not in pipeline_state:
             errors.append("No validated data from step 2")
+        else:
+            df = pipeline_state.get("validated_data") or pipeline_state.get("dataframe")
+            # Basic schema and index checks
+            try:
+                if not isinstance(df, pd.DataFrame):
+                    errors.append("Input is not a DataFrame")
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    self.logger.warning("Input index is not DatetimeIndex")
+                elif not df.index.is_monotonic_increasing:
+                    self.logger.warning("Datetime index is not monotonic increasing")
+                if len(df) < 100:
+                    self.logger.warning(f"Very few rows for regime discovery: {len(df)}")
+                for c in ["open", "high", "low", "close"]:
+                    if c not in df.columns:
+                        self.logger.warning(f"Missing expected column: {c}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Input inspection failed: {e}")
         
         # Validate n_regimes
         if self.n_regimes < 2 or self.n_regimes > 10:
@@ -134,10 +151,16 @@ class HMMRegimeDiscoveryStep(BaseStep):
         # Step 1: Feature Engineering
         self.logger.info("📊 Engineering features...")
         features_df = await self._engineer_features(data)
+        self.logger.info(
+            f"✅ Features engineered: shape={features_df.shape}, columns={len(features_df.columns)}"
+        )
         
         # Step 2: Run HMM Analysis
         self.logger.info("🎯 Running HMM analysis...")
         hmm_results = await self._run_hmm_analysis(features_df)
+        self.logger.info(
+            f"✅ HMM analysis complete: states={hmm_results.get('n_states')}, success={hmm_results.get('success')}"
+        )
         
         # Step 3: Characterize Regimes
         self.logger.info("📈 Characterizing regimes...")
@@ -145,6 +168,7 @@ class HMMRegimeDiscoveryStep(BaseStep):
             features_df, 
             hmm_results
         )
+        self.logger.info("✅ Regime characterization complete")
         
         # Step 4: Generate Reports
         self.logger.info("📝 Generating reports...")
@@ -201,6 +225,16 @@ class HMMRegimeDiscoveryStep(BaseStep):
             labels = pipeline_state["regime_labels"]
             if len(labels) == 0:
                 errors.append("No regime labels generated")
+            else:
+                # Additional sanity checks
+                try:
+                    unique_labels = np.unique(labels)
+                    if len(unique_labels) < 2:
+                        self.logger.warning("Regime labels have fewer than 2 unique states")
+                    if np.isnan(labels).any():
+                        errors.append("NaN values in regime labels")
+                except Exception:
+                    pass
         
         return len(errors) == 0, errors
     

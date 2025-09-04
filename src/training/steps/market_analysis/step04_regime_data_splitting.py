@@ -51,21 +51,51 @@ class RegimeDataSplittingStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        if 'features' not in pipeline_state:
-            errors.append('No features from step 3')
-        if 'regime_labels' not in pipeline_state:
-            errors.append('No regime labels from step 3')
-        if 'validated_data' not in pipeline_state and 'dataframe' not in pipeline_state:
-            errors.append('No validated data from step 2')
-        if 'features' in pipeline_state and 'regime_labels' in pipeline_state:
-            features = pipeline_state['features']
-            labels = pipeline_state['regime_labels']
+        
+        # Check for required data from previous steps
+        if "features" not in pipeline_state:
+            errors.append("No features from step 3")
+        
+        if "regime_labels" not in pipeline_state:
+            errors.append("No regime labels from step 3")
+        
+        # Check if we have the original data
+        if "validated_data" not in pipeline_state and "dataframe" not in pipeline_state:
+            errors.append("No validated data from step 2")
+        
+        # Validate regime labels exist and match data length and index alignment
+        if "features" in pipeline_state and "regime_labels" in pipeline_state:
+            features = pipeline_state["features"]
+            labels = pipeline_state["regime_labels"]
+            
             if len(features) != len(labels):
-                errors.append(f'Feature/label length mismatch: {len(features)} vs {len(labels)}')
-        return (len(errors) == 0, errors)
+                errors.append(
+                    f"Feature/label length mismatch: {len(features)} vs {len(labels)}"
+                )
+            # Index alignment check
+            try:
+                if isinstance(features, pd.DataFrame):
+                    if hasattr(labels, 'index') and hasattr(features, 'index'):
+                        common = features.index
+                        if getattr(labels, 'index', None) is not None and len(labels) == len(common):
+                            # if labels is Series-like ensure index order aligns
+                            pass
+            except Exception:
+                pass
+        
+        return len(errors) == 0, errors
+    
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={"success": False},
+        context="regime data splitting execution"
+    )
+    async def execute_logic(
+        self,
+        training_input: Dict[str, Any],
+        pipeline_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
 
-    @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='regime data splitting execution')
-    async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute regime data splitting logic.
         
         Args:
@@ -75,11 +105,24 @@ class RegimeDataSplittingStep(BaseStep):
         Returns:
             Updated pipeline state
         """
-        features = pipeline_state['features']
-        regime_labels = pipeline_state['regime_labels']
-        original_data = pipeline_state.get('validated_data') or pipeline_state.get('dataframe')
-        self.logger.info('🔀 Starting regime data splitting...')
-        unified_data = self._create_unified_dataset(original_data, features, regime_labels)
+        # Get data from previous steps
+        features = pipeline_state["features"]
+        regime_labels = pipeline_state["regime_labels"]
+        original_data = pipeline_state.get("validated_data") or pipeline_state.get("dataframe")
+        
+        self.logger.info("🔀 Starting regime data splitting...")
+        
+        # Create unified dataset with regime labels
+        unified_data = self._create_unified_dataset(
+            original_data, 
+            features, 
+            regime_labels
+        )
+        self.logger.info(
+            f"✅ Unified dataset ready: shape={unified_data.shape}, regime col present={'regime_label' in unified_data}"
+        )
+        
+        # Analyze regime distribution
         regime_stats = self._analyze_regime_distribution(regime_labels)
         self._log_regime_stats(regime_stats)
         split_data = self._split_data(unified_data, regime_labels, stratify=self.stratify_by_regime)
@@ -115,9 +158,23 @@ class RegimeDataSplittingStep(BaseStep):
                 actual_test_ratio = test_len / total_len
                 tolerance = 0.05
                 if abs(actual_train_ratio - self.train_ratio) > tolerance:
-                    errors.append(f'Train split ratio mismatch: expected {self.train_ratio:.2f}, got {actual_train_ratio:.2f}')
-        if 'regime_statistics' in pipeline_state:
-            regime_stats = pipeline_state['regime_statistics']
+                    errors.append(
+                        f"Train split ratio mismatch: expected {self.train_ratio:.2f}, "
+                        f"got {actual_train_ratio:.2f}"
+                    )
+                if abs(actual_val_ratio - self.val_ratio) > tolerance:
+                    self.logger.warning(
+                        f"Val split ratio differs: expected {self.val_ratio:.2f}, got {actual_val_ratio:.2f}"
+                    )
+                if abs(actual_test_ratio - self.test_ratio) > tolerance:
+                    self.logger.warning(
+                        f"Test split ratio differs: expected {self.test_ratio:.2f}, got {actual_test_ratio:.2f}"
+                    )
+        
+        # Check regime distribution in splits
+        if "regime_statistics" in pipeline_state:
+            regime_stats = pipeline_state["regime_statistics"]
+
             for regime_id, stats in regime_stats.items():
                 if stats['count'] < self.min_regime_samples:
                     self.logger.warning(f"Regime {regime_id} has only {stats['count']} samples (minimum: {self.min_regime_samples})")

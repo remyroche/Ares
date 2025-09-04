@@ -109,6 +109,15 @@ class FeatureEngineeringStep(BaseStep):
             if "regime_labels" not in pipeline_state:
                 self.logger.warning("Regime labels not available, will skip regime features")
         
+        # Basic schema/index checks on input data
+        df = pipeline_state.get("labeled_data") or pipeline_state.get("train_data")
+        if isinstance(df, pd.DataFrame):
+            if not isinstance(df.index, pd.DatetimeIndex):
+                self.logger.warning("Input index is not DatetimeIndex; time features may be limited")
+            for col in ["open", "high", "low", "close"]:
+                if col not in df.columns:
+                    self.logger.warning(f"Missing expected price column: {col}")
+        
         return len(errors) == 0, errors
     
     @handles_errors(
@@ -147,6 +156,9 @@ class FeatureEngineeringStep(BaseStep):
                 data, 
                 pipeline_state
             )
+            self.logger.info(
+                f"✅ Engineered split '{split_name}': shape={engineered_split.shape}"
+            )
             
             # Calculate feature statistics
             stats = self._calculate_feature_statistics(engineered_split)
@@ -160,6 +172,9 @@ class FeatureEngineeringStep(BaseStep):
             engineered_data, selected_features = await self._perform_feature_selection(
                 engineered_data,
                 feature_statistics
+            )
+            self.logger.info(
+                f"✅ Feature selection complete: selected={len(selected_features)}"
             )
         else:
             selected_features = self._get_all_feature_columns(engineered_data)

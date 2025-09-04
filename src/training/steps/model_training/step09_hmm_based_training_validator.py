@@ -1,114 +1,173 @@
-"""Validator for Step 8: HMM-Based Training.
+"""HMM-Based Training Step Validator"""
 
-This module validates the HMM-based training step outputs with comprehensive model checks.
-"""
-import asyncio
-import sys
+import json
+from typing import Any, Dict, List
+import pandas as pd
 from pathlib import Path
-from typing import Any, Dict, Optional
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+
+from src.core.decorators import handles_errors, validates, log_call, traced
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors, validates
-logger = system_logger.getChild('Step8HMMBasedTrainingValidator')
+from src.utils.common_operations import safe_file_exists, validate_dataframe_schema, validate_data_quality
 
-@validates()
-@handles_errors()
-async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Run validation for Step 8: HMM-Based Training.
+class HMMTrainingValidator:
+    """Validator for HMM-based training step."""
 
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild('HMMTrainingValidator')
+        self.validation_results: Dict[str, Any] = {}
 
-    Returns:
-        Dictionary containing validation results
-    """
-    logger.info('🔍 Validating Step 8: HMM-Based Training')
-    try:
-        symbol = training_input.get('symbol', 'ETHUSDT')
-        exchange = training_input.get('exchange', 'BINANCE')
-        timeframe = training_input.get('timeframe', '1m')
-        data_dir = training_input.get('data_dir', 'data_cache')
-        hmm_models_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_hmm_models.pkl'
-        if not hmm_models_path.exists():
-            logger.error(f'❌ HMM models file not found: {hmm_models_path}')
-            return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': f'HMM models file not found: {hmm_models_path}'}
-        file_size = hmm_models_path.stat().st_size
-        if file_size == 0:
-            logger.error(f'❌ HMM models file is empty: {hmm_models_path}')
-            return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': 'HMM models file is empty'}
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @validates(strict=True)
+    @log_call
+    @traced
+    async def validate_training_step(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
+        """Validate HMM-based training step."""
+        self.logger.info(f"🔍 Validating HMM-based training step for {symbol} on {exchange}")
+        
         try:
-            import pickle
-            import numpy as np
-            with open(hmm_models_path, 'rb') as f:
-                models_data = pickle.load(f)
-            if not isinstance(models_data, dict):
-                logger.error('❌ HMM models data is not a dictionary')
-                return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': 'HMM models data is not a dictionary'}
-            required_keys = ['models', 'regime_mapping', 'training_metadata']
-            missing_keys = [key for key in required_keys if key not in models_data]
-            if missing_keys:
-                logger.error(f'❌ Missing required keys in models data: {missing_keys}')
-                return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': f'Missing required keys: {missing_keys}'}
-            models = models_data.get('models', {})
-            if not models:
-                logger.error('❌ No models found in models data')
-                return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': 'No models found in models data'}
-            model_validation_results = {}
-            for regime_id, model in models.items():
-                try:
-                    if hasattr(model, 'predict'):
-                        model_validation_results[regime_id] = 'VALID'
-                    else:
-                        model_validation_results[regime_id] = 'INVALID - No predict method'
-                    if hasattr(model, 'score'):
-                        model_validation_results[regime_id] += ' - Has score method'
-                    if hasattr(model, 'n_components'):
-                        model_validation_results[regime_id] += f' - {model.n_components} components'
-                except Exception as e:
-                    model_validation_results[regime_id] = f'ERROR - {str(e)}'
-            regime_mapping = models_data.get('regime_mapping', {})
-            if not regime_mapping:
-                logger.warning('⚠️ No regime mapping found')
-            training_metadata = models_data.get('training_metadata', {})
-            if not training_metadata:
-                logger.warning('⚠️ No training metadata found')
-            training_metrics = training_metadata.get('metrics', {})
-            if training_metrics:
-                logger.info(f'✅ Training metrics: {training_metrics}')
-                if 'accuracy' in training_metrics:
-                    accuracy = training_metrics['accuracy']
-                    if accuracy < 0.5:
-                        logger.warning(f'⚠️ Low accuracy score: {accuracy}')
-                    elif accuracy > 0.95:
-                        logger.warning(f'⚠️ Very high accuracy score (potential overfitting): {accuracy}')
-            performance_data = training_metadata.get('performance', {})
-            if performance_data:
-                logger.info(f'✅ Performance data: {performance_data}')
-            feature_importance = training_metadata.get('feature_importance', {})
-            if feature_importance:
-                logger.info(f'✅ Feature importance data available for {len(feature_importance)} regimes')
-            logger.info(f'✅ Number of models: {len(models)}')
-            logger.info(f'✅ Regime mapping keys: {list(regime_mapping.keys())}')
-            logger.info(f'✅ Training metadata keys: {list(training_metadata.keys())}')
-            invalid_models = [regime_id for regime_id, status in model_validation_results.items() if 'INVALID' in status or 'ERROR' in status]
-            if invalid_models:
-                logger.warning(f'⚠️ Found {len(invalid_models)} invalid models: {invalid_models}')
-                return {'step_name': 'step8_hmm_based_training', 'validation_passed': True, 'warning': f'Found {len(invalid_models)} invalid models', 'model_validation_results': model_validation_results, 'file_path': str(hmm_models_path), 'file_size': file_size, 'num_models': len(models), 'training_metrics': training_metrics}
-            logger.info('✅ Step 8: HMM-Based Training validation passed')
-            return {'step_name': 'step8_hmm_based_training', 'validation_passed': True, 'file_path': str(hmm_models_path), 'file_size': file_size, 'num_models': len(models), 'model_validation_results': model_validation_results, 'training_metrics': training_metrics, 'performance_data': performance_data, 'feature_importance': bool(feature_importance)}
+            validation_result = {
+                'step_name': 'step09_hmm_based_training',
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'data_dir': data_dir,
+                'overall_success': False,
+                'errors': [],
+                'warnings': []
+            }
+            
+            # Validate inputs
+            input_validation = await self._validate_inputs(symbol, exchange, timeframe, data_dir)
+            if not input_validation['success']:
+                validation_result['errors'].extend(input_validation['errors'])
+                return validation_result
+            
+            # Validate configuration
+            config_validation = await self._validate_configuration()
+            if not config_validation['success']:
+                validation_result['errors'].extend(config_validation['errors'])
+                return validation_result
+            
+            # Validate data availability
+            data_validation = await self._validate_data_availability(symbol, exchange, data_dir)
+            if not data_validation['success']:
+                validation_result['errors'].extend(data_validation['errors'])
+                return validation_result
+            
+            validation_result['overall_success'] = True
+            validation_result['warnings'].extend(input_validation.get('warnings', []))
+            validation_result['warnings'].extend(config_validation.get('warnings', []))
+            validation_result['warnings'].extend(data_validation.get('warnings', []))
+            
+            self.validation_results['step09_hmm_based_training'] = validation_result
+            
+            self.logger.info("✅ HMM-based training step validation completed successfully")
+            return validation_result
+            
         except Exception as e:
-            logger.error(f'❌ Error loading HMM models: {e}')
-            return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': f'Error loading models: {e}'}
-    except Exception as e:
-        logger.exception(f'❌ Error in Step 8 validation: {e}')
-        return {'step_name': 'step8_hmm_based_training', 'validation_passed': False, 'error': f'Validation error: {e}'}
-if __name__ == '__main__':
+            self.logger.error(f"❌ HMM-based training step validation failed: {e}")
+            validation_result['errors'].append(f"Validation error: {e}")
+            return validation_result
 
-    async def test() -> None:
-        test_input = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m', 'data_dir': 'data_cache'}
-        test_state = {}
-        result = await run_validator(test_input, test_state)
-        print(f'Validation result: {result}')
-    asyncio.run(test())
+    @handles_errors(Exception, fallback={'success': False, 'errors': ['Input validation failed']}, log_level="ERROR")
+    async def _validate_inputs(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Dict[str, Any]:
+        """Validate input parameters."""
+        errors = []
+        warnings = []
+        
+        if not symbol or not isinstance(symbol, str):
+            errors.append("Symbol must be a non-empty string")
+        elif len(symbol) < 3:
+            errors.append("Symbol must be at least 3 characters long")
+        elif not symbol.isupper():
+            warnings.append("Symbol should be uppercase")
+        
+        valid_exchanges = ['BINANCE', 'MEXC', 'GATEIO']
+        if not exchange or exchange not in valid_exchanges:
+            errors.append(f"Exchange must be one of: {valid_exchanges}")
+        
+        valid_timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+        if not timeframe or timeframe not in valid_timeframes:
+            errors.append(f"Timeframe must be one of: {valid_timeframes}")
+        
+        if not data_dir or not isinstance(data_dir, str):
+            errors.append("Data directory must be a non-empty string")
+        elif not safe_file_exists(data_dir):
+            errors.append(f"Data directory does not exist: {data_dir}")
+        
+        return {
+            'success': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings
+        }
+
+    @handles_errors(Exception, fallback={'success': False, 'errors': ['Configuration validation failed']}, log_level="ERROR")
+    async def _validate_configuration(self) -> Dict[str, Any]:
+        """Validate training configuration."""
+        errors = []
+        warnings = []
+        
+        required_sections = ['HMM_LM', 'regime_specific_training']
+        for section in required_sections:
+            if section not in self.config:
+                errors.append(f"Missing required configuration section: {section}")
+        
+        if 'regime_specific_training' in self.config:
+            regime_config = self.config['regime_specific_training']
+            if not isinstance(regime_config, dict):
+                errors.append("Regime-specific training configuration must be a dictionary")
+            else:
+                required_regime_params = ['min_regime_samples', 'regime_validation_split']
+                for param in required_regime_params:
+                    if param not in regime_config:
+                        errors.append(f"Missing required regime parameter: {param}")
+        
+        return {
+            'success': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings
+        }
+
+    @handles_errors(Exception, fallback={'success': False, 'errors': ['Data validation failed']}, log_level="ERROR")
+    async def _validate_data_availability(self, symbol: str, exchange: str, data_dir: str) -> Dict[str, Any]:
+        """Validate data availability and quality."""
+        errors = []
+        warnings = []
+        
+        required_files = [
+            f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
+            f"volume_{exchange}_{symbol}_consolidated.parquet"
+        ]
+        
+        for file_name in required_files:
+            file_path = f"{data_dir}/{file_name}"
+            if not safe_file_exists(file_path):
+                errors.append(f"Required data file not found: {file_path}")
+            else:
+                file_size = Path(file_path).stat().st_size
+                if file_size == 0:
+                    errors.append(f"Data file is empty: {file_path}")
+                elif file_size < 1024:
+                    warnings.append(f"Data file is very small: {file_path} ({file_size} bytes)")
+        
+        main_data_file = f"{data_dir}/{required_files[0]}"
+        if safe_file_exists(main_data_file):
+            try:
+                df = pd.read_parquet(main_data_file)
+                required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                schema_valid, schema_errors = validate_dataframe_schema(df, required_columns)
+                if not schema_valid:
+                    errors.extend([f"Schema error: {error}" for error in schema_errors])
+                
+                if len(df) < 1000:
+                    warnings.append(f"Low data volume: {len(df)} rows (minimum recommended: 1000)")
+                    
+            except Exception as e:
+                errors.append(f"Failed to validate data file {main_data_file}: {e}")
+        
+        return {
+            'success': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings
+        }

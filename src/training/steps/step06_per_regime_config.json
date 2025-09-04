@@ -1,0 +1,152 @@
+{
+  "step06_feature_engineering": {
+    "per_regime_feature_engineering": true,
+    "force_regime_specific_periods": true,
+    "adaptive_lookback_per_regime": true,
+    "use_matrix_optimizer": true,
+    "use_dynamic_periods": true,
+    "max_interactions": 100,
+    "min_importance": 0.01,
+    "correlation_threshold": 0.8,
+    "mutual_info_threshold": 0.05,
+    "strong_interaction_threshold": 0.7,
+    "medium_interaction_threshold": 0.5,
+    "weak_interaction_threshold": 0.3
+  },
+  "regime_specific_features": {
+    "regime_0": {
+      "emphasis": "trend",
+      "lookback_periods": [10, 20, 50, 100, 200],
+      "optimization_priority": "trend_strength",
+      "interaction_patterns": {
+        "trend_momentum": {
+          "features": ["SMA_20", "SMA_100", "EMA_21", "ADX_14"],
+          "weight": 2.0,
+          "enabled": true
+        },
+        "trend_volume": {
+          "features": ["OBV_20", "Volume_Ratio", "SMA_20", "ATR_14"],
+          "weight": 1.8,
+          "enabled": true
+        }
+      }
+    },
+    "regime_1": {
+      "emphasis": "trend",
+      "lookback_periods": [10, 20, 50, 100, 200],
+      "optimization_priority": "trend_strength",
+      "interaction_patterns": {
+        "trend_momentum": {
+          "features": ["SMA_20", "SMA_100", "EMA_21", "ADX_14"],
+          "weight": 2.0,
+          "enabled": true
+        },
+        "trend_volume": {
+          "features": ["OBV_20", "Volume_Ratio", "SMA_20", "ATR_14"],
+          "weight": 1.8,
+          "enabled": true
+        }
+      }
+    },
+    "regime_2": {
+      "emphasis": "trend",
+      "lookback_periods": [10, 20, 50, 100, 200],
+      "optimization_priority": "trend_strength",
+      "interaction_patterns": {
+        "trend_momentum": {
+          "features": ["SMA_20", "SMA_100", "EMA_21", "ADX_14"],
+          "weight": 2.0,
+          "enabled": true
+        },
+        "trend_volume": {
+          "features": ["OBV_20", "Volume_Ratio", "SMA_20", "ATR_14"],
+          "weight": 1.8,
+          "enabled": true
+        }
+      }
+    },
+    "regime_3": {
+      "emphasis": "balanced",
+      "lookback_periods": [7, 14, 30, 60],
+      "optimization_priority": "balanced_performance",
+      "interaction_patterns": {
+        "momentum_volume": {
+          "features": ["RSI_14", "MACD_12_26", "OBV_20", "Volume_Ratio"],
+          "weight": 1.6,
+          "enabled": true
+        },
+        "oscillator_trend": {
+          "features": ["RSI_14", "Williams_R_14", "CCI_20", "EMA_21"],
+          "weight": 1.4,
+          "enabled": true
+        }
+      }
+    },
+    "regime_4": {
+      "emphasis": "balanced",
+      "lookback_periods": [7, 14, 30, 60],
+      "optimization_priority": "balanced_performance",
+      "interaction_patterns": {
+        "momentum_volume": {
+          "features": ["RSI_14", "MACD_12_26", "OBV_20", "Volume_Ratio"],
+          "weight": 1.6,
+          "enabled": true
+        },
+        "oscillator_trend": {
+          "features": ["RSI_14", "Williams_R_14", "CCI_20", "EMA_21"],
+          "weight": 1.4,
+          "enabled": true
+        }
+      }
+    },
+    "regime_5": {
+      "emphasis": "mean_reversion",
+      "lookback_periods": [5, 10, 20, 30],
+      "optimization_priority": "volatility_capture",
+      "interaction_patterns": {
+        "mean_reversion": {
+          "features": ["RSI_14", "BB_Position_20", "Williams_R_14", "CCI_20"],
+          "weight": 2.2,
+          "enabled": true
+        },
+        "volatility_regime": {
+          "features": ["ATR_14", "BB_Squeeze_20", "Volatility", "Volume_Ratio"],
+          "weight": 1.9,
+          "enabled": true
+        }
+      }
+    }
+  },
+  "diverse_lookback_optimization": {
+    "target_periods_per_feature": 3,
+    "min_periods_per_feature": 2,
+    "max_periods_per_feature": 3,
+    "diversity_threshold": 0.3,
+    "meaningful_threshold": 0.1,
+    "correlation_threshold": 0.7,
+    "information_diversity_weight": 0.4,
+    "signal_strength_weight": 0.4,
+    "correlation_penalty_weight": 0.2,
+    "lookback_ranges": {
+      "RSI": {"min": 5, "max": 50, "step": 2},
+      "MACD_fast": {"min": 5, "max": 25, "step": 1},
+      "MACD_slow": {"min": 20, "max": 40, "step": 2},
+      "Bollinger_Bands": {"min": 10, "max": 50, "step": 2},
+      "SMA_short": {"min": 3, "max": 20, "step": 1},
+      "SMA_long": {"min": 20, "max": 100, "step": 5},
+      "EMA_short": {"min": 3, "max": 20, "step": 1},
+      "EMA_long": {"min": 20, "max": 100, "step": 5},
+      "ATR": {"min": 5, "max": 30, "step": 1},
+      "Stochastic_k": {"min": 5, "max": 30, "step": 1},
+      "Stochastic_d": {"min": 3, "max": 10, "step": 1},
+      "ADX": {"min": 5, "max": 30, "step": 1},
+      "CCI": {"min": 5, "max": 30, "step": 1}
+    }
+  },
+  "validation_settings": {
+    "min_data_points_for_optimization": 100,
+    "validate_optimization_results": true,
+    "log_optimization_details": true,
+    "save_optimization_metadata": true
+  }
+}

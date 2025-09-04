@@ -14,11 +14,10 @@ from typing import Any
 import pandas as pd
 
 from .comprehensive_enhanced_scenario_predictor import (
-import asyncio
-import numpy as np
-
     ComprehensiveEnhancedScenarioPredictor,
 )
+import asyncio
+import numpy as np
 
 # Simple logger setup
 logger = logging.getLogger(__name__)

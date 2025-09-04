@@ -259,7 +259,7 @@ def test_specific_parameters():
         return counts, data.get("combination_counts", {})
     centroids=data.get("cluster_centroids", {})
 
-    result=simulate_merging_with_parameters(counts = centroids, 0.005, 0.80, 15)
+    result=simulate_merging_with_parameters(centroids, 0.005, 0.80, 15)
 
     if result:
         print("Results with freq=0.005, sim=0.80, max=15:")

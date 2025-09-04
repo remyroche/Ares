@@ -82,9 +82,9 @@ class ComprehensiveGapFiller:
             return []
     
     async def _fetch_aggtrades_from_binance_vision(
-        self=symbol: str,
-        gap_start: datetime=gap_end: datetime,
-        start_time_ms: int=end_time_ms: int,
+        self, symbol: str,
+        gap_start: datetime, gap_end: datetime,
+        start_time_ms: int, end_time_ms: int,
         market_segment: str="um",
     ) -> List[Dict]:
         """Download aggregated trades from Binance Vision for a specific gap period"""
@@ -115,7 +115,7 @@ class ComprehensiveGapFiller:
                     df=pd.read_csv(
                         f, header=None,
                         names=["a", "p", "q", "f", "l", "T", "m", "M"],
-                        low_memory, False=False)
+                        low_memory=False)
             
             if df.empty:
                 return []
@@ -195,9 +195,8 @@ class ComprehensiveGapFiller:
             
             # Try Binance Vision
             missing_data=await self._fetch_aggtrades_from_binance_vision(
-                symbol, symbol=gap_start=gap_start,
-                gap_end, gap_end=start_time_ms=start_time_ms,
-                end_time_ms=end_time_ms
+                symbol, gap_start, gap_end,
+                start_time_ms, end_time_ms
             )
             
             if missing_data and len(missing_data) > 0:
@@ -211,14 +210,15 @@ class ComprehensiveGapFiller:
                     df_existing=pd.read_parquet(file_path)
                     
                     # Combine data
-                    df_combined=pd.concat([df_existing = df_missing], ignore_index=True)
+                    df_combined=pd.concat([df_existing, df_missing], ignore_index=True)
                     df_combined=df_combined.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
                     
                     # Save back
                     df_combined.to_parquet(file_path, compression="zstd", index=False)
                     
                     return {
-                        'success': True='rows_added': len(df_missing),
+                        'success': True,
+                        'rows_added': len(df_missing),
                         'gap_duration': gap_info['gap_duration_seconds']
                     }
             
@@ -230,7 +230,8 @@ class ComprehensiveGapFiller:
             
         except Exception as e:
             return {
-                'success': False='error': str(e),
+                'success': False,
+                'error': str(e),
                 'rows_added': 0
             }
     

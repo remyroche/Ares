@@ -249,8 +249,14 @@ class CodeInteractionMapper:
             visual_files = self._generate_visual_diagrams(reports_dir, timestamp)
             if visual_files:
                 print(f"  - Generated {len(visual_files)} visual diagrams")
+            else:
+                print(f"  - No visual diagrams generated (check dependencies)")
+        except ImportError as e:
+            print(f"  - Visual diagrams skipped: Missing dependencies ({e})")
+            print(f"  - Install matplotlib for visualizations: pip install matplotlib")
         except Exception as e:
             print(f"  - Could not generate visual diagrams: {e}")
+            print(f"  - HTML reports are still available")
 
         return {
             "json": str(json_file),
@@ -361,6 +367,12 @@ class CodeInteractionMapper:
                     if fig:
                         files = dep_viz.save_figure(fig, f"removal_plan_{timestamp}")
                         generated_files.extend(files)
+                
+                # Function usage mapping
+                fig = self._create_function_usage_map()
+                if fig:
+                    files = dep_viz.save_figure(fig, f"function_usage_map_{timestamp}")
+                    generated_files.extend(files)
                 
                 print(f"  - Generated dead code visualizations")
 
@@ -1160,6 +1172,292 @@ class CodeInteractionMapper:
         except Exception as e:
             print(f"  - Error creating removal plan chart: {e}")
             return None
+
+    def _create_function_usage_map(self):
+        """Create a comprehensive function usage mapping visualization."""
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.patches as mpatches
+            import numpy as np
+            from collections import defaultdict, Counter
+            
+            # Collect function usage data from call graph and dead code analysis
+            call_graph = self.results.get('call_graph', {})
+            dead_code = self.results.get('dead_code')
+            
+            if not call_graph.get('functions') and not dead_code:
+                return None
+            
+            # Prepare function usage data
+            function_usage = defaultdict(lambda: {
+                'calls_made': 0,
+                'times_called': 0,
+                'file_path': '',
+                'is_dead': False,
+                'is_deprecated': False,
+                'impact_score': 0
+            })
+            
+            # Process call graph data
+            call_relationships = call_graph.get('call_relationships', [])
+            functions = call_graph.get('functions', {})
+            
+            # Count function calls
+            for call in call_relationships:
+                caller = call.get('caller', {})
+                callee = call.get('callee', {})
+                
+                caller_name = caller.get('name', '')
+                callee_name = callee.get('name', '')
+                
+                if caller_name:
+                    function_usage[caller_name]['calls_made'] += 1
+                    function_usage[caller_name]['file_path'] = caller.get('file_path', '')
+                
+                if callee_name:
+                    function_usage[callee_name]['times_called'] += 1
+                    function_usage[callee_name]['file_path'] = callee.get('file_path', '')
+            
+            # Process dead code data
+            if dead_code:
+                for severity, issues in dead_code.issues_by_severity.items():
+                    for issue in issues:
+                        if issue.issue_type in ['unused_function', 'unused_method']:
+                            # Extract function name from description or file
+                            func_name = self._extract_function_name_from_issue(issue)
+                            if func_name:
+                                function_usage[func_name]['is_dead'] = True
+                                function_usage[func_name]['impact_score'] = self._calculate_impact_score(issue)
+                
+                # Process deprecated functions
+                if dead_code.deprecated_issues:
+                    for issue in dead_code.deprecated_issues:
+                        if issue.deprecated_type == 'decorator':
+                            func_name = self._extract_function_name_from_issue(issue)
+                            if func_name:
+                                function_usage[func_name]['is_deprecated'] = True
+            
+            # Create visualization
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(20, 16))
+            
+            # 1. Function Usage Heatmap
+            self._create_usage_heatmap(ax1, function_usage)
+            
+            # 2. Dead vs Used Functions
+            self._create_dead_vs_used_chart(ax2, function_usage)
+            
+            # 3. Function Call Network
+            self._create_call_network_chart(ax3, call_relationships)
+            
+            # 4. Usage Statistics
+            self._create_usage_statistics_chart(ax4, function_usage)
+            
+            plt.suptitle('Function Usage Mapping Analysis', fontsize=20, fontweight='bold', y=0.98)
+            plt.tight_layout()
+            return fig
+            
+        except ImportError:
+            print("  - Matplotlib not available for function usage map")
+            return None
+        except Exception as e:
+            print(f"  - Error creating function usage map: {e}")
+            return None
+
+    def _extract_function_name_from_issue(self, issue):
+        """Extract function name from dead code issue."""
+        # Try to extract from description
+        description = issue.description.lower()
+        if 'function' in description:
+            # Look for function name patterns
+            import re
+            patterns = [
+                r"unused function '([^']+)'",
+                r"function '([^']+)'",
+                r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, description)
+                if match:
+                    return match.group(1)
+        
+        # Fallback: try to extract from file path and line
+        file_path = issue.file_path
+        if file_path:
+            # This is a simplified extraction - in practice, you'd parse the file
+            return f"function_at_line_{issue.line_number}"
+        
+        return None
+
+    def _calculate_impact_score(self, issue):
+        """Calculate impact score for an issue."""
+        score = 0
+        if issue.confidence >= 95:
+            score += 3
+        elif issue.confidence >= 80:
+            score += 2
+        else:
+            score += 1
+        
+        if issue.severity == "high":
+            score += 3
+        elif issue.severity == "medium":
+            score += 2
+        else:
+            score += 1
+        
+        return score
+
+    def _create_usage_heatmap(self, ax, function_usage):
+        """Create a heatmap showing function usage patterns."""
+        # Prepare data for heatmap
+        functions = list(function_usage.keys())[:20]  # Top 20 functions
+        if not functions:
+            ax.text(0.5, 0.5, 'No function data available', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Function Usage Heatmap', fontsize=14, fontweight='bold')
+            return
+        
+        # Create usage matrix
+        usage_data = []
+        for func in functions:
+            usage = function_usage[func]
+            usage_data.append([
+                usage['times_called'],
+                usage['calls_made'],
+                1 if usage['is_dead'] else 0,
+                1 if usage['is_deprecated'] else 0,
+                usage['impact_score']
+            ])
+        
+        # Create heatmap
+        im = ax.imshow(usage_data, cmap='RdYlGn_r', aspect='auto')
+        
+        # Set labels
+        ax.set_xticks(range(5))
+        ax.set_xticklabels(['Times Called', 'Calls Made', 'Is Dead', 'Is Deprecated', 'Impact Score'])
+        ax.set_yticks(range(len(functions)))
+        ax.set_yticklabels([f.split('/')[-1] for f in functions], fontsize=8)
+        
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label('Usage Intensity', rotation=270, labelpad=20)
+        
+        ax.set_title('Function Usage Heatmap (Top 20)', fontsize=14, fontweight='bold')
+        ax.tick_params(axis='x', rotation=45)
+
+    def _create_dead_vs_used_chart(self, ax, function_usage):
+        """Create a chart comparing dead vs used functions."""
+        dead_functions = sum(1 for usage in function_usage.values() if usage['is_dead'])
+        used_functions = sum(1 for usage in function_usage.values() if usage['times_called'] > 0)
+        deprecated_functions = sum(1 for usage in function_usage.values() if usage['is_deprecated'])
+        unused_functions = sum(1 for usage in function_usage.values() if usage['times_called'] == 0 and not usage['is_dead'])
+        
+        categories = ['Used Functions', 'Dead Functions', 'Deprecated Functions', 'Unused Functions']
+        counts = [used_functions, dead_functions, deprecated_functions, unused_functions]
+        colors = ['#2ed573', '#ff4757', '#ffa502', '#747d8c']
+        
+        # Create pie chart
+        wedges, texts, autotexts = ax.pie(counts, labels=categories, colors=colors, autopct='%1.1f%%',
+                                         startangle=90, textprops={'fontsize': 10})
+        
+        # Add count labels
+        for i, (wedge, count) in enumerate(zip(wedges, counts)):
+            angle = (wedge.theta2 + wedge.theta1) / 2
+            x = 0.8 * np.cos(np.radians(angle))
+            y = 0.8 * np.sin(np.radians(angle))
+            ax.text(x, y, f'({count})', ha='center', va='center', fontweight='bold', fontsize=9)
+        
+        ax.set_title('Function Usage Distribution', fontsize=14, fontweight='bold')
+
+    def _create_call_network_chart(self, ax, call_relationships):
+        """Create a simplified call network visualization."""
+        if not call_relationships:
+            ax.text(0.5, 0.5, 'No call relationships found', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Function Call Network', fontsize=14, fontweight='bold')
+            return
+        
+        # Count function calls
+        call_counts = Counter()
+        for call in call_relationships[:50]:  # Limit to top 50 relationships
+            caller = call.get('caller', {}).get('name', '')
+            callee = call.get('callee', {}).get('name', '')
+            if caller and callee:
+                call_counts[(caller, callee)] += 1
+        
+        # Create network visualization
+        functions = set()
+        for (caller, callee), count in call_counts.most_common(20):  # Top 20 relationships
+            functions.add(caller)
+            functions.add(callee)
+        
+        functions = list(functions)
+        if len(functions) < 2:
+            ax.text(0.5, 0.5, 'Insufficient call data for network', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Function Call Network', fontsize=14, fontweight='bold')
+            return
+        
+        # Create simple network layout
+        n_functions = len(functions)
+        angles = np.linspace(0, 2*np.pi, n_functions, endpoint=False)
+        x_pos = np.cos(angles)
+        y_pos = np.sin(angles)
+        
+        # Plot function nodes
+        ax.scatter(x_pos, y_pos, s=100, c='lightblue', alpha=0.7, edgecolors='black')
+        
+        # Add function labels
+        for i, func in enumerate(functions):
+            ax.annotate(func.split('/')[-1][:10], (x_pos[i], y_pos[i]), 
+                       xytext=(5, 5), textcoords='offset points', fontsize=8)
+        
+        # Draw call relationships
+        for (caller, callee), count in call_counts.most_common(10):  # Top 10 relationships
+            if caller in functions and callee in functions:
+                caller_idx = functions.index(caller)
+                callee_idx = functions.index(callee)
+                
+                ax.plot([x_pos[caller_idx], x_pos[callee_idx]], 
+                       [y_pos[caller_idx], y_pos[callee_idx]], 
+                       'k-', alpha=0.3, linewidth=count/2)
+        
+        ax.set_xlim(-1.2, 1.2)
+        ax.set_ylim(-1.2, 1.2)
+        ax.set_aspect('equal')
+        ax.set_title('Function Call Network (Top 10)', fontsize=14, fontweight='bold')
+        ax.axis('off')
+
+    def _create_usage_statistics_chart(self, ax, function_usage):
+        """Create usage statistics chart."""
+        if not function_usage:
+            ax.text(0.5, 0.5, 'No usage statistics available', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Usage Statistics', fontsize=14, fontweight='bold')
+            return
+        
+        # Calculate statistics
+        total_functions = len(function_usage)
+        highly_used = sum(1 for usage in function_usage.values() if usage['times_called'] > 5)
+        moderately_used = sum(1 for usage in function_usage.values() if 1 <= usage['times_called'] <= 5)
+        unused = sum(1 for usage in function_usage.values() if usage['times_called'] == 0)
+        
+        # Create bar chart
+        categories = ['Highly Used\n(>5 calls)', 'Moderately Used\n(1-5 calls)', 'Unused\n(0 calls)']
+        counts = [highly_used, moderately_used, unused]
+        colors = ['#2ed573', '#ffa502', '#ff4757']
+        
+        bars = ax.bar(categories, counts, color=colors)
+        ax.set_title('Function Usage Statistics', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Number of Functions', fontsize=12)
+        
+        # Add value labels
+        for bar, count in zip(bars, counts):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                   f'{count}', ha='center', va='bottom', fontweight='bold')
+        
+        # Add total count
+        ax.text(0.02, 0.98, f'Total Functions: {total_functions}', 
+               transform=ax.transAxes, fontsize=12, fontweight='bold',
+               bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7),
+               verticalalignment='top')
 
     def run(self):
         """Run the complete interaction mapping."""

@@ -48,6 +48,7 @@ class EmojiLogger:
     VALIDATING = "🔍"
     STORING = "💾"
     CLEANING = "🧹"
+    TIME = "⏰"
     
     # File operations
     FILE_CREATED = "📄"

@@ -1425,6 +1425,7 @@ class AresLauncher:
             print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}...")
             
             # Set up environment with correct Python path and enhanced logging
+            import os
             env = os.environ.copy()
             env['PYTHONPATH'] = str(project_root)
             env['DATA_COLLECTION_MODE'] = 'enhanced'

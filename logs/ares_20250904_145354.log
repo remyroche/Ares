@@ -1,0 +1,27 @@
+2025-09-04 14:53:54,767 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 14:53:54
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_145354.log
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:53:54,767 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 14:53:54,767 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - 📊 Running enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 14:53:54,767 - AresComponent.AresLauncher - INFO - 🔍 Validating data collection prerequisites...
+2025-09-04 14:53:54,768 - AresComponent.AresLauncher - WARNING - ⚠️ Creating missing directory: data_cache
+2025-09-04 14:53:54,768 - AresComponent.AresLauncher - INFO - ✅ Directory exists: log
+2025-09-04 14:53:54,768 - AresComponent.AresLauncher - INFO - ✅ Data collection script found: standalone_data_collection.py
+2025-09-04 14:53:54,768 - AresComponent.AresLauncher - INFO - ✅ Required Python packages available
+2025-09-04 14:53:54,768 - AresComponent.AresLauncher - INFO - ✅ Data collection prerequisites validation completed
+2025-09-04 14:53:54,768 - AresComponent.AresLauncher - ERROR - ❌ Failed to run enhanced data collection pipeline: cannot access local variable 'os' where it is not associated with a value
+Traceback (most recent call last):
+  File "/workspace/ares_launcher.py", line 1428, in run_data_collection_pipeline
+    env = os.environ.copy()
+          ^^
+UnboundLocalError: cannot access local variable 'os' where it is not associated with a value
+2025-09-04 14:53:54,769 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 14:53:54,769 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 14:53:54,769 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

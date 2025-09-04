@@ -1,0 +1,5 @@
+2025-09-04 14:54:08,577 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-09-04 14:54:08,623 INFO AresTradingSystem 🚀 Launcher started: INITIALIZATION - -
+2025-09-04 14:54:08,623 INFO AresTradingSystem 🚀 Launcher started: data-collection - -
+2025-09-04 14:54:08,623 INFO AresTradingSystem 📊 Symbol: ETHUSDT, Exchange: BINANCE - -
+2025-09-04 14:54:09,441 INFO AresTradingSystem 🏁 Launcher ended: FAILED (exit code: 1) - -

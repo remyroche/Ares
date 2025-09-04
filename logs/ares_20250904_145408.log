@@ -1,0 +1,260 @@
+2025-09-04 14:54:08,623 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 14:54:08
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_145408.log
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:08,623 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 14:54:08,623 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - 📊 Running enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - 🔍 Validating data collection prerequisites...
+2025-09-04 14:54:08,623 - AresComponent.AresLauncher - INFO - ✅ Directory exists: data_cache
+2025-09-04 14:54:08,624 - AresComponent.AresLauncher - INFO - ✅ Directory exists: log
+2025-09-04 14:54:08,624 - AresComponent.AresLauncher - INFO - ✅ Data collection script found: standalone_data_collection.py
+2025-09-04 14:54:08,624 - AresComponent.AresLauncher - INFO - ✅ Required Python packages available
+2025-09-04 14:54:08,624 - AresComponent.AresLauncher - INFO - ✅ Data collection prerequisites validation completed
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - 🚀 ENHANCED DATA COLLECTION PIPELINE LAUNCHER
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️ Step 1: Enhanced Data Collection Pipeline
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️ Pipeline Configuration:
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Symbol: ETHUSDT
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Exchange: BINANCE
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Timeframes: ['1m', '5m', '15m', '30m', '1h']
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Data directory: data_cache
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Force rerun: True
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Quality checks: True
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Progressive append: True
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Collect klines: True
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Collect aggtrades: True
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Collect futures: True
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️   Quality check samples: 100
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - 🚀 Starting pipeline execution...
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - 🚀 INITIALIZING ENHANCED DATA COLLECTION PIPELINE
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️ Pipeline ID: data_collection_20250904_145408
+2025-09-04 14:54:08,860 - AresComponent.AresLauncher - INFO - ℹ️ Timeframes: ['1m', '5m', '15m', '30m', '1h']
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Collect Klines: True
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Collect AggTrades: True
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Collect Futures: True
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Progressive Append: True
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Quality Check Samples: 100
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Pipeline initialization completed successfully
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - 🚀 ENHANCED DATA COLLECTION PIPELINE START
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Symbol: ETHUSDT
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Exchange: BINANCE
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Data Directory: data_cache
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Start Time: 2025-09-04 14:54:08
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - 🚀 Starting Step 1: Data Collection
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ℹ️ Description: Collecting raw data from exchange
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,860 - __main__ - INFO - ℹ️ Step started at: 14:54:08
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - ⏳ Collecting data from BINANCE for ETHUSDT
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - 🔄 Collecting klines data...
+2025-09-04 14:54:08,861 - AresComponent.AresLauncher - INFO - 🔄 Collecting 1m klines data
+2025-09-04 14:54:08,870 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,870 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,870 - AresComponent.AresLauncher - INFO - ✅ Collected 38881 1m klines records
+2025-09-04 14:54:08,870 - AresComponent.AresLauncher - INFO - 🔄 Collecting 5m klines data
+2025-09-04 14:54:08,877 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,876 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,877 - AresComponent.AresLauncher - INFO - ✅ Collected 38881 5m klines records
+2025-09-04 14:54:08,877 - AresComponent.AresLauncher - INFO - 🔄 Collecting 15m klines data
+2025-09-04 14:54:08,883 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,883 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,883 - AresComponent.AresLauncher - INFO - ✅ Collected 38881 15m klines records
+2025-09-04 14:54:08,883 - AresComponent.AresLauncher - INFO - 🔄 Collecting 30m klines data
+2025-09-04 14:54:08,889 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,889 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,889 - AresComponent.AresLauncher - INFO - ✅ Collected 38881 30m klines records
+2025-09-04 14:54:08,889 - AresComponent.AresLauncher - INFO - 🔄 Collecting 1h klines data
+2025-09-04 14:54:08,895 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,895 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,895 - AresComponent.AresLauncher - INFO - ✅ Collected 38881 1h klines records
+2025-09-04 14:54:08,895 - AresComponent.AresLauncher - INFO - 🔄 Collecting aggtrades data...
+2025-09-04 14:54:08,998 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:08,997 - __main__ - INFO - Collected 39966 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:54:08,998 - AresComponent.AresLauncher - INFO - ✅ Collected 39966 aggtrades records
+2025-09-04 14:54:08,998 - AresComponent.AresLauncher - INFO - 🔄 Collecting futures data...
+2025-09-04 14:54:09,000 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,000 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,000 - AresComponent.AresLauncher - INFO - ✅ Collected 82 futures records
+2025-09-04 14:54:09,001 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for klines_1m
+2025-09-04 14:54:09,002 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for klines_5m
+2025-09-04 14:54:09,003 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for klines_15m
+2025-09-04 14:54:09,004 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for klines_30m
+2025-09-04 14:54:09,005 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for klines_1h
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for aggtrades
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ✅ Data quality check passed for futures
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️ Data collection summary:
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️   Total records collected: 234,453
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️   Klines records: 194,405
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️   AggTrades records: 39,966
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️   Futures records: 82
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ✅ Completed Step 1: Data Collection (Duration: 0.15s)
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️ Details: Collected 7 data points
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - 📊 Progress: [████░░░░░░░░░░░░░░░░] 20.0% - Step 1: Data Collection (ETA: 0.6s)
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - 🚀 Starting Step 2: Data Validation
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - ℹ️ Description: Validating data quality and integrity
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,006 - __main__ - INFO - ℹ️ Step started at: 14:54:09
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - 🔍 Starting comprehensive data validation
+2025-09-04 14:54:09,006 - AresComponent.AresLauncher - INFO - 🔍 Checking data completeness...
+2025-09-04 14:54:09,057 - AresComponent.AresLauncher - INFO - ✅ Data completeness validation passed
+2025-09-04 14:54:09,057 - AresComponent.AresLauncher - INFO - 🔍 Checking data integrity...
+2025-09-04 14:54:09,107 - AresComponent.AresLauncher - INFO - ✅ Data integrity validation passed
+2025-09-04 14:54:09,107 - AresComponent.AresLauncher - INFO - 🔍 Checking schema compliance...
+2025-09-04 14:54:09,157 - AresComponent.AresLauncher - INFO - ✅ Schema compliance validation passed
+2025-09-04 14:54:09,157 - AresComponent.AresLauncher - INFO - 🔍 Checking timestamp continuity...
+2025-09-04 14:54:09,207 - AresComponent.AresLauncher - INFO - ✅ Timestamp continuity validation passed
+2025-09-04 14:54:09,207 - AresComponent.AresLauncher - INFO - ℹ️ Data validation summary:
+2025-09-04 14:54:09,207 - AresComponent.AresLauncher - INFO - ✅   completeness: PASSED
+2025-09-04 14:54:09,207 - AresComponent.AresLauncher - INFO - ✅   integrity: PASSED
+2025-09-04 14:54:09,207 - AresComponent.AresLauncher - INFO - ✅   schema: PASSED
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - ✅   timestamp: PASSED
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - ✅ Completed Step 2: Data Validation (Duration: 0.20s)
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - ℹ️ Details: All validation checks passed
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - 📊 Progress: [████████░░░░░░░░░░░░] 40.0% - Step 2: Data Validation (ETA: 0.5s)
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - 🚀 Starting Step 3: Data Formatting and Storage
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - ℹ️ Description: Formatting data and storing to files
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,207 - __main__ - INFO - ℹ️ Step started at: 14:54:09
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - 🔄 Starting data formatting and storage
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - 🔄 Processing klines data...
+2025-09-04 14:54:09,208 - AresComponent.AresLauncher - INFO - 🔄 Formatting 1m klines data
+2025-09-04 14:54:09,212 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,212 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,212 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,219 - AresComponent.AresLauncher - INFO - 💾 Storing 1m klines data to klines_BINANCE_ETHUSDT_1m_2025_09.parquet
+2025-09-04 14:54:09,221 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,221 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,221 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,221 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,221 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,221 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,221 - AresComponent.AresLauncher - INFO - 🔄 Formatting 5m klines data
+2025-09-04 14:54:09,225 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,225 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,226 - AresComponent.AresLauncher - INFO - 🔄 Resampling to 5m
+2025-09-04 14:54:09,235 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,235 - __main__ - INFO - Resampled data to 5m: 7777 rows
+2025-09-04 14:54:09,235 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,237 - AresComponent.AresLauncher - INFO - 💾 Storing 5m klines data to klines_BINANCE_ETHUSDT_5m_2025_09.parquet
+2025-09-04 14:54:09,238 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,238 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,238 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,238 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,238 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,238 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,238 - AresComponent.AresLauncher - INFO - 🔄 Formatting 15m klines data
+2025-09-04 14:54:09,243 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,242 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,243 - AresComponent.AresLauncher - INFO - 🔄 Resampling to 15m
+2025-09-04 14:54:09,250 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,250 - __main__ - INFO - Resampled data to 15m: 2593 rows
+2025-09-04 14:54:09,250 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,252 - AresComponent.AresLauncher - INFO - 💾 Storing 15m klines data to klines_BINANCE_ETHUSDT_15m_2025_09.parquet
+2025-09-04 14:54:09,253 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,252 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,253 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,253 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,253 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,253 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,253 - AresComponent.AresLauncher - INFO - 🔄 Formatting 30m klines data
+2025-09-04 14:54:09,257 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,257 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,257 - AresComponent.AresLauncher - INFO - 🔄 Resampling to 30m
+2025-09-04 14:54:09,265 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,265 - __main__ - INFO - Resampled data to 30m: 1297 rows
+2025-09-04 14:54:09,265 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,266 - AresComponent.AresLauncher - INFO - 💾 Storing 30m klines data to klines_BINANCE_ETHUSDT_30m_2025_09.parquet
+2025-09-04 14:54:09,267 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,267 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,267 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,267 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,267 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,267 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,267 - AresComponent.AresLauncher - INFO - 🔄 Formatting 1h klines data
+2025-09-04 14:54:09,271 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,271 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,271 - AresComponent.AresLauncher - INFO - 🔄 Resampling to 1h
+2025-09-04 14:54:09,280 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,280 - __main__ - INFO - Resampled data to 1h: 649 rows
+2025-09-04 14:54:09,280 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,281 - AresComponent.AresLauncher - INFO - 💾 Storing 1h klines data to klines_BINANCE_ETHUSDT_1h_2025_09.parquet
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,282 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - 🔄 Processing aggtrades data...
+2025-09-04 14:54:09,282 - AresComponent.AresLauncher - INFO - 🔄 Formatting aggtrades data
+2025-09-04 14:54:09,376 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,376 - __main__ - INFO - Collected 39827 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:54:09,376 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,385 - AresComponent.AresLauncher - INFO - 💾 Storing aggtrades data to aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2025-09-04 14:54:09,386 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,386 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,386 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,386 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,386 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,387 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,387 - AresComponent.AresLauncher - INFO - 🔄 Processing futures data...
+2025-09-04 14:54:09,387 - AresComponent.AresLauncher - INFO - 🔄 Formatting futures data
+2025-09-04 14:54:09,387 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,387 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,388 - AresComponent.AresLauncher - INFO - 🔄 Standardizing timestamps and enforcing schema
+2025-09-04 14:54:09,389 - AresComponent.AresLauncher - INFO - 💾 Storing futures data to futures_BINANCE_ETHUSDT_consolidated.parquet
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,390 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ℹ️ Data formatting and storage summary:
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ℹ️   Files created: 0
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ℹ️   Total size: 0.00 MB
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ℹ️   Data directory: data_cache
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ⚠️ Failed to store: klines_1m, klines_5m, klines_15m, klines_30m, klines_1h, aggtrades, futures
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ✅ Completed Step 3: Data Formatting (Duration: 0.18s)
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - ℹ️ Details: Data formatted and stored successfully
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - 📊 Progress: [████████████░░░░░░░░] 60.0% - Step 3: Data Formatting (ETA: 0.4s)
+2025-09-04 14:54:09,390 - AresComponent.AresLauncher - INFO - 🎉 PIPELINE COMPLETED SUCCESSFULLY
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - 2025-09-04 14:54:09,390 - __main__ - ERROR - Pipeline execution failed: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 414, in run_pipeline
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - await self._complete_pipeline()
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1232, in _complete_pipeline
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - self.emoji_logger.print_with_emoji(EmojiLogger.TIME, f"Total duration: {duration:.2f} seconds")
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - AttributeError: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - ❌ PIPELINE FAILURE DETECTED
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - ❌ Error: Pipeline execution failed: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - ❌ ENHANCED DATA COLLECTION FAILED WITH EXCEPTION: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,391 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 414, in run_pipeline
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - await self._complete_pipeline()
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1232, in _complete_pipeline
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - self.emoji_logger.print_with_emoji(EmojiLogger.TIME, f"Total duration: {duration:.2f} seconds")
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^
+2025-09-04 14:54:09,392 - AresComponent.AresLauncher - INFO - AttributeError: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - 
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - During handling of the above exception, another exception occurred:
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - 
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1378, in main
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - result = await run_standalone_enhanced_data_collection_pipeline(
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ...<4 lines>...
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - )
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1321, in run_standalone_enhanced_data_collection_pipeline
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - result = await pipeline.run_pipeline(symbol, exchange, data_dir)
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 426, in run_pipeline
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - await self._handle_pipeline_failure(f"Pipeline execution failed: {e}")
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1209, in _handle_pipeline_failure
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - self.emoji_logger.print_with_emoji(EmojiLogger.TIME, f"Duration before failure: {duration:.2f} seconds")
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - AttributeError: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - 
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - During handling of the above exception, another exception occurred:
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - 
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1459, in <module>
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - asyncio.run(main())
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~^^^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/usr/lib/python3.13/asyncio/runners.py", line 195, in run
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - return runner.run(main)
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/usr/lib/python3.13/asyncio/runners.py", line 118, in run
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - return self._loop.run_until_complete(task)
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/usr/lib/python3.13/asyncio/base_events.py", line 719, in run_until_complete
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - return future.result()
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 1451, in main
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - emoji_logger.print_with_emoji(EmojiLogger.TIME, f"Total execution time: {total_time:.2f} seconds")
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^
+2025-09-04 14:54:09,393 - AresComponent.AresLauncher - INFO - AttributeError: type object 'EmojiLogger' has no attribute 'TIME'
+2025-09-04 14:54:09,441 - AresComponent.AresLauncher - ERROR - ❌ Enhanced data collection pipeline failed with return code: 1
+2025-09-04 14:54:09,441 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 14:54:09,441 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 14:54:09,441 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

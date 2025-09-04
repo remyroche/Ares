@@ -15,6 +15,7 @@ The workflow:
 6. Train Production Model on lean dataset
 7. Create optimized live trading configurations
 """
+import json
 import pickle
 import time
 from dataclasses import dataclass
@@ -395,12 +396,7 @@ class WaveletFeatureSelectionWorkflow:
 
             # SHAP Analysis
             self.logger.info("📊 Computing SHAP importance...")
-            # Try new import path first, then fallback to old path
-            try:
-                from shap.explainers import TreeExplainer
-            except ImportError:
-                pass
-            explainer = TreeExplainer(model)
+            explainer = self._get_shap_explainer(model)
             shap_values = explainer.shap_values(X_test)
 
             # Calculate SHAP importance (mean absolute SHAP values)
@@ -690,9 +686,6 @@ class WaveletFeatureSelectionWorkflow:
 
             # Save lean feature names for deployment
             feature_names_path = self.model_dir / "production_features.json"
-            import json
-from src.core.decorators.errors import handles_errors
-
             with open(feature_names_path, "w") as f:
                 json.dump(lean_dataset["winner_feature_names"], f)
 
@@ -1095,3 +1088,19 @@ from src.core.decorators.errors import handles_errors
                 for f in winner_features
             ],
         }
+
+    def _get_shap_explainer(self, model):
+        """Get SHAP explainer with proper import handling.
+        
+        Args:
+            model: The trained model to explain
+            
+        Returns:
+            SHAP TreeExplainer instance
+        """
+        try:
+            from shap.explainers import TreeExplainer
+        except ImportError:
+            # Fallback to old import path
+            from shap import TreeExplainer
+        return TreeExplainer(model)

@@ -145,48 +145,6 @@ class Tactician:
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="component managers initialization",
-    )
-    async def _initialize_component_managers(self) -> None:
-        """Initialize all component managers."""
-        try:
-            # Initialize tactics orchestrator
-            from .tactics_orchestrator import TacticsOrchestrator
-            self.tactics_orchestrator = TacticsOrchestrator(self.config)
-            await self.tactics_orchestrator.initialize()
-
-            # Initialize position sizer
-            from src.tactician.position_sizer import PositionSizer
-            self.position_sizer = PositionSizer(self.config)
-            await self.position_sizer.initialize()
-
-            # Initialize leverage sizer
-            from src.tactician.leverage_sizer import LeverageSizer
-            self.leverage_sizer = LeverageSizer(self.config)
-            await self.leverage_sizer.initialize()
-
-            # Initialize position division strategy
-            from src.tactician.position_division_strategy import PositionDivisionStrategy
-            self.position_division_strategy = PositionDivisionStrategy(self.config)
-            await self.position_division_strategy.initialize()
-
-            # Initialize enhanced scenario predictor
-            from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
-            self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
-            success = await self.scenario_predictor.initialize()
-            if not success:
-                self.logger.error("Failed to initialize enhanced scenario predictor")
-                raise ValueError("Enhanced scenario predictor initialization failed")
-
-            self.logger.info("✅ All component managers initialized")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
-            raise
-
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
     )
@@ -253,52 +211,24 @@ class Tactician:
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
 
-            # Enhanced predictions are now handled by the supervisor
-            # No local initialization needed
+            # Initialize enhanced scenario predictor if needed
+            if self.enable_enhanced_predictions:
+                try:
+                    from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+                    self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
+                    success = await self.scenario_predictor.initialize()
+                    if not success:
+                        self.logger.warning("Failed to initialize enhanced scenario predictor, continuing without it")
+                        self.scenario_predictor = None
+                except ImportError:
+                    self.logger.warning("EnhancedScenarioBasedPredictor not available, continuing without it")
+                    self.scenario_predictor = None
 
             self.logger.info("✅ All component managers initialized")
 
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
             raise
-
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
-    def _validate_configuration(self) -> bool:
-        """
-        Validate tactician configuration.
-
-        Returns:
-            bool: True if configuration is valid, False otherwise
-        """
-        try:
-            # Validate required configuration sections
-            required_sections = ["tactician", "tactics_orchestrator"]
-
-            for section in required_sections:
-                if section not in self.config:
-                    self.logger.error(
-                        f"Missing required configuration section: {section}",
-                    )
-                    return False
-
-            # Validate tactician specific settings
-            if self.tactics_interval <= 0:
-                self.logger.error(invalid("Invalid tactics_interval configuration"))
-                return False
-
-            if self.max_history <= 0:
-                self.logger.error(invalid("Invalid max_history configuration"))
-                return False
-
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"Configuration validation failed: {e}"))
-            return False
 
     @handles_errors(
         error_handlers={
@@ -728,6 +658,11 @@ class Tactician:
             if not self.is_initialized:
                 self.logger.error("Tactician not initialized")
                 return self._generate_error_predictions(symbol, timeframe)
+
+            # Check if scenario predictor is available
+            if not self.scenario_predictor:
+                self.logger.warning("Scenario predictor not available, using default predictions")
+                return self._generate_default_predictions(symbol, timeframe)
 
             # Extract comprehensive features
             features = self.scenario_predictor.extract_comprehensive_features(market_data)

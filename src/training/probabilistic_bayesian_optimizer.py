@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 '\nProbabilistic Bayesian Optimizer for Tactician and Analyst Models\n\nThis module provides Bayesian optimization specifically designed for probabilistic models\nthat output probability distributions, confidence intervals, and uncertainty estimates.\nIt optimizes both model hyperparameters and probabilistic output calibration.\n'
 import logging
 import warnings

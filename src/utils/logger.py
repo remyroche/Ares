@@ -305,30 +305,62 @@ class EnhancedLogger:
                 self._original_methods['warning'] = logger.warning
                 self._original_methods['critical'] = logger.critical
                 self._original_methods['exception'] = logger.exception
+                self._original_methods['info'] = logger.info
+                self._original_methods['debug'] = logger.debug
                 self.error = self._enhanced_error
                 self.warning = self._enhanced_warning
                 self.critical = self._enhanced_critical
                 self.exception = self._enhanced_exception
+                self.info = self._enhanced_info
+                self.debug = self._enhanced_debug
 
             def _enhanced_error(self, msg: str, *args, **kwargs) -> None:
-                """Enhanced error logging with warning symbol."""
+                """Enhanced error logging with warning symbol and context."""
                 enhanced_msg = error(msg)
-                return self._original_methods['error'](enhanced_msg, *args, **kwargs)
+                # Add timestamp and context for better troubleshooting
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f"[{timestamp}] {enhanced_msg}"
+                return self._original_methods['error'](context_msg, *args, **kwargs)
 
             def _enhanced_warning(self, msg: str, *args, **kwargs) -> None:
-                """Enhanced warning logging with warning symbol."""
+                """Enhanced warning logging with warning symbol and context."""
                 enhanced_msg = warning(msg)
-                return self._original_methods['warning'](enhanced_msg, *args, **kwargs)
+                # Add timestamp and context for better troubleshooting
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f"[{timestamp}] {enhanced_msg}"
+                return self._original_methods['warning'](context_msg, *args, **kwargs)
 
             def _enhanced_critical(self, msg: str, *args, **kwargs) -> None:
-                """Enhanced critical logging with warning symbol."""
+                """Enhanced critical logging with warning symbol and context."""
                 enhanced_msg = critical(msg)
-                return self._original_methods['critical'](enhanced_msg, *args, **kwargs)
+                # Add timestamp and context for better troubleshooting
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f"[{timestamp}] {enhanced_msg}"
+                return self._original_methods['critical'](context_msg, *args, **kwargs)
 
             def _enhanced_exception(self, msg: str, *args, **kwargs) -> None:
-                """Enhanced exception logging with warning symbol."""
+                """Enhanced exception logging with warning symbol and context."""
                 enhanced_msg = error(msg)
-                return self._original_methods['exception'](enhanced_msg, *args, **kwargs)
+                # Add timestamp and context for better troubleshooting
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f"[{timestamp}] {enhanced_msg}"
+                return self._original_methods['exception'](context_msg, *args, **kwargs)
+
+            def _enhanced_info(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced info logging with emoji and context."""
+                enhanced_msg = info(msg)
+                # Add timestamp and context for better troubleshooting
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f"[{timestamp}] {enhanced_msg}"
+                return self._logger.info(context_msg, *args, **kwargs)
+
+            def _enhanced_debug(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced debug logging with emoji and context."""
+                enhanced_msg = f"🔍 {msg}"
+                # Add timestamp and context for better troubleshooting
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f"[{timestamp}] {enhanced_msg}"
+                return self._logger.debug(context_msg, *args, **kwargs)
 
             def __getattr__(self, name: Any) -> None:
                 """Delegate all other attributes to the base logger."""
@@ -706,3 +738,267 @@ def heartbeat(logger: logging.Logger, name: str, interval_seconds: float=15.0, d
                 logger.info(f'✅ {name} done elapsed={elapsed:.1f}s')
         except Exception:
             pass
+
+
+def log_step_progress(logger: logging.Logger, step_name: str, step_number: int, total_steps: int, 
+                     status: str = "running", details: str = "", context: dict = None) -> None:
+    """
+    Log step progress with comprehensive emoji-based status indicators.
+    
+    Args:
+        logger: Logger instance
+        step_name: Name of the current step
+        step_number: Current step number (1-based)
+        total_steps: Total number of steps
+        status: Status of the step (running, completed, failed, skipped)
+        details: Additional details about the step
+        context: Additional context information
+    """
+    try:
+        progress_percent = (step_number / total_steps) * 100
+        progress_bar = "█" * int(progress_percent / 5) + "░" * (20 - int(progress_percent / 5))
+        
+        # Status emojis
+        status_emojis = {
+            "running": "🔄",
+            "completed": "✅", 
+            "failed": "❌",
+            "skipped": "⏭️",
+            "warning": "⚠️",
+            "info": "ℹ️"
+        }
+        
+        emoji = status_emojis.get(status, "📋")
+        
+        # Context information
+        context_str = ""
+        if context:
+            context_parts = []
+            for key, value in context.items():
+                if value is not None:
+                    context_parts.append(f"{key}={value}")
+            if context_parts:
+                context_str = f" | {' | '.join(context_parts)}"
+        
+        # Format the message
+        message = f"{emoji} Step {step_number}/{total_steps} ({progress_percent:.1f}%) | {step_name} | {status.upper()}"
+        if details:
+            message += f" | {details}"
+        if context_str:
+            message += context_str
+            
+        # Add progress bar
+        message += f"\n📊 Progress: [{progress_bar}] {progress_percent:.1f}%"
+        
+        # Log based on status
+        if status == "failed":
+            logger.error(message)
+        elif status == "warning":
+            logger.warning(message)
+        elif status == "completed":
+            logger.info(message)
+        else:
+            logger.info(message)
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to log step progress: {e}")
+
+
+def log_validation_result(logger: logging.Logger, validator_name: str, result: bool, 
+                         details: str = "", metrics: dict = None) -> None:
+    """
+    Log validation results with comprehensive emoji indicators.
+    
+    Args:
+        logger: Logger instance
+        validator_name: Name of the validator
+        result: Validation result (True/False)
+        details: Additional details about the validation
+        metrics: Optional metrics dictionary
+    """
+    try:
+        if result:
+            emoji = "✅"
+            status = "PASSED"
+            level = "info"
+        else:
+            emoji = "❌"
+            status = "FAILED"
+            level = "error"
+            
+        message = f"{emoji} Validation {status} | {validator_name}"
+        if details:
+            message += f" | {details}"
+            
+        # Add metrics if provided
+        if metrics:
+            metrics_str = " | ".join([f"{k}={v}" for k, v in metrics.items()])
+            message += f" | Metrics: {metrics_str}"
+            
+        if level == "error":
+            logger.error(message)
+        else:
+            logger.info(message)
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to log validation result: {e}")
+
+
+def log_data_quality_check(logger: logging.Logger, check_name: str, status: str, 
+                          details: str = "", stats: dict = None) -> None:
+    """
+    Log data quality check results with emoji indicators.
+    
+    Args:
+        logger: Logger instance
+        check_name: Name of the quality check
+        status: Status of the check (passed, failed, warning)
+        details: Additional details
+        stats: Optional statistics dictionary
+    """
+    try:
+        status_emojis = {
+            "passed": "✅",
+            "failed": "❌", 
+            "warning": "⚠️",
+            "info": "ℹ️"
+        }
+        
+        emoji = status_emojis.get(status, "📋")
+        message = f"{emoji} Data Quality Check | {check_name} | {status.upper()}"
+        
+        if details:
+            message += f" | {details}"
+            
+        if stats:
+            stats_str = " | ".join([f"{k}={v}" for k, v in stats.items()])
+            message += f" | Stats: {stats_str}"
+            
+        if status == "failed":
+            logger.error(message)
+        elif status == "warning":
+            logger.warning(message)
+        else:
+            logger.info(message)
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to log data quality check: {e}")
+
+
+def log_performance_metrics(logger: logging.Logger, operation_name: str, 
+                           duration: float, memory_usage: float = None, 
+                           additional_metrics: dict = None) -> None:
+    """
+    Log performance metrics with emoji indicators.
+    
+    Args:
+        logger: Logger instance
+        operation_name: Name of the operation
+        duration: Duration in seconds
+        memory_usage: Memory usage in MB (optional)
+        additional_metrics: Additional metrics dictionary
+    """
+    try:
+        # Performance emoji based on duration
+        if duration < 1.0:
+            emoji = "⚡"  # Fast
+        elif duration < 10.0:
+            emoji = "🔄"  # Normal
+        else:
+            emoji = "🐌"  # Slow
+            
+        message = f"{emoji} Performance | {operation_name} | Duration: {duration:.3f}s"
+        
+        if memory_usage is not None:
+            message += f" | Memory: {memory_usage:.2f}MB"
+            
+        if additional_metrics:
+            metrics_str = " | ".join([f"{k}={v}" for k, v in additional_metrics.items()])
+            message += f" | {metrics_str}"
+            
+        logger.info(message)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to log performance metrics: {e}")
+
+
+def log_error_with_context(logger: logging.Logger, error: Exception, context: dict = None, 
+                          operation: str = "", recovery_attempted: bool = False) -> None:
+    """
+    Log errors with comprehensive context and recovery information.
+    
+    Args:
+        logger: Logger instance
+        error: The exception that occurred
+        context: Additional context information
+        operation: Name of the operation that failed
+        recovery_attempted: Whether recovery was attempted
+    """
+    try:
+        error_type = type(error).__name__
+        error_msg = str(error)
+        
+        # Main error message
+        message = f"💥 Error in {operation} | Type: {error_type} | Message: {error_msg}"
+        
+        # Add context if provided
+        if context:
+            context_str = " | ".join([f"{k}={v}" for k, v in context.items()])
+            message += f" | Context: {context_str}"
+            
+        # Add recovery information
+        if recovery_attempted:
+            message += " | 🔄 Recovery attempted"
+        else:
+            message += " | 🚫 No recovery attempted"
+            
+        logger.error(message)
+        
+        # Log stack trace at debug level
+        logger.debug(f"🔍 Stack trace for {operation}:", exc_info=True)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to log error with context: {e}")
+
+
+def log_system_status(logger: logging.Logger, component: str, status: str, 
+                     details: str = "", health_metrics: dict = None) -> None:
+    """
+    Log system component status with health indicators.
+    
+    Args:
+        logger: Logger instance
+        component: Name of the system component
+        status: Status of the component (healthy, degraded, failed, starting, stopping)
+        details: Additional details
+        health_metrics: Optional health metrics
+    """
+    try:
+        status_emojis = {
+            "healthy": "🟢",
+            "degraded": "🟡", 
+            "failed": "🔴",
+            "starting": "🔄",
+            "stopping": "⏹️",
+            "maintenance": "🔧"
+        }
+        
+        emoji = status_emojis.get(status, "⚪")
+        message = f"{emoji} System Status | {component} | {status.upper()}"
+        
+        if details:
+            message += f" | {details}"
+            
+        if health_metrics:
+            metrics_str = " | ".join([f"{k}={v}" for k, v in health_metrics.items()])
+            message += f" | Health: {metrics_str}"
+            
+        if status == "failed":
+            logger.error(message)
+        elif status == "degraded":
+            logger.warning(message)
+        else:
+            logger.info(message)
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to log system status: {e}")

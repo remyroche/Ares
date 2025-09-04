@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from src.core.decorators import handles_errors, log_execution_time
 from .base_validation_step import BaseValidationStep
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 class MonteCarloValidationStep(BaseValidationStep):
     """Step 19: Monte Carlo Validation with random sampling."""

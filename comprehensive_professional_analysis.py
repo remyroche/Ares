@@ -16,7 +16,6 @@ Provides:
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
@@ -24,6 +23,8 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from centralized_logging import get_logger
 
 # Add code_quality to path
 code_quality_path = Path(__file__).parent / "code_quality"
@@ -52,16 +53,7 @@ except ImportError as e:
     print(f"Warning: Code quality tools not available: {e}")
     CODE_QUALITY_AVAILABLE = False
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("comprehensive_analysis.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-logger = logging.getLogger("ComprehensiveProfessionalAnalysis")
+logger = get_logger(__name__)
 
 
 @dataclass

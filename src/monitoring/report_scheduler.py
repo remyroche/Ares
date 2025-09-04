@@ -17,6 +17,7 @@ import asyncio
 
 if TYPE_CHECKING:
     from datetime import datetime
+from src.core.decorators.errors import handles_errors
 
 
 class ReportType(Enum):

@@ -83,6 +83,7 @@ def compute_shap_importance(
     """
     import shap  # type: ignore
     from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
+from src.core.decorators.errors import handles_errors
 
     Xn = X.select_dtypes(include=[np.number]).fillna(0.0)
     if len(Xn) == 0:

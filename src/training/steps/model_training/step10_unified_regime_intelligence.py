@@ -1909,6 +1909,7 @@ class UnifiedRegimeIntelligenceStep:
         """
         try:
             import optuna  # type: ignore
+from src.core.decorators.errors import handles_errors
         except Exception as ex:
             self.logger.warning(
                 f"⚠️ Optuna not available for HPO ({ex}); skipping optimization",

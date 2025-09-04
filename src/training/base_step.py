@@ -14,6 +14,7 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 class BaseStep(ABC):
     """Abstract base class for all pipeline steps.

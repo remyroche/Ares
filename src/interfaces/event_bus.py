@@ -5,6 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Any, Callable
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
@@ -16,6 +17,7 @@ from src.utils.warning_symbols import (
 )
 from src.core.decorators import handles_errors
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 # src/interfaces/event_bus.py
 
@@ -130,7 +132,7 @@ class EventBus:
     @handles_errors(
         Exception,
         fallback=False,
-        log_level="ERROR",
+        log_level="ERROR"
     )
     async def run(self) -> bool:
         try:

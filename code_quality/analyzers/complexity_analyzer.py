@@ -1,8 +1,13 @@
 """
 Code Complexity Analyzer
 
+DEPRECATED: This analyzer is deprecated in favor of the enhanced ASTAnalysisAnalyzer
+which provides comprehensive complexity analysis with better integration.
+
 Analyzes Python code complexity using Radon library.
 Provides cyclomatic complexity, maintainability index, and Halstead metrics.
+
+Migration: Use code_quality.analyzers.ast_analysis_analyzer.ASTAnalysisAnalyzer instead.
 """
 
 import ast

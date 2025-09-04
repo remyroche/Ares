@@ -1549,6 +1549,7 @@ async def run_enhanced_step(
         per_regime_results: dict[str, Any] = {}
         try:
             from src.utils.regime_data_access import get_regime_column, split_train_val_test_by_regime
+from src.core.decorators.errors import handles_errors
             regime_col = get_regime_column(data)
             if regime_col is not None:
                 logger.info(f"🔁 Running per-regime enhanced training based on '{regime_col}'")

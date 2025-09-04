@@ -37,6 +37,7 @@ class LabelingStep(BaseStep):
                 self.triple_barrier_labeler = TripleBarrierLabeler(self.labeling_config.get('barrier_config', {}))
             if self.labeling_config.get('use_meta_labeling', True):
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
+from src.core.decorators.errors import handles_errors
                 self.meta_labeler = MetaLabelingSystem()
             self.logger.info('✅ Labeling components initialized')
         except ImportError as e:

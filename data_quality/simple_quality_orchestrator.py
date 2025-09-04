@@ -9,14 +9,13 @@ JSON and CSV files without requiring pandas or sklearn.
 import argparse
 import csv
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("SimpleQualityOrchestrator")
+from centralized_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class QualityLevel:

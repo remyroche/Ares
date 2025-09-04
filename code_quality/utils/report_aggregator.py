@@ -193,6 +193,30 @@ class ReportAggregator:
                     "source": "enhanced_validator",
                 })
 
+    def add_dependency_results(self, results: dict[str, Any]):
+        """Add enhanced dependency analysis results."""
+        # Add dependency issues to overall summary
+        undeclared_deps = results.get("undeclared_deps", [])
+        unused_deps = results.get("unused_deps", [])
+        
+        # Store dependency analysis results in a special section
+        if not hasattr(self, 'dependency_analysis'):
+            self.dependency_analysis = {
+                "undeclared_deps": [],
+                "unused_deps": [],
+                "tools_used": [],
+                "recommendations": []
+            }
+        
+        self.dependency_analysis["undeclared_deps"] = undeclared_deps
+        self.dependency_analysis["unused_deps"] = unused_deps
+        self.dependency_analysis["tools_used"] = results.get("tools_used", [])
+        self.dependency_analysis["recommendations"] = results.get("recommendations", [])
+        
+        # Add to overall summary
+        self.overall_summary["issue_breakdown"]["undeclared_dependencies"] = len(undeclared_deps)
+        self.overall_summary["issue_breakdown"]["unused_dependencies"] = len(unused_deps)
+
     def _normalize_path(self, path: Any) -> str:
         """Normalize file path for consistency."""
         if isinstance(path, dict):

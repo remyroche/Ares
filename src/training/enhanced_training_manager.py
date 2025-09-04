@@ -1692,6 +1692,7 @@ class TrainingManager:
                         step11_success = await self._run_optimized_parameters_optimization(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                     else:
                         from src.training.steps import step11_final_parameters_optimization
+from src.core.decorators.errors import handles_errors
                         step11_success = await step11_final_parameters_optimization.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                     if not step11_success:
                         return False

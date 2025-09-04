@@ -22,6 +22,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class ExchangeVolumeAdapter:

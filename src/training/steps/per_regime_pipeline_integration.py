@@ -12,6 +12,7 @@ import inspect
 
 from src.utils.logger import getChild as get_logger
 from src.training.steps.regime_handler import regime_handler
+from src.training.steps.regime_continuity_manager import regime_continuity_manager
 from src.utils.pipeline_standards import pipeline_standards
 
 
@@ -37,6 +38,27 @@ PER_REGIME_STEP_MAPPING = {
     'step19_monte_carlo_validation': 'step19_monte_carlo_validation_per_regime',
     'step20_ab_testing': 'step20_ab_testing_per_regime',
     'step21_saving': 'step21_saving_per_regime'
+}
+
+# Status of per-regime implementations
+PER_REGIME_IMPLEMENTATION_STATUS = {
+    'step05_labeling': 'implemented',
+    'step06_feature_engineering': 'implemented',
+    'step07_enhanced_matrix_operations': 'implemented',
+    'step08_advanced_feature_selection': 'implemented',
+    'step09_hmm_based_training': 'pending',
+    'step10_unified_regime_intelligence': 'pending',
+    'step11_analyst_creation': 'pending',
+    'step12_analyst_enhancement': 'pending',
+    'step13_analyst_ensemble_creation': 'pending',
+    'step14_tactician_labeling': 'pending',
+    'step15_tactician_specialist_training': 'pending',
+    'step16_confidence_calibration': 'pending',
+    'step17_final_parameters_optimization': 'pending',
+    'step18_walk_forward_validation': 'pending',
+    'step19_monte_carlo_validation': 'pending',
+    'step20_ab_testing': 'pending',
+    'step21_saving': 'pending'
 }
 
 
@@ -69,6 +91,12 @@ class PerRegimePipelineIntegrator:
             
         # Check if per-regime is enabled globally
         if not self.per_regime_enabled:
+            return False
+        
+        # Check if per-regime implementation is available
+        implementation_status = PER_REGIME_IMPLEMENTATION_STATUS.get(step_name, 'pending')
+        if implementation_status != 'implemented':
+            self.logger.warning(f"⚠️ Per-regime implementation not available for {step_name} (status: {implementation_status})")
             return False
             
         # Check step-specific configuration

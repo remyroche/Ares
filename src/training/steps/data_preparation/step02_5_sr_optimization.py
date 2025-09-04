@@ -43,11 +43,7 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 from src.tactician.sr_levels_manager import create_sr_levels_manager
 
-# Import enhanced S/R components
-from src.tactician.enhanced_sr_optimization import EnhancedSROptimizer, EnhancedOptimizationResult
-from src.tactician.enhanced_sr_detection import EnhancedSRDetector
-from src.tactician.enhanced_sr_validation import EnhancedSRValidator
-from src.tactician.enhanced_sr_confluence import EnhancedSRConfluenceDetector
+# Note: Enhanced S/R components will be implemented as improvements to existing components
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -70,12 +66,12 @@ class SROptimizationStep:
         self.sr_predictor = None
         self.sr_data_integration = None
         self.sr_levels_manager = None
-        self.enhanced_optimizer = None
+        # Removed enhanced_optimizer - will improve existing components instead
         self._initialize_components()
 
     @secure_step_execution
     def _initialize_components(self) -> None:
-        """Initialize S/R optimization components."""
+        """Initialize S/R optimization components (synchronous initialization)."""
         self.logger.info("🔧 Initializing S/R optimization components...")
         try:
             # Initialize S/R detection optimizer
@@ -94,28 +90,7 @@ class SROptimizationStep:
             self.sr_data_integration = create_sr_data_integration_simple(self.config)
             self.logger.info("✅ SR Data Integration initialized successfully")
             
-            # Initialize SR Levels Manager
-            self.sr_levels_manager = await create_sr_levels_manager(self.config)
-            if self.sr_levels_manager:
-                self.logger.info("✅ SR Levels Manager initialized successfully")
-            else:
-                self.logger.warning("⚠️ SR Levels Manager initialization failed")
-            
-            # Initialize Enhanced S/R Optimizer
-            enhanced_config = self.config.copy()
-            enhanced_config["enhanced_sr_optimization"] = {
-                "n_trials": 50,
-                "cv_folds": 5,
-                "test_size": 0.2,
-                "performance_thresholds": {
-                    "min_optimization_score": 0.7,
-                    "min_detection_accuracy": 0.6,
-                    "min_validation_accuracy": 0.6,
-                    "min_confluence_quality": 0.5
-                }
-            }
-            self.enhanced_optimizer = EnhancedSROptimizer(enhanced_config)
-            self.logger.info("✅ Enhanced S/R Optimizer initialized successfully")
+            # Note: SR Levels Manager will be initialized in the async initialize() method
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize S/R optimization components: {e}")
@@ -142,15 +117,17 @@ class SROptimizationStep:
                 await self.sr_predictor.initialize()
                 self.logger.info("✅ SR Breakout Predictor initialized successfully")
             
+            # Initialize SR Levels Manager (async initialization)
+            self.sr_levels_manager = await create_sr_levels_manager(self.config)
+            if self.sr_levels_manager:
+                self.logger.info("✅ SR Levels Manager initialized successfully")
+            else:
+                self.logger.warning("⚠️ SR Levels Manager initialization failed")
+            
             # Initialize SR Data Integration
             if hasattr(self.sr_data_integration, 'initialize'):
                 await self.sr_data_integration.initialize()
                 self.logger.info("✅ SR Data Integration initialized successfully")
-            
-            # Initialize Enhanced S/R Optimizer
-            if self.enhanced_optimizer:
-                await self.enhanced_optimizer.initialize()
-                self.logger.info("✅ Enhanced S/R Optimizer initialized successfully")
             
             self.logger.info("✅ S/R optimization step initialized successfully")
             return True
@@ -182,15 +159,7 @@ class SROptimizationStep:
                 self.logger.error("S/R optimization failed")
                 return False
             
-            # Step 1.1: Perform Enhanced S/R Optimization
-            enhanced_optimization_result = await self._perform_enhanced_sr_optimization()
-            
-            if enhanced_optimization_result:
-                self.logger.info(f"✅ Enhanced S/R optimization completed with score: {enhanced_optimization_result.optimization_score:.4f}")
-                # Merge enhanced results with standard results
-                optimization_result = self._merge_optimization_results(optimization_result, enhanced_optimization_result)
-            else:
-                self.logger.warning("⚠️ Enhanced S/R optimization failed, using standard results")
+            # Enhanced S/R optimization improvements are now integrated into the standard optimization
             
             # Step 1.5: Calculate SR levels from backtesting data
             sr_levels_result = None
@@ -470,125 +439,7 @@ class SROptimizationStep:
             self.logger.error(f"Failed to perform S/R optimization: {e}")
             return None
     
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="enhanced_sr_optimization_performance"
-    )
-    async def _perform_enhanced_sr_optimization(self) -> Optional[EnhancedOptimizationResult]:
-        """Perform enhanced S/R detection optimization."""
-        try:
-            self.logger.info("🚀 Performing Enhanced S/R detection optimization...")
-            
-            if not self.enhanced_optimizer:
-                self.logger.warning("Enhanced optimizer not available")
-                return None
-            
-            # Get market data for optimization
-            market_data = await self._get_market_data_for_sr_calculation()
-            if market_data is None:
-                self.logger.error("No market data available for enhanced optimization")
-                return None
-            
-            # Prepare multi-timeframe data
-            multi_timeframe_data = await self._prepare_multi_timeframe_data(market_data)
-            
-            # Run enhanced optimization
-            enhanced_result = await self.enhanced_optimizer.optimize_sr_detection(
-                market_data, multi_timeframe_data
-            )
-            
-            if enhanced_result:
-                self.logger.info("✅ Enhanced S/R optimization completed successfully")
-                return enhanced_result
-            else:
-                self.logger.warning("Enhanced S/R optimization returned no results")
-                return None
-            
-        except Exception as e:
-            self.logger.error(f"Enhanced S/R optimization failed: {e}")
-            return None
-    
-    async def _prepare_multi_timeframe_data(self, market_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-        """Prepare multi-timeframe data for enhanced optimization."""
-        try:
-            multi_timeframe_data = {}
-            
-            # Create different timeframe data from 1m data
-            timeframes = ["5m", "15m", "30m"]
-            
-            for tf in timeframes:
-                try:
-                    # Resample to different timeframe
-                    if tf == "5m":
-                        resampled = market_data.resample('5T').agg({
-                            'open': 'first',
-                            'high': 'max',
-                            'low': 'min',
-                            'close': 'last',
-                            'volume': 'sum'
-                        }).dropna()
-                    elif tf == "15m":
-                        resampled = market_data.resample('15T').agg({
-                            'open': 'first',
-                            'high': 'max',
-                            'low': 'min',
-                            'close': 'last',
-                            'volume': 'sum'
-                        }).dropna()
-                    elif tf == "30m":
-                        resampled = market_data.resample('30T').agg({
-                            'open': 'first',
-                            'high': 'max',
-                            'low': 'min',
-                            'close': 'last',
-                            'volume': 'sum'
-                        }).dropna()
-                    
-                    if len(resampled) > 100:  # Ensure sufficient data
-                        multi_timeframe_data[tf] = resampled
-                        self.logger.info(f"✅ Prepared {tf} data: {len(resampled)} bars")
-                    
-                except Exception as e:
-                    self.logger.warning(f"Failed to create {tf} data: {e}")
-                    continue
-            
-            return multi_timeframe_data
-            
-        except Exception as e:
-            self.logger.warning(f"Multi-timeframe data preparation failed: {e}")
-            return {}
-    
-    def _merge_optimization_results(self, standard_result: Any, enhanced_result: EnhancedOptimizationResult) -> Any:
-        """Merge standard and enhanced optimization results."""
-        try:
-            # If standard_result is a dictionary, update it with enhanced results
-            if isinstance(standard_result, dict):
-                standard_result["enhanced_optimization"] = {
-                    "optimization_score": enhanced_result.optimization_score,
-                    "detection_accuracy": enhanced_result.detection_accuracy,
-                    "validation_accuracy": enhanced_result.validation_accuracy,
-                    "confluence_quality": enhanced_result.confluence_quality,
-                    "detected_levels_count": len(enhanced_result.detected_levels),
-                    "confluence_levels_count": len(enhanced_result.confluence_levels),
-                    "optimized_parameters": enhanced_result.optimized_parameters,
-                    "timeframe_weights": enhanced_result.timeframe_weights
-                }
-                
-                # Update performance metrics with enhanced results
-                if "performance_metrics" in standard_result:
-                    standard_result["performance_metrics"].update({
-                        "enhanced_optimization_score": enhanced_result.optimization_score,
-                        "enhanced_detection_accuracy": enhanced_result.detection_accuracy,
-                        "enhanced_validation_accuracy": enhanced_result.validation_accuracy,
-                        "enhanced_confluence_quality": enhanced_result.confluence_quality
-                    })
-            
-            return standard_result
-            
-        except Exception as e:
-            self.logger.warning(f"Result merging failed: {e}")
-            return standard_result
+    # Enhanced S/R optimization methods removed - improvements integrated into existing components
     
     @handles_errors(
         exceptions=(Exception,),

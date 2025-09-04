@@ -1,0 +1,230 @@
+# S/R Optimization Configuration
+# This file contains all configurable parameters for S/R detection optimization
+
+sr_detection_optimization:
+  # Optimization parameters
+  n_trials: 100
+  cv_folds: 5
+  test_size: 0.2
+  optimization_timeout: 3600
+  
+  # Performance thresholds
+  performance_thresholds:
+    min_sr_validation_score: 0.6
+    min_bounce_rate: 0.5
+    max_false_breakout_rate: 0.4
+    min_volume_confirmation: 0.4
+    min_level_detection_accuracy: 0.3
+  
+  # Timeframe-specific configurations
+  timeframe_config:
+    "1m":
+      touch_threshold: 0.0005
+      bounce_threshold: 0.002
+      breakout_threshold: 0.005
+      min_touches: 3
+      volume_spike_threshold: 1.3
+      fractal_period: 5
+      pivot_period: 8
+    "5m":
+      touch_threshold: 0.001
+      bounce_threshold: 0.003
+      breakout_threshold: 0.008
+      min_touches: 3
+      volume_spike_threshold: 1.4
+      fractal_period: 5
+      pivot_period: 10
+    "15m":
+      touch_threshold: 0.0015
+      bounce_threshold: 0.005
+      breakout_threshold: 0.01
+      min_touches: 2
+      volume_spike_threshold: 1.5
+      fractal_period: 5
+      pivot_period: 12
+    "30m":
+      touch_threshold: 0.002
+      bounce_threshold: 0.008
+      breakout_threshold: 0.015
+      min_touches: 2
+      volume_spike_threshold: 1.6
+      fractal_period: 5
+      pivot_period: 15
+  
+  # Parameter ranges for optimization
+  parameter_ranges:
+    # Method weights
+    fractal_weight: [0.1, 0.6]
+    volume_weight: [0.1, 0.5]
+    pivot_weight: [0.1, 0.4]
+    atr_weight: [0.05, 0.3]
+    
+    # Strength calculation weights
+    touch_count_weight: [0.2, 0.5]
+    total_volume_weight: [0.1, 0.4]
+    level_age_weight: [0.1, 0.4]
+    bounce_rate_weight: [0.1, 0.4]
+    isolation_score_weight: [0.05, 0.3]
+    
+    # DBSCAN parameters by timeframe
+    dbscan_params:
+      "1m":
+        eps: [0.002, 0.01]
+        min_samples: [2, 4]
+      "5m":
+        eps: [0.005, 0.015]
+        min_samples: [2, 5]
+      "15m":
+        eps: [0.008, 0.02]
+        min_samples: [3, 6]
+      "30m":
+        eps: [0.01, 0.025]
+        min_samples: [4, 6]
+    
+    # Multi-timeframe weights
+    timeframe_weights:
+      tf_15m_weight: [0.15, 0.3]
+      tf_1h_weight: [0.2, 0.35]
+      tf_4h_weight: [0.15, 0.3]
+      tf_1d_weight: [0.05, 0.2]
+    
+    # Advanced method parameters
+    fibonacci_sensitivity: [0.5, 0.9]
+    elliott_confidence_threshold: [0.4, 0.8]
+    order_flow_hvn_threshold: [1.1, 2.0]
+
+# S/R Strength Optimization Configuration
+sr_strength_optimization:
+  # Optimization parameters
+  n_trials: 50
+  n_jobs: -1
+  chunk_size: 1000
+  
+  # Parameter ranges
+  parameter_ranges:
+    # Touch validation
+    min_touches: [2, 5]
+    touch_proximity_threshold: [0.001, 0.005]
+    touch_time_decay: [0.9, 0.99]
+    
+    # Bounce quality
+    min_bounce_ratio: [0.0005, 0.002]
+    bounce_strength_multiplier: [1.5, 3.0]
+    failed_bounce_penalty: [0.5, 0.9]
+    
+    # Age importance
+    optimal_age_bars: [50, 200]
+    age_decay_rate: [0.95, 0.995]
+    max_age_bars: [300, 1000]
+    recent_bonus_bars: [10, 50]
+    
+    # Volume confirmation
+    volume_spike_threshold: [1.2, 2.0]
+    volume_confirmation_weight: [0.2, 0.5]
+    low_volume_penalty: [0.6, 0.9]
+    
+    # Price action
+    clean_bounce_threshold: [0.6, 0.9]
+    rejection_wick_ratio: [0.5, 0.8]
+    consolidation_bonus: [1.1, 1.5]
+    
+    # Multi-touch
+    consistent_bounce_bonus: [1.1, 1.5]
+    increasing_strength_bonus: [1.1, 1.3]
+    decreasing_strength_penalty: [0.7, 0.9]
+
+# S/R Breakout Predictor Configuration
+sr_breakout_predictor:
+  # Basic parameters
+  sr_proximity_threshold: 0.02
+  breakout_confidence_threshold: 0.6
+  enable_detailed_reporting: true
+  report_directory: "reports/sr_analysis"
+  report_format: "json"
+  report_retention_days: 30
+  
+  # Advanced parameters
+  use_optimized_params: true
+  optimization_results_file: "optimization_results.json"
+  
+  # Validation parameters
+  validation_period: 100
+  min_validation_period: 50
+  max_validation_period: 1000
+  confidence_level: 0.95
+  min_sample_size: 10
+  
+  # Performance thresholds
+  bounce_threshold: 0.001
+  breakout_threshold: 0.005
+  volume_spike_threshold: 1.5
+
+# Market regime detection parameters
+market_regime_detection:
+  # Trend detection
+  trend_threshold: 0.02  # 2% difference for trend detection
+  sma_short_period: 20
+  sma_long_period: 50
+  
+  # Volatility detection
+  rsi_overbought: 70
+  rsi_oversold: 30
+  rsi_period: 14
+  
+  # Regime classification
+  trending_conditions:
+    - trend: ["uptrend", "downtrend"]
+      strength: "neutral"
+  ranging_conditions:
+    - trend: "sideways"
+  transitional_conditions:
+    - strength: ["overbought", "oversold"]
+
+# Caching configuration
+caching:
+  # Cache sizes
+  sr_context_cache_size: 1000
+  technical_indicators_cache_size: 1000
+  volume_ma_cache_size: 500
+  
+  # Cache cleanup
+  cleanup_threshold: 0.8  # Clean when 80% full
+  cleanup_ratio: 0.25     # Remove 25% of entries during cleanup
+  
+  # Cache TTL (time to live) in seconds
+  sr_context_ttl: 3600    # 1 hour
+  indicators_ttl: 1800    # 30 minutes
+  volume_ma_ttl: 900      # 15 minutes
+
+# Error handling configuration
+error_handling:
+  # Retry configuration
+  max_retries: 3
+  retry_delay: 1.0  # seconds
+  exponential_backoff: true
+  
+  # Error logging
+  log_level: "INFO"
+  log_errors: true
+  log_warnings: true
+  log_debug: false
+  
+  # Error recovery
+  fallback_to_basic: true
+  continue_on_error: true
+  max_consecutive_errors: 5
+
+# Memory management
+memory_management:
+  # Data chunking
+  chunk_size: 1000
+  max_memory_usage_mb: 1024
+  
+  # Garbage collection
+  gc_frequency: 100  # Run GC every 100 operations
+  cleanup_frequency: 50  # Cleanup caches every 50 operations
+  
+  # Memory monitoring
+  monitor_memory: true
+  memory_warning_threshold: 0.8  # Warn at 80% memory usage
+  memory_critical_threshold: 0.9  # Critical at 90% memory usage

@@ -90,6 +90,7 @@ class UnifiedEnhancedPipeline:
         print("🎉 ENHANCED UNIFIED PIPELINE COMPLETE!")
         print("=" * 80)
         print(f"📊 Total Issues Found: {self.results['total_issues']}")
+        print(f"📝 Trailing Whitespace: {self.results['summary']['trailing_whitespace_count']} (cosmetic only)")
         print(f"⏱️  Execution Time: {self.results['execution_time']:.2f} seconds")
         print(f"📁 Files Analyzed: {self.results['files_analyzed']}")
         print(f"💾 Reports saved to: {self.output_dir}")
@@ -360,16 +361,10 @@ class UnifiedEnhancedPipeline:
                             "type": "long_line"
                         })
                     
-                    # Check trailing whitespace
+                    # Check trailing whitespace (count but don't add to issues - just cosmetic)
                     if line.rstrip() != line.rstrip(' \t'):
                         style_stats["trailing_whitespace"] += 1
-                        issues.append({
-                            "file": str(file_path),
-                            "line": i,
-                            "message": "Trailing whitespace",
-                            "severity": "info",
-                            "type": "trailing_whitespace"
-                        })
+                        # Don't add trailing whitespace to issues list - it's just cosmetic noise
                 
                 # Check for missing docstrings in functions and classes
                 try:
@@ -485,6 +480,7 @@ class UnifiedEnhancedPipeline:
         total_issues = 0
         issues_by_severity = {"error": 0, "warning": 0, "info": 0}
         issues_by_type = {}
+        trailing_whitespace_count = 0
         
         for tool_name, result in self.results["analysis_results"].items():
             if "issues" in result:
@@ -495,10 +491,15 @@ class UnifiedEnhancedPipeline:
                     
                     issues_by_severity[severity] = issues_by_severity.get(severity, 0) + 1
                     issues_by_type[issue_type] = issues_by_type.get(issue_type, 0) + 1
+            
+            # Count trailing whitespace separately (not included in main issues)
+            if "style_stats" in result and "trailing_whitespace" in result["style_stats"]:
+                trailing_whitespace_count += result["style_stats"]["trailing_whitespace"]
         
         self.results["total_issues"] = total_issues
         self.results["summary"] = {
             "total_issues": total_issues,
+            "trailing_whitespace_count": trailing_whitespace_count,
             "issues_by_severity": issues_by_severity,
             "issues_by_type": issues_by_type,
             "tools_executed": len(self.results["analysis_results"]),
@@ -524,6 +525,7 @@ class UnifiedEnhancedPipeline:
             f.write(f"Timestamp: {self.results['timestamp']}\n")
             f.write(f"Files Analyzed: {self.results['files_analyzed']}\n")
             f.write(f"Total Issues: {self.results['total_issues']}\n")
+            f.write(f"Trailing Whitespace: {self.results['summary']['trailing_whitespace_count']} (cosmetic only)\n")
             f.write(f"Execution Time: {self.results['execution_time']:.2f} seconds\n\n")
             
             summary = self.results['summary']

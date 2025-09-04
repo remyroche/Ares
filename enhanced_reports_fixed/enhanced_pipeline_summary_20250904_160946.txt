@@ -1,0 +1,26 @@
+ENHANCED UNIFIED PIPELINE SUMMARY
+==================================================
+
+Project: /workspace/src
+Timestamp: 2025-09-04T16:09:37.476598
+Files Analyzed: 691
+Total Issues: 9596
+Trailing Whitespace: 318231 (cosmetic only)
+Execution Time: 9.49 seconds
+
+Issues by Severity:
+  Error: 148
+  Warning: 8891
+  Info: 557
+
+Issues by Type:
+  Syntax Error: 126
+  Unused Import: 1462
+  Deep Nesting: 194
+  Long Function: 1
+  Unused Function: 1740
+  Unused Class: 566
+  Long Line: 4740
+  Missing Docstring: 557
+  Potential Secret: 188
+  Unsafe Function: 22

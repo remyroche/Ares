@@ -558,6 +558,14 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
         
         bt_logger.log_success(f"Comprehensive report saved to: {comprehensive_report_file}", "REPORTING")
         
+        # Generate detailed regime/cluster metrics report with datetime
+        regime_metrics_file = Path(data_dir) / f"regime_cluster_metrics_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
+        regime_metrics_report = generate_detailed_regime_metrics_report(
+            pipeline_results, regime_metrics_file
+        )
+        
+        bt_logger.log_success(f"Detailed regime/cluster metrics report saved to: {regime_metrics_file}", "REPORTING")
+        
         # Log performance summary
         bt_logger.log_performance_summary()
         

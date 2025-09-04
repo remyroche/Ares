@@ -444,6 +444,23 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
             if success:
                 logger.info(f"✅ {step_name} completed successfully")
                 print(f"   ✅ {step_name} completed successfully")
+                
+                # Run model interpretability analysis if this is a model training step
+                if "training" in step_name.lower() or "model" in step_name.lower():
+                    print(f"   🧠 Running model interpretability analysis for {step_name}...")
+                    logger.info(f"🧠 Running model interpretability analysis for {step_name}...")
+                    
+                    interpretability_success = await _run_model_interpretability_analysis(
+                        step_instance, symbol, exchange, timeframe, data_dir, step_name
+                    )
+                    
+                    if interpretability_success:
+                        print(f"   ✅ Model interpretability analysis completed for {step_name}")
+                        logger.info(f"✅ Model interpretability analysis completed for {step_name}")
+                    else:
+                        print(f"   ⚠️ Model interpretability analysis failed for {step_name} - continuing...")
+                        logger.warning(f"⚠️ Model interpretability analysis failed for {step_name} - continuing...")
+                
                 return True
             else:
                 logger.error(f"❌ {step_name} failed")
@@ -455,6 +472,160 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
             logger.error(f"📋 Exception type: {type(e).__name__}")
             print(f"   ❌ Error executing {step_name}: {e}")
             print(f"   📋 Exception type: {type(e).__name__}")
+            return False
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _run_model_interpretability_analysis(
+        step_instance: Any,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str,
+        step_name: str
+    ) -> bool:
+        """Run model interpretability analysis for trained models."""
+        try:
+            # Import model interpretability components
+            from src.training.model_interpretability import ModelExplainer
+            
+            # Check if step instance has trained models
+            trained_models = None
+            feature_names = None
+            X_train = None
+            X_test = None
+            y_train = None
+            y_test = None
+            
+            # Try to extract models and data from step instance
+            if hasattr(step_instance, 'trained_models'):
+                trained_models = step_instance.trained_models
+            elif hasattr(step_instance, 'models'):
+                trained_models = step_instance.models
+            elif hasattr(step_instance, 'model'):
+                trained_models = {"main_model": step_instance.model}
+            
+            # Try to extract feature names
+            if hasattr(step_instance, 'feature_names'):
+                feature_names = step_instance.feature_names
+            elif hasattr(step_instance, 'features'):
+                feature_names = step_instance.features
+            
+            # Try to extract training data
+            if hasattr(step_instance, 'X_train'):
+                X_train = step_instance.X_train
+            if hasattr(step_instance, 'X_test'):
+                X_test = step_instance.X_test
+            if hasattr(step_instance, 'y_train'):
+                y_train = step_instance.y_train
+            if hasattr(step_instance, 'y_test'):
+                y_test = step_instance.y_test
+            
+            # If we don't have the data, try to load it
+            if X_train is None or X_test is None:
+                try:
+                    # Try to load data from data directory
+                    import pandas as pd
+                    from src.utils.common_operations import safe_read_parquet
+                    
+                    # Load features data
+                    features_file = f"{data_dir}/features_{exchange}_{symbol}_consolidated.parquet"
+                    if safe_file_exists(features_file):
+                        features_df = safe_read_parquet(features_file)
+                        if feature_names is None:
+                            feature_names = [col for col in features_df.columns if col not in ['timestamp', 'target']]
+                        
+                        # Split into train/test (simple split for interpretability)
+                        split_idx = int(len(features_df) * 0.8)
+                        X_train = features_df.iloc[:split_idx][feature_names]
+                        X_test = features_df.iloc[split_idx:][feature_names]
+                        
+                        # Load labels if available
+                        labels_file = f"{data_dir}/labels_{exchange}_{symbol}_consolidated.parquet"
+                        if safe_file_exists(labels_file):
+                            labels_df = safe_read_parquet(labels_file)
+                            y_train = labels_df.iloc[:split_idx]['target'] if 'target' in labels_df.columns else None
+                            y_test = labels_df.iloc[split_idx:]['target'] if 'target' in labels_df.columns else None
+                
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not load data for interpretability analysis: {e}")
+                    return False
+            
+            # Check if we have the required components
+            if not trained_models or not feature_names or X_train is None or X_test is None:
+                logger.warning(f"⚠️ Insufficient data for interpretability analysis in {step_name}")
+                return False
+            
+            # Initialize model explainer
+            explainer_config = {
+                "interpretability": {
+                    "enabled": True,
+                    "shap_enabled": True,
+                    "lime_enabled": True,
+                    "visualization_enabled": True,
+                    "reporting_enabled": True
+                }
+            }
+            
+            model_explainer = ModelExplainer(explainer_config)
+            
+            # Run interpretability analysis
+            output_dir = f"{data_dir}/interpretability/{step_name}"
+            
+            if isinstance(trained_models, dict) and len(trained_models) > 1:
+                # Multiple models - run multi-model analysis
+                results = await model_explainer.explain_multiple_models(
+                    models=trained_models,
+                    X_train=X_train,
+                    X_test=X_test,
+                    y_train=y_train,
+                    y_test=y_test,
+                    feature_names=feature_names,
+                    symbol=symbol,
+                    exchange=exchange,
+                    output_dir=output_dir
+                )
+            else:
+                # Single model - run single model analysis
+                model = list(trained_models.values())[0] if isinstance(trained_models, dict) else trained_models
+                model_name = list(trained_models.keys())[0] if isinstance(trained_models, dict) else step_name
+                
+                results = await model_explainer.explain_model(
+                    model=model,
+                    X_train=X_train,
+                    X_test=X_test,
+                    y_train=y_train,
+                    y_test=y_test,
+                    feature_names=feature_names,
+                    model_name=model_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    output_dir=output_dir
+                )
+            
+            # Log interpretability results
+            if results and "error" not in results:
+                top_features = results.get("feature_importance", {}).get("top_features", [])
+                if top_features:
+                    logger.info(f"🧠 Top 5 important features for {step_name}: {', '.join(top_features[:5])}")
+                    print(f"   🧠 Top 5 important features: {', '.join(top_features[:5])}")
+                
+                # Log insights
+                insights = results.get("insights", {})
+                feature_insights = insights.get("feature_insights", [])
+                if feature_insights:
+                    logger.info(f"💡 Key insight: {feature_insights[0]}")
+                    print(f"   💡 Key insight: {feature_insights[0]}")
+                
+                return True
+            else:
+                logger.warning(f"⚠️ Interpretability analysis returned no results for {step_name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Model interpretability analysis failed for {step_name}: {e}")
+            print(f"   ❌ Model interpretability analysis failed: {e}")
             return False
     
     # Main pipeline execution with comprehensive validation

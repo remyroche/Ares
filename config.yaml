@@ -59,15 +59,15 @@ tactician:
 
   # Decision Thresholds (Step17 Optimizable)
   decision_thresholds:
-    entry_profit_threshold: 0.6
-    entry_risk_threshold: 0.2
-    entry_confidence_threshold: 0.7
-    entry_profit_risk_ratio: 2.0
-    entry_scenario_dominance: 0.4
-    exit_risk_threshold: 0.5
-    exit_confidence_drop: 0.2
-    position_size_multiplier: 1.0
-    leverage_multiplier: 1.0
+    entry_profit_threshold: 0.6     # Range: [0.4, 0.8] - Minimum profit probability for entry
+    entry_risk_threshold: 0.2       # Range: [0.1, 0.4] - Maximum risk probability for entry
+    entry_confidence_threshold: 0.7 # Range: [0.5, 0.9] - Minimum confidence for entry
+    entry_profit_risk_ratio: 2.0    # Range: [1.5, 3.0] - Minimum profit/risk ratio for entry
+    entry_scenario_dominance: 0.4   # Range: [0.3, 0.6] - Minimum scenario dominance for entry
+    exit_risk_threshold: 0.5        # Range: [0.3, 0.7] - Maximum risk probability for exit
+    exit_confidence_drop: 0.2       # Range: [0.1, 0.3] - Confidence drop threshold for exit
+    position_size_multiplier: 1.0   # Range: [0.5, 2.0] - Multiplier for calculated position size
+    leverage_multiplier: 1.0        # Range: [0.5, 2.0] - Multiplier for calculated leverage
 
   # Risk Management (Step17 Optimizable)
   risk_management:
@@ -142,37 +142,32 @@ step17_optimization:
 
   # Leverage Sizing Optimization (Step17 Optimizable)
   leverage:
-    min_leverage: 10.0
-    max_leverage: 100.0
-    confidence_threshold: 0.6
-    liquidation_buffer: 0.05
-    ml_weight: 0.6
-    liquidation_weight: 0.4
-    leverage_multiplier: 1.0
-    risk_adjustment_factor: 1.0
-    confidence_boost_threshold: 0.8
-    max_risk_leverage: 50.0
+    min_leverage: 10.0              # Range: [5.0, 20.0] - Minimum leverage for trading
+    max_leverage: 100.0             # Range: [50.0, 200.0] - Maximum leverage for trading
+    confidence_threshold: 0.6       # Range: [0.4, 0.8] - Minimum confidence for leverage sizing
+    liquidation_buffer: 0.05        # Range: [0.02, 0.1] - Liquidation risk buffer
+    ml_weight: 0.6                  # Range: [0.3, 0.8] - Weight of ML predictions in leverage
+    liquidation_weight: 0.4         # Range: [0.2, 0.7] - Weight of liquidation risk in leverage
+    leverage_multiplier: 1.0        # Range: [0.5, 2.0] - Multiplier for calculated leverage
+    risk_adjustment_factor: 1.0     # Range: [0.5, 2.0] - Risk adjustment factor for leverage
+    max_risk_leverage: 50.0         # Range: [20.0, 100.0] - Maximum leverage in high risk conditions
 
   # Position Sizing Optimization (Step17 Optimizable)
   position_sizing:
-    kelly_multiplier: 0.25
-    max_position_size: 0.5
-    min_position_size: 0.01
-    confidence_threshold: 0.6
-    ml_weight: 0.7
-    kelly_weight: 0.3
-    risk_adjustment_factor: 1.0
-    confidence_boost_threshold: 0.8
-    volatility_adjustment: 1.0
-    market_regime_multiplier: 1.0
+    kelly_multiplier: 0.25          # Range: [0.1, 1.5] - Kelly criterion multiplier for position sizing
+    max_position_size: 0.3          # Range: [0.2, 0.3] - HARD CAP: Maximum position size (absolute limit)
+    min_position_size: 0.01         # Range: [0.001, 0.1] - Minimum position size
+    confidence_threshold: 0.6       # Range: [0.4, 0.8] - Minimum confidence for position sizing
+    ml_weight: 0.7                  # Range: [0.4, 0.9] - Weight of ML predictions in position sizing
+    kelly_weight: 0.3               # Range: [0.1, 0.6] - Weight of Kelly criterion in position sizing
+    risk_adjustment_factor: 1.0     # Range: [0.5, 2.0] - Risk adjustment factor for position sizing
 
   # Take Profit / Stop Loss (TPSL) Optimization (Step17 Optimizable)
   tpsl:
-    atr_multiplier: 2.0
-    confidence_threshold: 0.7
-    min_hold_time: 300
-    stop_loss_multiplier: 1.5
-    take_profit_multiplier: 2.0
+    atr_multiplier: 2.0             # Range: [1.0, 4.0] - ATR multiplier for dynamic barriers
+    confidence_threshold: 0.7       # Range: [0.5, 0.9] - Minimum confidence for TPSL
+    stop_loss_multiplier: 1.5       # Range: [1.0, 3.0] - Multiplier for stop loss distance
+    take_profit_multiplier: 2.0     # Range: [1.0, 4.0] - Multiplier for take profit distance
     trailing_stop_enabled: true
     trailing_stop_distance: 0.02
     max_hold_time: 3600
@@ -180,17 +175,16 @@ step17_optimization:
   # ML Tactics Optimization (Step17 Optimizable)
   ml_tactics:
     enable_ml_tactics: true
-    confidence_threshold: 0.7
-    regime_threshold: 0.6
-    ml_weight: 0.8
-    regime_weight: 0.2
-    confidence_boost_factor: 1.2
-    risk_adjustment_factor: 1.0
+    confidence_threshold: 0.7       # Range: [0.5, 0.9] - Minimum confidence for ML tactics
+    regime_threshold: 0.6           # Range: [0.4, 0.8] - Minimum regime confidence for ML tactics
+    ml_weight: 0.8                  # Range: [0.5, 0.95] - Weight of ML predictions in tactics
+    regime_weight: 0.2              # Range: [0.05, 0.5] - Weight of regime analysis in tactics
+    risk_adjustment_factor: 1.0     # Range: [0.5, 2.0] - Risk adjustment factor for ML tactics
 
   # Decision Policy Optimization (Step17 Optimizable)
   decision_policy:
-    confidence_threshold: 0.6
-    risk_threshold: 0.1
+    confidence_threshold: 0.6       # Range: [0.4, 0.8] - Minimum confidence for trading decisions
+    risk_threshold: 0.1             # Range: [0.05, 0.2] - Maximum acceptable risk level
 
   # Confidence Optimization (Step17 Optimizable)
   confidence:
@@ -291,10 +285,10 @@ performance_attribution:
     barrier_type_weight: 0.3
 
 # =============================================================================
-# MICROSTRUCTURE FEATURES CONFIGURATION
+# MICROSTRUCTURE FEATURES CONFIGURATION (Step06 Optimization)
 # =============================================================================
 microstructure_features:
-  # Feature Extraction Parameters (Step17 Optimizable)
+  # Feature Extraction Parameters (Optimize in Step06, not Step17)
   feature_extraction:
     spread_threshold: 0.0001
     volume_imbalance_threshold: 0.1
@@ -309,7 +303,7 @@ microstructure_features:
     european_afternoon: [12, 18] # 12-18 UTC
     us_evening: [18, 24]         # 18-24 UTC
 
-  # Timeframe-Specific Features (Step17 Optimizable)
+  # Timeframe-Specific Features (Optimize in Step06, not Step17)
   timeframe_features:
     "5m":
       ultra_tight_spread_threshold: 0.00005
@@ -329,10 +323,10 @@ microstructure_features:
       high_volatility_threshold: 0.0008
 
 # =============================================================================
-# BAYESIAN PROBABILITY UPDATES CONFIGURATION
+# BAYESIAN PROBABILITY UPDATES CONFIGURATION (Separate Optimization)
 # =============================================================================
 bayesian_updates:
-  # Update Parameters (Step17 Optimizable)
+  # Update Parameters (Optimize separately, not in Step17)
   update_parameters:
     learning_rate: 0.1
     prior_strength: 0.5
@@ -340,24 +334,24 @@ bayesian_updates:
     max_observations: 1000
     confidence_decay: 0.95
 
-  # Regime-Specific Updates (Step17 Optimizable)
+  # Regime-Specific Updates (Optimize separately, not in Step17)
   regime_updates:
     update_frequency: 100  # Update every 100 trades
     regime_transition_threshold: 0.7
     stability_period: 300
 
 # =============================================================================
-# COPULA DEPENDENCY MODELS CONFIGURATION
+# COPULA DEPENDENCY MODELS CONFIGURATION (Separate Optimization)
 # =============================================================================
 copula_models:
-  # Dependency Modeling (Step17 Optimizable)
+  # Dependency Modeling (Optimize separately, not in Step17)
   dependency_modeling:
     copula_type: "gaussian"  # gaussian, t, clayton, gumbel
     correlation_threshold: 0.3
     tail_dependence_threshold: 0.1
     update_frequency: 50
 
-  # Cluster Dependencies (Step17 Optimizable)
+  # Cluster Dependencies (Optimize separately, not in Step17)
   cluster_dependencies:
     max_clusters: 20
     min_correlation: 0.1

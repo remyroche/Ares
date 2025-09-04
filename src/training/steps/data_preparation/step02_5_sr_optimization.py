@@ -214,6 +214,9 @@ class SROptimizationStep:
                 optimization_result, sr_analysis_reports, sr_integration_analysis, detailed_reports
             )
             
+            # Step 8: Log results to MLflow
+            await self._log_to_mlflow(optimization_result, sr_analysis_reports, detailed_reports)
+            
             execution_time = time.time() - self.start_time
             self.logger.info(f"✅ S/R optimization completed successfully in {execution_time:.2f}s")
             
@@ -1685,6 +1688,57 @@ class SROptimizationStep:
     context="step02_5_sr_optimization"
 )
 @secure_step_execution
+    async def _log_to_mlflow(self, optimization_result: Any, 
+                            sr_analysis_reports: Dict[str, Any],
+                            detailed_reports: Dict[str, Any]) -> None:
+        """Log S/R optimization results to MLflow."""
+        try:
+            import mlflow
+            
+            # Log optimization metrics
+            if optimization_result:
+                mlflow.log_metric("sr_optimization_score", optimization_result.optimization_score)
+                mlflow.log_metric("sr_cv_score_mean", optimization_result.cv_scores['mean'])
+                mlflow.log_metric("sr_cv_score_std", optimization_result.cv_scores['std'])
+                
+                # Log best parameters
+                for param_name, param_value in optimization_result.best_params.items():
+                    mlflow.log_param(f"sr_{param_name}", param_value)
+                
+                # Log performance metrics
+                for metric_name, metric_value in optimization_result.performance_metrics.items():
+                    if isinstance(metric_value, (int, float)):
+                        mlflow.log_metric(f"sr_{metric_name}", metric_value)
+            
+            # Log S/R detection results
+            if sr_analysis_reports:
+                mlflow.log_metric("sr_support_levels_count", 
+                                len(sr_analysis_reports.get('support_levels', [])))
+                mlflow.log_metric("sr_resistance_levels_count", 
+                                len(sr_analysis_reports.get('resistance_levels', [])))
+                mlflow.log_metric("sr_confluence_zones_count", 
+                                len(sr_analysis_reports.get('confluence_zones', [])))
+            
+            # Log comprehensive integration results
+            if hasattr(self, 'sr_comprehensive_integration') and self.sr_comprehensive_integration:
+                component_status = self.sr_comprehensive_integration.get_component_status()
+                active_components = sum(1 for status in component_status.values() if status)
+                mlflow.log_metric("sr_active_components", active_components)
+                mlflow.log_metric("sr_total_components", len(component_status))
+            
+            # Log reports as artifacts
+            if detailed_reports and 'report_paths' in detailed_reports:
+                for report_name, report_path in detailed_reports['report_paths'].items():
+                    if Path(report_path).exists():
+                        mlflow.log_artifact(report_path, f"sr_reports/{report_name}")
+            
+            self.logger.info("✅ S/R optimization results logged to MLflow")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to log S/R results to MLflow: {e}")
+            # Don't fail the step if MLflow logging fails
+
+
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the S/R optimization step."""
     try:

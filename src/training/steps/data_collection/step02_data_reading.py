@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 from src.core.decorators import cached, handles_errors, log_execution_time, traced, validates
+from src.core.decorators.errors import handles_errors
+from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import ensure_directory, safe_json_dump, safe_read_parquet
@@ -186,18 +188,27 @@ class DataReadingStep:
         """Save validation report to file."""
         step_start = time.time()
         self.logger.info('💾 Saving validation report...')
+        
         try:
-            from datetime import datetime
-from src.core.decorators.errors import handles_errors
             reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'data_quality')
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             report_filename = f'data_reading_validation_{exchange}_{symbol}_{timestamp}.json'
             report_path = reports_dir / report_filename
-            report_data = {'step': 'step02_data_reading', 'timestamp': datetime.now().isoformat(), 'symbol': symbol, 'exchange': exchange, 'validation_results': validation_results, 'step_timings': self.step_timings}
+            
+            report_data = {
+                'step': 'step02_data_reading', 
+                'timestamp': datetime.now().isoformat(), 
+                'symbol': symbol, 
+                'exchange': exchange, 
+                'validation_results': validation_results, 
+                'step_timings': self.step_timings
+            }
+            
             safe_json_dump(report_data, report_path, indent=2, default=str)
             self.logger.info(f'✅ Validation report saved to {report_path}')
             self._log_step_timing('save_validation_report', step_start)
             return True
+            
         except Exception as e:
             self.logger.exception(f'❌ Error saving validation report: {e}')
             return False

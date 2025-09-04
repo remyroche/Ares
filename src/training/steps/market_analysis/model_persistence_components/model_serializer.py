@@ -244,7 +244,6 @@ class ModelSerializer:
             return None
         try:
             import onnxruntime as ort
-from src.core.decorators.errors import handles_errors
             session = ort.InferenceSession(str(file_path))
             return session
         except Exception as e:

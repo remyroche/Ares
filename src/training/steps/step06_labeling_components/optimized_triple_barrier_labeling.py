@@ -462,7 +462,6 @@ if __name__ == "__main__":
     import numpy as np
     import asyncio
     import copy
-    from src.core.decorators.errors import handles_errors
 
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

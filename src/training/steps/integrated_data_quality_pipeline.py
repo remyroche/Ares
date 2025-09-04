@@ -259,7 +259,7 @@ class IntegratedDataQualityPipeline:
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step03 HMM regime discovery."""
         try:
-            from .step03_hmm_regime_discovery import run_step as run_step3
+            from .step03_hmm_clustering import run_step as run_step3
             
             success = await run_step3(
                 symbol=symbol,

@@ -248,8 +248,9 @@ class LimitedMicrostructureFeatures:
             'time_since_last_trade': time_since_last_trade,
             'hour_of_day': current_time.hour,
             'day_of_week': current_time.weekday(),
-            'is_market_hours': self._is_market_hours(current_time),
-            'is_weekend': current_time.weekday() >= 5
+            'is_market_hours': True,  # Always true for 24/7 crypto trading
+            'is_weekend': current_time.weekday() >= 5,
+            'trading_session': self._get_trading_session(current_time)
         }
         
         return time_features
@@ -364,14 +365,27 @@ class LimitedMicrostructureFeatures:
         return momentum
     
     def _is_market_hours(self, timestamp: datetime) -> bool:
-        """Check if timestamp is during market hours (simplified)"""
+        """Check if timestamp is during market hours (24/7 for crypto)"""
         
-        # Simplified market hours (24/7 for crypto, adjust as needed)
+        # 24/7 trading for crypto markets - no market hours restrictions
+        return True
+    
+    def _get_trading_session(self, timestamp: datetime) -> str:
+        """Get trading session based on time of day (24/7 crypto)"""
+        
         hour = timestamp.hour
         
-        # Assume active trading hours (adjust based on your market)
-        # For high-frequency 5m trading, consider extended hours
-        return 6 <= hour <= 23  # 6 AM to 11 PM (extended for 5m trading)
+        # Define trading sessions for 24/7 crypto markets
+        if 0 <= hour < 6:
+            return 'asian_overnight'
+        elif 6 <= hour < 12:
+            return 'asian_morning'
+        elif 12 <= hour < 18:
+            return 'european_afternoon'
+        elif 18 <= hour < 24:
+            return 'us_evening'
+        else:
+            return 'unknown'
     
     def _update_feature_statistics(self, features: Dict[str, Any]) -> None:
         """Update feature statistics for normalization"""
@@ -475,16 +489,17 @@ class LimitedMicrostructureFeatures:
             else:
                 signals['normal_volatility'] = 1
         
-        # Time-based signals
-        if 'is_market_hours' in features:
-            if features['is_market_hours']:
-                signals['market_hours'] = 1
-            else:
-                signals['off_market_hours'] = 1
+        # Time-based signals (24/7 trading)
+        if 'trading_session' in features:
+            session = features['trading_session']
+            signals[f'session_{session}'] = 1
+        
+        # Always market hours for 24/7 crypto
+        signals['market_hours'] = 1
         
         return signals
     
-    def get_timeframe_specific_features(
+    async def get_timeframe_specific_features(
         self,
         market_data: Dict[str, Any],
         timeframe: str,

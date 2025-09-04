@@ -48,6 +48,7 @@ class MLOptimizedBarriers:
         # Optimization Configuration
         self.optimization_config = config.get('barrier_optimization', {})
         self.regime_names = [f"regime_{i:02d}" for i in range(20)]  # regime_00 to regime_19
+        self.trading_fee = 0.0008  # 0.08% trading fee
         
         # Multi-Objective Weights (as specified)
         self.objective_weights = {
@@ -56,11 +57,11 @@ class MLOptimizedBarriers:
             'sharpe_ratio': 0.25  # 25% weight on Sharpe ratio
         }
         
-        # Optimization Bounds
+        # Optimization Bounds (accounting for 0.08% trading fee)
         self.optimization_bounds = {
-            'profit_take_multiplier': (0.0005, 0.005),  # 0.05% to 0.5%
-            'stop_loss_multiplier': (0.0002, 0.003),    # 0.02% to 0.3%
-            'confidence_threshold': (0.4, 0.8)          # 40% to 80%
+            'profit_take_multiplier': (0.0013, 0.0058),  # 0.13% to 0.58% (0.05%+fee to 0.5%+fee)
+            'stop_loss_multiplier': (0.0010, 0.0038),    # 0.10% to 0.38% (0.02%+fee to 0.3%+fee)
+            'confidence_threshold': (0.4, 0.8)           # 40% to 80%
         }
         
         # Storage
@@ -105,9 +106,9 @@ class MLOptimizedBarriers:
             # For now, initialize with default values
             for regime in self.regime_names:
                 self.optimized_barriers[regime] = {
-                    'profit_take_multiplier': 0.002,  # Default 0.2%
-                    'stop_loss_multiplier': 0.001,    # Default 0.1%
-                    'confidence_threshold': 0.6,      # Default 60%
+                    'profit_take_multiplier': 0.0028,  # Default 0.28% (0.2% + 0.08% fee)
+                    'stop_loss_multiplier': 0.0018,    # Default 0.18% (0.1% + 0.08% fee)
+                    'confidence_threshold': 0.6,       # Default 60%
                     'optimization_status': 'default'
                 }
         except Exception as e:
@@ -285,10 +286,14 @@ class MLOptimizedBarriers:
              self.optimization_bounds['confidence_threshold'][1]) / 2
         ]
         
-        # Optimization constraints
+        # Optimization constraints (accounting for trading fee)
         constraints = [
             # Profit take should be greater than stop loss (risk-reward ratio > 1)
             {'type': 'ineq', 'fun': lambda x: x[0] - x[1]},
+            # Profit take should be at least 2x trading fee (0.16%) to ensure profitability
+            {'type': 'ineq', 'fun': lambda x: x[0] - 2 * self.trading_fee},
+            # Stop loss should be at least 1.5x trading fee (0.12%) to limit losses
+            {'type': 'ineq', 'fun': lambda x: x[1] - 1.5 * self.trading_fee},
             # Confidence threshold should be reasonable
             {'type': 'ineq', 'fun': lambda x: x[2] - 0.3},  # At least 30%
             {'type': 'ineq', 'fun': lambda x: 0.9 - x[2]}   # At most 90%
@@ -324,10 +329,10 @@ class MLOptimizedBarriers:
                 'metrics': final_metrics
             }
         else:
-            # Fallback to current barriers if optimization fails
+            # Fallback to current barriers if optimization fails (accounting for trading fee)
             fallback_barriers = self.optimized_barriers.get(regime, {
-                'profit_take_multiplier': 0.002,
-                'stop_loss_multiplier': 0.001,
+                'profit_take_multiplier': 0.0028,  # 0.28% (0.2% + 0.08% fee)
+                'stop_loss_multiplier': 0.0018,    # 0.18% (0.1% + 0.08% fee)
                 'confidence_threshold': 0.6
             })
             
@@ -425,15 +430,15 @@ class MLOptimizedBarriers:
             regime_volatility = 0.002  # Default 0.2% volatility
             price_movement = np.random.normal(0, regime_volatility)
         
-        # Determine trade outcome
+        # Determine trade outcome (accounting for trading fee)
         if price_movement >= profit_take:
-            pnl = profit_take * 100  # Convert to percentage
+            pnl = (profit_take - self.trading_fee) * 100  # Subtract trading fee
             outcome = 'profit_take'
         elif price_movement <= -stop_loss:
-            pnl = -stop_loss * 100
+            pnl = (-stop_loss - self.trading_fee) * 100  # Subtract trading fee
             outcome = 'stop_loss'
         else:
-            pnl = price_movement * 100
+            pnl = (price_movement - self.trading_fee) * 100  # Subtract trading fee
             outcome = 'partial'
             
         return {

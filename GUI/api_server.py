@@ -1559,6 +1559,10 @@ async def get_regime_performance():
 
 # Import launcher integration
 try:
+    import sys
+    import os
+    gui_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, gui_dir)
     from launcher_integration import (
         start_launcher_mode, start_training, stop_process, stop_all_processes,
         get_process_status, get_available_modes, get_available_training_modes,

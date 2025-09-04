@@ -68,7 +68,7 @@ trap cleanup SIGINT SIGTERM
 # Start the API server in the background (run as module from project root)
 echo "🔧 Starting API server on port ${API_PORT}..."
 (
-  cd "${ROOT_DIR}" && API_PORT="${API_PORT}" python3 -m GUI.api_server &
+  cd "${ROOT_DIR}" && API_PORT="${API_PORT}" python3 GUI/api_server_simple.py &
 )
 API_PID=$!
 

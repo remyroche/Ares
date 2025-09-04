@@ -354,12 +354,25 @@ class PositionSizer:
         kelly_position_size: float,
         ml_position_size: float,
     ) -> float:
-        """Calculate weighted position size using Kelly criterion and ML confidence."""
+        """Calculate weighted position size using logarithmic computations to prevent multiplicative compounding."""
         try:
-            # Calculate weighted position size using multiplication with ml_weight
-            # Formula: position_size = kelly_position_size * (ml_position_size ^ ml_weight)
-            weighted_size = kelly_position_size * (ml_position_size ** self.ml_weight)
-
+            import math
+            
+            # Convert to log space to prevent multiplicative compounding
+            # Formula: log(position_size) = (1 - ml_weight) * log(kelly) + ml_weight * log(ml)
+            # This ensures additive combination in log space, preventing exponential growth
+            
+            # Add small epsilon to prevent log(0)
+            epsilon = 1e-8
+            log_kelly = math.log(kelly_position_size + epsilon)
+            log_ml = math.log(ml_position_size + epsilon)
+            
+            # Weighted combination in log space (additive, not multiplicative)
+            weighted_log = (1 - self.ml_weight) * log_kelly + self.ml_weight * log_ml
+            
+            # Convert back to linear space
+            weighted_size = math.exp(weighted_log)
+            
             # Ensure within bounds
             return max(
                 self.min_position_size, min(self.max_position_size, weighted_size),
@@ -378,10 +391,14 @@ class PositionSizer:
         analyst_confidence: float,
         tactician_confidence: float,
     ) -> float:
-        """Adjust position size based on market health (vol/liquidity/stress), strategist risk, and dynamic confidence."""
+        """Adjust position size using logarithmic computations to prevent multiplicative compounding."""
         try:
-            adjusted = base_size
-
+            import math
+            
+            # Start with base size in log space
+            epsilon = 1e-8
+            log_adjusted = math.log(base_size + epsilon)
+            
             # Market health: downscale size under high volatility or stress; upscale when healthy
             if market_health_analysis:
                 vol = market_health_analysis.get("volatility_analysis", {})
@@ -393,47 +410,45 @@ class PositionSizer:
                 stress_level = float(stress.get("stress_level", 0.5))  # 0..1
                 liquidity_score = float(liq.get("liquidity_score", 0.5))  # 0..1
 
-                # Volatility adjustment
+                # Volatility adjustment in log space (additive)
                 if vol_regime in ("high", "extreme") or current_vol > 0.03:
-                    adjusted *= 0.6
+                    log_adjusted += math.log(0.6)  # Reduce by 40%
                 elif vol_regime == "low" and current_vol < 0.015:
-                    adjusted *= 1.1
+                    log_adjusted += math.log(1.1)  # Increase by 10%
 
-                # Stress adjustment
+                # Stress adjustment in log space (additive)
                 if stress_level >= 0.8:
-                    adjusted *= 0.4
+                    log_adjusted += math.log(0.4)  # Reduce by 60%
                 elif stress_level >= 0.6:
-                    adjusted *= 0.6
+                    log_adjusted += math.log(0.6)  # Reduce by 40%
                 elif stress_level >= 0.4:
-                    adjusted *= 0.8
+                    log_adjusted += math.log(0.8)  # Reduce by 20%
 
-                # Liquidity adjustment
+                # Liquidity adjustment in log space (additive)
                 if liquidity_score < 0.3:
-                    adjusted *= 0.6
+                    log_adjusted += math.log(0.6)  # Reduce by 40%
                 elif liquidity_score > 0.7:
-                    adjusted *= 1.05
+                    log_adjusted += math.log(1.05)  # Increase by 5%
 
-            # Strategist risk parameters: respect max risk caps without using fixed TP/SL distances
+            # Strategist risk parameters: respect max risk caps
             if strategist_risk_parameters:
-                # Example: cap size based on max daily loss or risk per trade signals
                 max_position_risk = float(
                     strategist_risk_parameters.get("max_position_risk", 0.01),
                 )
-                # Ensure final size does not exceed configured max_position_size
-                configured_max = float(self.max_position_size)
-                adjusted = min(adjusted, configured_max)
                 # If max_position_risk is very small, reduce size further
                 if max_position_risk <= 0.005:
-                    adjusted *= 0.8
+                    log_adjusted += math.log(0.8)  # Reduce by 20%
 
-            # Dynamic confidence-based modulation (analyst and tactician)
-            # Use dual confidence similar to monitor normalization
+            # Dynamic confidence-based modulation in log space
             _, normalized = normalize_dual_confidence(
                 analyst_confidence, tactician_confidence,
             )
             # Scale position by a gentle factor around 1.0 (0.8..1.2)
             conf_scale = 0.8 + 0.4 * normalized
-            adjusted *= conf_scale
+            log_adjusted += math.log(conf_scale)
+            
+            # Convert back to linear space
+            adjusted = math.exp(log_adjusted)
 
             return max(self.min_position_size, min(self.max_position_size, adjusted))
         except Exception as e:

@@ -394,13 +394,29 @@ class LeverageSizer:
         ml_leverage: float,
         liquidation_leverage: float,
     ) -> float:
-        """Calculate weighted leverage using ML and liquidation risk models."""
+        """Calculate weighted leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
-            # Calculate weighted leverage
-            weighted_leverage = (
-                ml_leverage * self.ml_weight
-                + liquidation_leverage * self.liquidation_weight
-            ) / (self.ml_weight + self.liquidation_weight)
+            import math
+            
+            # Convert to log space to prevent multiplicative compounding
+            # Formula: log(leverage) = ml_weight * log(ml_leverage) + liquidation_weight * log(liquidation_leverage)
+            # This ensures additive combination in log space, preventing exponential growth
+            
+            # Add small epsilon to prevent log(0)
+            epsilon = 1e-8
+            log_ml = math.log(ml_leverage + epsilon)
+            log_liquidation = math.log(liquidation_leverage + epsilon)
+            
+            # Weighted combination in log space (additive, not multiplicative)
+            # Normalize weights to sum to 1.0
+            total_weight = self.ml_weight + self.liquidation_weight
+            normalized_ml_weight = self.ml_weight / total_weight
+            normalized_liquidation_weight = self.liquidation_weight / total_weight
+            
+            weighted_log = normalized_ml_weight * log_ml + normalized_liquidation_weight * log_liquidation
+            
+            # Convert back to linear space
+            weighted_leverage = math.exp(weighted_log)
 
             # Ensure within bounds
             return max(
@@ -421,11 +437,15 @@ class LeverageSizer:
         analyst_confidence: float,
         tactician_confidence: float,
     ) -> float:
-        """Adjust leverage based on market health and risk parameters."""
+        """Adjust leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
-            adjusted = base_leverage
+            import math
+            
+            # Start with base leverage in log space
+            epsilon = 1e-8
+            log_adjusted = math.log(base_leverage + epsilon)
 
-            # Apply market health modifiers
+            # Apply market health modifiers in log space (additive)
             if market_health_analysis:
                 volatility_modifier = market_health_analysis.get(
                     "volatility_modifier", 1.0
@@ -435,16 +455,22 @@ class LeverageSizer:
                 )
                 stress_modifier = market_health_analysis.get("stress_modifier", 1.0)
 
-                adjusted *= volatility_modifier * liquidity_modifier * stress_modifier
+                # Add modifiers in log space instead of multiplying
+                log_adjusted += math.log(volatility_modifier)
+                log_adjusted += math.log(liquidity_modifier)
+                log_adjusted += math.log(stress_modifier)
 
-            # Apply strategist risk parameters
+            # Apply strategist risk parameters in log space (additive)
             if strategist_risk_parameters:
                 risk_modifier = strategist_risk_parameters.get("leverage_modifier", 1.0)
-                adjusted *= risk_modifier
+                log_adjusted += math.log(risk_modifier)
 
-            # Apply confidence modifiers
+            # Apply confidence modifiers in log space (additive)
             confidence_modifier = (analyst_confidence + tactician_confidence) / 2
-            adjusted *= confidence_modifier
+            log_adjusted += math.log(confidence_modifier)
+            
+            # Convert back to linear space
+            adjusted = math.exp(log_adjusted)
 
             # Ensure within bounds
             return max(

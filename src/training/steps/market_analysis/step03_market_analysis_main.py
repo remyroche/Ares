@@ -49,9 +49,9 @@ async def main():
     correlation_id = f"market_analysis_{symbol}_{exchange}_{int(time.time())}"
     enhanced_logger.start_pipeline(symbol, exchange, correlation_id)
     
-    enhanced_logger.logger.info("🚀 Step 3: Market Analysis Pipeline")
+    enhanced_logger.logger.info("▶️ Step 3: Market Analysis Pipeline")
     enhanced_logger.logger.info("=" * 80)
-    enhanced_logger.logger.info(f"📊 Configuration:")
+    enhanced_logger.logger.info(f"⚙️ Configuration:")
     enhanced_logger.logger.info(f"   Symbol: {symbol}")
     enhanced_logger.logger.info(f"   Exchange: {exchange}")
     enhanced_logger.logger.info(f"   Timeframe: {timeframe}")
@@ -77,13 +77,13 @@ async def main():
         total_time = time.time() - start_time
         
         if success:
-            enhanced_logger.logger.info("\n🎉 MARKET ANALYSIS COMPLETED SUCCESSFULLY!")
+            enhanced_logger.logger.info("\n✓ MARKET ANALYSIS COMPLETED")
             enhanced_logger.logger.info("=" * 80)
-            enhanced_logger.logger.info("✅ All market analysis steps completed:")
-            enhanced_logger.logger.info("   ✅ HMM regime discovery and clustering")
-            enhanced_logger.logger.info("   ✅ Regime data splitting and labeling")
-            enhanced_logger.logger.info("   ✅ Feature engineering and selection")
-            enhanced_logger.logger.info("   ✅ Advanced matrix operations")
+            enhanced_logger.logger.info("✓ All market analysis steps completed:")
+            enhanced_logger.logger.info("   ✓ HMM regime discovery and clustering")
+            enhanced_logger.logger.info("   ✓ Regime data splitting and labeling")
+            enhanced_logger.logger.info("   ✓ Feature engineering and selection")
+            enhanced_logger.logger.info("   ✓ Advanced matrix operations")
             enhanced_logger.logger.info(f"⏱️ Total execution time: {total_time:.2f} seconds")
             enhanced_logger.logger.info("=" * 80)
             
@@ -112,7 +112,7 @@ async def main():
     except Exception as e:
         total_time = time.time() - start_time
         error_message = str(e)
-        enhanced_logger.logger.error(f"\n💥 MARKET ANALYSIS FAILED WITH EXCEPTION: {error_message}")
+        enhanced_logger.logger.error(f"\n❌ MARKET ANALYSIS FAILED WITH EXCEPTION: {error_message}")
         enhanced_logger.logger.error("=" * 80)
         enhanced_logger.logger.error(f"⏱️ Total execution time: {total_time:.2f} seconds")
         enhanced_logger.logger.error("=" * 80)

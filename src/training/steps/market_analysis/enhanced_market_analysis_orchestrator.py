@@ -98,43 +98,49 @@ class MarketAnalysisPipelineOrchestrator:
             'correlation_id': None,
         }
         
-        # Step configurations
+        # Step configurations with step numbers
         self.step_configs = {
             'hmm_clustering': {
                 'enabled': True,
                 'timeout': 300,  # 5 minutes
                 'retry_attempts': 3,
                 'validator': None,  # Will be set dynamically
+                'step_number': 1,
             },
             'regime_splitting': {
                 'enabled': True,
                 'timeout': 180,  # 3 minutes
                 'retry_attempts': 2,
                 'validator': RegimeDataSplittingValidator(),
+                'step_number': 2,
             },
             'labeling': {
                 'enabled': True,
                 'timeout': 240,  # 4 minutes
                 'retry_attempts': 2,
                 'validator': LabelingValidator(),
+                'step_number': 3,
             },
             'feature_engineering': {
                 'enabled': True,
                 'timeout': 600,  # 10 minutes
                 'retry_attempts': 2,
                 'validator': FeatureEngineeringValidator(),
+                'step_number': 4,
             },
             'matrix_operations': {
                 'enabled': True,
                 'timeout': 300,  # 5 minutes
                 'retry_attempts': 2,
                 'validator': MatrixOperationsValidator(),
+                'step_number': 5,
             },
             'feature_selection': {
                 'enabled': True,
                 'timeout': 180,  # 3 minutes
                 'retry_attempts': 2,
                 'validator': None,  # Will be set dynamically
+                'step_number': 6,
             },
         }
 
@@ -359,8 +365,13 @@ class MarketAnalysisPipelineOrchestrator:
         """Execute a pipeline step with comprehensive validation and error handling."""
         # Start enhanced logging and progress monitoring for this step
         step_description = self._get_step_description(step_name)
-        self.enhanced_logger.start_step(step_name, step_description)
-        progress_monitor.update_step_progress(step_name, 0.0, "Starting...", "running")
+        step_config = self.step_configs.get(step_name, {})
+        step_number = step_config.get('step_number', 0)
+        total_steps = len([s for s in self.step_configs.values() if s.get('enabled', True)])
+        
+        self.enhanced_logger.start_step(step_name, step_description, step_number, total_steps)
+        progress_monitor.update_step_progress(step_name, 0.0, "Starting...", "running", 
+                                            step_number=step_number, total_steps=total_steps)
         
         self.logger.info(f"🔄 Executing step: {step_name}")
         self.pipeline_state['current_step'] = step_name

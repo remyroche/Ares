@@ -84,15 +84,21 @@ class ProgressMonitor:
         enhanced_logger.logger.info("📊 Progress monitoring stopped")
     
     def update_step_progress(self, step_name: str, progress: float, message: str = "", 
-                           status: str = "running", details: Dict[str, Any] = None):
+                           status: str = "running", details: Dict[str, Any] = None, 
+                           step_number: int = None, total_steps: int = None):
         """Update progress for a specific step."""
+        step_details = details or {}
+        if step_number is not None and total_steps is not None:
+            step_details['step_number'] = step_number
+            step_details['total_steps'] = total_steps
+            
         self.steps[step_name] = ProgressUpdate(
             step_name=step_name,
             progress=max(0.0, min(1.0, progress)),
             message=message,
             timestamp=datetime.now(),
             status=status,
-            details=details or {}
+            details=step_details
         )
     
     def complete_step(self, step_name: str, success: bool = True, message: str = ""):
@@ -138,10 +144,10 @@ class ProgressMonitor:
     
     def _display_step_progress(self, step: ProgressUpdate):
         """Display progress for a single step."""
-        # Get status emoji
+        # Get status emoji - more focused on troubleshooting
         status_emoji = {
             'running': self.spinner_chars[self.spinner_index % len(self.spinner_chars)],
-            'completed': '✅',
+            'completed': '✓',
             'failed': '❌',
             'warning': '⚠️'
         }.get(step.status, '❓')
@@ -155,16 +161,24 @@ class ProgressMonitor:
         # Format timestamp
         time_str = step.timestamp.strftime("%H:%M:%S")
         
+        # Try to extract step number from step name or details
+        step_display_name = step.step_name
+        if hasattr(step, 'step_number') and hasattr(step, 'total_steps'):
+            step_display_name = f"STEP {step.step_number}/{step.total_steps}: {step.step_name}"
+        elif 'step_number' in step.details and 'total_steps' in step.details:
+            step_display_name = f"STEP {step.details['step_number']}/{step.details['total_steps']}: {step.step_name}"
+        
         # Display step info
-        print(f"{status_emoji} {step.step_name:<25} {progress_bar} {progress_pct} [{time_str}]")
+        print(f"{status_emoji} {step_display_name:<35} {progress_bar} {progress_pct} [{time_str}]")
         
         if step.message:
-            print(f"   📝 {step.message}")
+            print(f"   ℹ️ {step.message}")
         
         # Display details if any
         if step.details:
             for key, value in step.details.items():
-                print(f"   📊 {key}: {value}")
+                if key not in ['step_number', 'total_steps']:  # Skip step numbering details
+                    print(f"   📊 {key}: {value}")
         
         print()
     

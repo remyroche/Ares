@@ -137,7 +137,9 @@ def create_empty_dataframe(columns: list[str]) -> pd.DataFrame:
                 logger.warning(f"⚠️ Column {i} is not a string: {col}")
         
         result = pd.DataFrame(columns=columns)
-        logger.info(f"✅ Created empty DataFrame with shape {result.shape}")
+        # Only log if there are issues or debugging is needed
+        if not columns:
+            logger.warning("⚠️ Created DataFrame with no columns")
         return result
         
     except Exception as e:
@@ -172,8 +174,6 @@ def safe_fillna(df: pd.DataFrame, value: Any=0) -> pd.DataFrame:
         remaining_nans = result.isnull().sum().sum()
         if remaining_nans > 0:
             logger.warning(f"⚠️ {remaining_nans} NaN values remain after filling")
-        
-        logger.info(f"✅ Filled {nan_count - remaining_nans} NaN values")
         return result
         
     except Exception as e:
@@ -207,7 +207,6 @@ def safe_rolling(df: pd.DataFrame, window: int, min_periods: int=1) -> pd.core.w
             logger.warning(f"⚠️ Window size ({window}) is larger than DataFrame length ({len(df)})")
         
         result = df.rolling(window=window, min_periods=min_periods)
-        logger.info(f"✅ Created rolling window object")
         return result
         
     except Exception as e:
@@ -331,7 +330,7 @@ def ensure_directory(path: str | Path) -> Path:
         
         # Create the directory
         path_obj.mkdir(parents=True, exist_ok=True)
-        logger.info(f"✅ Created directory: {path_obj}")
+        # Only log if there are issues - directory creation is normal
         return path_obj
         
     except Exception as e:
@@ -395,7 +394,7 @@ def safe_json_dump(data: Any, file_path: str | Path, **kwargs) -> None:
         # Verify the file was created
         if path_obj.exists():
             file_size = path_obj.stat().st_size
-            logger.info(f"✅ Successfully saved JSON file: {path_obj} ({file_size} bytes)")
+            # Only log if there are issues - file saving is normal
         else:
             logger.error(f"❌ JSON file was not created: {path_obj}")
             raise RuntimeError("File was not created")
@@ -436,7 +435,7 @@ def safe_json_load(file_path: str | Path) -> Any:
         with open(path_obj, 'r') as f:
             data = json.load(f)
         
-        logger.info(f"✅ Successfully loaded JSON file: {path_obj} ({file_size} bytes)")
+        # Only log if there are issues - file loading is normal
         return data
         
     except Exception as e:

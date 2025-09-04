@@ -193,7 +193,18 @@ class DecoratorConfig:
             
             is_valid, issues = self.validate_config()
             
+            # Determine status based on validation
+            if is_valid and len(issues) == 0:
+                status = "excellent"
+            elif is_valid and len(issues) <= 2:
+                status = "good"
+            elif is_valid:
+                status = "fair"
+            else:
+                status = "poor"
+            
             health_status = {
+                "status": status,
                 "is_valid": is_valid,
                 "issues": issues,
                 "issue_count": len(issues),
@@ -206,16 +217,18 @@ class DecoratorConfig:
                 "log_errors_enabled": self.log_errors
             }
             
-            status = "healthy" if is_valid else "degraded"
-            try:
-                log_system_status(
-                    logger, "DecoratorConfig", status,
-                    details=f"Validation: {'PASSED' if is_valid else 'FAILED'}",
-                    health_metrics=health_status
-                )
-            except Exception:
-                # Fallback if log_system_status fails
-                pass
+            # Only log health status if there are issues (fair/poor)
+            if not is_valid or len(issues) > 0:
+                status = "degraded" if is_valid else "failed"
+                try:
+                    log_system_status(
+                        logger, "DecoratorConfig", status,
+                        details=f"Validation: {'PASSED' if is_valid else 'FAILED'}",
+                        health_metrics=health_status
+                    )
+                except Exception:
+                    # Fallback if log_system_status fails
+                    pass
             
             return health_status
             

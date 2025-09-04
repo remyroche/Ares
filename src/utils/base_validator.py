@@ -223,17 +223,13 @@ class BaseValidator(ABC):
 
             passed = len(critical_errors) == 0
             
-            # Log detailed results
-            if passed:
-                logger.info(f"✅ No critical errors found in step: {self.step_name}")
-                if len(errors) > 0:
-                    logger.info(f"ℹ️ Found {len(errors)} non-critical errors")
-                if len(warnings) > 0:
-                    logger.info(f"ℹ️ Found {len(warnings)} warnings")
-            else:
+            # Only log if there are issues
+            if not passed:
                 logger.error(f"❌ Step {self.step_name} has {len(critical_errors)} critical errors")
                 for i, error in enumerate(critical_errors):
                     logger.error(f"  {i+1}. {error}")
+            elif len(warnings) > 0:
+                logger.warning(f"⚠️ Step {self.step_name} has {len(warnings)} warnings")
             
             # Log validation result
             log_validation_result(
@@ -306,7 +302,8 @@ class BaseValidator(ABC):
 
             if exists:
                 if is_file:
-                    logger.info(f"✅ {file_type} found: {file_path} ({file_size} bytes)")
+                    # Only log if there are issues - file existence is normal
+                    pass
                 elif is_dir:
                     logger.warning(f"⚠️ Path exists but is a directory, not a {file_type}: {file_path}")
                     exists = False  # Treat directory as failure for file validation

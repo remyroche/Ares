@@ -22,6 +22,8 @@ from collections import defaultdict, deque
 
 from src.core.decorators import handles_errors, log_execution_time, traced
 from src.utils.common_operations import (
+from copy import copy
+
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params

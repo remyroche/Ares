@@ -1555,6 +1555,384 @@ async def get_regime_performance():
     return stats.get("regime_performance", {})
 
 
+# --- Additional GUI Integration Endpoints ---
+
+# Import launcher integration
+try:
+    import sys
+    import os
+    gui_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, gui_dir)
+    from launcher_integration import (
+        start_launcher_mode, start_training, stop_process, stop_all_processes,
+        get_process_status, get_available_modes, get_available_training_modes,
+        get_available_exchanges
+    )
+    LAUNCHER_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Launcher integration not available: {e}")
+    LAUNCHER_INTEGRATION_AVAILABLE = False
+
+@app.get("/api/launcher/status")
+async def get_launcher_status():
+    """Get the current status of the Ares launcher and running processes."""
+    try:
+        if LAUNCHER_INTEGRATION_AVAILABLE:
+            # Use launcher integration
+            status = await get_process_status()
+            return {
+                "launcher_active": status["total_processes"] > 0,
+                "running_processes": status["running_processes"],
+                "last_check": status["last_check"],
+                "gui_mode": True,
+                "integration_available": True
+            }
+        else:
+            # Fallback to process scanning
+            running_processes = []
+            try:
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
+                        if 'ares_launcher.py' in cmdline or 'ares_pipeline.py' in cmdline:
+                            running_processes.append({
+                                'pid': proc.info['pid'],
+                                'name': proc.info['name'],
+                                'cmdline': cmdline,
+                                'status': 'running'
+                            })
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except Exception:
+                pass
+
+            return {
+                "launcher_active": len(running_processes) > 0,
+                "running_processes": running_processes,
+                "last_check": datetime.now().isoformat(),
+                "gui_mode": True,
+                "integration_available": False
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/launcher/start")
+async def start_launcher_mode_endpoint(request: Request):
+    """Start a specific launcher mode via the GUI."""
+    try:
+        data = await request.json()
+        mode = data.get('mode')
+        symbol = data.get('symbol')
+        exchange = data.get('exchange', 'BINANCE')
+        lookback_days = data.get('lookback_days')
+        
+        if not mode or not symbol:
+            raise HTTPException(status_code=400, detail="Mode and symbol are required")
+        
+        if LAUNCHER_INTEGRATION_AVAILABLE:
+            # Use launcher integration
+            valid_modes = get_available_modes()
+            if mode not in valid_modes:
+                raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
+            
+            result = await start_launcher_mode(mode, symbol, exchange, lookback_days=lookback_days)
+            
+            if result["success"]:
+                return {
+                    "success": True,
+                    "message": result["message"],
+                    "mode": mode,
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "process_key": result.get("process_key"),
+                    "pid": result.get("pid"),
+                    "command": result.get("command"),
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                raise HTTPException(status_code=500, detail=result["error"])
+        else:
+            # Fallback to mock response
+            valid_modes = ['paper', 'live', 'backtest', 'blank', 'light', 'full', 'load', 'precompute']
+            if mode not in valid_modes:
+                raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
+            
+            return {
+                "success": True,
+                "message": f"Launcher mode '{mode}' started for {symbol} on {exchange} (mock mode - integration not available)",
+                "mode": mode,
+                "symbol": symbol,
+                "exchange": exchange,
+                "timestamp": datetime.now().isoformat(),
+                "integration_available": False
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/launcher/stop")
+async def stop_launcher_endpoint():
+    """Stop all running launcher processes."""
+    try:
+        if LAUNCHER_INTEGRATION_AVAILABLE:
+            result = await stop_all_processes()
+            return {
+                "success": result["success"],
+                "message": result["message"],
+                "stopped_processes": result.get("stopped_processes", []),
+                "errors": result.get("errors", []),
+                "timestamp": datetime.now().isoformat(),
+                "integration_available": True
+            }
+        else:
+            return {
+                "success": True,
+                "message": "All launcher processes stopped (mock mode - integration not available)",
+                "timestamp": datetime.now().isoformat(),
+                "integration_available": False
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/training/modes")
+async def get_training_modes():
+    """Get available training modes and their configurations."""
+    try:
+        # Import training modes from the launcher
+        try:
+            from src.config.training_modes import (
+                get_intensity_comparison,
+                get_mode_recommendations,
+                list_available_modes,
+                get_training_mode_config
+            )
+            
+            modes = list_available_modes()
+            comparison = get_intensity_comparison()
+            recommendations = get_mode_recommendations()
+            
+            mode_details = {}
+            for mode_name, description in modes.items():
+                try:
+                    config = get_training_mode_config(mode_name)
+                    mode_details[mode_name] = {
+                        "description": description,
+                        "lookback_days": config.lookback_days,
+                        "max_trials": config.max_trials,
+                        "n_trials": config.n_trials,
+                        "computational_intensity": config.computational_intensity,
+                        "estimated_duration_minutes": config.estimated_duration_minutes,
+                        "enable_advanced_model_training": config.enable_advanced_model_training,
+                        "enable_ensemble_training": config.enable_ensemble_training,
+                        "enable_multi_timeframe_training": config.enable_multi_timeframe_training,
+                        "enable_adaptive_training": config.enable_adaptive_training,
+                        "recommendation": recommendations.get(mode_name, "No specific recommendation available.")
+                    }
+                except Exception as e:
+                    logger.warning(f"Could not get config for mode {mode_name}: {e}")
+                    mode_details[mode_name] = {
+                        "description": description,
+                        "error": str(e)
+                    }
+            
+            return {
+                "modes": mode_details,
+                "comparison": comparison,
+                "recommendations": recommendations
+            }
+        except ImportError:
+            # Fallback to mock data
+            return {
+                "modes": {
+                    "light": {
+                        "description": "Light training mode for quick testing (30 days)",
+                        "lookback_days": 30,
+                        "max_trials": 10,
+                        "n_trials": 5,
+                        "computational_intensity": "low",
+                        "estimated_duration_minutes": 15,
+                        "enable_advanced_model_training": False,
+                        "enable_ensemble_training": False,
+                        "enable_multi_timeframe_training": False,
+                        "enable_adaptive_training": False,
+                        "recommendation": "Use for quick testing and development"
+                    },
+                    "blank": {
+                        "description": "Blank training mode for standard testing (180 days)",
+                        "lookback_days": 180,
+                        "max_trials": 50,
+                        "n_trials": 25,
+                        "computational_intensity": "medium",
+                        "estimated_duration_minutes": 60,
+                        "enable_advanced_model_training": True,
+                        "enable_ensemble_training": False,
+                        "enable_multi_timeframe_training": False,
+                        "enable_adaptive_training": False,
+                        "recommendation": "Use for standard model training and validation"
+                    },
+                    "full": {
+                        "description": "Full training mode for production (730 days)",
+                        "lookback_days": 730,
+                        "max_trials": 200,
+                        "n_trials": 100,
+                        "computational_intensity": "high",
+                        "estimated_duration_minutes": 240,
+                        "enable_advanced_model_training": True,
+                        "enable_ensemble_training": True,
+                        "enable_multi_timeframe_training": True,
+                        "enable_adaptive_training": True,
+                        "recommendation": "Use for production model training with full dataset"
+                    }
+                },
+                "comparison": {
+                    "light": {"intensity_percentage": 0.1, "max_trials": 10, "n_trials": 5, "estimated_duration_minutes": 15, "lookback_days": 30},
+                    "blank": {"intensity_percentage": 0.5, "max_trials": 50, "n_trials": 25, "estimated_duration_minutes": 60, "lookback_days": 180},
+                    "full": {"intensity_percentage": 1.0, "max_trials": 200, "n_trials": 100, "estimated_duration_minutes": 240, "lookback_days": 730}
+                },
+                "recommendations": {
+                    "light": "Use for quick testing and development",
+                    "blank": "Use for standard model training and validation", 
+                    "full": "Use for production model training with full dataset"
+                }
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/training/start")
+async def start_training_endpoint(request: Request):
+    """Start training with specified parameters."""
+    try:
+        data = await request.json()
+        mode = data.get('mode', 'blank')
+        symbol = data.get('symbol')
+        exchange = data.get('exchange', 'BINANCE')
+        lookback_days = data.get('lookback_days')
+        
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+        
+        if LAUNCHER_INTEGRATION_AVAILABLE:
+            # Use launcher integration
+            valid_modes = get_available_training_modes()
+            if mode not in valid_modes:
+                raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
+            
+            result = await start_training(mode, symbol, exchange, lookback_days=lookback_days)
+            
+            if result["success"]:
+                return {
+                    "success": True,
+                    "message": result["message"],
+                    "mode": mode,
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "lookback_days": lookback_days,
+                    "process_key": result.get("process_key"),
+                    "pid": result.get("pid"),
+                    "command": result.get("command"),
+                    "timestamp": datetime.now().isoformat(),
+                    "integration_available": True
+                }
+            else:
+                raise HTTPException(status_code=500, detail=result["error"])
+        else:
+            # Fallback to mock response
+            valid_modes = ['light', 'blank', 'full']
+            if mode not in valid_modes:
+                raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
+            
+            return {
+                "success": True,
+                "message": f"Training started in {mode} mode for {symbol} on {exchange} (mock mode - integration not available)",
+                "mode": mode,
+                "symbol": symbol,
+                "exchange": exchange,
+                "lookback_days": lookback_days,
+                "timestamp": datetime.now().isoformat(),
+                "integration_available": False
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/training/status")
+async def get_training_status():
+    """Get current training status and progress."""
+    try:
+        if LAUNCHER_INTEGRATION_AVAILABLE:
+            # Use launcher integration
+            status = await get_process_status()
+            training_processes = [
+                proc for proc in status["running_processes"] 
+                if any(mode in proc.get("process_key", "") for mode in ["light", "blank", "full"])
+            ]
+            
+            return {
+                "training_active": len(training_processes) > 0,
+                "training_processes": training_processes,
+                "last_check": status["last_check"],
+                "integration_available": True
+            }
+        else:
+            # Fallback to process scanning
+            training_processes = []
+            try:
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
+                        if 'training' in cmdline.lower() or 'enhanced_training_manager' in cmdline:
+                            training_processes.append({
+                                'pid': proc.info['pid'],
+                                'name': proc.info['name'],
+                                'cmdline': cmdline,
+                                'status': 'running'
+                            })
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except Exception:
+                pass
+            
+            return {
+                "training_active": len(training_processes) > 0,
+                "training_processes": training_processes,
+                "last_check": datetime.now().isoformat(),
+                "integration_available": False
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/data/status")
+async def get_data_status():
+    """Get data collection and processing status."""
+    try:
+        # Check for data files
+        data_files = []
+        data_dir = "data_cache"
+        if os.path.exists(data_dir):
+            for file in os.listdir(data_dir):
+                if file.endswith('.parquet') or file.endswith('.csv'):
+                    file_path = os.path.join(data_dir, file)
+                    stat = os.stat(file_path)
+                    data_files.append({
+                        'name': file,
+                        'size': stat.st_size,
+                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        'type': 'parquet' if file.endswith('.parquet') else 'csv'
+                    })
+        
+        return {
+            "data_files": data_files,
+            "data_directory": data_dir,
+            "last_check": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
 

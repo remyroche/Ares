@@ -18,6 +18,7 @@ import ABTesting from './components/ABTesting.jsx';
 import TokenManagement from './components/TokenManagement';
 import ModelComparison from './components/ModelComparison';
 import MonitoringDashboard from './components/MonitoringDashboard.jsx';
+import LauncherControl from './components/LauncherControl.jsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -47,6 +48,8 @@ export default function App() {
         return <TokenManagement />;
       case 'model-comparison':
         return <ModelComparison />;
+      case 'launcher':
+        return <LauncherControl />;
       case 'system':
         return <SystemManagement killSwitchStatus={killSwitchStatus} setKillSwitchStatus={setKillSwitchStatus} />;
       default:
@@ -57,6 +60,7 @@ export default function App() {
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'monitoring', label: 'Monitoring', icon: Monitor },
+    { id: 'launcher', label: 'Launcher Control', icon: Play },
     { id: 'token-management', label: 'Token Management', icon: Settings },
     { id: 'model-comparison', label: 'Model Comparison', icon: GitCompare },
     { id: 'backtesting', label: 'Backtesting', icon: TestTube2 },
@@ -82,6 +86,7 @@ const Sidebar = ({ activePage, setActivePage, killSwitchStatus }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'monitoring', label: 'Monitoring', icon: Monitor },
+    { id: 'launcher', label: 'Launcher Control', icon: Play },
     { id: 'token-management', label: 'Token Management', icon: Settings },
     { id: 'model-comparison', label: 'Model Comparison', icon: GitCompare },
     { id: 'backtesting', label: 'Backtesting', icon: TestTube2 },

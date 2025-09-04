@@ -66,16 +66,11 @@ class StaticAnalysisConfig:
 class ASTAnalysisConfig:
     """Configuration for AST analysis tools."""
     enabled: bool = True
-    tools: list[str] = field(default_factory=lambda: ["astroid", "rope", "jedi", "custom_ast"])
+    tools: list[str] = field(default_factory=lambda: ["astroid", "jedi", "custom_ast"])
     astroid_config: dict[str, Any] = field(default_factory=lambda: {
         "max_function_length": 20,
         "max_nesting_level": 4,
         "check_unused_variables": True
-    })
-    rope_config: dict[str, Any] = field(default_factory=lambda: {
-        "find_duplicates": True,
-        "find_unused_imports": True,
-        "project_root": None
     })
     jedi_config: dict[str, Any] = field(default_factory=lambda: {
         "check_undefined_names": True,
@@ -184,16 +179,11 @@ class ConfigManager:
             },
             "ast_analysis": {
                 "enabled": True,
-                "tools": ["astroid", "rope", "jedi", "custom_ast"],
+                "tools": ["astroid", "jedi", "custom_ast"],
                 "astroid_config": {
                     "max_function_length": 20,
                     "max_nesting_level": 4,
                     "check_unused_variables": True
-                },
-                "rope_config": {
-                    "find_duplicates": True,
-                    "find_unused_imports": True,
-                    "project_root": None
                 },
                 "jedi_config": {
                     "check_undefined_names": True,
@@ -319,7 +309,6 @@ class ConfigManager:
                         "enabled": self.config.analysis.ast_analysis.enabled,
                         "tools": self.config.analysis.ast_analysis.tools,
                         "astroid_config": self.config.analysis.ast_analysis.astroid_config,
-                        "rope_config": self.config.analysis.ast_analysis.rope_config,
                         "jedi_config": self.config.analysis.ast_analysis.jedi_config,
                         "custom_ast_config": self.config.analysis.ast_analysis.custom_ast_config,
                     },

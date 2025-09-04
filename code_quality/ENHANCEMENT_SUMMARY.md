@@ -14,7 +14,6 @@ Successfully enhanced both `sequential_fixer.py` and `pipeline_unified_enhanced.
 
 ### 2. AST Analysis Integration
 - **Astroid**: Advanced AST parsing and analysis
-- **Rope**: Refactoring and code analysis
 - **Jedi**: Code completion and static analysis
 - **Custom AST Analysis**: Cyclomatic complexity, nesting levels, unused variables
 
@@ -58,7 +57,7 @@ Successfully enhanced both `sequential_fixer.py` and `pipeline_unified_enhanced.
 
 2. **`code_quality/analyzers/ast_analysis_analyzer.py`**
    - ASTAnalysisAnalyzer class
-   - Integration with Astroid, Rope, Jedi
+   - Integration with Astroid, Jedi
    - Custom AST analysis for complexity and refactoring
 
 3. **`code_quality/tests/test_enhanced_pipelines.py`**
@@ -110,7 +109,6 @@ Successfully enhanced both `sequential_fixer.py` and `pipeline_unified_enhanced.
 - **Complexity Analysis**: Cyclomatic complexity calculation
 - **Nesting Detection**: Deep nesting level identification
 - **Unused Code Detection**: Unused variables and functions
-- **Refactoring Opportunities**: Rope-based refactoring suggestions
 - **Import Resolution**: Jedi-based import analysis
 - **Code Structure Analysis**: Advanced AST-based code structure analysis
 

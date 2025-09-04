@@ -29,7 +29,6 @@ Advanced AST-based analysis using specialized tools:
 
 #### Tools Integrated:
 - **Astroid**: Advanced AST parsing and analysis
-- **Rope**: Refactoring and code analysis
 - **Jedi**: Code completion and static analysis
 - **Custom AST Analysis**: Cyclomatic complexity, nesting levels, unused variables
 
@@ -37,7 +36,6 @@ Advanced AST-based analysis using specialized tools:
 - Cyclomatic complexity analysis
 - Deep nesting detection
 - Unused variable identification
-- Refactoring opportunity detection
 - Code completion issue analysis
 - Import resolution checking
 
@@ -98,9 +96,8 @@ class StaticAnalysisConfig:
 @dataclass
 class ASTAnalysisConfig:
     enabled: bool = True
-    tools: list[str] = ["astroid", "rope", "jedi", "custom_ast"]
+    tools: list[str] = ["astroid", "jedi", "custom_ast"]
     astroid_config: dict[str, Any] = {...}
-    rope_config: dict[str, Any] = {...}
     jedi_config: dict[str, Any] = {...}
     custom_ast_config: dict[str, Any] = {...}
 ```
@@ -225,7 +222,6 @@ Located at: `code_quality/analyzers/ast_analysis_analyzer.py`
 - `analyze_file(file_path)`: Analyze a single Python file
 - `analyze_directory(directory_path)`: Analyze all Python files in a directory
 - `_run_astroid_analysis(file_path)`: Run Astroid analysis
-- `_run_rope_analysis(file_path)`: Run Rope analysis
 - `_run_jedi_analysis(file_path)`: Run Jedi analysis
 - `_run_custom_ast_analysis(file_path)`: Run custom AST analysis
 
@@ -235,7 +231,6 @@ Located at: `code_quality/analyzers/ast_analysis_analyzer.py`
     "file": "path/to/file.py",
     "tools": {
         "astroid": {"status": "success", "issues": [...]},
-        "rope": {"status": "success", "refactoring_opportunities": [...]},
         "jedi": {"status": "success", "issues": [...]},
         "custom_ast": {"status": "success", "complexity_issues": [...]}
     },
@@ -297,7 +292,7 @@ Enhanced terminal output with color-coded severity levels and detailed summaries
 The enhanced pipelines require the following additional packages:
 
 ```bash
-pip install pylint flake8 mypy bandit astroid rope jedi
+pip install pylint flake8 mypy bandit astroid jedi
 ```
 
 ### Optional Dependencies
@@ -305,7 +300,6 @@ pip install pylint flake8 mypy bandit astroid rope jedi
 Some tools are optional and the pipelines will gracefully handle their absence:
 
 - **Astroid**: Advanced AST analysis (optional)
-- **Rope**: Refactoring analysis (optional)
 - **Jedi**: Code completion analysis (optional)
 
 ## Testing
@@ -350,7 +344,7 @@ python -m pytest tests/test_enhanced_pipelines.py -v
 ### Common Issues
 
 1. **Missing Dependencies**
-   - Install required packages: `pip install pylint flake8 mypy bandit astroid rope jedi`
+   - Install required packages: `pip install pylint flake8 mypy bandit astroid jedi`
    - Check Python version compatibility
 
 2. **Tool Failures**

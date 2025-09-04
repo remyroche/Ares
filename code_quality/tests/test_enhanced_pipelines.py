@@ -340,7 +340,6 @@ def another_function(y):
             "summary": {
                 "tools_availability": {
                     "astroid": True,
-                    "rope": False,
                     "jedi": True
                 }
             }
@@ -466,7 +465,7 @@ class TestConfigurationIntegration(unittest.TestCase):
         
         self.assertTrue(config.enabled)
         self.assertIn("astroid", config.tools)
-        self.assertIn("rope", config.tools)
+        # Rope removed from tools list
         self.assertIn("jedi", config.tools)
         self.assertIn("custom_ast", config.tools)
         self.assertIn("max_function_length", config.astroid_config)

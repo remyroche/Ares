@@ -9,6 +9,7 @@ with detailed tracking and analysis.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import numpy as np

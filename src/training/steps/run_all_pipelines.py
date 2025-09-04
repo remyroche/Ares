@@ -31,17 +31,17 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities and decorators
-from src.utils.compat import handle_errors
+from src.core.domain import handle_errors, memory_efficient, validate_data_quality, monitor_pipeline_step
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, ensure_directory, 
     safe_json_dump, safe_json_load, safe_file_exists
 )
 from src.utils.validator_orchestrator import ValidatorOrchestrator
 from src.utils.data_quality_framework import DataQualityFramework
-from src.utils.pipeline_standards import pipeline_standards
+from src.utils.pipeline_standards import pipeline_standards, PipelineStandards
 from src.utils.logger import system_logger
 from src.utils.prometheus_metrics import metrics
-from src.utils.enhanced_memory_management import memory_efficient
+from src.utils.enhanced_memory_management import memory_efficient as memory_efficient_util
 from src.utils.data_formatting_framework import DataFormattingFramework
 
 # Import all pipeline modules
@@ -121,23 +121,40 @@ class EnhancedPipelineOrchestrator:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize monitoring: {e}")
     
-    @handle_errors(exceptions=(Exception,), default_return=False, context="validate_pipeline_prerequisites")
+    @handle_errors(fallback=False)
+    @monitor_pipeline_step("prerequisites_validation")
     async def validate_pipeline_prerequisites(self) -> bool:
         """Validate prerequisites before starting pipeline execution."""
         self.logger.info("🔍 Validating pipeline prerequisites...")
         
         try:
-            # Validate configuration
+            # Validate configuration using pipeline standards
             if not self.config.symbol or not self.config.exchange:
                 self.logger.error("❌ Invalid symbol or exchange configuration")
                 return False
             
-            # Validate data directory
-            if not safe_file_exists(self.config.data_dir):
+            # Validate data directory using pipeline standards
+            data_dir_path = PipelineStandards.build_path(
+                "raw_data", 
+                self.config.exchange, 
+                self.config.symbol
+            )
+            if not safe_file_exists(data_dir_path) and not safe_file_exists(self.config.data_dir):
                 self.logger.error(f"❌ Data directory does not exist: {self.config.data_dir}")
                 return False
             
-            # Validate pipeline standards
+            # Validate environment dependencies using pipeline standards
+            required_modules = ['pandas', 'numpy', 'asyncio', 'pathlib']
+            dependency_check = PipelineStandards.validate_environment_dependencies(
+                required_modules, self.logger
+            )
+            
+            missing_deps = [mod for mod, available in dependency_check.items() if not available]
+            if missing_deps:
+                self.logger.error(f"❌ Missing required dependencies: {missing_deps}")
+                return False
+            
+            # Validate pipeline standards compliance
             standards_check = await pipeline_standards.validate_environment()
             if not standards_check.get("passed", False):
                 self.logger.error(f"❌ Pipeline standards validation failed: {standards_check.get('error')}")
@@ -150,7 +167,8 @@ class EnhancedPipelineOrchestrator:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
     
-    @handle_errors(exceptions=(Exception,), default_return=None, context="save_checkpoint")
+    @handle_errors(fallback=None)
+    @monitor_pipeline_step("save_checkpoint")
     async def save_checkpoint(self, pipeline_name: str, result: PipelineResult):
         """Save pipeline execution checkpoint."""
         try:
@@ -179,7 +197,8 @@ class EnhancedPipelineOrchestrator:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save checkpoint: {e}")
     
-    @handle_errors(exceptions=(Exception,), default_return=None, context="load_checkpoint")
+    @handle_errors(fallback=None)
+    @monitor_pipeline_step("load_checkpoint")
     async def load_checkpoint(self) -> Optional[Dict[str, Any]]:
         """Load pipeline execution checkpoint."""
         try:
@@ -193,7 +212,9 @@ class EnhancedPipelineOrchestrator:
             self.logger.warning(f"⚠️ Failed to load checkpoint: {e}")
             return None
     
-    @handle_errors(exceptions=(Exception,), default_return=False, context="validate_pipeline_data")
+    @handle_errors(fallback=False)
+    @validate_data_quality()
+    @monitor_pipeline_step("validate_pipeline_data")
     async def validate_pipeline_data(self, pipeline_name: str, data_paths: List[str]) -> Tuple[bool, Dict[str, Any]]:
         """Validate data quality and structure for a pipeline."""
         self.logger.info(f"🔍 Validating data for {pipeline_name}...")
@@ -209,17 +230,36 @@ class EnhancedPipelineOrchestrator:
                     all_passed = False
                     continue
                 
-                # Validate data quality
+                # Use pipeline standards for file validation
+                file_type = self._determine_file_type(data_path)
+                schema_validation = PipelineStandards.validate_file_schema(
+                    file_path=data_path,
+                    expected_schema=file_type,
+                    logger=self.logger
+                )
+                
+                # Validate data quality using pipeline standards
                 quality_result = await self.data_quality_framework.validate_data_file(
                     file_path=data_path,
                     validation_level=self.config.validation_level
                 )
                 
-                validation_results[data_path] = quality_result
+                # Combine validation results
+                combined_result = {
+                    "schema_validation": schema_validation,
+                    "quality_validation": quality_result,
+                    "overall_passed": schema_validation.get("passed", False) and quality_result.get("passed", False)
+                }
                 
-                if not quality_result.get("passed", False):
+                validation_results[data_path] = combined_result
+                
+                if not combined_result["overall_passed"]:
                     all_passed = False
-                    self.logger.warning(f"⚠️ Data quality issues in {data_path}: {quality_result.get('error')}")
+                    self.logger.warning(f"⚠️ Data validation issues in {data_path}")
+                    if not schema_validation.get("passed", False):
+                        self.logger.warning(f"   Schema issues: {schema_validation.get('error')}")
+                    if not quality_result.get("passed", False):
+                        self.logger.warning(f"   Quality issues: {quality_result.get('error')}")
             
             if all_passed:
                 self.logger.info(f"✅ Data validation passed for {pipeline_name}")
@@ -232,7 +272,21 @@ class EnhancedPipelineOrchestrator:
             self.logger.exception(f"❌ Data validation failed for {pipeline_name}: {e}")
             return False, {"error": str(e)}
     
-    @handle_errors(exceptions=(Exception,), default_return=False, context="rollback_pipeline")
+    def _determine_file_type(self, file_path: str) -> str:
+        """Determine file type based on path for schema validation."""
+        if "aggtrades" in file_path:
+            return "aggtrades"
+        elif "klines" in file_path:
+            return "klines"
+        elif "futures" in file_path:
+            return "futures"
+        elif "unified" in file_path:
+            return "unified"
+        else:
+            return "general"
+    
+    @handle_errors(fallback=False)
+    @monitor_pipeline_step("rollback_pipeline")
     async def rollback_pipeline(self, pipeline_name: str) -> bool:
         """Rollback pipeline execution if needed."""
         if not self.config.enable_rollback:
@@ -258,7 +312,8 @@ class EnhancedPipelineOrchestrator:
             return False
     
     @memory_efficient
-    @handle_errors(exceptions=(Exception,), default_return=False, context="execute_pipeline")
+    @handle_errors(fallback=False)
+    @monitor_pipeline_step("execute_pipeline")
     async def execute_pipeline(self, pipeline_name: str, pipeline_func, pipeline_config: Dict[str, Any]) -> PipelineResult:
         """Execute a single pipeline with comprehensive error handling and validation."""
         self.logger.info(f"🚀 Executing {pipeline_name} pipeline...")
@@ -339,7 +394,8 @@ class EnhancedPipelineOrchestrator:
         
         return result
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="run_all_pipelines")
+    @handle_errors(fallback=False)
+    @monitor_pipeline_step("run_all_pipelines")
     async def run_all_pipelines(self) -> bool:
         """Run all training pipelines in sequence with enhanced validation and error handling."""
         
@@ -401,17 +457,21 @@ class EnhancedPipelineOrchestrator:
             }
         }
         
-        # Pipeline execution order with data dependencies
+        # Pipeline execution order with data dependencies using pipeline standards
         pipelines = [
             ('Data Collection', run_data_collection_pipeline, pipeline_configs['data_collection'], [
-                f"data_cache/aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
+                PipelineStandards.build_path("raw_data", self.config.exchange, self.config.symbol) + 
+                f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}"
             ]),
             ('Market Analysis', run_market_analysis_pipeline, pipeline_configs['market_analysis'], [
-                f"data_cache/aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet",
-                f"data_cache/volume_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
+                PipelineStandards.build_path("raw_data", self.config.exchange, self.config.symbol) + 
+                f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}",
+                PipelineStandards.build_path("processed_data", self.config.exchange, self.config.symbol) + 
+                f"/volume_{self.config.exchange}_{self.config.symbol}_consolidated.parquet"
             ]),
             ('Model Training', run_model_training_pipeline, pipeline_configs['model_training'], [
-                f"data_cache/aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet",
+                PipelineStandards.build_path("raw_data", self.config.exchange, self.config.symbol) + 
+                f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}",
                 f"models/{self.config.symbol}_{self.config.exchange}_hmm_model.pkl"
             ]),
             ('Optimization', run_optimisation_pipeline, pipeline_configs['optimisation'], [
@@ -419,7 +479,8 @@ class EnhancedPipelineOrchestrator:
                 f"models/{self.config.symbol}_{self.config.exchange}_tactician_model.pkl"
             ]),
             ('Backtesting', run_backtesting_pipeline, pipeline_configs['backtesting'], [
-                f"data_cache/aggtrades_{self.config.exchange}_{self.config.symbol}_consolidated.parquet",
+                PipelineStandards.build_path("raw_data", self.config.exchange, self.config.symbol) + 
+                f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}",
                 f"models/{self.config.symbol}_{self.config.exchange}_final_models.pkl"
             ]),
         ]
@@ -496,8 +557,10 @@ class EnhancedPipelineOrchestrator:
         
         self.logger.info("=" * 100)
         
-        # Save enhanced results
-        results_file = Path(self.config.data_dir) / f"enhanced_pipeline_results_{self.config.symbol}_{self.config.timeframe}.json"
+        # Save enhanced results using pipeline standards
+        results_dir = PipelineStandards.build_path("reports", self.config.exchange, self.config.symbol)
+        ensure_directory(results_dir)
+        results_file = Path(results_dir) / f"enhanced_pipeline_results_{self.config.symbol}_{self.config.timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
         enhanced_results = {
             'symbol': self.config.symbol,
             'exchange': self.config.exchange,

@@ -49,11 +49,10 @@ class TrainingOrchestrator:
         context="training orchestrator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training orchestrator and all component managers."""
+        """Initialize training orchestrator and all component managers.
 
         Returns:
             bool: True if initialization successful, False otherwise
-
         """
         try:
             self.logger.info("Initializing Training Orchestrator...")
@@ -428,11 +427,10 @@ class TrainingOrchestrator:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate training orchestrator configuration."""
+        """Validate training orchestrator configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-
         """
         try:
             # Validate required configuration sections
@@ -477,14 +475,13 @@ class TrainingOrchestrator:
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the complete training pipeline."""
+        """Execute the complete training pipeline.
 
         Args:
             training_input: Training input parameters
 
         Returns:
             bool: True if training successful, False otherwise
-
         """
         try:
             self.logger.info("🚀 Starting training pipeline execution...")
@@ -520,14 +517,13 @@ class TrainingOrchestrator:
         context="training input validation",
     )
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
-        """Validate training input parameters."""
+        """Validate training input parameters.
 
         Args:
             training_input: Training input parameters
 
         Returns:
             bool: True if input is valid, False otherwise
-
         """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
@@ -559,14 +555,13 @@ class TrainingOrchestrator:
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the main training pipeline."""
+        """Execute the main training pipeline.
 
         Args:
             training_input: Training input parameters
 
         Returns:
             bool: True if pipeline successful, False otherwise
-
         """
         try:
             self.logger.info("📊 Executing training pipeline...")
@@ -631,11 +626,10 @@ class TrainingOrchestrator:
         context="training results storage",
     )
     async def _store_training_results(self, training_input: dict[str, Any]) -> None:
-        """Store training results for later retrieval."""
+        """Store training results for later retrieval.
 
         Args:
             training_input: Training input parameters
-
         """
         try:
             # Store results in a format that can be retrieved later
@@ -648,11 +642,10 @@ class TrainingOrchestrator:
             self.logger.error(failed(f"❌ Failed to store training results: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get current training status."""
+        """Get current training status.
 
         Returns:
             dict: Training status information
-
         """
         return {
             "is_training": self.is_training,
@@ -664,11 +657,10 @@ class TrainingOrchestrator:
         }
 
     def get_training_results(self) -> dict[str, Any]:
-        """Get the latest training results."""
+        """Get the latest training results.
 
         Returns:
             dict: Training results
-
         """
         return self.training_results.copy()
 
@@ -706,14 +698,13 @@ class TrainingOrchestrator:
 async def setup_training_orchestrator(
     config: dict[str, Any] | None = None,
 ) -> TrainingOrchestrator | None:
-    """Setup and return a configured TrainingOrchestrator instance."""
+    """Setup and return a configured TrainingOrchestrator instance.
 
     Args:
         config: Configuration dictionary
 
     Returns:
         TrainingOrchestrator: Configured training orchestrator instance
-
     """
     try:
         orchestrator = TrainingOrchestrator(config or {})

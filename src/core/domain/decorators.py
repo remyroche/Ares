@@ -142,8 +142,8 @@ def monitor_step_execution(
         # performance_level and log_memory are accepted for compatibility; detailed
         # handling can be implemented by upstream observers if needed.
         return compose(
-            log_execution_time,
-            log_call(include_args=log_inputs, include_result=log_outputs, max_length=100),
+            log_execution_time(),
+            log_call(log_args=log_inputs, log_result=log_outputs),
             traced(span_name=f"step.{name}")
         )(func)
 
@@ -220,7 +220,7 @@ def ensure_data_integrity(
         # Compose basic validation and error handling. Additional integrity checks
         # can be layered here in the future without breaking call sites.
         return compose(
-            validates,
+            validates(),
             handles_errors(fallback=None)
         )(func)
 

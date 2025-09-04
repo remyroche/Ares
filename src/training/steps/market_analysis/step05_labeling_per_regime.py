@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import numpy as np
 
-from src.training.steps.step05_labeling import LabelingStep
+from src.training.steps.market_analysis.step05_labeling import LabelingStep
 from src.training.steps.regime_handler import regime_handler
 from src.training.steps.regime_processing_decorator import (
     per_regime_processing, 

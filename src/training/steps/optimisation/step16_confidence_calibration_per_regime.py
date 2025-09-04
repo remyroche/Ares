@@ -185,6 +185,43 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             self.logger.exception(f"❌ Failed to load tactician data with protection: {e}")
             return None
     
+    def _construct_output_file_path(self, symbol: str, exchange: str, regime_id: Optional[int]) -> Path:
+        """Construct the output file path for calibration results."""
+        output_dir = Path("models")
+        ensure_directory(output_dir)
+        
+        if regime_id is not None:
+            return output_dir / f"{symbol}_{exchange}_confidence_calibration_regime_{regime_id}.json"
+        else:
+            return output_dir / f"{symbol}_{exchange}_confidence_calibration.json"
+
+    def _create_enhanced_results(self, calibration_results: Dict[str, Any], symbol: str, 
+                                exchange: str, timeframe: str, regime_id: Optional[int]) -> Dict[str, Any]:
+        """Create enhanced results with metadata."""
+        return {
+            'calibration_results': calibration_results,
+            'metadata': {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'regime_id': regime_id,
+                'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                'version': '1.0',
+                'data_protection_enabled': True
+            }
+        }
+
+    def _save_and_verify_results(self, enhanced_results: Dict[str, Any], output_file: Path) -> bool:
+        """Save results and verify file creation."""
+        safe_json_dump(enhanced_results, output_file, indent=2)
+        
+        if safe_file_exists(output_file):
+            self.logger.info(f"✅ Calibration results saved successfully: {output_file}")
+            return True
+        else:
+            self.logger.error(f"❌ Failed to save calibration results: {output_file}")
+            return False
+
     @handles_errors(fallback=False, context="save_calibration_results_with_protection")
     async def _save_calibration_results_with_protection(
         self, 
@@ -199,40 +236,16 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
         self.logger.info(f"💾 Saving calibration results with protection for regime {regime_id}...")
         
         try:
-            # Ensure output directory exists
-            output_dir = Path("models")
-            ensure_directory(output_dir)
-            
             # Construct output file path
-            if regime_id is not None:
-                output_file = output_dir / f"{symbol}_{exchange}_confidence_calibration_regime_{regime_id}.json"
-            else:
-                output_file = output_dir / f"{symbol}_{exchange}_confidence_calibration.json"
+            output_file = self._construct_output_file_path(symbol, exchange, regime_id)
             
-            # Add metadata to results
-            enhanced_results = {
-                'calibration_results': calibration_results,
-                'metadata': {
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'timeframe': timeframe,
-                    'regime_id': regime_id,
-                    'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
-                    'version': '1.0',
-                    'data_protection_enabled': True
-                }
-            }
+            # Create enhanced results with metadata
+            enhanced_results = self._create_enhanced_results(
+                calibration_results, symbol, exchange, timeframe, regime_id
+            )
             
-            # Save with error handling
-            safe_json_dump(enhanced_results, output_file, indent=2)
-            
-            # Verify file was created
-            if safe_file_exists(output_file):
-                self.logger.info(f"✅ Calibration results saved successfully: {output_file}")
-                return True
-            else:
-                self.logger.error(f"❌ Failed to save calibration results: {output_file}")
-                return False
+            # Save and verify results
+            return self._save_and_verify_results(enhanced_results, output_file)
                 
         except Exception as e:
             self.logger.exception(f"❌ Failed to save calibration results with protection: {e}")

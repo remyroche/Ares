@@ -405,34 +405,75 @@ class LabelingStep:
             self.logger.warning(f'⚠️ Error determining label source: {e}')
             return pd.Series('unknown', index=data.index)
 
+    def _validate_regime_aware_inputs(self, data: pd.DataFrame) -> bool:
+        """Validate inputs for regime-aware labeling."""
+        if self.regime_barrier_optimizer is None:
+            self.logger.error('❌ Regime barrier optimizer not available')
+            return False
+        
+        if self.regime_col not in data.columns:
+            self.logger.error(f"❌ Regime column '{self.regime_col}' not found in data")
+            return False
+        
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            self.logger.error(f'❌ Missing required columns for triple barrier labeling: {missing_columns}')
+            return False
+        
+        return True
+
+    def _create_regime_labeler(self):
+        """Create and configure the regime labeler."""
+        try:
+            from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+            return RegimeAwareTripleBarrierLabeling(
+                default_profit_take_multiplier=0.002,
+                default_stop_loss_multiplier=0.001,
+                default_time_barrier_minutes=self.time_barrier_minutes,
+                default_max_lookahead=self.max_lookahead
+            )
+        except ImportError as e:
+            self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
+            return None
+
+    def _generate_labels_with_regime_labeler(self, regime_labeler, data: pd.DataFrame) -> Optional[pd.Series]:
+        """Generate labels using the regime labeler."""
+        try:
+            labels = regime_labeler.generate_labels(
+                data,
+                regime_column=self.regime_col,
+                time_barrier_minutes=self.time_barrier_minutes,
+                max_lookahead=self.max_lookahead
+            )
+            
+            if labels is not None:
+                self.logger.info(f'✅ Generated {len(labels)} regime-aware labels')
+                return labels
+            else:
+                raise Exception('Regime-aware labeling returned None')
+                
+        except Exception as e:
+            self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
+            return None
+
     async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
         """Generate regime-aware triple barrier labels using RegimeSpecificTripleBarrierOptimizer."""
         try:
-            if self.regime_barrier_optimizer is None:
-                self.logger.error('❌ Regime barrier optimizer not available')
-                return None
             self.logger.info('🔧 Generating regime-aware triple barrier labels...')
-            if self.regime_col not in data.columns:
-                self.logger.error(f"❌ Regime column '{self.regime_col}' not found in data")
+            
+            # Validate inputs
+            if not self._validate_regime_aware_inputs(data):
                 return None
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            if missing_columns:
-                self.logger.error(f'❌ Missing required columns for triple barrier labeling: {missing_columns}')
+            
+            # Create regime labeler
+            regime_labeler = self._create_regime_labeler()
+            if regime_labeler is None:
                 return None
-            try:
-                from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
-from src.core.decorators.errors import handles_errors
-                regime_labeler = RegimeAwareTripleBarrierLabeling(default_profit_take_multiplier=0.002, default_stop_loss_multiplier=0.001, default_time_barrier_minutes=self.time_barrier_minutes, default_max_lookahead=self.max_lookahead)
-                labels = regime_labeler.generate_labels(data, regime_column=self.regime_col, time_barrier_minutes=self.time_barrier_minutes, max_lookahead=self.max_lookahead)
-                if labels is not None:
-                    self.logger.info(f'✅ Generated {len(labels)} regime-aware labels')
-                    return labels
-                else:
-                    raise Exception('Regime-aware labeling returned None')
-            except Exception as e:
-                self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
-                return None
+            
+            # Generate labels
+            return self._generate_labels_with_regime_labeler(regime_labeler, data)
+            
         except Exception as e:
             self.logger.exception(f'❌ Error in regime-aware labeling: {e}')
             return None

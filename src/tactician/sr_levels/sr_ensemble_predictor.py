@@ -15,6 +15,7 @@ from datetime import datetime
 
 from src.core.decorators import handles_errors, traced
 from src.utils.logger import system_logger
+from src.tactician.sr_strength_optimizer import SRLevelIdentifier
 
 
 @dataclass
@@ -49,9 +50,7 @@ class OptimizedSRMethod(BaseSRMethod):
         self.config = config
         self.logger = system_logger.getChild("OptimizedSRMethod")
         
-        # Import the strength optimizer
-        from src.tactician.sr_strength_optimizer import SRLevelIdentifier
-        from src.core.decorators.errors import handles_errors
+        # Initialize the strength optimizer
         self.identifier = SRLevelIdentifier(config)
     
     def identify_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:

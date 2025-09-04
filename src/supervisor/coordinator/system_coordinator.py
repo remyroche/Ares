@@ -15,6 +15,7 @@ from src.core.decorators import handles_errors
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed
+from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
 
 from .circuit_breaker import CircuitBreaker
 from .component_monitor import ComponentMonitor
@@ -153,8 +154,6 @@ class SystemCoordinator:
         """Initialize the enhanced prediction service."""
         try:
             if self.enhanced_prediction_service_config.get("enabled", True):
-                from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
-from src.core.decorators.errors import handles_errors
                 self.enhanced_prediction_service = EnhancedPredictionService(
                     self.enhanced_prediction_service_config
                 )

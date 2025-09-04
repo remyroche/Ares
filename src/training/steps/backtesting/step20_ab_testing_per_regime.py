@@ -13,7 +13,6 @@ from src.training.steps.regime_continuity_decorator import per_regime_step
 from src.utils.logger import getChild as get_logger
 from src.utils.pipeline_standards import pipeline_standards
 from src.core.decorators import traced, validates, handles_errors
-from src.core.decorators.errors import handles_errors
 
 logger = get_logger('Step20ABTestingPerRegime')
 
@@ -24,6 +23,48 @@ class PerRegimeABTestingStep(Step20ABTesting):
         super().__init__(config)
         self.per_regime_enabled = config.get('per_regime_ab_testing', True)
         
+    def _create_ab_testing_context(self, symbol: str, exchange: str, timeframe: str, 
+                                  data_dir: str, regime_id: Optional[int]) -> Dict[str, Any]:
+        """Create AB testing context with all necessary parameters."""
+        return {
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'data_dir': data_dir,
+            'regime_id': regime_id
+        }
+
+    async def _load_and_validate_mc_data(self, context: Dict[str, Any]) -> Optional[Any]:
+        """Load and validate Monte Carlo data."""
+        mc_data = await self._load_mc_data(
+            context['symbol'], context['exchange'], context['timeframe'], 
+            context['data_dir'], context['regime_id']
+        )
+        
+        if mc_data is None:
+            self.logger.error(f"❌ Failed to load Monte Carlo data for regime {context['regime_id']}")
+            return None
+        
+        return mc_data
+
+    async def _execute_ab_testing_workflow(self, context: Dict[str, Any], mc_data: Any) -> bool:
+        """Execute the complete AB testing workflow."""
+        # Perform AB testing
+        ab_results = await self._perform_ab_testing(mc_data, context['regime_id'])
+        
+        # Save results
+        success = await self._save_ab_results(
+            ab_results, context['symbol'], context['exchange'], 
+            context['timeframe'], context['data_dir'], context['regime_id']
+        )
+        
+        if success:
+            self.logger.info(f"✅ Successfully completed AB testing for regime {context['regime_id']}")
+        else:
+            self.logger.error(f"❌ Failed to save AB results for regime {context['regime_id']}")
+        
+        return success
+
     @traced(span_name='execute_per_regime_ab_testing')
     @per_regime_step('step20_ab_testing')
     async def execute_per_regime_ab_testing(
@@ -41,24 +82,15 @@ class PerRegimeABTestingStep(Step20ABTesting):
         try:
             self.logger.info(f"🚀 Starting per-regime AB testing for regime {regime_id}")
             
-            # Load Monte Carlo validation results
-            mc_data = await self._load_mc_data(symbol, exchange, timeframe, data_dir, regime_id)
+            # Create context and load data
+            context = self._create_ab_testing_context(symbol, exchange, timeframe, data_dir, regime_id)
+            mc_data = await self._load_and_validate_mc_data(context)
+            
             if mc_data is None:
-                self.logger.error(f"❌ Failed to load Monte Carlo data for regime {regime_id}")
                 return False
             
-            # Perform AB testing
-            ab_results = await self._perform_ab_testing(mc_data, regime_id)
-            
-            # Save results
-            success = await self._save_ab_results(ab_results, symbol, exchange, timeframe, data_dir, regime_id)
-            
-            if success:
-                self.logger.info(f"✅ Successfully completed AB testing for regime {regime_id}")
-            else:
-                self.logger.error(f"❌ Failed to save AB results for regime {regime_id}")
-            
-            return success
+            # Execute AB testing workflow
+            return await self._execute_ab_testing_workflow(context, mc_data)
             
         except Exception as e:
             self.logger.exception(f"❌ Error in per-regime AB testing for regime {regime_id}: {e}")

@@ -1,25 +1,36 @@
 """
-Plugin package for code quality tools.
+Plugin System for Code Quality Pipeline
+
+This module provides a flexible plugin architecture for extending the
+code quality pipeline with new tools and analyzers.
 """
 
-from .autopep8_fixer import Autopep8Fixer
-from .black_fixer import BlackFixer
-from .docformatter_fixer import DocformatterFixer
-from .flake8_analyzer import Flake8Analyzer
-from .isort_fixer import IsortFixer
-from .pyre_analyzer import PyreAnalyzer
-from .ruff_analyzer import RuffAnalyzer
-from .unify_fixer import UnifyFixer
-from .yapf_fixer import YapfFixer
+from .base_plugin import (
+    BasePlugin, PluginResult, PluginContext, PluginMetadata,
+    PluginCategory, PluginPriority, FileProcessorPlugin, DirectoryProcessorPlugin
+)
+from .plugin_registry import PluginRegistry
+from .plugin_manager import PluginManager
+from .exceptions import (
+    PluginError, PluginNotFoundError, PluginDependencyError,
+    PluginExecutionError, PluginConfigurationError, PluginTimeoutError
+)
 
 __all__ = [
-    "BlackFixer",
-    "IsortFixer",
-    "Flake8Analyzer",
-    "Autopep8Fixer",
-    "YapfFixer",
-    "DocformatterFixer",
-    "UnifyFixer",
-    "RuffAnalyzer",
-    "PyreAnalyzer",
+    'BasePlugin',
+    'PluginResult', 
+    'PluginContext',
+    'PluginMetadata',
+    'PluginCategory',
+    'PluginPriority',
+    'FileProcessorPlugin',
+    'DirectoryProcessorPlugin',
+    'PluginRegistry',
+    'PluginManager',
+    'PluginError',
+    'PluginNotFoundError',
+    'PluginDependencyError',
+    'PluginExecutionError',
+    'PluginConfigurationError',
+    'PluginTimeoutError'
 ]

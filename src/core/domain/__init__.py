@@ -6,6 +6,36 @@ from src.core.decorators import compose, handles_errors, traced, validates
 from .decorators import PerformanceLevel, ValidationLevel, create_step_decorator, ensure_data_integrity, monitor_step_execution, prevent_data_leakage, quality_gate, secure_data_processing, validate_data_quality, validate_feature_engineering_with_lookahead_bias_detection, validate_klines_data_quality, validate_multi_timeframe_data_quality, validate_pipeline_step
 from .decorators_extended import artifact_versioning, deterministic_seed, monitor_feature_engineering, monitor_pipeline_performance, optimize_memory_usage, secure_step_execution, smart_validation_cache, validate_feature_engineering_pipeline, validate_hmm_data_requirements, validate_hmm_regime_discovery, validate_ohlcv_data_quality, validate_step2_operation, validate_step3_5_comprehensive, validate_step3_comprehensive, validate_step4_comprehensive, validate_step5_comprehensive, validate_step6_comprehensive, validate_step_comprehensive, validate_wavelet_data_quality
 
+# Backward-compatibility aliases for older code references
+def with_tracing_span(*args, **kwargs):
+    """Alias for traced to preserve backward compatibility with older imports."""
+    return traced(*args, **kwargs)
+
+def handle_errors(*args, **kwargs):
+    """Alias for handles_errors to preserve backward compatibility with older imports."""
+    return handles_errors(*args, **kwargs)
+
+# No-ops or thin wrappers for legacy names referenced in some modules
+def validate_data_structure(*args, **kwargs):
+    """Legacy alias retained for compatibility; use validate_data_quality instead."""
+    return validate_data_quality(*args, **kwargs)
+
+def resource_monitor(*args, **kwargs):  # pragma: no cover - compatibility shim
+    """Lightweight compatibility shim; monitoring handled via traced/log decorators."""
+    def _decorator(func):
+        return func
+    return _decorator
+
+def memory_efficient(*args, **kwargs):  # pragma: no cover - compatibility shim
+    """Prefer src.utils.enhanced_memory_management.memory_efficient; kept for imports."""
+    try:
+        from src.utils.enhanced_memory_management import memory_efficient as _mem
+        return _mem(*args, **kwargs)
+    except Exception:
+        def _decorator(func):
+            return func
+        return _decorator
+
 def comprehensive_validation(data_quality: bool=True, feature_engineering: bool=True, performance_monitoring: bool=True, **kwargs) -> callable:
     """Apply comprehensive validation combining multiple validators."""
     decorators = []

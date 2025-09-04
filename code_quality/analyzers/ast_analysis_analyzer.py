@@ -262,32 +262,64 @@ class ASTAnalysisAnalyzer:
             tree = ast.parse(content, file_path)
             
             complexity_issues = []
+            function_metrics = []
+            class_metrics = []
             
-            # Analyze cyclomatic complexity
+            # Analyze functions
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
-                    complexity = self._calculate_cyclomatic_complexity(node)
-                    if complexity > 10:
+                    # Calculate comprehensive metrics
+                    metrics = self._calculate_function_metrics(node, content)
+                    function_metrics.append(metrics)
+                    
+                    # Check cyclomatic complexity
+                    if metrics["cyclomatic_complexity"] > 10:
                         complexity_issues.append({
                             "line": node.lineno,
                             "column": node.col_offset,
-                            "message": f"Function '{node.name}' has high cyclomatic complexity ({complexity})",
+                            "message": f"Function '{node.name}' has high cyclomatic complexity ({metrics['cyclomatic_complexity']})",
                             "severity": "warning",
                             "category": "complexity",
                             "code": "high_complexity",
-                            "complexity_score": complexity
+                            "complexity_score": metrics["cyclomatic_complexity"]
                         })
-                
-                # Check for long parameter lists
-                if isinstance(node, ast.FunctionDef):
-                    if len(node.args.args) > 5:
+                    
+                    # Check parameter count
+                    if metrics["parameter_count"] > 5:
                         complexity_issues.append({
                             "line": node.lineno,
                             "column": node.col_offset,
-                            "message": f"Function '{node.name}' has too many parameters ({len(node.args.args)})",
+                            "message": f"Function '{node.name}' has too many parameters ({metrics['parameter_count']})",
                             "severity": "warning",
                             "category": "complexity",
                             "code": "too_many_parameters"
+                        })
+                    
+                    # Check nesting depth
+                    if metrics["nesting_depth"] > 4:
+                        complexity_issues.append({
+                            "line": node.lineno,
+                            "column": node.col_offset,
+                            "message": f"Function '{node.name}' has deep nesting ({metrics['nesting_depth']} levels)",
+                            "severity": "warning",
+                            "category": "complexity",
+                            "code": "deep_nesting"
+                        })
+                
+                # Analyze classes
+                elif isinstance(node, ast.ClassDef):
+                    class_metric = self._calculate_class_metrics(node, content)
+                    class_metrics.append(class_metric)
+                    
+                    # Check class complexity
+                    if class_metric["complexity"] > 10:
+                        complexity_issues.append({
+                            "line": node.lineno,
+                            "column": node.col_offset,
+                            "message": f"Class '{node.name}' has high complexity ({class_metric['complexity']})",
+                            "severity": "warning",
+                            "category": "complexity",
+                            "code": "high_class_complexity"
                         })
                 
                 # Check for long lines (approximate)
@@ -303,9 +335,15 @@ class ASTAnalysisAnalyzer:
                             "code": "line_too_long"
                         })
             
+            # Calculate file-level metrics
+            file_metrics = self._calculate_file_metrics(content, function_metrics, class_metrics)
+            
             return {
                 "status": "success",
                 "complexity_issues": complexity_issues,
+                "function_metrics": function_metrics,
+                "class_metrics": class_metrics,
+                "file_metrics": file_metrics,
                 "ast_info": {
                     "total_nodes": len(list(ast.walk(tree))),
                     "functions": len([n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]),
@@ -353,6 +391,184 @@ class ASTAnalysisAnalyzer:
                 complexity += 1
         
         return complexity
+
+    def _calculate_function_metrics(self, node: ast.FunctionDef, content: str) -> Dict[str, Any]:
+        """Calculate comprehensive metrics for a function."""
+        lines = content.split('\n')
+        start_line = node.lineno - 1
+        end_line = node.end_lineno - 1 if hasattr(node, 'end_lineno') else start_line
+        
+        # Extract function source
+        function_source = '\n'.join(lines[start_line:end_line + 1])
+        
+        # Calculate metrics
+        cyclomatic_complexity = self._calculate_cyclomatic_complexity(node)
+        parameter_count = len(node.args.args)
+        nesting_depth = self._calculate_nesting_depth(node)
+        lines_of_code = end_line - start_line + 1
+        
+        # Calculate Halstead metrics (simplified)
+        halstead_metrics = self._calculate_halstead_metrics(function_source)
+        
+        # Calculate maintainability index (simplified)
+        maintainability_index = self._calculate_maintainability_index(
+            cyclomatic_complexity, lines_of_code, parameter_count
+        )
+        
+        return {
+            "name": node.name,
+            "line_number": node.lineno,
+            "cyclomatic_complexity": cyclomatic_complexity,
+            "parameter_count": parameter_count,
+            "nesting_depth": nesting_depth,
+            "lines_of_code": lines_of_code,
+            "halstead_metrics": halstead_metrics,
+            "maintainability_index": maintainability_index,
+            "return_points": self._count_return_points(node)
+        }
+
+    def _calculate_class_metrics(self, node: ast.ClassDef, content: str) -> Dict[str, Any]:
+        """Calculate comprehensive metrics for a class."""
+        lines = content.split('\n')
+        start_line = node.lineno - 1
+        end_line = node.end_lineno - 1 if hasattr(node, 'end_lineno') else start_line
+        
+        # Count methods
+        methods = [n for n in node.body if isinstance(n, ast.FunctionDef)]
+        method_count = len(methods)
+        
+        # Calculate class complexity (sum of method complexities)
+        total_complexity = sum(self._calculate_cyclomatic_complexity(method) for method in methods)
+        
+        # Calculate inheritance depth
+        inheritance_depth = len(node.bases)
+        
+        return {
+            "name": node.name,
+            "line_number": node.lineno,
+            "method_count": method_count,
+            "complexity": total_complexity,
+            "inheritance_depth": inheritance_depth,
+            "lines_of_code": end_line - start_line + 1
+        }
+
+    def _calculate_file_metrics(self, content: str, function_metrics: List[Dict], class_metrics: List[Dict]) -> Dict[str, Any]:
+        """Calculate file-level metrics."""
+        lines = content.split('\n')
+        
+        # Basic line metrics
+        total_lines = len(lines)
+        source_lines = len([l for l in lines if l.strip() and not l.strip().startswith('#')])
+        comment_lines = len([l for l in lines if l.strip().startswith('#')])
+        blank_lines = len([l for l in lines if not l.strip()])
+        
+        # Complexity metrics
+        all_complexities = [f["cyclomatic_complexity"] for f in function_metrics]
+        avg_complexity = sum(all_complexities) / len(all_complexities) if all_complexities else 0
+        max_complexity = max(all_complexities) if all_complexities else 0
+        
+        # Calculate file maintainability index
+        file_mi = self._calculate_file_maintainability_index(function_metrics, source_lines)
+        
+        return {
+            "total_lines": total_lines,
+            "source_lines": source_lines,
+            "comment_lines": comment_lines,
+            "blank_lines": blank_lines,
+            "function_count": len(function_metrics),
+            "class_count": len(class_metrics),
+            "average_complexity": avg_complexity,
+            "max_complexity": max_complexity,
+            "maintainability_index": file_mi
+        }
+
+    def _calculate_nesting_depth(self, node: ast.FunctionDef) -> int:
+        """Calculate maximum nesting depth in a function."""
+        max_depth = 0
+        current_depth = 0
+        
+        for child in ast.walk(node):
+            if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor, ast.Try, ast.With)):
+                current_depth += 1
+                max_depth = max(max_depth, current_depth)
+            elif isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor, ast.Try, ast.With)):
+                current_depth -= 1
+        
+        return max_depth
+
+    def _calculate_halstead_metrics(self, source: str) -> Dict[str, float]:
+        """Calculate simplified Halstead metrics."""
+        # This is a simplified implementation
+        # In a full implementation, you'd use a proper Halstead metrics library
+        operators = ['+', '-', '*', '/', '=', '==', '!=', '<', '>', '<=', '>=', 'and', 'or', 'not']
+        operands = []
+        
+        # Count operators and operands (simplified)
+        operator_count = sum(source.count(op) for op in operators)
+        operand_count = len([word for word in source.split() if word.isalnum() and not word in operators])
+        
+        # Calculate metrics
+        n1 = len(set(op for op in operators if op in source))  # Unique operators
+        n2 = len(set(word for word in source.split() if word.isalnum() and not word in operators))  # Unique operands
+        N1 = operator_count  # Total operators
+        N2 = operand_count  # Total operands
+        
+        if n1 == 0 or n2 == 0:
+            return {
+                "volume": 0.0,
+                "difficulty": 0.0,
+                "effort": 0.0,
+                "time": 0.0,
+                "bugs": 0.0
+            }
+        
+        volume = (N1 + N2) * (n1 + n2).bit_length()  # Simplified volume calculation
+        difficulty = (n1 / 2) * (N2 / n2) if n2 > 0 else 0
+        effort = volume * difficulty
+        time = effort / 18  # Simplified time calculation
+        bugs = volume / 3000  # Simplified bugs calculation
+        
+        return {
+            "volume": volume,
+            "difficulty": difficulty,
+            "effort": effort,
+            "time": time,
+            "bugs": bugs
+        }
+
+    def _calculate_maintainability_index(self, complexity: int, lines_of_code: int, parameter_count: int) -> float:
+        """Calculate maintainability index for a function."""
+        # Simplified maintainability index calculation
+        # Based on cyclomatic complexity, lines of code, and parameter count
+        if lines_of_code == 0:
+            return 100.0
+        
+        # Penalty factors
+        complexity_penalty = min(50, complexity * 2)
+        loc_penalty = min(30, lines_of_code / 10)
+        param_penalty = min(20, parameter_count * 2)
+        
+        mi = max(0, 100 - complexity_penalty - loc_penalty - param_penalty)
+        return mi
+
+    def _calculate_file_maintainability_index(self, function_metrics: List[Dict], source_lines: int) -> float:
+        """Calculate maintainability index for a file."""
+        if not function_metrics or source_lines == 0:
+            return 100.0
+        
+        total_complexity = sum(f["cyclomatic_complexity"] for f in function_metrics)
+        avg_complexity = total_complexity / len(function_metrics)
+        
+        # Simplified file-level maintainability index
+        complexity_penalty = min(40, avg_complexity * 3)
+        loc_penalty = min(30, source_lines / 20)
+        
+        mi = max(0, 100 - complexity_penalty - loc_penalty)
+        return mi
+
+    def _count_return_points(self, node: ast.FunctionDef) -> int:
+        """Count the number of return statements in a function."""
+        return len([n for n in ast.walk(node) if isinstance(n, ast.Return)])
 
     def generate_report(self) -> Dict[str, Any]:
         """Generate a comprehensive AST analysis report."""

@@ -79,7 +79,13 @@ class ASTAnalysisConfig:
     custom_ast_config: dict[str, Any] = field(default_factory=lambda: {
         "max_cyclomatic_complexity": 10,
         "max_parameters": 5,
-        "max_line_length": 120
+        "max_line_length": 120,
+        "max_nesting_depth": 4,
+        "maintainability_threshold": 65,
+        "include_halstead_metrics": True,
+        "include_maintainability_index": True,
+        "include_function_metrics": True,
+        "include_class_metrics": True
     })
 
 
@@ -192,7 +198,13 @@ class ConfigManager:
                 "custom_ast_config": {
                     "max_cyclomatic_complexity": 10,
                     "max_parameters": 5,
-                    "max_line_length": 120
+                    "max_line_length": 120,
+                    "max_nesting_depth": 4,
+                    "maintainability_threshold": 65,
+                    "include_halstead_metrics": True,
+                    "include_maintainability_index": True,
+                    "include_function_metrics": True,
+                    "include_class_metrics": True
                 }
             }
         },

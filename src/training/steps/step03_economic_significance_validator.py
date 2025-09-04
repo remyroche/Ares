@@ -62,19 +62,23 @@ class EconomicSignificanceValidator:
         volatility_tests = self._test_volatility_patterns(data, regimes)
         validation_results['volatility_significance'] = volatility_tests
         
-        # 6. Calculate regime characteristics
+        # 6. Test momentum pattern differences
+        momentum_tests = self._test_momentum_patterns(data, regimes)
+        validation_results['momentum_significance'] = momentum_tests
+        
+        # 7. Calculate regime characteristics
         regime_chars = self._calculate_regime_characteristics(data, regimes)
         validation_results['regime_characteristics'] = regime_chars
         
-        # 7. Calculate economic metrics
+        # 8. Calculate economic metrics
         economic_metrics = self._calculate_economic_metrics(data, regimes, returns)
         validation_results['economic_metrics'] = economic_metrics
         
-        # 8. Overall significance assessment
+        # 9. Overall significance assessment
         overall_significance = self._assess_overall_significance(validation_results)
         validation_results['overall_significant'] = overall_significance
         
-        # 9. Generate validation summary
+        # 10. Generate validation summary
         validation_summary = self._generate_validation_summary(validation_results)
         validation_results['validation_summary'] = validation_summary
         
@@ -295,6 +299,154 @@ class EconomicSignificanceValidator:
         
         return results
     
+    def _test_momentum_patterns(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
+        """Test if regimes have different momentum patterns."""
+        results = {
+            'momentum_means': {},
+            'momentum_volatilities': {},
+            'momentum_distributions': {},
+            'momentum_significant': False
+        }
+        
+        # Calculate multi-timeframe momentum
+        momentum_5 = data['close'].pct_change(5)
+        momentum_10 = data['close'].pct_change(10)
+        momentum_20 = data['close'].pct_change(20)
+        
+        unique_regimes = np.unique(regimes)
+        momentum_data_5 = []
+        momentum_data_10 = []
+        momentum_data_20 = []
+        
+        for regime in unique_regimes:
+            regime_mask = regimes == regime
+            regime_momentum_5 = momentum_5[regime_mask].dropna()
+            regime_momentum_10 = momentum_10[regime_mask].dropna()
+            regime_momentum_20 = momentum_20[regime_mask].dropna()
+            
+            if len(regime_momentum_5) > 10:
+                results['momentum_means'][f'regime_{regime}_5d'] = np.mean(regime_momentum_5)
+                results['momentum_volatilities'][f'regime_{regime}_5d'] = np.std(regime_momentum_5)
+                momentum_data_5.append(regime_momentum_5)
+            
+            if len(regime_momentum_10) > 10:
+                results['momentum_means'][f'regime_{regime}_10d'] = np.mean(regime_momentum_10)
+                results['momentum_volatilities'][f'regime_{regime}_10d'] = np.std(regime_momentum_10)
+                momentum_data_10.append(regime_momentum_10)
+            
+            if len(regime_momentum_20) > 10:
+                results['momentum_means'][f'regime_{regime}_20d'] = np.mean(regime_momentum_20)
+                results['momentum_volatilities'][f'regime_{regime}_20d'] = np.std(regime_momentum_20)
+                momentum_data_20.append(regime_momentum_20)
+        
+        # Test momentum distribution differences
+        momentum_significant = False
+        
+        if len(momentum_data_5) > 1:
+            try:
+                f_stat, f_pvalue = stats.f_oneway(*momentum_data_5)
+                if f_pvalue < self.significance_threshold:
+                    momentum_significant = True
+            except:
+                pass
+        
+        if len(momentum_data_10) > 1:
+            try:
+                f_stat, f_pvalue = stats.f_oneway(*momentum_data_10)
+                if f_pvalue < self.significance_threshold:
+                    momentum_significant = True
+            except:
+                pass
+        
+        if len(momentum_data_20) > 1:
+            try:
+                f_stat, f_pvalue = stats.f_oneway(*momentum_data_20)
+                if f_pvalue < self.significance_threshold:
+                    momentum_significant = True
+            except:
+                pass
+        
+        results['momentum_significant'] = momentum_significant
+        
+        # Additional momentum-specific tests
+        results['momentum_autocorrelation'] = self._test_momentum_autocorrelation(data, regimes)
+        results['momentum_persistence'] = self._test_momentum_persistence(data, regimes)
+        results['momentum_reversal_patterns'] = self._test_momentum_reversal_patterns(data, regimes)
+        
+        return results
+    
+    def _test_momentum_autocorrelation(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
+        """Test momentum autocorrelation patterns across regimes."""
+        results = {}
+        
+        momentum_5 = data['close'].pct_change(5)
+        momentum_10 = data['close'].pct_change(10)
+        
+        unique_regimes = np.unique(regimes)
+        
+        for regime in unique_regimes:
+            regime_mask = regimes == regime
+            regime_momentum_5 = momentum_5[regime_mask].dropna()
+            regime_momentum_10 = momentum_10[regime_mask].dropna()
+            
+            if len(regime_momentum_5) > 20:
+                # Calculate autocorrelation
+                autocorr_5 = regime_momentum_5.autocorr(lag=1)
+                autocorr_10 = regime_momentum_10.autocorr(lag=1)
+                
+                results[f'regime_{regime}_autocorr_5d'] = autocorr_5
+                results[f'regime_{regime}_autocorr_10d'] = autocorr_10
+        
+        return results
+    
+    def _test_momentum_persistence(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
+        """Test momentum persistence patterns across regimes."""
+        results = {}
+        
+        momentum_5 = data['close'].pct_change(5)
+        
+        unique_regimes = np.unique(regimes)
+        
+        for regime in unique_regimes:
+            regime_mask = regimes == regime
+            regime_momentum = momentum_5[regime_mask].dropna()
+            
+            if len(regime_momentum) > 20:
+                # Calculate momentum persistence (how often momentum continues)
+                momentum_sign = np.sign(regime_momentum)
+                momentum_continuation = np.sum(momentum_sign[:-1] == momentum_sign[1:]) / len(momentum_sign[:-1])
+                
+                results[f'regime_{regime}_momentum_persistence'] = momentum_continuation
+        
+        return results
+    
+    def _test_momentum_reversal_patterns(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
+        """Test momentum reversal patterns across regimes."""
+        results = {}
+        
+        momentum_5 = data['close'].pct_change(5)
+        momentum_10 = data['close'].pct_change(10)
+        
+        unique_regimes = np.unique(regimes)
+        
+        for regime in unique_regimes:
+            regime_mask = regimes == regime
+            regime_momentum_5 = momentum_5[regime_mask].dropna()
+            regime_momentum_10 = momentum_10[regime_mask].dropna()
+            
+            if len(regime_momentum_5) > 20:
+                # Calculate momentum reversal rate
+                momentum_sign_5 = np.sign(regime_momentum_5)
+                momentum_reversals_5 = np.sum(momentum_sign_5[:-1] != momentum_sign_5[1:]) / len(momentum_sign_5[:-1])
+                
+                momentum_sign_10 = np.sign(regime_momentum_10)
+                momentum_reversals_10 = np.sum(momentum_sign_10[:-1] != momentum_sign_10[1:]) / len(momentum_sign_10[:-1])
+                
+                results[f'regime_{regime}_reversal_rate_5d'] = momentum_reversals_5
+                results[f'regime_{regime}_reversal_rate_10d'] = momentum_reversals_10
+        
+        return results
+    
     def _calculate_regime_characteristics(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
         """Calculate detailed regime characteristics."""
         results = {
@@ -442,6 +594,7 @@ class EconomicSignificanceValidator:
         risk_tests = validation_results['risk_significance']
         volume_tests = validation_results['volume_significance']
         volatility_tests = validation_results['volatility_significance']
+        momentum_tests = validation_results['momentum_significance']
         
         # Overall significance if any major test is significant
         overall_significant = (
@@ -449,7 +602,8 @@ class EconomicSignificanceValidator:
             return_tests.get('economically_significant', False) or
             risk_tests.get('risk_adjusted_significant', False) or
             volume_tests.get('volume_significant', False) or
-            volatility_tests.get('volatility_significant', False)
+            volatility_tests.get('volatility_significant', False) or
+            momentum_tests.get('momentum_significant', False)
         )
         
         return overall_significant
@@ -475,6 +629,8 @@ class EconomicSignificanceValidator:
             summary['significant_tests'].append('volume_patterns')
         if validation_results['volatility_significance'].get('volatility_significant', False):
             summary['significant_tests'].append('volatility_patterns')
+        if validation_results['momentum_significance'].get('momentum_significant', False):
+            summary['significant_tests'].append('momentum_patterns')
         
         # Generate recommendations
         if not summary['overall_significant']:

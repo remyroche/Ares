@@ -513,10 +513,69 @@ class EnhancedMLRegimeTransitionDetector:
             else:
                 no_improvement_count += 1
             
-            # Stop if no improvement for patience iterations
+            # Enhanced stopping criteria: stop, remove 5 features, try again and compare
             if no_improvement_count >= self.patience:
-                print(f"   Stopping: No improvement for {self.patience} iterations")
-                break
+                print(f"   Performance plateau detected. Testing feature removal...")
+                
+                # Remove 5 least important features and test
+                if len(current_features) > 25:  # Only if we have enough features
+                    # Get feature importance from current model
+                    feature_importance = lgb_model.feature_importance(importance_type='gain')
+                    feature_importance_dict = dict(zip(current_features, feature_importance))
+                    
+                    # Sort by importance and remove 5 least important
+                    sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1])
+                    features_to_remove = [feat[0] for feat in sorted_features[:5]]
+                    
+                    # Remove features and test
+                    reduced_features = [f for f in current_features if f not in features_to_remove]
+                    
+                    if len(reduced_features) >= 15:  # Minimum feature threshold
+                        # Test reduced feature set
+                        X_train_reduced = X_train[:, reduced_features]
+                        X_test_reduced = X_test[:, reduced_features]
+                        
+                        scaler_reduced = StandardScaler()
+                        X_train_scaled_reduced = scaler_reduced.fit_transform(X_train_reduced)
+                        X_test_scaled_reduced = scaler_reduced.transform(X_test_reduced)
+                        
+                        train_data_reduced = lgb.Dataset(X_train_scaled_reduced, label=y_train)
+                        val_data_reduced = lgb.Dataset(X_test_scaled_reduced, label=y_test, reference=train_data_reduced)
+                        
+                        lgb_model_reduced = lgb.train(
+                            self.lgb_params,
+                            train_data_reduced,
+                            valid_sets=[val_data_reduced],
+                            num_boost_round=1000,
+                            callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)]
+                        )
+                        
+                        y_pred_proba_reduced = lgb_model_reduced.predict(X_test_scaled_reduced, num_iteration=lgb_model_reduced.best_iteration)
+                        y_pred_reduced = (y_pred_proba_reduced > 0.5).astype(int)
+                        performance_reduced = f1_score(y_test, y_pred_reduced)
+                        
+                        print(f"   Reduced features: {len(reduced_features)}, Performance: {performance_reduced:.4f}")
+                        
+                        # Compare with last 3 results
+                        recent_performances = [p['performance'] for p in selection_history[-3:]]
+                        avg_recent_performance = np.mean(recent_performances)
+                        
+                        if performance_reduced > avg_recent_performance:
+                            print(f"   Feature removal improved performance. Using reduced feature set.")
+                            current_features = reduced_features
+                            best_performance = performance_reduced
+                            best_features = reduced_features.copy()
+                            no_improvement_count = 0
+                            continue
+                        else:
+                            print(f"   Feature removal did not improve performance. Stopping.")
+                            break
+                    else:
+                        print(f"   Not enough features to remove. Stopping.")
+                        break
+                else:
+                    print(f"   Not enough features to remove. Stopping.")
+                    break
             
             # Add next batch of features
             next_features = feature_indices[len(current_features):len(current_features) + self.feature_increment]

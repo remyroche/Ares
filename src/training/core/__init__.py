@@ -1,33 +1,16 @@
 from __future__ import annotations
 
-"""Core training pipeline framework for Ares trading bot.
+"""Core training API exports.
 
-This module provides the foundational classes and interfaces for the modular
-training pipeline architecture.
+This package exposes the simplified training manager facade used by other
+components. Legacy pipeline internals (e.g., pipeline_base, stage_registry)
+are intentionally not imported here to avoid hard dependencies that are not
+required by the current codebase.
 """
 
-from src.utils.warning_symbols import (
-    connection_error,
-    critical,
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    problem,
-    timeout,
-    validation_error,
-    warning,
-)
-
-from .pipeline_base import PipelineStage, StageContext
-from .stage_registry import StageRegistry
-from .checkpoint_manager import CheckpointManager
+from .training_manager import TrainingManager, create_training_manager
 
 __all__ = [
-    "PipelineStage",
-    "StageContext",
-    "StageRegistry",
-    "CheckpointManager",
+    "TrainingManager",
+    "create_training_manager",
 ]

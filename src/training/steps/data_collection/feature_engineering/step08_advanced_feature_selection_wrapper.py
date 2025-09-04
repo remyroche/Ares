@@ -39,17 +39,22 @@ class AdvancedFeatureSelectionStep(BaseStep):
     async def execute_logic(
         self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        # Run the legacy-heavy step and surface its outputs in pipeline_state
-        from src.training.steps.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
-        from src.core.decorators.errors import handles_errors
+        # Execute the advanced feature selection step
+        result_state = await self._execute_feature_selection(training_input, pipeline_state)
+        
+        # Update pipeline state with results
+        pipeline_state.update(result_state)
+        return pipeline_state
 
+    async def _execute_feature_selection(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the advanced feature selection step."""
+        from src.training.steps.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
+        
         step_impl = Step08AdvancedFeatureSelection(self.config)
         result_state = await step_impl.execute(training_input, pipeline_state)
         self.logger.info("✅ Step08 legacy implementation executed")
-
-        # Ensure downstream steps have a deterministic key to read
-        pipeline_state.update(result_state)
-        return pipeline_state
+        
+        return result_state
 
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         errors: list = []

@@ -9,18 +9,24 @@ The backtesting pipeline has been significantly enhanced with comprehensive logg
 ### 1. Enhanced Logging System (`enhanced_logging.py`)
 
 **Features:**
-- **Emoji-based logging** for easy visual identification of issues
+- **Focused emoji usage** for troubleshooting issues (emojis only for problems and step completion)
 - **Real-time progress indicators** with visual progress bars
 - **Performance monitoring** with memory and CPU tracking
 - **Quality flags** to detect and report low-quality outcomes
 - **Step timing** with detailed execution time tracking
 - **Error categorization** and detailed error reporting
+- **Comprehensive backtesting metrics** logging (PnL, Sharpe, win rate, etc.)
+- **Regime-specific analysis** for each market regime
+- **Model performance tracking** with accuracy and confidence metrics
+- **Risk analysis** with detailed risk metrics
 
 **Benefits:**
-- Easy to spot issues with emoji indicators (🚀 ✅ ❌ ⚠️ 📊)
+- Clean logging with emojis only for issues and step completion
 - Real-time progress updates with visual progress bars
 - Comprehensive error tracking with context
 - Performance bottleneck identification
+- Detailed backtesting results for each market regime
+- Ongoing performance metrics throughout execution
 
 ### 2. Progress Indicators & Status Updates
 
@@ -71,13 +77,17 @@ The backtesting pipeline has been significantly enhanced with comprehensive logg
 
 **Report Sections:**
 1. **Execution Summary**: Overall pipeline status and success rate
-2. **Quality Assessment**: Quality score, flags, and issue categorization
-3. **Performance Analysis**: Execution times, resource usage, bottlenecks
-4. **Data Quality Report**: Data file analysis and quality metrics
-5. **Validation Results**: Detailed validation step analysis
-6. **Error Analysis**: Error categorization and timeline
-7. **Recommendations**: Actionable improvement suggestions
-8. **Troubleshooting Guide**: Common issues and solutions
+2. **Backtesting Results**: Comprehensive performance metrics (PnL, Sharpe, win rate, etc.)
+3. **Regime Analysis**: Detailed analysis for each market regime/cluster
+4. **Model Performance**: Model accuracy, confidence, and feature importance
+5. **Risk Analysis**: Portfolio risk, regime risk, liquidity risk, concentration risk
+6. **Quality Assessment**: Quality score, flags, and issue categorization
+7. **Performance Analysis**: Execution times, resource usage, bottlenecks
+8. **Data Quality Report**: Data file analysis and quality metrics
+9. **Validation Results**: Detailed validation step analysis
+10. **Error Analysis**: Error categorization and timeline
+11. **Recommendations**: Actionable improvement suggestions
+12. **Troubleshooting Guide**: Common issues and solutions
 
 ### 6. Enhanced Error Reporting
 
@@ -92,9 +102,9 @@ The backtesting pipeline has been significantly enhanced with comprehensive logg
 
 ### Initialization
 ```
-🚀 Starting Enhanced Backtesting Pipeline
-📊 Configuration: ETHUSDT on BINANCE, timeframe: 1m
-📋 Pipeline Configuration:
+Starting Enhanced Backtesting Pipeline
+Configuration: ETHUSDT on BINANCE, timeframe: 1m
+Pipeline Configuration:
    • Symbol: ETHUSDT
    • Exchange: BINANCE
    • Timeframe: 1m
@@ -114,16 +124,62 @@ The backtesting pipeline has been significantly enhanced with comprehensive logg
 📈 Model Saving: [████████████████████] 100.0% - Starting model saving
 ```
 
-### Quality Flags
+### Backtesting Metrics
 ```
-⚠️ Quality Flag [DATA_QUALITY]: High missing data percentage: 5.2%
-❌ Quality Flag [VALIDATION_FAILURE]: Pre-flight validation failed
-⚠️ Quality Flag [PERFORMANCE]: High memory usage: 1,250.5 MB
+Backtesting Metrics - Walk Forward Validation:
+   • Total Return: 15.23%
+   • Sharpe Ratio: 1.45
+   • Win Rate: 58.7%
+   • Max Drawdown: 8.2%
+   • Total Trades: 1,247
+   • Avg Trade Return: 0.12%
+   • Profit Factor: 1.34
+   • Volatility: 12.5%
+   • VaR (95%): 2.1%
+   • Calmar Ratio: 1.86
+
+Market Regime Analysis:
+  Bull Market:
+    • Duration: 45.2 days
+    • Frequency: 35.2%
+    • Regime Return: 8.7%
+    • Regime Sharpe: 1.23
+    • Trades in Regime: 456
+  Bear Market:
+    • Duration: 23.1 days
+    • Frequency: 18.1%
+    • Regime Return: -2.1%
+    • Regime Sharpe: -0.45
+    • Trades in Regime: 234
+
+Model Performance Analysis:
+  Tactician Model:
+    • Accuracy: 67.3%
+    • Precision: 64.2%
+    • Recall: 71.8%
+    • F1 Score: 67.8%
+    • Avg Confidence: 78.5%
+    • Top Features: volume_ma_20, price_momentum, volatility_std
+
+Risk Analysis:
+   • Portfolio VaR: 2.1%
+   • Expected Shortfall: 3.4%
+   • Concentration Risk: 15.2%
+   • Liquidity Risk: 8.7%
+   • Correlation Risk: 45.3%
+```
+
+### Quality Flags (Only for Issues)
+```
+⚠️ Quality Flag [PERFORMANCE]: Low Sharpe ratio: 0.85
+⚠️ Quality Flag [REGIME_PERFORMANCE]: Negative returns in Bear Market: -2.1%
+⚠️ Quality Flag [MODEL_PERFORMANCE]: Low confidence for Tactician Model: 65.2%
+⚠️ Quality Flag [RISK]: High portfolio VaR: 5.2%
 ```
 
 ### Performance Summary
 ```
-📊 Performance Summary:
+Performance Summary:
    • Total execution time: 1,234.56s
    • Quality flags: 3
    • Errors: 0
@@ -148,7 +204,7 @@ The backtesting pipeline has been significantly enhanced with comprehensive logg
 ### Report Files
 - `data_cache/backtesting_pipeline_results_ETHUSDT_1m.json`
 - `data_cache/backtesting_report_ETHUSDT_1m.json`
-- `data_cache/comprehensive_backtesting_report_ETHUSDT_1m.json`
+- `data_cache/comprehensive_backtesting_report_ETHUSDT_1m.json` (includes backtesting metrics, regime analysis, model performance, risk analysis)
 - `data_cache/backtesting_execution_summary_ETHUSDT_1m.json`
 
 ### Configuration Files
@@ -174,7 +230,7 @@ python src/training/steps/backtesting/step18_backtesting_main.py --symbol ETHUSD
 ## 🎯 Benefits
 
 ### For Troubleshooting
-- **Easy issue identification** with emoji indicators
+- **Focused emoji usage** for easy issue identification (emojis only for problems)
 - **Detailed error context** with stack traces
 - **Quality flag system** for process issue detection
 - **Comprehensive reports** for analysis
@@ -185,9 +241,13 @@ python src/training/steps/backtesting/step18_backtesting_main.py --symbol ETHUSD
 - **Performance monitoring** with resource tracking
 - **Step-by-step execution tracking**
 - **Quality assessment** throughout the pipeline
+- **Ongoing backtesting metrics** throughout execution
 
 ### For Analysis
 - **Comprehensive reporting** with actionable recommendations
+- **Detailed backtesting results** (PnL, Sharpe, win rate, etc.) for each market regime
+- **Model performance analysis** with accuracy and confidence metrics
+- **Risk analysis** with portfolio, regime, and concentration risk
 - **Performance metrics** for optimization
 - **Quality scores** for process improvement
 - **Troubleshooting guides** for common issues
@@ -212,6 +272,17 @@ The system automatically detects and flags various issues:
 - High CPU usage (>90%)
 - Slow step execution (>5 minutes)
 - Resource bottlenecks
+
+### Backtesting Performance Issues
+- Low Sharpe ratio (<1.0)
+- Low win rate (<50%)
+- High max drawdown (>20%)
+- Low profit factor (<1.2)
+- Negative returns in specific market regimes
+- Low model accuracy (<60%)
+- Low model confidence (<70%)
+- High portfolio VaR (>5%)
+- High concentration risk (>30%)
 
 ### Process Issues
 - Pipeline execution failures
@@ -239,16 +310,17 @@ The comprehensive reporting system includes:
 
 When the pipeline completes successfully, you'll see:
 ```
-🎉 ENHANCED BACKTESTING COMPLETED SUCCESSFULLY!
+✅ ENHANCED BACKTESTING COMPLETED SUCCESSFULLY!
 ================================================================================
-✅ All enhanced backtesting steps completed:
+All enhanced backtesting steps completed:
    ✅ Comprehensive validation with quality assessment
-   ✅ Walk forward validation with detailed logging
-   ✅ Monte Carlo validation with performance monitoring
-   ✅ A/B testing with quality flags
-   ✅ Model saving with comprehensive reporting
+   ✅ Walk forward validation with detailed logging and backtesting metrics
+   ✅ Monte Carlo validation with performance monitoring and regime analysis
+   ✅ A/B testing with quality flags and model performance tracking
+   ✅ Model saving with comprehensive reporting and risk analysis
    ✅ Performance monitoring and resource tracking
-   ✅ Enhanced logging with emojis and progress indicators
+   ✅ Enhanced logging with focused emoji usage and progress indicators
+   ✅ Comprehensive backtesting results for each market regime
 ⏱️ Total execution time: 1,234.56 seconds
 ================================================================================
 ```
@@ -256,9 +328,11 @@ When the pipeline completes successfully, you'll see:
 ## 📋 Next Steps
 
 1. **Run the enhanced backtesting pipeline** to see the new logging in action
-2. **Review the generated reports** for comprehensive analysis
-3. **Monitor the quality flags** to identify any issues
-4. **Use the troubleshooting guide** if problems arise
-5. **Analyze performance metrics** for optimization opportunities
+2. **Review the generated reports** for comprehensive analysis including backtesting metrics
+3. **Monitor the quality flags** to identify any issues (emojis only for problems)
+4. **Analyze backtesting results** for each market regime (PnL, Sharpe, win rate, etc.)
+5. **Review model performance** and risk analysis in the comprehensive reports
+6. **Use the troubleshooting guide** if problems arise
+7. **Analyze performance metrics** for optimization opportunities
 
-The enhanced backtesting pipeline now provides comprehensive visibility into every aspect of the execution, making it much easier to troubleshoot issues and monitor progress in real-time.
+The enhanced backtesting pipeline now provides comprehensive visibility into every aspect of the execution, including detailed backtesting results for each market regime, making it much easier to troubleshoot issues and monitor progress in real-time.

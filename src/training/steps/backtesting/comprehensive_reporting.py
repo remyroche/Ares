@@ -44,6 +44,10 @@ class BacktestingReportGenerator:
         
         report = {
             'execution_summary': self._generate_execution_summary(pipeline_results),
+            'backtesting_results': self._generate_backtesting_results(pipeline_results),
+            'regime_analysis': self._generate_regime_analysis(pipeline_results),
+            'model_performance': self._generate_model_performance_analysis(pipeline_results),
+            'risk_analysis': self._generate_risk_analysis(pipeline_results),
             'quality_assessment': self._generate_quality_assessment(pipeline_results, logger_data),
             'performance_analysis': self._generate_performance_analysis(logger_data),
             'data_quality_report': self._generate_data_quality_report(),
@@ -71,6 +75,117 @@ class BacktestingReportGenerator:
             'success_rate': self._calculate_success_rate(pipeline_results),
             'overall_status': 'SUCCESS' if pipeline_results.get('success', False) else 'FAILED'
         }
+    
+    def _generate_backtesting_results(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive backtesting results analysis."""
+        backtesting_results = {
+            'overall_performance': {},
+            'walk_forward_results': {},
+            'monte_carlo_results': {},
+            'ab_testing_results': {},
+            'performance_summary': {}
+        }
+        
+        # Extract overall performance metrics
+        if 'walk_forward_results' in pipeline_results and pipeline_results['walk_forward_results']:
+            wf_results = pipeline_results['walk_forward_results']
+            if isinstance(wf_results, dict):
+                backtesting_results['walk_forward_results'] = self._extract_performance_metrics(wf_results)
+        
+        if 'monte_carlo_results' in pipeline_results and pipeline_results['monte_carlo_results']:
+            mc_results = pipeline_results['monte_carlo_results']
+            if isinstance(mc_results, dict):
+                backtesting_results['monte_carlo_results'] = self._extract_performance_metrics(mc_results)
+        
+        if 'ab_testing_results' in pipeline_results and pipeline_results['ab_testing_results']:
+            ab_results = pipeline_results['ab_testing_results']
+            if isinstance(ab_results, dict):
+                backtesting_results['ab_testing_results'] = self._extract_performance_metrics(ab_results)
+        
+        # Calculate overall performance summary
+        backtesting_results['performance_summary'] = self._calculate_overall_performance_summary(backtesting_results)
+        
+        return backtesting_results
+    
+    def _generate_regime_analysis(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate detailed regime analysis."""
+        regime_analysis = {
+            'regime_identification': {},
+            'regime_performance': {},
+            'regime_transitions': {},
+            'regime_stability': {},
+            'regime_recommendations': []
+        }
+        
+        # Extract regime information from results
+        for result_type, results in pipeline_results.items():
+            if results and isinstance(results, dict):
+                if 'regimes' in results:
+                    regime_analysis['regime_identification'] = results['regimes']
+                if 'regime_performance' in results:
+                    regime_analysis['regime_performance'] = results['regime_performance']
+                if 'regime_transitions' in results:
+                    regime_analysis['regime_transitions'] = results['regime_transitions']
+        
+        # Analyze regime stability and performance
+        regime_analysis['regime_stability'] = self._analyze_regime_stability(regime_analysis)
+        regime_analysis['regime_recommendations'] = self._generate_regime_recommendations(regime_analysis)
+        
+        return regime_analysis
+    
+    def _generate_model_performance_analysis(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate model performance analysis."""
+        model_analysis = {
+            'model_accuracy': {},
+            'model_confidence': {},
+            'feature_importance': {},
+            'model_comparison': {},
+            'model_recommendations': []
+        }
+        
+        # Extract model performance from results
+        for result_type, results in pipeline_results.items():
+            if results and isinstance(results, dict):
+                if 'model_accuracy' in results:
+                    model_analysis['model_accuracy'] = results['model_accuracy']
+                if 'model_confidence' in results:
+                    model_analysis['model_confidence'] = results['model_confidence']
+                if 'feature_importance' in results:
+                    model_analysis['feature_importance'] = results['feature_importance']
+        
+        # Compare model performance
+        model_analysis['model_comparison'] = self._compare_model_performance(model_analysis)
+        model_analysis['model_recommendations'] = self._generate_model_recommendations(model_analysis)
+        
+        return model_analysis
+    
+    def _generate_risk_analysis(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive risk analysis."""
+        risk_analysis = {
+            'portfolio_risk': {},
+            'regime_risk': {},
+            'model_risk': {},
+            'liquidity_risk': {},
+            'concentration_risk': {},
+            'risk_recommendations': []
+        }
+        
+        # Extract risk metrics from results
+        for result_type, results in pipeline_results.items():
+            if results and isinstance(results, dict):
+                if 'risk_metrics' in results:
+                    risk_analysis['portfolio_risk'] = results['risk_metrics']
+                if 'regime_risk' in results:
+                    risk_analysis['regime_risk'] = results['regime_risk']
+                if 'model_risk' in results:
+                    risk_analysis['model_risk'] = results['model_risk']
+        
+        # Calculate additional risk metrics
+        risk_analysis['liquidity_risk'] = self._calculate_liquidity_risk(pipeline_results)
+        risk_analysis['concentration_risk'] = self._calculate_concentration_risk(pipeline_results)
+        risk_analysis['risk_recommendations'] = self._generate_risk_recommendations(risk_analysis)
+        
+        return risk_analysis
     
     def _generate_quality_assessment(self, pipeline_results: Dict[str, Any], logger_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate quality assessment report."""
@@ -497,6 +612,270 @@ class BacktestingReportGenerator:
         # Sort by timestamp
         timeline.sort(key=lambda x: x['timestamp'])
         return timeline
+    
+    # Helper methods for new reporting functionality
+    def _extract_performance_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract performance metrics from results."""
+        metrics = {}
+        
+        # Common performance metrics
+        performance_keys = [
+            'total_return', 'sharpe_ratio', 'win_rate', 'max_drawdown',
+            'total_trades', 'avg_trade_return', 'profit_factor', 'volatility',
+            'var_95', 'calmar_ratio', 'sortino_ratio', 'information_ratio'
+        ]
+        
+        for key in performance_keys:
+            if key in results:
+                metrics[key] = results[key]
+        
+        return metrics
+    
+    def _calculate_overall_performance_summary(self, backtesting_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate overall performance summary."""
+        summary = {
+            'best_performing_method': None,
+            'worst_performing_method': None,
+            'average_sharpe_ratio': 0.0,
+            'average_return': 0.0,
+            'consistency_score': 0.0
+        }
+        
+        # Collect metrics from all methods
+        all_metrics = []
+        for method, metrics in backtesting_results.items():
+            if isinstance(metrics, dict) and 'sharpe_ratio' in metrics:
+                all_metrics.append((method, metrics))
+        
+        if all_metrics:
+            # Calculate averages
+            sharpe_ratios = [m[1].get('sharpe_ratio', 0) for m in all_metrics]
+            returns = [m[1].get('total_return', 0) for m in all_metrics]
+            
+            summary['average_sharpe_ratio'] = np.mean(sharpe_ratios) if sharpe_ratios else 0
+            summary['average_return'] = np.mean(returns) if returns else 0
+            
+            # Find best and worst performing methods
+            best_method = max(all_metrics, key=lambda x: x[1].get('sharpe_ratio', 0))
+            worst_method = min(all_metrics, key=lambda x: x[1].get('sharpe_ratio', 0))
+            
+            summary['best_performing_method'] = {
+                'method': best_method[0],
+                'sharpe_ratio': best_method[1].get('sharpe_ratio', 0),
+                'total_return': best_method[1].get('total_return', 0)
+            }
+            
+            summary['worst_performing_method'] = {
+                'method': worst_method[0],
+                'sharpe_ratio': worst_method[1].get('sharpe_ratio', 0),
+                'total_return': worst_method[1].get('total_return', 0)
+            }
+            
+            # Calculate consistency score (lower std dev = higher consistency)
+            if len(sharpe_ratios) > 1:
+                consistency_score = 1.0 - (np.std(sharpe_ratios) / (np.mean(sharpe_ratios) + 1e-8))
+                summary['consistency_score'] = max(0, min(1, consistency_score))
+        
+        return summary
+    
+    def _analyze_regime_stability(self, regime_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze regime stability and transitions."""
+        stability = {
+            'regime_persistence': {},
+            'transition_frequency': {},
+            'regime_volatility': {},
+            'stability_score': 0.0
+        }
+        
+        # Analyze regime persistence
+        if 'regime_performance' in regime_analysis:
+            for regime, performance in regime_analysis['regime_performance'].items():
+                if 'duration' in performance:
+                    stability['regime_persistence'][regime] = performance['duration']
+        
+        # Analyze transition frequency
+        if 'regime_transitions' in regime_analysis:
+            transitions = regime_analysis['regime_transitions']
+            if isinstance(transitions, dict):
+                stability['transition_frequency'] = transitions
+        
+        # Calculate overall stability score
+        if stability['regime_persistence']:
+            avg_persistence = np.mean(list(stability['regime_persistence'].values()))
+            stability['stability_score'] = min(1.0, avg_persistence / 30.0)  # Normalize to 30 days
+        
+        return stability
+    
+    def _generate_regime_recommendations(self, regime_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate regime-specific recommendations."""
+        recommendations = []
+        
+        # Analyze regime performance
+        if 'regime_performance' in regime_analysis:
+            for regime, performance in regime_analysis['regime_performance'].items():
+                if 'regime_return' in performance and performance['regime_return'] < 0:
+                    recommendations.append({
+                        'type': 'REGIME_PERFORMANCE',
+                        'regime': regime,
+                        'issue': f'Negative returns in {regime}',
+                        'recommendation': f'Review strategy for {regime} regime or consider regime-specific adjustments'
+                    })
+        
+        # Analyze regime stability
+        if 'regime_stability' in regime_analysis:
+            stability = regime_analysis['regime_stability']
+            if stability.get('stability_score', 0) < 0.5:
+                recommendations.append({
+                    'type': 'REGIME_STABILITY',
+                    'issue': 'Low regime stability',
+                    'recommendation': 'Consider increasing regime persistence or adjusting regime detection parameters'
+                })
+        
+        return recommendations
+    
+    def _compare_model_performance(self, model_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare performance across different models."""
+        comparison = {
+            'best_model': None,
+            'model_rankings': [],
+            'performance_gaps': {},
+            'consistency_analysis': {}
+        }
+        
+        # Collect model performance data
+        models = []
+        if 'model_accuracy' in model_analysis:
+            for model_name, accuracy in model_analysis['model_accuracy'].items():
+                models.append({
+                    'name': model_name,
+                    'accuracy': accuracy,
+                    'confidence': model_analysis['model_confidence'].get(model_name, 0)
+                })
+        
+        if models:
+            # Rank models by accuracy
+            models.sort(key=lambda x: x['accuracy'], reverse=True)
+            comparison['model_rankings'] = models
+            
+            # Identify best model
+            if models:
+                comparison['best_model'] = models[0]
+            
+            # Calculate performance gaps
+            if len(models) > 1:
+                best_accuracy = models[0]['accuracy']
+                for model in models[1:]:
+                    gap = best_accuracy - model['accuracy']
+                    comparison['performance_gaps'][model['name']] = gap
+        
+        return comparison
+    
+    def _generate_model_recommendations(self, model_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate model-specific recommendations."""
+        recommendations = []
+        
+        # Check model accuracy
+        if 'model_accuracy' in model_analysis:
+            for model_name, accuracy in model_analysis['model_accuracy'].items():
+                if accuracy < 0.6:
+                    recommendations.append({
+                        'type': 'MODEL_ACCURACY',
+                        'model': model_name,
+                        'issue': f'Low accuracy: {accuracy:.2%}',
+                        'recommendation': f'Consider retraining {model_name} or adjusting hyperparameters'
+                    })
+        
+        # Check model confidence
+        if 'model_confidence' in model_analysis:
+            for model_name, confidence in model_analysis['model_confidence'].items():
+                if confidence < 0.7:
+                    recommendations.append({
+                        'type': 'MODEL_CONFIDENCE',
+                        'model': model_name,
+                        'issue': f'Low confidence: {confidence:.2%}',
+                        'recommendation': f'Improve feature engineering or model architecture for {model_name}'
+                    })
+        
+        return recommendations
+    
+    def _calculate_liquidity_risk(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate liquidity risk metrics."""
+        liquidity_risk = {
+            'volume_analysis': {},
+            'spread_analysis': {},
+            'execution_risk': {},
+            'liquidity_score': 0.0
+        }
+        
+        # Extract volume and spread data from results
+        for result_type, results in pipeline_results.items():
+            if results and isinstance(results, dict):
+                if 'volume_metrics' in results:
+                    liquidity_risk['volume_analysis'] = results['volume_metrics']
+                if 'spread_metrics' in results:
+                    liquidity_risk['spread_analysis'] = results['spread_metrics']
+        
+        # Calculate liquidity score (simplified)
+        if liquidity_risk['volume_analysis']:
+            avg_volume = liquidity_risk['volume_analysis'].get('average_volume', 0)
+            liquidity_risk['liquidity_score'] = min(1.0, avg_volume / 1000000)  # Normalize to 1M
+        
+        return liquidity_risk
+    
+    def _calculate_concentration_risk(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate concentration risk metrics."""
+        concentration_risk = {
+            'position_concentration': {},
+            'regime_concentration': {},
+            'time_concentration': {},
+            'concentration_score': 0.0
+        }
+        
+        # Extract concentration data from results
+        for result_type, results in pipeline_results.items():
+            if results and isinstance(results, dict):
+                if 'position_metrics' in results:
+                    concentration_risk['position_concentration'] = results['position_metrics']
+                if 'regime_distribution' in results:
+                    concentration_risk['regime_concentration'] = results['regime_distribution']
+        
+        # Calculate concentration score
+        if concentration_risk['regime_concentration']:
+            regime_dist = concentration_risk['regime_concentration']
+            if isinstance(regime_dist, dict):
+                # Calculate Herfindahl index for concentration
+                values = list(regime_dist.values())
+                if values:
+                    hhi = sum(v**2 for v in values)
+                    concentration_risk['concentration_score'] = hhi
+        
+        return concentration_risk
+    
+    def _generate_risk_recommendations(self, risk_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate risk-specific recommendations."""
+        recommendations = []
+        
+        # Check portfolio risk
+        if 'portfolio_risk' in risk_analysis:
+            portfolio_risk = risk_analysis['portfolio_risk']
+            if 'var_95' in portfolio_risk and portfolio_risk['var_95'] > 0.05:
+                recommendations.append({
+                    'type': 'PORTFOLIO_RISK',
+                    'issue': f'High VaR: {portfolio_risk["var_95"]:.2%}',
+                    'recommendation': 'Consider reducing position sizes or improving risk management'
+                })
+        
+        # Check concentration risk
+        if 'concentration_risk' in risk_analysis:
+            conc_risk = risk_analysis['concentration_risk']
+            if conc_risk.get('concentration_score', 0) > 0.3:
+                recommendations.append({
+                    'type': 'CONCENTRATION_RISK',
+                    'issue': f'High concentration: {conc_risk["concentration_score"]:.2f}',
+                    'recommendation': 'Diversify across more regimes or time periods'
+                })
+        
+        return recommendations
 
 def generate_backtesting_report(
     symbol: str,

@@ -8,8 +8,6 @@ import argparse
 import ast
 import json
 
-# Configure logging
-import logging
 import os
 import sys
 import time
@@ -18,15 +16,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("comprehensive_analysis_demo.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-logger = logging.getLogger("ComprehensiveAnalysisDemo")
+from centralized_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass

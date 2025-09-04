@@ -18,7 +18,6 @@ Provides:
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
@@ -26,6 +25,8 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from centralized_logging import get_logger
 
 # Import minimal modules
 from minimal_config import get_default_config as get_default_config_minimal_config
@@ -43,16 +44,7 @@ except ImportError as e:
     print(f"Warning: Some analyzers not available: {e}")
     ANALYZERS_AVAILABLE = False
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("comprehensive_analysis_core.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-logger = logging.getLogger("ComprehensiveAnalysisCore")
+logger = get_logger(__name__)
 
 
 @dataclass

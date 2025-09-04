@@ -1,425 +1,743 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
-"""Step 11: Analyst Creation - Refactored to use BaseStep.
+# src/training/steps/step11_analyst_creation.py
 
-This step creates base analyst models for each regime using regime-specific
-data and features. It focuses on creating robust base models that will be
-enhanced in subsequent steps.
-"""
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates
+)
+from copy import copy
+
+import asyncio
 import json
 import os
 import pickle
 import time
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Never
+
 import joblib
 import lightgbm as lgb
 import numpy as np
 import optuna
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.metrics import accuracy_score, classification_report
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import KFold
+from torch import nn, optim
+from torch.nn.utils import prune
 from torch.utils.data import DataLoader, TensorDataset
-from src.training.base_step import BaseStep
-from src.core.decorators import handles_errors, traced, validates
+
+# Import shap with error handling
+try:
+    import shap
+except ImportError:
+    shap = None
+
+# Import new model architectures
+try:
+    import torch
+    from torch import nn, optim
+    from torch.utils.data import DataLoader, TensorDataset
+
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+import contextlib
+
+from src.config import CONFIG
+from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards
-from copy import copy
-import asyncio
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    timeout,
+    warning,
+)
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+
+# Suppress Optuna's verbose logging to keep the output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-class AnalystModelBuilder:
-    """Builds and trains analyst models for each regime."""
+# Required modules for this step
+REQUIRED_MODULES = [
+    "numpy",
+    "pandas", 
+    "torch",
+    "sklearn",
+    "lightgbm",
+    "xgboost",
+    "optuna",
+    "joblib",
+    "src.utils.logger",
+    "src.utils.error_handler"
+]
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize the model builder.
-        
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+
+class AnalystCreationStep:
+    """Step 11: Analyst Creation - Creates base analyst models for each regime.
+
+    This step creates the initial analyst models for each regime using the
+    regime-specific data and features. It focuses on creating robust base models
+    that will be enhanced in subsequent steps.
+    """
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initializes the AnalystCreationStep.
+
         Args:
-            config: Configuration dictionary
+            config (Dict[str, Any]): Configuration dictionary for the step.
         """
         self.config = config
-        self.logger = system_logger.getChild('AnalystModelBuilder')
-        self.model_types = config.get('model_types', ['lightgbm', 'xgboost', 'random_forest'])
-        self.optimization_trials = config.get('optimization_trials', 50)
-        self.cv_folds = config.get('cv_folds', 5)
-
-    def build_regime_analyst(self, regime_id: int, X_train: pd.DataFrame, y_train: pd.Series, X_val: Optional[pd.DataFrame]=None, y_val: Optional[pd.Series]=None) -> Dict[str, Any]:
-        """Build and train analyst model for a specific regime.
+        self.standards = pipeline_standards
+        self.logger = system_logger
+        self._validate_environment()
         
-        Args:
-            regime_id: Regime identifier
-            X_train: Training features
-            y_train: Training labels
-            X_val: Validation features (optional)
-            y_val: Validation labels (optional)
+        # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
+        # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
+        # Fallback to 'cpu' if MPS is not available or hangs.
+        self.device = self._safe_get_device()
+        self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
+
+        # Explicit feature isolation: non-feature columns to exclude from selection
+        self._METADATA_COLUMNS: list[str] = [
+            "timestamp",
+            "exchange",
+            "symbol",
+            "timeframe",
+            "split",
+            "year",
+            "month",
+            "day",
+            "day_of_week",
+            "day_of_month",
+            "quarter",
+        ]
+        self._LABEL_COLUMNS: set[str] = {
+            "label",
+            "target",
+            "y",
+            "class",
+            "signal",
+            "prediction",
+        }
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
+
+    def _safe_get_device(self) -> str:
+        """Safely determine the best device to use with timeout protection."""
+        try:
+            # Use threading with timeout to prevent hanging
+            import queue
+            import threading
             
-        Returns:
-            Dictionary containing model and metadata
-        """
-        self.logger.info(f'Building analyst for regime {regime_id}')
-        results = {'regime_id': regime_id, 'models': {}, 'best_model': None, 'best_score': -np.inf, 'feature_importance': {}, 'training_metrics': {}}
-        for model_type in self.model_types:
+            result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
+            
+            def check_mps() -> None:
+                try:
+                    is_available = torch.backends.mps.is_available()
+                    result_queue.put(("mps" if is_available else "cpu", None))
+                except Exception as e:  # noqa: BLE001
+                    result_queue.put(("cpu", e))
+
+            # Start the check in a separate thread
+            thread = threading.Thread(target=check_mps)
+            thread.daemon = True
+            thread.start()
+
+            # Wait for result with timeout
             try:
-                if model_type == 'lightgbm':
-                    model_result = self._train_lightgbm(X_train, y_train, X_val, y_val)
-                elif model_type == 'xgboost':
-                    model_result = self._train_xgboost(X_train, y_train, X_val, y_val)
-                elif model_type == 'random_forest':
-                    model_result = self._train_random_forest(X_train, y_train, X_val, y_val)
-                else:
-                    self.logger.warning(f'Unknown model type: {model_type}')
-                    continue
-                results['models'][model_type] = model_result
-                if model_result['validation_score'] > results['best_score']:
-                    results['best_score'] = model_result['validation_score']
-                    results['best_model'] = model_type
-            except Exception as e:
-                self.logger.error(f'Error training {model_type}: {e}')
-        if results['best_model']:
-            best_model_result = results['models'][results['best_model']]
-            results['feature_importance'] = best_model_result.get('feature_importance', {})
-        return results
+                device, err = result_queue.get(timeout=10)  # 10 second timeout
+                if err:
+                    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+                    return "cpu"
+                return device
+            except queue.Empty:
+                self.logger.exception(
+                    timeout("MPS availability check timed out, using CPU"),
+                )
+                return "cpu"
 
-    def _train_lightgbm(self, X_train: pd.DataFrame, y_train: pd.Series, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Dict[str, Any]:
-        """Train LightGBM model with optimization."""
-        self.logger.info('Training LightGBM model...')
-        train_data = lgb.Dataset(X_train, label=y_train)
-        valid_data = lgb.Dataset(X_val, label=y_val) if X_val is not None else None
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
+            return "cpu"
 
-        def objective(trial: Any) -> None:
-            params = {'objective': 'multiclass' if len(np.unique(y_train)) > 2 else 'binary', 'num_class': len(np.unique(y_train)) if len(np.unique(y_train)) > 2 else 1, 'metric': 'multi_logloss' if len(np.unique(y_train)) > 2 else 'binary_logloss', 'boosting_type': 'gbdt', 'num_leaves': trial.suggest_int('num_leaves', 10, 100), 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True), 'feature_fraction': trial.suggest_float('feature_fraction', 0.5, 1.0), 'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1.0), 'bagging_freq': trial.suggest_int('bagging_freq', 1, 10), 'min_child_samples': trial.suggest_int('min_child_samples', 5, 50), 'verbosity': -1}
-            if valid_data:
-                model = lgb.train(params, train_data, valid_sets=[valid_data], num_boost_round=100, callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)])
-                score = accuracy_score(y_val, model.predict(X_val, num_iteration=model.best_iteration).argmax(axis=1))
-            else:
-                cv_results = lgb.cv(params, train_data, num_boost_round=100, nfold=self.cv_folds, callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)])
-                score = -min(cv_results[params['metric'] + '-mean'])
-            return score
-        study = optuna.create_study(direction='maximize', study_name='lightgbm_opt')
-        study.optimize(objective, n_trials=self.optimization_trials)
-        best_params = study.best_params
-        best_params.update({'objective': 'multiclass' if len(np.unique(y_train)) > 2 else 'binary', 'num_class': len(np.unique(y_train)) if len(np.unique(y_train)) > 2 else 1, 'metric': 'multi_logloss' if len(np.unique(y_train)) > 2 else 'binary_logloss', 'verbosity': -1})
-        model = lgb.train(best_params, train_data, valid_sets=[valid_data] if valid_data else None, num_boost_round=200, callbacks=[lgb.early_stopping(20), lgb.log_evaluation(0)] if valid_data else [])
-        if X_val is not None:
-            predictions = model.predict(X_val, num_iteration=model.best_iteration)
-            if len(predictions.shape) > 1:
-                predictions = predictions.argmax(axis=1)
-            validation_score = accuracy_score(y_val, predictions)
-        else:
-            validation_score = study.best_value
-        importance = model.feature_importance(importance_type='gain')
-        feature_importance = dict(zip(X_train.columns, importance))
-        return {'model': model, 'best_params': best_params, 'validation_score': validation_score, 'feature_importance': feature_importance, 'optimization_history': study.trials_dataframe()}
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst creation step initialization",
+    )
+    async def initialize(self) -> None:
+        """Initialize the analyst creation step."""
+        self.logger.info("Initializing Analyst Creation Step...")
+        self.logger.info("Analyst Creation Step initialized successfully.")
 
-    def _train_xgboost(self, X_train: pd.DataFrame, y_train: pd.Series, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Dict[str, Any]:
-        """Train XGBoost model with optimization."""
-        self.logger.info('Training XGBoost model...')
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={"status": "FAILED", "error": "Execution failed"},
+        context="analyst creation step execution",
+    )
+    async def execute(
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Executes the analyst model creation pipeline for each regime.
 
-        def objective(trial: Any) -> None:
-            params = {'objective': 'multi:softprob' if len(np.unique(y_train)) > 2 else 'binary:logistic', 'num_class': len(np.unique(y_train)) if len(np.unique(y_train)) > 2 else None, 'eval_metric': 'mlogloss' if len(np.unique(y_train)) > 2 else 'logloss', 'max_depth': trial.suggest_int('max_depth', 3, 10), 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True), 'n_estimators': trial.suggest_int('n_estimators', 50, 300), 'subsample': trial.suggest_float('subsample', 0.5, 1.0), 'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0), 'min_child_weight': trial.suggest_int('min_child_weight', 1, 10), 'verbosity': 0}
-            if params['num_class'] is None:
-                del params['num_class']
-            model = xgb.XGBClassifier(**params)
-            if X_val is not None:
-                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=10, verbose=False)
-                score = accuracy_score(y_val, model.predict(X_val))
-            else:
-                scores = []
-                kf = KFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
-                for train_idx, val_idx in kf.split(X_train):
-                    X_fold_train = X_train.iloc[train_idx]
-                    y_fold_train = y_train.iloc[train_idx]
-                    X_fold_val = X_train.iloc[val_idx]
-                    y_fold_val = y_train.iloc[val_idx]
-                    model.fit(X_fold_train, y_fold_train)
-                    scores.append(accuracy_score(y_fold_val, model.predict(X_fold_val)))
-                score = np.mean(scores)
-            return score
-        study = optuna.create_study(direction='maximize', study_name='xgboost_opt')
-        study.optimize(objective, n_trials=self.optimization_trials)
-        best_params = study.best_params
-        best_params.update({'objective': 'multi:softprob' if len(np.unique(y_train)) > 2 else 'binary:logistic', 'num_class': len(np.unique(y_train)) if len(np.unique(y_train)) > 2 else None, 'eval_metric': 'mlogloss' if len(np.unique(y_train)) > 2 else 'logloss', 'verbosity': 0})
-        if best_params['num_class'] is None:
-            del best_params['num_class']
-        model = xgb.XGBClassifier(**best_params)
-        if X_val is not None:
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=20, verbose=False)
-            validation_score = accuracy_score(y_val, model.predict(X_val))
-        else:
-            model.fit(X_train, y_train)
-            validation_score = study.best_value
-        importance = model.feature_importances_
-        feature_importance = dict(zip(X_train.columns, importance))
-        return {'model': model, 'best_params': best_params, 'validation_score': validation_score, 'feature_importance': feature_importance, 'optimization_history': study.trials_dataframe()}
-
-    def _train_random_forest(self, X_train: pd.DataFrame, y_train: pd.Series, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Dict[str, Any]:
-        """Train Random Forest model with optimization."""
-        self.logger.info('Training Random Forest model...')
-
-        def objective(trial: Any) -> None:
-            params = {'n_estimators': trial.suggest_int('n_estimators', 50, 300), 'max_depth': trial.suggest_int('max_depth', 3, 20), 'min_samples_split': trial.suggest_int('min_samples_split', 2, 20), 'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10), 'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]), 'random_state': 42, 'n_jobs': -1}
-            model = RandomForestClassifier(**params)
-            if X_val is not None:
-                model.fit(X_train, y_train)
-                score = accuracy_score(y_val, model.predict(X_val))
-            else:
-                scores = []
-                kf = KFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
-                for train_idx, val_idx in kf.split(X_train):
-                    X_fold_train = X_train.iloc[train_idx]
-                    y_fold_train = y_train.iloc[train_idx]
-                    X_fold_val = X_train.iloc[val_idx]
-                    y_fold_val = y_train.iloc[val_idx]
-                    model.fit(X_fold_train, y_fold_train)
-                    scores.append(accuracy_score(y_fold_val, model.predict(X_fold_val)))
-                score = np.mean(scores)
-            return score
-        study = optuna.create_study(direction='maximize', study_name='rf_opt')
-        study.optimize(objective, n_trials=self.optimization_trials)
-        best_params = study.best_params
-        best_params.update({'random_state': 42, 'n_jobs': -1})
-        model = RandomForestClassifier(**best_params)
-        model.fit(X_train, y_train)
-        if X_val is not None:
-            validation_score = accuracy_score(y_val, model.predict(X_val))
-        else:
-            validation_score = study.best_value
-        importance = model.feature_importances_
-        feature_importance = dict(zip(X_train.columns, importance))
-        return {'model': model, 'best_params': best_params, 'validation_score': validation_score, 'feature_importance': feature_importance, 'optimization_history': study.trials_dataframe()}
-
-class MultiOutputAnalystBuilder:
-    """Builds analyst models that support multiple output types."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize the multi-output builder.
-        
         Args:
-            config: Configuration dictionary
-        """
-        self.config = config
-        self.logger = system_logger.getChild('MultiOutputAnalystBuilder')
-        self.base_builder = AnalystModelBuilder(config)
+            training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
+            pipeline_state (Dict[str, Any]): The current state of the pipeline.
 
-    def build_multi_output_analyst(self, regime_id: int, X_train: pd.DataFrame, y_train_dict: Dict[str, pd.Series], X_val: Optional[pd.DataFrame]=None, y_val_dict: Optional[Dict[str, pd.Series]]=None) -> Dict[str, Any]:
-        """Build analyst models for multiple outputs.
-        
-        Args:
-            regime_id: Regime identifier
-            X_train: Training features
-            y_train_dict: Dictionary of training labels for each output
-            X_val: Validation features (optional)
-            y_val_dict: Dictionary of validation labels (optional)
-            
         Returns:
-            Dictionary containing models for each output
+            Dict[str, Any]: A dictionary containing the results of the creation process.
         """
-        self.logger.info(f'Building multi-output analyst for regime {regime_id}')
-        results = {'regime_id': regime_id, 'output_models': {}, 'aggregated_metrics': {}, 'feature_importance': {}}
-        for output_name, y_train in y_train_dict.items():
-            y_val = y_val_dict.get(output_name) if y_val_dict else None
-            output_result = self.base_builder.build_regime_analyst(regime_id, X_train, y_train, X_val, y_val)
-            results['output_models'][output_name] = output_result
-            if output_result['feature_importance']:
-                for feature, importance in output_result['feature_importance'].items():
-                    if feature not in results['feature_importance']:
-                        results['feature_importance'][feature] = {}
-                    results['feature_importance'][feature][output_name] = importance
-        results['aggregated_metrics'] = self._calculate_aggregated_metrics(results['output_models'])
-        return results
+        self.logger.info(
+            "🚀 Starting Step 11: Analyst Creation - Base Model Creation for Each Regime",
+        )
+        self.logger.info("🔄 Executing Analyst Creation...")
+        
+        start_time = datetime.now()
 
-    def _calculate_aggregated_metrics(self, output_models: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
-        """Calculate aggregated metrics across all outputs."""
-        metrics = {'avg_validation_score': 0.0, 'min_validation_score': float('inf'), 'max_validation_score': -float('inf'), 'output_scores': {}}
-        scores = []
-        for output_name, model_result in output_models.items():
-            score = model_result['best_score']
-            scores.append(score)
-            metrics['output_scores'][output_name] = score
-            metrics['min_validation_score'] = min(metrics['min_validation_score'], score)
-            metrics['max_validation_score'] = max(metrics['max_validation_score'], score)
-        if scores:
-            metrics['avg_validation_score'] = np.mean(scores)
-        return metrics
+        try:
+            data_dir: str = str(training_input.get("data_dir", "data/training"))
+            models_dir: str = os.path.join(data_dir, "analyst_models")
+            regime_data_dir: str = data_dir
 
-class AnalystCreationStep(BaseStep):
-    """Step 11: Analyst Creation - Creates base analyst models for each regime."""
+            self.logger.info(f"📁 Data directory: {data_dir}")
+            self.logger.info(f"📁 Models directory: {models_dir}")
+            self.logger.info(f"📁 Regime data directory: {regime_data_dir}")
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize the step."""
-        super().__init__(config, '11', 'analyst_creation')
+            # Create models directory
+            os.makedirs(models_dir, exist_ok=True)
 
-    def _initialize_step(self) -> None:
-        """Initialize step-specific components."""
-        self.model_builder = AnalystModelBuilder(self.config)
-        self.multi_output_builder = MultiOutputAnalystBuilder(self.config)
-        self.use_multi_output = self.config.get('use_multi_output', False)
-        self.validation_split = self.config.get('validation_split', 0.2)
-        self.random_state = self.config.get('random_state', 42)
+            # Load regime splits from previous step
+            self.logger.info("🔄 Loading regime splits from previous step...")
+            regime_splits = await self._load_regime_splits(regime_data_dir)
+            
+            if not regime_splits:
+                msg = f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
+                raise ValueError(msg)
 
-    def get_required_inputs(self) -> List[str]:
-        """Get required inputs for this step."""
-        return ['regime_features', 'regime_labels', 'num_regimes']
+            self.logger.info(f"📊 Found {len(regime_splits)} regimes to process")
 
-    def get_produced_outputs(self) -> List[str]:
-        """Get outputs produced by this step."""
-        return ['regime_analysts', 'analyst_metadata', 'feature_importance', 'analyst_performance']
+            # Create analyst models for each regime
+            created_models_summary: dict[str, dict[str, Any]] = {}
 
-    def get_dependencies(self) -> List[str]:
-        """Get step dependencies."""
-        return ['step10_unified_regime_intelligence']
+            # Process regimes in parallel for better efficiency
+            async def create_regime_analysts(regime_name: str, regime_data: pd.DataFrame) -> tuple[str, dict[str, Any]]:
+                self.logger.info(f"🚀 Starting analyst creation for regime: {regime_name}")
+                self.logger.info(f"📊 Regime {regime_name} has {len(regime_data)} samples")
 
-    @validates(input_schema={'training_input': dict, 'pipeline_state': dict})
-    def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate step inputs."""
-        errors = []
-        for key in self.get_required_inputs():
-            if key not in pipeline_state:
-                errors.append(f'Missing required input: {key}')
-        if 'regime_features' in pipeline_state:
-            features = pipeline_state['regime_features']
-            if not isinstance(features, pd.DataFrame):
-                errors.append('regime_features must be a pandas DataFrame')
-            elif features.empty:
-                errors.append('regime_features cannot be empty')
-        if 'regime_labels' in pipeline_state:
-            labels = pipeline_state['regime_labels']
-            if self.use_multi_output:
-                if not isinstance(labels, dict):
-                    errors.append('regime_labels must be a dictionary for multi-output mode')
-            elif not isinstance(labels, (pd.Series, np.ndarray)):
-                errors.append('regime_labels must be a Series or array for single-output mode')
-        if 'num_regimes' in pipeline_state:
-            num_regimes = pipeline_state['num_regimes']
-            if not isinstance(num_regimes, int) or num_regimes <= 0:
-                errors.append('num_regimes must be a positive integer')
-        return (len(errors) == 0, errors)
+                try:
+                    # Prepare data for this regime
+                    X_train, y_train, X_val, y_val = await self._prepare_regime_data(regime_data)
+                    self.logger.info(
+                        f"✅ Prepared data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
+                    )
+                except Exception as e:
+                    self.logger.exception(f"⚠️ Error preparing data for regime '{regime_name}': {e}")
+                    return regime_name, {}
 
-    @traced
-    @handles_errors(exceptions=(Exception,), default_return={}, context='analyst creation execution')
-    async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the analyst creation logic."""
-        self.logger.info('Starting analyst creation...')
-        regime_features = pipeline_state['regime_features']
-        regime_labels = pipeline_state['regime_labels']
-        num_regimes = pipeline_state['num_regimes']
-        regime_analysts = {}
-        analyst_metadata = {}
-        feature_importance = {}
-        analyst_performance = {}
-        self.logger.info(f'Creating analysts for {num_regimes} regimes...')
-        for regime_id in range(num_regimes):
-            self.logger.info(f'Processing regime {regime_id}...')
-            if isinstance(regime_labels, dict):
-                first_output = list(regime_labels.keys())[0]
-                regime_mask = regime_labels[first_output] == regime_id
-            else:
-                regime_mask = regime_labels == regime_id
-            regime_X = regime_features[regime_mask]
-            if len(regime_X) < 10:
-                self.logger.warning(f'Regime {regime_id} has only {len(regime_X)} samples, skipping...')
-                continue
-            train_idx, val_idx = train_test_split(np.arange(len(regime_X)), test_size=self.validation_split, random_state=self.random_state)
-            X_train = regime_X.iloc[train_idx]
-            X_val = regime_X.iloc[val_idx]
-            if self.use_multi_output and isinstance(regime_labels, dict):
-                y_train_dict = {output: labels[regime_mask].iloc[train_idx] for output, labels in regime_labels.items()}
-                y_val_dict = {output: labels[regime_mask].iloc[val_idx] for output, labels in regime_labels.items()}
-                analyst_result = self.multi_output_builder.build_multi_output_analyst(regime_id, X_train, y_train_dict, X_val, y_val_dict)
-            else:
-                if isinstance(regime_labels, dict):
-                    first_output = list(regime_labels.keys())[0]
-                    y_train = regime_labels[first_output][regime_mask].iloc[train_idx]
-                    y_val = regime_labels[first_output][regime_mask].iloc[val_idx]
+                # Create base models for this regime
+                regime_models = await self._create_regime_analysts(
+                    regime_name, X_train, y_train, X_val, y_val
+                )
+
+                return regime_name, regime_models
+
+            # Create tasks for parallel processing
+            self.logger.info(
+                f"🔄 Creating parallel processing tasks for {len(regime_splits)} regimes...",
+            )
+            tasks: list[asyncio.Task] = []
+            for regime_name, regime_data in regime_splits.items():
+                task = asyncio.create_task(create_regime_analysts(regime_name, regime_data))
+                tasks.append(task)
+
+            # Execute tasks with limited concurrency
+            max_concurrent = min(3, len(tasks))  # Limit to 3 concurrent regimes
+            self.logger.info(
+                f"⚡ Processing {len(tasks)} regimes with max {max_concurrent} concurrent tasks",
+            )
+
+            for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
+                batch = tasks[i : i + max_concurrent]
+                self.logger.info(
+                    f"🔄 Processing batch {batch_idx}: regimes {i+1}-{min(i+max_concurrent, len(tasks))}",
+                )
+                results = await asyncio.gather(*batch, return_exceptions=True)
+
+                for j, result in enumerate(results):
+                    regime_idx = i + j
+                    if isinstance(result, Exception):
+                        self.logger.error(f"❌ Error in regime {regime_idx}: {result}")
+                        continue
+                    
+                    regime_name, regime_models = result
+                    created_models_summary[regime_name] = regime_models
+                    self.logger.info(f"✅ Completed analyst creation for regime: {regime_name}")
+
+            # Save created models
+            await self._save_analyst_models(created_models_summary, models_dir)
+
+            # Log creation summary
+            total_models = sum(len(models) for models in created_models_summary.values())
+            self.logger.info(f"🎉 Analyst creation completed: {len(created_models_summary)} regimes, {total_models} total models")
+
+            pipeline_state["analyst_creation_completed"] = True
+            pipeline_state["created_analyst_models"] = created_models_summary
+            pipeline_state["analyst_models_directory"] = models_dir
+
+            return pipeline_state
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error in analyst creation: {e}")
+            pipeline_state["analyst_creation_completed"] = False
+            pipeline_state["analyst_creation_error"] = str(e)
+            return pipeline_state
+
+    async def _load_regime_splits(self, data_dir: str) -> dict[str, pd.DataFrame]:
+        """Load regime data from unified dataset with labels."""
+        try:
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
+            
+            # Try to load unified regime dataset first (new approach)
+            unified_regime_file = os.path.join(
+                data_dir, "training", 
+                f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
+            )
+            
+            if os.path.exists(unified_regime_file):
+                self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
+                unified_data = pd.read_parquet(unified_regime_file)
+                
+                # Load regime labels mapping
+                labels_file = os.path.join(
+                    data_dir, "training", 
+                    f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
+                )
+                
+                if os.path.exists(labels_file):
+                    with open(labels_file) as f:
+                        regime_labels = json.load(f)
+                    
+                    regime_ids = regime_labels.get("regime_ids", [])
+                    self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
+                    
+                    # Create regime splits from unified dataset
+                    regime_splits = {}
+                    for regime_id in regime_ids:
+                        regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
+                        
+                        if len(regime_data) > 0:
+                            regime_splits[f"regime_{regime_id}"] = regime_data
+                            self.logger.info(f"📊 Created regime {regime_id}: {len(regime_data)} rows")
+                    
+                    self.logger.info(f"✅ Created {len(regime_splits)} regime splits from unified dataset")
+                    return regime_splits
                 else:
-                    y_train = regime_labels[regime_mask].iloc[train_idx]
-                    y_val = regime_labels[regime_mask].iloc[val_idx]
-                analyst_result = self.model_builder.build_regime_analyst(regime_id, X_train, y_train, X_val, y_val)
-            regime_analysts[f'regime_{regime_id}'] = analyst_result
-            analyst_metadata[f'regime_{regime_id}'] = {'training_samples': len(X_train), 'validation_samples': len(X_val), 'best_model_type': analyst_result.get('best_model'), 'best_score': analyst_result.get('best_score', 0.0)}
-            if analyst_result.get('feature_importance'):
-                feature_importance[f'regime_{regime_id}'] = analyst_result['feature_importance']
-            if self.use_multi_output:
-                analyst_performance[f'regime_{regime_id}'] = analyst_result.get('aggregated_metrics', {})
-            else:
-                analyst_performance[f'regime_{regime_id}'] = {'validation_score': analyst_result.get('best_score', 0.0), 'model_type': analyst_result.get('best_model')}
-        overall_metrics = self._calculate_overall_metrics(analyst_performance)
-        analyst_performance['overall'] = overall_metrics
-        result = pipeline_state.copy()
-        result.update({'regime_analysts': regime_analysts, 'analyst_metadata': analyst_metadata, 'feature_importance': feature_importance, 'analyst_performance': analyst_performance})
-        await self._save_artifacts(result)
-        self.logger.info(f'Analyst creation completed. Created {len(regime_analysts)} regime analysts.')
-        return result
+                    self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
+            
+            # Fallback to legacy approach for backward compatibility
+            self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
+            regime_splits_dir = os.path.join(data_dir, "training", "regime_splits")
+            if not os.path.exists(regime_splits_dir):
+                self.logger.error(f"❌ Legacy regime splits directory not found: {regime_splits_dir}")
+                return {}
 
-    def _calculate_overall_metrics(self, analyst_performance: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
-        """Calculate overall performance metrics across all regimes."""
-        scores = []
-        for regime_id, performance in analyst_performance.items():
-            if isinstance(performance, dict):
-                if 'validation_score' in performance:
-                    scores.append(performance['validation_score'])
-                elif 'avg_validation_score' in performance:
-                    scores.append(performance['avg_validation_score'])
-        if scores:
-            return {'mean_score': np.mean(scores), 'std_score': np.std(scores), 'min_score': np.min(scores), 'max_score': np.max(scores), 'num_regimes': len(scores)}
+            regime_splits = {}
+            for file in os.listdir(regime_splits_dir):
+                if file.endswith(".parquet") and "regime_" in file:
+                    regime_name = file.split("regime_")[-1].replace(".parquet", "")
+                    file_path = os.path.join(regime_splits_dir, file)
+                    regime_data = pd.read_parquet(file_path)
+                    regime_splits[regime_name] = regime_data
+                    self.logger.info(f"📊 Loaded legacy regime {regime_name}: {len(regime_data)} rows")
+
+            return regime_splits
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error loading regime splits: {e}")
+            return {}
+
+    async def _prepare_regime_data(self, regime_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """Prepare data for analyst model creation."""
+        try:
+            # Separate features and labels
+            feature_columns = [col for col in regime_data.columns 
+            if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
+            
+            X = regime_data[feature_columns]
+            y = regime_data["label"] if "label" in regime_data.columns else pd.Series([0] * len(regime_data))
+
+            # Split into train/validation
+            split_idx = int(len(X) * 0.8)
+            X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
+            y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
+
+            return X_train, y_train, X_val, y_val
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error preparing regime data: {e}")
+            raise
+
+    async def _create_regime_analysts(
+        self, 
+        regime_name: str, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series, 
+        X_val: pd.DataFrame, 
+        y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Create base analyst models for a specific regime."""
+        try:
+            self.logger.info(f"🔧 Creating base analyst models for regime: {regime_name}")
+
+            regime_models = {}
+
+            # Create LightGBM model
+            self.logger.info(f"🌳 Creating LightGBM model for regime: {regime_name}")
+            lgb_model = await self._create_lightgbm_model(X_train, y_train, X_val, y_val)
+            regime_models["lightgbm"] = lgb_model
+
+            # Create XGBoost model
+            self.logger.info(f"🌲 Creating XGBoost model for regime: {regime_name}")
+            xgb_model = await self._create_xgboost_model(X_train, y_train, X_val, y_val)
+            regime_models["xgboost"] = xgb_model
+
+            # Create Random Forest model
+            self.logger.info(f"🌿 Creating Random Forest model for regime: {regime_name}")
+            rf_model = await self._create_random_forest_model(X_train, y_train, X_val, y_val)
+            regime_models["random_forest"] = rf_model
+
+            # Create neural network model if PyTorch is available
+            if TORCH_AVAILABLE:
+                self.logger.info(f"🧠 Creating Neural Network model for regime: {regime_name}")
+                nn_model = await self._create_neural_network_model(X_train, y_train, X_val, y_val)
+                regime_models["neural_network"] = nn_model
+
+            self.logger.info(f"✅ Created {len(regime_models)} base models for regime: {regime_name}")
+            return regime_models
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating analyst models for regime {regime_name}: {e}")
+            return {}
+
+    async def _create_lightgbm_model(
+        self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Create a LightGBM model."""
+        try:
+            # Basic LightGBM parameters
+            params = {
+                'objective': 'binary',
+                'metric': 'binary_logloss',
+                'boosting_type': 'gbdt',
+                'num_leaves': 31,
+                'learning_rate': 0.05,
+                'feature_fraction': 0.9,
+                'bagging_fraction': 0.8,
+                'bagging_freq': 5,
+                'verbose': -1
+            }
+
+            # Create dataset
+            train_data = lgb.Dataset(X_train, label=y_train)
+            val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+
+            # Train model
+            model = lgb.train(
+                params,
+                train_data,
+                valid_sets=[val_data],
+                num_boost_round=100,
+                callbacks=[lgb.early_stopping(stopping_rounds=10)]
+            )
+
+            # Evaluate
+            val_pred = model.predict(X_val)
+            val_pred_binary = (val_pred > 0.5).astype(int)
+            accuracy = accuracy_score(y_val, val_pred_binary)
+
+            return {
+                "model": model,
+                "accuracy": accuracy,
+                "model_type": "lightgbm",
+                "creation_date": datetime.now().isoformat(),
+                "feature_importance": dict(zip(X_train.columns, model.feature_importance()))
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating LightGBM model: {e}")
+            return {"model": None, "accuracy": 0.0, "error": str(e)}
+
+    async def _create_xgboost_model(
+        self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Create an XGBoost model."""
+        try:
+            # Basic XGBoost parameters
+            params = {
+                'objective': 'binary:logistic',
+                'eval_metric': 'logloss',
+                'max_depth': 6,
+                'learning_rate': 0.1,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'n_estimators': 100
+            }
+
+            # Train model
+            model = xgb.XGBClassifier(**params)
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=10, verbose=False)
+
+            # Evaluate
+            val_pred = model.predict(X_val)
+            accuracy = accuracy_score(y_val, val_pred)
+
+            return {
+                "model": model,
+                "accuracy": accuracy,
+                "model_type": "xgboost",
+                "creation_date": datetime.now().isoformat(),
+                "feature_importance": dict(zip(X_train.columns, model.feature_importances_))
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating XGBoost model: {e}")
+            return {"model": None, "accuracy": 0.0, "error": str(e)}
+
+    async def _create_random_forest_model(
+        self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Create a Random Forest model."""
+        try:
+            # Basic Random Forest parameters
+            params = {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 2,
+                'min_samples_leaf': 1,
+                'random_state': 42
+            }
+
+            # Train model
+            model = RandomForestClassifier(**params)
+            model.fit(X_train, y_train)
+
+            # Evaluate
+            val_pred = model.predict(X_val)
+            accuracy = accuracy_score(y_val, val_pred)
+
+            return {
+                "model": model,
+                "accuracy": accuracy,
+                "model_type": "random_forest",
+                "creation_date": datetime.now().isoformat(),
+                "feature_importance": dict(zip(X_train.columns, model.feature_importances_))
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating Random Forest model: {e}")
+            return {"model": None, "accuracy": 0.0, "error": str(e)}
+
+    async def _create_neural_network_model(
+        self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Create a neural network model."""
+        try:
+            # Convert to tensors
+            X_train_tensor = torch.FloatTensor(X_train.values)
+            y_train_tensor = torch.FloatTensor(y_train.values)
+            X_val_tensor = torch.FloatTensor(X_val.values)
+            y_val_tensor = torch.FloatTensor(y_val.values)
+
+            # Create simple neural network
+            input_size = X_train.shape[1]
+            model = nn.Sequential(
+                nn.Linear(input_size, 64),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(64, 32),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(32, 1),
+                nn.Sigmoid()
+            ).to(self.device)
+
+            # Training setup
+            criterion = nn.BCELoss()
+            optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+            # Train model
+            model.train()
+            for epoch in range(50):
+                optimizer.zero_grad()
+                outputs = model(X_train_tensor.to(self.device))
+                loss = criterion(outputs.squeeze(), y_train_tensor.to(self.device))
+                loss.backward()
+                optimizer.step()
+
+            # Evaluate
+            model.eval()
+            with torch.no_grad():
+                val_outputs = model(X_val_tensor.to(self.device))
+                val_pred = (val_outputs.squeeze() > 0.5).float()
+                accuracy = accuracy_score(y_val_tensor.cpu().numpy(), val_pred.cpu().numpy())
+
+            return {
+                "model": model,
+                "accuracy": accuracy,
+                "model_type": "neural_network",
+                "creation_date": datetime.now().isoformat(),
+                "device": self.device
+            }
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating Neural Network model: {e}")
+            return {"model": None, "accuracy": 0.0, "error": str(e)}
+
+    async def _save_analyst_models(self, created_models: dict[str, dict[str, Any]], models_dir: str) -> None:
+        """Save created analyst models."""
+        try:
+            for regime_name, regime_models in created_models.items():
+                regime_dir = os.path.join(models_dir, regime_name)
+                os.makedirs(regime_dir, exist_ok=True)
+
+                for model_name, model_data in regime_models.items():
+                    if model_data.get("model") is not None:
+                        model_file = os.path.join(regime_dir, f"{model_name}.joblib")
+                        
+                        # Save model
+                        joblib.dump(model_data["model"], model_file)
+                        
+                        # Save metadata
+                        metadata_file = os.path.join(regime_dir, f"{model_name}_metadata.json")
+                        metadata = {
+                            "accuracy": model_data.get("accuracy", 0.0),
+                            "model_type": model_data.get("model_type", "unknown"),
+                            "creation_date": model_data.get("creation_date", ""),
+                            "feature_importance": model_data.get("feature_importance", {}),
+                            "device": model_data.get("device", "cpu")
+                        }
+                        
+                        with open(metadata_file, "w") as f:
+                            json.dump(metadata, f, indent=2)
+
+                        self.logger.info(f"💾 Saved {model_name} model for regime {regime_name}")
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error saving analyst models: {e}")
+
+
+@handles_errors(
+    exceptions=(Exception,),
+    default_return=False,
+    context="step11_analyst_creation"
+)
+async def run_step(
+    symbol: str,
+    exchange: str,
+    timeframe: str = "1m",
+    data_dir: str = "data_cache",
+    force_rerun: bool = False,
+    **kwargs: Any,
+) -> bool:
+    """Run the analyst creation step.
+
+    Args:
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        exchange: Exchange name (e.g., "BINANCE")
+        timeframe: Timeframe (e.g., "1m")
+        data_dir: Data directory
+        force_rerun: Force re-run even if results exist
+        **kwargs: Additional arguments
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    logger = system_logger.getChild("Step11AnalystCreation")
+    
+    logger.info("=" * 80)
+    logger.info("🚀 STEP 11: Analyst Creation")
+    logger.info("=" * 80)
+    logger.info(f"🎯 Symbol: {symbol}")
+    logger.info(f"🏢 Exchange: {exchange}")
+    logger.info(f"📊 Timeframe: {timeframe}")
+    logger.info(f"📁 Data directory: {data_dir}")
+    logger.info(f"🔄 Force rerun: {force_rerun}")
+    logger.info("=" * 80)
+    
+    try:
+        # Initialize analyst creation step
+        config = {
+            "SYMBOL": symbol,
+            "EXCHANGE": exchange,
+            "TIMEFRAME": timeframe,
+            "DATA_DIR": data_dir,
+        }
+        
+        logger.info("🔧 Initializing analyst creation step...")
+        step = AnalystCreationStep(config)
+        await step.initialize()
+
+        # Prepare training input
+        training_input = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": timeframe,
+            "data_dir": data_dir,
+            "force_rerun": force_rerun,
+        }
+
+        # Execute analyst creation
+        logger.info("🎯 Executing analyst creation...")
+        pipeline_state = {}
+        result = await step.execute(training_input, pipeline_state)
+
+        if result.get("analyst_creation_completed", False):
+            logger.info("✅ Step 11: Analyst Creation completed successfully")
+            
+            # Log creation results
+            if result.get("created_analyst_models"):
+                models = result["created_analyst_models"]
+                logger.info(f"📊 Created analyst models for {len(models)} regimes")
+                
+                for regime_name, regime_models in models.items():
+                    model_count = len(regime_models)
+                    logger.info(f"   - {regime_name}: {model_count} models")
+                    
+                    for model_name, model_data in regime_models.items():
+                        accuracy = model_data.get("accuracy", 0.0)
+                        logger.info(f"     - {model_name}: {accuracy:.4f} accuracy")
+            
+            return True
         else:
-            return {'num_regimes': 0}
-
-    async def _save_artifacts(self, result: Dict[str, Any]) -> None:
-        """Save step artifacts."""
-        artifacts_dir = Path(self.config.get('artifacts_dir', 'artifacts')) / self.full_step_name
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        if 'regime_analysts' in result:
-            analysts_dir = artifacts_dir / 'regime_analysts'
-            analysts_dir.mkdir(exist_ok=True)
-            for regime_id, analyst_data in result['regime_analysts'].items():
-                regime_dir = analysts_dir / regime_id
-                regime_dir.mkdir(exist_ok=True)
-                if 'models' in analyst_data:
-                    for model_type, model_result in analyst_data['models'].items():
-                        if 'model' in model_result:
-                            model_path = regime_dir / f'{model_type}_model.pkl'
-                            joblib.dump(model_result['model'], model_path)
-                metadata = {'regime_id': analyst_data.get('regime_id'), 'best_model': analyst_data.get('best_model'), 'best_score': analyst_data.get('best_score'), 'feature_importance': analyst_data.get('feature_importance', {})}
-                with open(regime_dir / 'metadata.json', 'w') as f:
-                    json.dump(metadata, f, indent=2)
-        if 'analyst_metadata' in result:
-            with open(artifacts_dir / 'analyst_metadata.json', 'w') as f:
-                json.dump(result['analyst_metadata'], f, indent=2)
-        if 'analyst_performance' in result:
-            with open(artifacts_dir / 'analyst_performance.json', 'w') as f:
-                json.dump(result['analyst_performance'], f, indent=2)
-        self.logger.info(f'Artifacts saved to {artifacts_dir}')
-
-    def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate step outputs."""
-        errors = []
-        required_outputs = ['regime_analysts', 'analyst_metadata', 'analyst_performance']
-        for output in required_outputs:
-            if output not in pipeline_state:
-                errors.append(f'Missing required output: {output}')
-            elif pipeline_state[output] is None:
-                errors.append(f'Output {output} is None')
-        if 'regime_analysts' in pipeline_state:
-            analysts = pipeline_state['regime_analysts']
-            if not isinstance(analysts, dict):
-                errors.append('regime_analysts must be a dictionary')
-            elif not analysts:
-                errors.append('No regime analysts were created')
-            else:
-                for regime_id, analyst_data in analysts.items():
-                    if not isinstance(analyst_data, dict):
-                        errors.append(f'Analyst data for {regime_id} must be a dictionary')
-                    elif 'models' not in analyst_data:
-                        errors.append(f'No models found for {regime_id}')
-        if 'analyst_performance' in pipeline_state:
-            performance = pipeline_state['analyst_performance']
-            if 'overall' not in performance:
-                errors.append('Missing overall performance metrics')
-        return (len(errors) == 0, errors)
+            logger.error("❌ Step 11: Analyst Creation failed")
+            error = result.get("analyst_creation_error", "Unknown error")
+            logger.error(f"   Error details: {error}")
+            return False
+            
+    except Exception as e:
+        logger.exception(f"❌ Unexpected error in Step 11: {e}")
+        return False

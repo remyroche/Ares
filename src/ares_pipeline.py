@@ -507,7 +507,7 @@ class AresPipeline:
             tactician_confidence = dual_model_decision.get('tactician_confidence', 0.5)
             final_confidence = dual_model_decision.get('final_confidence', 0.5)
             normalized_confidence = dual_model_decision.get('normalized_confidence', 0.5)
-            ml_predictions = {'price_target_confidences': {'0.5%': analyst_confidence, '1.0%': analyst_confidence * 0.9, '1.5%': analyst_confidence * 0.8, '2.0%': analyst_confidence * 0.7}, 'adversarial_confidences': {'0.5%': 1.0 - tactician_confidence, '1.0%': (1.0 - tactician_confidence) * 0.9, '1.5%': (1.0 - tactician_confidence) * 0.8, '2.0%': (1.0 - tactician_confidence) * 0.7}, 'directional_analysis': {'primary_direction': dual_model_decision.get('direction', 'HOLD'), 'primary_confidence': final_confidence, 'magnitude_levels': [0.5, 1.0, 1.5, 2.0]}}
+            ml_predictions = {'price_target_confidences': {'0.25%': analyst_confidence, '0.5%': analyst_confidence * 0.9, '0.75%': analyst_confidence * 0.8, '1.0%': analyst_confidence * 0.7}, 'adversarial_confidences': {'0.25%': 1.0 - tactician_confidence, '0.5%': (1.0 - tactician_confidence) * 0.9, '0.75%': (1.0 - tactician_confidence) * 0.8, '1.0%': (1.0 - tactician_confidence) * 0.7}, 'directional_analysis': {'primary_direction': dual_model_decision.get('direction', 'HOLD'), 'primary_confidence': final_confidence, 'magnitude_levels': [0.25, 0.5, 0.75, 1.0]}}
             position_sizer = getattr(self.tactician, 'position_sizer', None)
             if position_sizer:
                 position_size_result = await position_sizer.calculate_position_size(ml_predictions=ml_predictions, current_price=current_price, account_balance=1000.0, analyst_confidence=analyst_confidence, tactician_confidence=tactician_confidence)

@@ -150,7 +150,6 @@ class AnalystCreationStep:
             # Use threading with timeout to prevent hanging
             import queue
             import threading
-from src.core.decorators.errors import handles_errors
             
             result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
             

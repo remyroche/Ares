@@ -1,0 +1,108 @@
+================================================================================
+MODEL TRAINING PIPELINE - COMPREHENSIVE REPORT
+================================================================================
+
+Symbol: ETHUSDT
+Exchange: BINANCE
+Timestamp: 20250904_145806
+Generated: 2025-09-04T14:58:06.066444
+
+EXECUTIVE SUMMARY
+----------------------------------------
+Pipeline Status: COMPLETED
+Total Execution Time: 2.5 hours
+Overall Success Rate: 98.0%
+Best Performing Regime: bull_market
+Best Performing Cluster: cluster_1
+
+KEY ACHIEVEMENTS:
+• Successfully trained 25 HMM models
+• Created 15 specialized analysts
+• Generated 8 ensemble models
+• Trained 12 tactician specialists
+• Achieved 89.1% regime intelligence accuracy
+
+REGIME PERFORMANCE RANKING
+----------------------------------------
+1. BEAR_MARKET
+   Accuracy: 0.822
+   F1 Score: 0.767
+   AUC-ROC: 0.840
+
+2. SIDEWAYS_MARKET
+   Accuracy: 0.792
+   F1 Score: 0.813
+   AUC-ROC: 0.853
+
+3. HIGH_VOLATILITY
+   Accuracy: 0.784
+   F1 Score: 0.730
+   AUC-ROC: 0.826
+
+4. LOW_VOLATILITY
+   Accuracy: 0.774
+   F1 Score: 0.733
+   AUC-ROC: 0.815
+
+5. BULL_MARKET
+   Accuracy: 0.730
+   F1 Score: 0.766
+   AUC-ROC: 0.832
+
+CLUSTER PERFORMANCE RANKING
+----------------------------------------
+1. CLUSTER_4
+   Accuracy: 0.832
+   F1 Score: 0.777
+   AUC-ROC: 0.847
+
+2. CLUSTER_3
+   Accuracy: 0.826
+   F1 Score: 0.760
+   AUC-ROC: 0.788
+
+3. CLUSTER_1
+   Accuracy: 0.800
+   F1 Score: 0.792
+   AUC-ROC: 0.865
+
+4. CLUSTER_0
+   Accuracy: 0.795
+   F1 Score: 0.785
+   AUC-ROC: 0.834
+
+5. CLUSTER_2
+   Accuracy: 0.791
+   F1 Score: 0.744
+   AUC-ROC: 0.868
+
+STEP-BY-STEP SUMMARY
+----------------------------------------
+Step 9: HMM-based Training
+   Best Regime: bear_market
+   Best Cluster: cluster_0
+
+Step 10: Unified Regime Intelligence
+   Best Regime: bear_market
+   Best Cluster: cluster_2
+
+Step 11: Analyst Creation
+   Best Regime: low_volatility
+   Best Cluster: cluster_3
+
+Step 12: Analyst Enhancement
+   Best Regime: bull_market
+   Best Cluster: cluster_3
+
+Step 13: Analyst Ensemble Creation
+   Best Regime: high_volatility
+   Best Cluster: cluster_4
+
+Step 14: Tactician Labeling
+   Best Regime: low_volatility
+   Best Cluster: cluster_4
+
+Step 15: Tactician Specialist Training
+   Best Regime: bear_market
+   Best Cluster: cluster_1
+

@@ -64,10 +64,9 @@ class PositionSizer:
 
         # Load optimized component weights
         self.ml_weight: float = position_sizing_optimization.get("ml_weight", 0.7)
-        self.kelly_weight: float = position_sizing_optimization.get("kelly_weight", 0.3)
 
         # Load additional optimized parameters
-        self.risk_adjustment_factor: float = position_sizing_optimization.get("risk_adjustment_factor", 1.0)
+        # risk_adjustment_factor removed as requested
 
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
@@ -357,16 +356,9 @@ class PositionSizer:
     ) -> float:
         """Calculate weighted position size using Kelly criterion and ML confidence."""
         try:
-                        # Calculate weighted position size
-            # Combine Kelly and ML sizes multiplicatively as requested
-            weighted_size = (kelly_position_size * ml_position_size)
-
-            # Scale to position size range
-            weighted_size = (
-                self.min_position_size
-                + (self.max_position_size - self.min_position_size)
-                * (weighted_size / (self.max_position_size * self.max_position_size))
-            )
+            # Calculate weighted position size using multiplication with ml_weight
+            # Formula: position_size = kelly_position_size * (ml_position_size ^ ml_weight)
+            weighted_size = kelly_position_size * (ml_position_size ** self.ml_weight)
 
             # Ensure within bounds
             return max(

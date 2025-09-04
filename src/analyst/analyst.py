@@ -587,18 +587,9 @@ class Analyst:
                 current_price,
             )
             if table:
-                upside = table.get("price_target_confidences", {}) or {}
-                downside = table.get("adversarial_confidences", {}) or {}
-                best_up = max(upside.items(), key=lambda kv: kv[1]) if upside else (None, 0.0)
-                best_dn = max(downside.items(), key=lambda kv: kv[1]) if downside else (None, 0.0)
-                return {
-                    "upside": upside,
-                    "downside": downside,
-                    "best_targets": {
-                        "upside": {"target": best_up[0], "probability": best_up[1]},
-                        "downside": {"target": best_dn[0], "probability": best_dn[1]},
-                    },
-                }
+                # Use the new extraction method for consistent formatting
+                extracted = self._extract_price_target_probabilities(table)
+                return extracted
 
         # Fallback: derive naive probabilities from volatility
         if "close" in features_df.columns and len(features_df) > 50:
@@ -606,25 +597,125 @@ class Analyst:
             vol = float(returns.rolling(window=20).std().iloc[-1] or 0.0)
         else:
             vol = 0.01
+        
         # Define default target ladder (percent values as strings)
         targets = [f"{x/10:.1f}%" for x in range(1, 21)]  # 0.1% .. 2.0%
+        
         # Simple mapping: higher vol => higher chance to hit further targets, but cap at 1
         def prob_for(level_str: str) -> float:
             level = float(level_str.replace("%", "")) / 100.0
             base = min(1.0, max(0.05, (vol * 5) / max(level, 1e-6)))
             return float(np.clip(base, 0.0, 1.0))
-        upside = {t: prob_for(t) for t in targets}
-        downside = {t: prob_for(t) for t in targets}
-        best_up = max(upside.items(), key=lambda kv: kv[1]) if upside else (None, 0.0)
-        best_dn = max(downside.items(), key=lambda kv: kv[1]) if downside else (None, 0.0)
-        return {
-            "upside": upside,
-            "downside": downside,
-            "best_targets": {
-                "upside": {"target": best_up[0], "probability": best_up[1]},
-                "downside": {"target": best_dn[0], "probability": best_dn[1]},
+        
+        # Create fallback predictions in the same format as ML predictor
+        price_target_confidences = {t: prob_for(t) for t in targets}
+        adversarial_confidences = {t: prob_for(t) for t in targets}
+        
+        # Create a mock ML prediction result for extraction
+        mock_ml_predictions = {
+            "price_target_confidences": price_target_confidences,
+            "adversarial_confidences": adversarial_confidences,
+            "directional_analysis": {
+                "bullish": 0.5,
+                "bearish": 0.5,
+                "neutral": 0.0,
+                "primary_direction": "neutral",
+                "confidence": 0.5
             },
+            "model_status": "fallback",
+            "timestamp": datetime.now().isoformat()
         }
+        
+        # Use the extraction method for consistent formatting
+        return self._extract_price_target_probabilities(mock_ml_predictions)
+
+    def _extract_price_target_probabilities(
+        self,
+        ml_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Extract and consolidate price target probabilities from ML predictions.
+        
+        Args:
+            ml_predictions: ML prediction results from confidence predictor
+            
+        Returns:
+            dict: Consolidated probability outputs
+        """
+        try:
+            if not ml_predictions:
+                return {
+                    "price_target_probabilities": {},
+                    "adversarial_risk_probabilities": {},
+                    "directional_analysis": {},
+                    "summary": {"status": "no_predictions"}
+                }
+            
+            # Extract price target confidences
+            price_target_confidences = ml_predictions.get("price_target_confidences", {})
+            adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
+            directional_analysis = ml_predictions.get("directional_analysis", {})
+            
+            # Convert to probability format expected by the system
+            price_target_probabilities = {}
+            for target, confidence in price_target_confidences.items():
+                price_target_probabilities[target] = {
+                    "probability": float(confidence),
+                    "confidence_level": "high" if confidence > 0.7 else "medium" if confidence > 0.4 else "low"
+                }
+            
+            # Convert adversarial confidences to risk probabilities
+            adversarial_risk_probabilities = {}
+            for target, confidence in adversarial_confidences.items():
+                adversarial_risk_probabilities[target] = {
+                    "risk_probability": float(confidence),
+                    "risk_level": "high" if confidence > 0.6 else "medium" if confidence > 0.3 else "low"
+                }
+            
+            # Extract directional analysis
+            directional_summary = {
+                "bullish_probability": directional_analysis.get("bullish", 0.0),
+                "bearish_probability": directional_analysis.get("bearish", 0.0),
+                "neutral_probability": directional_analysis.get("neutral", 0.0),
+                "primary_direction": directional_analysis.get("primary_direction", "neutral"),
+                "confidence": directional_analysis.get("confidence", 0.0)
+            }
+            
+            # Find best targets
+            best_upside = max(price_target_confidences.items(), key=lambda x: x[1]) if price_target_confidences else (None, 0.0)
+            best_downside = max(adversarial_confidences.items(), key=lambda x: x[1]) if adversarial_confidences else (None, 0.0)
+            
+            summary = {
+                "status": "success",
+                "model_status": ml_predictions.get("model_status", "unknown"),
+                "total_targets": len(price_target_confidences),
+                "total_risk_levels": len(adversarial_confidences),
+                "best_upside_target": {
+                    "target": best_upside[0],
+                    "probability": float(best_upside[1])
+                } if best_upside[0] else None,
+                "best_downside_risk": {
+                    "target": best_downside[0],
+                    "probability": float(best_downside[1])
+                } if best_downside[0] else None,
+                "timestamp": ml_predictions.get("timestamp", datetime.now().isoformat())
+            }
+            
+            return {
+                "price_target_probabilities": price_target_probabilities,
+                "adversarial_risk_probabilities": adversarial_risk_probabilities,
+                "directional_analysis": directional_summary,
+                "summary": summary
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting price target probabilities: {e}")
+            return {
+                "price_target_probabilities": {},
+                "adversarial_risk_probabilities": {},
+                "directional_analysis": {},
+                "summary": {"status": "error", "error": str(e)}
+            }
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),

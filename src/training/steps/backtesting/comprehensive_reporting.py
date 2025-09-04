@@ -62,6 +62,416 @@ class BacktestingReportGenerator:
             safe_json_dump(report, output_file, indent=2)
         
         return report
+
+    def generate_step_report(
+        self,
+        step_name: str,
+        step_results: Dict[str, Any],
+        symbol: str,
+        timeframe: str,
+        data_dir: str,
+        output_file: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate detailed report for a specific backtesting step."""
+        timestamp = get_current_datetime()
+        
+        report = {
+            'step_info': {
+                'step_name': step_name,
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'timestamp': timestamp,
+                'data_directory': data_dir
+            },
+            'step_results': step_results,
+            'step_metrics': self._extract_step_metrics(step_results),
+            'step_analysis': self._analyze_step_results(step_name, step_results),
+            'quality_assessment': self._assess_step_quality(step_name, step_results),
+            'recommendations': self._generate_step_recommendations(step_name, step_results),
+            'troubleshooting': self._generate_step_troubleshooting(step_name, step_results)
+        }
+        
+        # Save to file if specified
+        if output_file:
+            safe_json_dump(report, output_file, indent=2)
+            logging.info(f"Step report saved to: {output_file}")
+        
+        return report
+
+    def _extract_step_metrics(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract key metrics from step results."""
+        metrics = {}
+        
+        # Performance metrics
+        if 'performance_metrics' in step_results:
+            metrics['performance'] = step_results['performance_metrics']
+        
+        # Regime-specific metrics
+        if 'regime_performance' in step_results:
+            metrics['regime_performance'] = step_results['regime_performance']
+        
+        # Model performance
+        if 'model_performance' in step_results:
+            metrics['model_performance'] = step_results['model_performance']
+        
+        # Risk metrics
+        if 'risk_metrics' in step_results:
+            metrics['risk_metrics'] = step_results['risk_metrics']
+        
+        # Execution metrics
+        if 'execution_time' in step_results:
+            metrics['execution_time'] = step_results['execution_time']
+        
+        if 'memory_usage' in step_results:
+            metrics['memory_usage'] = step_results['memory_usage']
+        
+        return metrics
+
+    def _analyze_step_results(self, step_name: str, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze step results for insights."""
+        analysis = {
+            'step_type': step_name,
+            'success': step_results.get('success', False),
+            'data_quality': self._assess_data_quality(step_results),
+            'performance_insights': self._extract_performance_insights(step_results),
+            'regime_insights': self._extract_regime_insights(step_results),
+            'model_insights': self._extract_model_insights(step_results)
+        }
+        
+        return analysis
+
+    def _assess_step_quality(self, step_name: str, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess quality of step results."""
+        quality_flags = []
+        quality_score = 100
+        
+        # Check for errors
+        if 'errors' in step_results and step_results['errors']:
+            quality_flags.append({
+                'type': 'ERROR',
+                'message': f"Step {step_name} has errors",
+                'details': step_results['errors']
+            })
+            quality_score -= 30
+        
+        # Check performance metrics
+        if 'performance_metrics' in step_results:
+            perf = step_results['performance_metrics']
+            if 'sharpe_ratio' in perf and perf['sharpe_ratio'] < 1.0:
+                quality_flags.append({
+                    'type': 'WARNING',
+                    'message': f"Low Sharpe ratio in {step_name}: {perf['sharpe_ratio']:.2f}",
+                    'details': {'sharpe_ratio': perf['sharpe_ratio']}
+                })
+                quality_score -= 10
+        
+        # Check regime performance
+        if 'regime_performance' in step_results:
+            for regime, regime_data in step_results['regime_performance'].items():
+                if 'regime_return' in regime_data and regime_data['regime_return'] < 0:
+                    quality_flags.append({
+                        'type': 'WARNING',
+                        'message': f"Negative returns in {regime} regime",
+                        'details': {'regime': regime, 'return': regime_data['regime_return']}
+                    })
+                    quality_score -= 5
+        
+        return {
+            'quality_score': max(0, quality_score),
+            'quality_flags': quality_flags,
+            'overall_assessment': 'EXCELLENT' if quality_score >= 90 else 'GOOD' if quality_score >= 70 else 'FAIR' if quality_score >= 50 else 'POOR'
+        }
+
+    def _generate_step_recommendations(self, step_name: str, step_results: Dict[str, Any]) -> List[Dict[str, str]]:
+        """Generate recommendations for step improvement."""
+        recommendations = []
+        
+        # Performance-based recommendations
+        if 'performance_metrics' in step_results:
+            perf = step_results['performance_metrics']
+            if 'sharpe_ratio' in perf and perf['sharpe_ratio'] < 1.0:
+                recommendations.append({
+                    'category': 'PERFORMANCE',
+                    'priority': 'HIGH',
+                    'recommendation': f"Improve Sharpe ratio in {step_name} - consider parameter optimization or feature engineering",
+                    'action': "Review model parameters and feature selection"
+                })
+        
+        # Regime-based recommendations
+        if 'regime_performance' in step_results:
+            for regime, regime_data in step_results['regime_performance'].items():
+                if 'regime_return' in regime_data and regime_data['regime_return'] < 0:
+                    recommendations.append({
+                        'category': 'REGIME_PERFORMANCE',
+                        'priority': 'MEDIUM',
+                        'recommendation': f"Address negative returns in {regime} regime",
+                        'action': f"Review strategy parameters for {regime} market conditions"
+                    })
+        
+        return recommendations
+
+    def _generate_step_troubleshooting(self, step_name: str, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate troubleshooting guide for step issues."""
+        troubleshooting = {
+            'common_issues': [],
+            'debugging_steps': [],
+            'log_locations': []
+        }
+        
+        # Add step-specific troubleshooting
+        if step_name == 'walk_forward_validation':
+            troubleshooting['common_issues'].extend([
+                "Data gaps in time series",
+                "Insufficient training data",
+                "Overfitting in validation"
+            ])
+            troubleshooting['debugging_steps'].extend([
+                "Check data continuity",
+                "Verify minimum training window",
+                "Review validation metrics"
+            ])
+        
+        elif step_name == 'monte_carlo_validation':
+            troubleshooting['common_issues'].extend([
+                "High variance in results",
+                "Poor convergence",
+                "Memory issues with large simulations"
+            ])
+            troubleshooting['debugging_steps'].extend([
+                "Increase simulation count gradually",
+                "Check random seed consistency",
+                "Monitor memory usage"
+            ])
+        
+        elif step_name == 'ab_testing':
+            troubleshooting['common_issues'].extend([
+                "Statistical significance issues",
+                "Insufficient sample size",
+                "Biased test groups"
+            ])
+            troubleshooting['debugging_steps'].extend([
+                "Verify sample size calculations",
+                "Check group randomization",
+                "Review statistical tests"
+            ])
+        
+        return troubleshooting
+
+    def _assess_data_quality(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess data quality for the step."""
+        quality_metrics = {
+            'completeness': 100,
+            'consistency': 100,
+            'accuracy': 100,
+            'issues': []
+        }
+        
+        # Check for missing data
+        if 'missing_data_count' in step_results:
+            missing_count = step_results['missing_data_count']
+            if missing_count > 0:
+                quality_metrics['completeness'] -= min(50, missing_count * 2)
+                quality_metrics['issues'].append(f"Missing data points: {missing_count}")
+        
+        # Check for data inconsistencies
+        if 'data_inconsistencies' in step_results:
+            inconsistencies = step_results['data_inconsistencies']
+            if inconsistencies:
+                quality_metrics['consistency'] -= len(inconsistencies) * 10
+                quality_metrics['issues'].extend(inconsistencies)
+        
+        return quality_metrics
+
+    def _extract_performance_insights(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract performance insights from step results."""
+        insights = {}
+        
+        if 'performance_metrics' in step_results:
+            perf = step_results['performance_metrics']
+            insights['total_return'] = perf.get('total_return', 0)
+            insights['sharpe_ratio'] = perf.get('sharpe_ratio', 0)
+            insights['max_drawdown'] = perf.get('max_drawdown', 0)
+            insights['win_rate'] = perf.get('win_rate', 0)
+            
+            # Performance assessment
+            if insights['sharpe_ratio'] > 2.0:
+                insights['performance_grade'] = 'EXCELLENT'
+            elif insights['sharpe_ratio'] > 1.5:
+                insights['performance_grade'] = 'GOOD'
+            elif insights['sharpe_ratio'] > 1.0:
+                insights['performance_grade'] = 'FAIR'
+            else:
+                insights['performance_grade'] = 'POOR'
+        
+        return insights
+
+    def _extract_regime_insights(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract regime-specific insights."""
+        insights = {}
+        
+        if 'regime_performance' in step_results:
+            regime_data = step_results['regime_performance']
+            insights['regime_count'] = len(regime_data)
+            insights['best_regime'] = None
+            insights['worst_regime'] = None
+            insights['regime_stability'] = 'STABLE'
+            
+            best_return = float('-inf')
+            worst_return = float('inf')
+            
+            for regime, data in regime_data.items():
+                if 'regime_return' in data:
+                    return_val = data['regime_return']
+                    if return_val > best_return:
+                        best_return = return_val
+                        insights['best_regime'] = regime
+                    if return_val < worst_return:
+                        worst_return = return_val
+                        insights['worst_regime'] = regime
+            
+            # Check for regime stability
+            returns = [data.get('regime_return', 0) for data in regime_data.values()]
+            if returns and max(returns) - min(returns) > 0.5:  # 50% difference
+                insights['regime_stability'] = 'VOLATILE'
+        
+        return insights
+
+    def _extract_model_insights(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract model-specific insights."""
+        insights = {}
+        
+        if 'model_performance' in step_results:
+            model_data = step_results['model_performance']
+            insights['model_count'] = len(model_data)
+            insights['best_model'] = None
+            insights['model_consistency'] = 'CONSISTENT'
+            
+            best_score = float('-inf')
+            scores = []
+            
+            for model, data in model_data.items():
+                if 'model_score' in data:
+                    score = data['model_score']
+                    scores.append(score)
+                    if score > best_score:
+                        best_score = score
+                        insights['best_model'] = model
+            
+            # Check model consistency
+            if scores and max(scores) - min(scores) > 0.3:  # 30% difference
+                insights['model_consistency'] = 'INCONSISTENT'
+        
+        return insights
+
+
+def generate_step_report(
+    step_name: str,
+    step_results: Dict[str, Any],
+    symbol: str,
+    timeframe: str,
+    data_dir: str,
+    output_file: Optional[str] = None
+) -> Dict[str, Any]:
+    """Generate detailed report for a specific backtesting step."""
+    reporter = ComprehensiveReporter(symbol, timeframe, data_dir)
+    return reporter.generate_step_report(step_name, step_results, symbol, timeframe, data_dir, output_file)
+
+
+def generate_detailed_regime_metrics_report(
+    pipeline_results: Dict[str, Any],
+    output_file: Optional[str] = None
+) -> Dict[str, Any]:
+    """Generate detailed regime/cluster metrics report with datetime."""
+    timestamp = get_current_datetime()
+    
+    report = {
+        'report_info': {
+            'type': 'regime_cluster_metrics',
+            'timestamp': timestamp,
+            'generated_by': 'comprehensive_reporting_system'
+        },
+        'regime_analysis': {},
+        'cluster_analysis': {},
+        'performance_by_regime': {},
+        'risk_metrics_by_regime': {},
+        'model_performance_by_regime': {},
+        'recommendations': [],
+        'quality_flags': []
+    }
+    
+    # Extract regime data from pipeline results
+    if 'walk_forward_results' in pipeline_results:
+        wf_results = pipeline_results['walk_forward_results']
+        if 'regime_performance' in wf_results:
+            report['regime_analysis']['walk_forward'] = wf_results['regime_performance']
+    
+    if 'monte_carlo_results' in pipeline_results:
+        mc_results = pipeline_results['monte_carlo_results']
+        if 'regime_performance' in mc_results:
+            report['regime_analysis']['monte_carlo'] = mc_results['regime_performance']
+    
+    if 'ab_testing_results' in pipeline_results:
+        ab_results = pipeline_results['ab_testing_results']
+        if 'regime_performance' in ab_results:
+            report['regime_analysis']['ab_testing'] = ab_results['regime_performance']
+    
+    # Generate performance analysis by regime
+    for validation_type, regime_data in report['regime_analysis'].items():
+        report['performance_by_regime'][validation_type] = {}
+        for regime, metrics in regime_data.items():
+            report['performance_by_regime'][validation_type][regime] = {
+                'return': metrics.get('regime_return', 0),
+                'sharpe': metrics.get('regime_sharpe', 0),
+                'volatility': metrics.get('regime_volatility', 0),
+                'max_drawdown': metrics.get('regime_max_drawdown', 0),
+                'win_rate': metrics.get('regime_win_rate', 0),
+                'duration': metrics.get('regime_duration', 0),
+                'frequency': metrics.get('regime_frequency', 0)
+            }
+    
+    # Generate quality flags for regime performance
+    for validation_type, regime_data in report['regime_analysis'].items():
+        for regime, metrics in regime_data.items():
+            if 'regime_return' in metrics and metrics['regime_return'] < 0:
+                report['quality_flags'].append({
+                    'type': 'WARNING',
+                    'validation_type': validation_type,
+                    'regime': regime,
+                    'message': f"Negative returns in {regime} regime: {metrics['regime_return']:.2%}",
+                    'severity': 'MEDIUM'
+                })
+            
+            if 'regime_sharpe' in metrics and metrics['regime_sharpe'] < 1.0:
+                report['quality_flags'].append({
+                    'type': 'WARNING',
+                    'validation_type': validation_type,
+                    'regime': regime,
+                    'message': f"Low Sharpe ratio in {regime} regime: {metrics['regime_sharpe']:.2f}",
+                    'severity': 'LOW'
+                })
+    
+    # Generate recommendations
+    negative_regimes = []
+    for validation_type, regime_data in report['regime_analysis'].items():
+        for regime, metrics in regime_data.items():
+            if 'regime_return' in metrics and metrics['regime_return'] < 0:
+                negative_regimes.append((validation_type, regime))
+    
+    if negative_regimes:
+        report['recommendations'].append({
+            'category': 'REGIME_PERFORMANCE',
+            'priority': 'HIGH',
+            'recommendation': f"Address negative returns in {len(negative_regimes)} regime(s)",
+            'action': "Review strategy parameters for underperforming market regimes",
+            'affected_regimes': negative_regimes
+        })
+    
+    # Save to file if specified
+    if output_file:
+        safe_json_dump(report, output_file, indent=2)
+        logging.info(f"Detailed regime metrics report saved to: {output_file}")
+    
+    return report
     
     def _generate_execution_summary(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate execution summary."""

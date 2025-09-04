@@ -35,7 +35,7 @@ from .step21_saving_validator import SavingValidator
 from .enhanced_logging import BacktestingLogger, get_backtesting_logger
 
 # Import comprehensive reporting system
-from .comprehensive_reporting import generate_backtesting_report
+from .comprehensive_reporting import generate_backtesting_report, generate_step_report, generate_detailed_regime_metrics_report
 
 # Import enhanced validation and utilities
 from src.utils.base_validator import BaseValidator
@@ -417,6 +417,18 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                         # Log risk metrics if available
                         if 'risk_metrics' in walk_forward_results:
                             bt_logger.log_risk_metrics(walk_forward_results['risk_metrics'])
+                        
+                        # Generate step-specific report
+                        step_report_file = Path(data_dir) / f"step_report_walk_forward_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
+                        step_report = generate_step_report(
+                            "walk_forward_validation",
+                            walk_forward_results,
+                            symbol,
+                            timeframe,
+                            data_dir,
+                            str(step_report_file)
+                        )
+                        bt_logger.log_success(f"Walk forward step report saved to: {step_report_file}", "REPORTING")
                     
                 except Exception as e:
                     bt_logger.log_error(e, "WALK_FORWARD")
@@ -455,6 +467,18 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                         # Log risk metrics if available
                         if 'risk_metrics' in monte_carlo_results:
                             bt_logger.log_risk_metrics(monte_carlo_results['risk_metrics'])
+                        
+                        # Generate step-specific report
+                        step_report_file = Path(data_dir) / f"step_report_monte_carlo_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
+                        step_report = generate_step_report(
+                            "monte_carlo_validation",
+                            monte_carlo_results,
+                            symbol,
+                            timeframe,
+                            data_dir,
+                            str(step_report_file)
+                        )
+                        bt_logger.log_success(f"Monte Carlo step report saved to: {step_report_file}", "REPORTING")
                     
                 except Exception as e:
                     bt_logger.log_error(e, "MONTE_CARLO")
@@ -493,6 +517,18 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                         # Log risk metrics if available
                         if 'risk_metrics' in ab_testing_results:
                             bt_logger.log_risk_metrics(ab_testing_results['risk_metrics'])
+                        
+                        # Generate step-specific report
+                        step_report_file = Path(data_dir) / f"step_report_ab_testing_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
+                        step_report = generate_step_report(
+                            "ab_testing",
+                            ab_testing_results,
+                            symbol,
+                            timeframe,
+                            data_dir,
+                            str(step_report_file)
+                        )
+                        bt_logger.log_success(f"A/B testing step report saved to: {step_report_file}", "REPORTING")
                     
                 except Exception as e:
                     bt_logger.log_error(e, "AB_TESTING")
@@ -521,6 +557,18 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                         bt_logger.log_info("Model Saving Results:", "MODEL_SAVING")
                         for key, value in model_saving_results.items():
                             bt_logger.log_info(f"   • {key}: {value}", "MODEL_SAVING")
+                        
+                        # Generate step-specific report
+                        step_report_file = Path(data_dir) / f"step_report_model_saving_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
+                        step_report = generate_step_report(
+                            "model_saving",
+                            model_saving_results,
+                            symbol,
+                            timeframe,
+                            data_dir,
+                            str(step_report_file)
+                        )
+                        bt_logger.log_success(f"Model saving step report saved to: {step_report_file}", "REPORTING")
                     
                 except Exception as e:
                     bt_logger.log_error(e, "MODEL_SAVING")
@@ -561,7 +609,7 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
         # Generate detailed regime/cluster metrics report with datetime
         regime_metrics_file = Path(data_dir) / f"regime_cluster_metrics_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
         regime_metrics_report = generate_detailed_regime_metrics_report(
-            pipeline_results, regime_metrics_file
+            pipeline_results, str(regime_metrics_file)
         )
         
         bt_logger.log_success(f"Detailed regime/cluster metrics report saved to: {regime_metrics_file}", "REPORTING")

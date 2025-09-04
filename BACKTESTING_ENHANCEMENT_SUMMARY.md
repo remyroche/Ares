@@ -89,6 +89,17 @@ The backtesting pipeline has been significantly enhanced with comprehensive logg
 11. **Recommendations**: Actionable improvement suggestions
 12. **Troubleshooting Guide**: Common issues and solutions
 
+**Individual Step Reports:**
+Each major validation step generates its own detailed report with datetime in filename:
+- **Walk Forward**: `step_report_walk_forward_{symbol}_{timeframe}_{YYYYMMDD_HHMMSS}.json`
+- **Monte Carlo**: `step_report_monte_carlo_{symbol}_{timeframe}_{YYYYMMDD_HHMMSS}.json`
+- **A/B Testing**: `step_report_ab_testing_{symbol}_{timeframe}_{YYYYMMDD_HHMMSS}.json`
+- **Model Saving**: `step_report_model_saving_{symbol}_{timeframe}_{YYYYMMDD_HHMMSS}.json`
+
+**Regime/Cluster Metrics Report:**
+- **Filename**: `regime_cluster_metrics_{symbol}_{timeframe}_{YYYYMMDD_HHMMSS}.json`
+- **Content**: Detailed regime performance, quality flags, and recommendations
+
 ### 6. Enhanced Error Reporting
 
 **Features:**

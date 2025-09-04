@@ -1578,52 +1578,189 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run optimisation pipeline."""
-        self.logger.info(f"📊 Running optimisation pipeline for {symbol} on {exchange}")
+        """Run enhanced optimisation pipeline with comprehensive validation and protection."""
+        self.logger.info(f"📊 Running enhanced optimisation pipeline for {symbol} on {exchange}")
+        print("=" * 80)
+        print("🚀 ENHANCED OPTIMISATION PIPELINE")
+        print("=" * 80)
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print(f"🖥️ GUI Mode: {with_gui}")
+        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        # Pre-flight validation
+        validation_success = self._validate_optimisation_prerequisites(symbol, exchange)
+        if not validation_success:
+            self.logger.error("❌ Pre-flight validation failed")
+            print("❌ Pre-flight validation failed - cannot proceed with optimisation")
+            return False
 
         if with_gui and not self.launch_gui("optimisation", symbol, exchange):
             return False
 
         try:
-            # Run the optimisation pipeline
-            print(f"🚀 Starting optimisation pipeline for {symbol} on {exchange}...")
+            # Enhanced optimisation pipeline with comprehensive error handling
+            print(f"🚀 Starting enhanced optimisation pipeline for {symbol} on {exchange}...")
+            
+            # Set environment variables for enhanced pipeline
+            import os
+            os.environ["OPTIMISATION_MODE"] = "enhanced"
+            os.environ["SYMBOL"] = symbol
+            os.environ["EXCHANGE"] = exchange
+            
             process=subprocess.Popen(
                 [
                     sys.executable,
                     "src/training/steps/optimisation/step16_optimisation_main.py",
+                    "--symbol", symbol,
+                    "--exchange", exchange,
+                    "--enhanced-mode"
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
                 text=True,
                 bufsize=1,  # Line buffered
                 universal_newlines=True,
+                env=dict(os.environ, OPTIMISATION_MODE="enhanced", SYMBOL=symbol, EXCHANGE=exchange),
             )
             self.processes.append(process)
 
-            # Read output in real-time
+            # Read output in real-time with enhanced monitoring
+            line_count = 0
+            error_count = 0
+            warning_count = 0
+            
             while True:
                 output=process.stdout.readline()
                 if output== "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
-                    self.logger.info(output.strip())  # Also log it
+                    line_count += 1
+                    output_stripped = output.strip()
+                    
+                    # Monitor for errors and warnings
+                    if "ERROR" in output_stripped or "❌" in output_stripped:
+                        error_count += 1
+                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
+                        warning_count += 1
+                    
+                    print(output_stripped)  # Print to terminal in real-time
+                    self.logger.info(output_stripped)  # Also log it
+                    
+                    # Progress indicator every 50 lines
+                    if line_count % 50 == 0:
+                        print(f"📊 Progress: {line_count} lines processed, {error_count} errors, {warning_count} warnings")
 
             # Get the final return code
             return_code=process.poll()
+            
+            # Enhanced result reporting
+            print("=" * 80)
+            print("📊 OPTIMISATION PIPELINE RESULTS")
+            print("=" * 80)
+            print(f"📈 Total lines processed: {line_count}")
+            print(f"❌ Total errors: {error_count}")
+            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"🔢 Return code: {return_code}")
+            print("=" * 80)
 
             if return_code== 0:
-                self.logger.info("✅ Optimisation pipeline completed successfully")
-                print("✅ Optimisation pipeline completed successfully")
+                self.logger.info("✅ Enhanced optimisation pipeline completed successfully")
+                print("✅ Enhanced optimisation pipeline completed successfully")
+                print("🎉 All optimisation steps completed with validation!")
                 return True
-            self.logger.error(
-                f"❌ Optimisation pipeline failed with return code: {return_code}",
-            )
-            print(f"❌ Optimisation pipeline failed with return code: {return_code}")
-            return False
+            else:
+                self.logger.error(
+                    f"❌ Enhanced optimisation pipeline failed with return code: {return_code}",
+                )
+                print(f"❌ Enhanced optimisation pipeline failed with return code: {return_code}")
+                if error_count > 0:
+                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                return False
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run optimisation pipeline: {e}")
+            self.logger.exception(f"❌ Failed to run enhanced optimisation pipeline: {e}")
+            print(f"❌ Failed to run enhanced optimisation pipeline: {e}")
+            return False
+        finally:
+            # Cleanup environment variables
+            import os
+            os.environ.pop("OPTIMISATION_MODE", None)
+            os.environ.pop("SYMBOL", None)
+            os.environ.pop("EXCHANGE", None)
+
+    def _validate_optimisation_prerequisites(self, symbol: str, exchange: str) -> bool:
+        """Validate prerequisites for optimisation pipeline execution."""
+        self.logger.info("🔍 Validating optimisation prerequisites...")
+        print("🔍 Validating optimisation prerequisites...")
+        
+        try:
+            from src.utils.common_operations import safe_file_exists, ensure_directory
+            from src.utils.data_quality_framework import DataQualityFramework
+            
+            # Initialize data quality framework
+            dq_framework = DataQualityFramework()
+            
+            # Check required directories
+            required_dirs = [
+                "data_cache",
+                "models",
+                "checkpoints",
+                "log"
+            ]
+            
+            for dir_path in required_dirs:
+                if not safe_file_exists(dir_path):
+                    self.logger.warning(f"⚠️ Creating missing directory: {dir_path}")
+                    ensure_directory(dir_path)
+                else:
+                    self.logger.info(f"✅ Directory exists: {dir_path}")
+            
+            # Check for required data files
+            required_data_files = [
+                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
+            ]
+            
+            missing_files = []
+            for file_path in required_data_files:
+                if not safe_file_exists(file_path):
+                    missing_files.append(file_path)
+                else:
+                    self.logger.info(f"✅ Data file exists: {file_path}")
+            
+            if missing_files:
+                self.logger.error(f"❌ Missing required data files: {missing_files}")
+                print(f"❌ Missing required data files:")
+                for file_path in missing_files:
+                    print(f"   • {file_path}")
+                print("💡 Please run data collection first:")
+                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                return False
+            
+            # Check for previous step outputs
+            previous_step_files = [
+                f"models/{symbol}_{exchange}_tactician_specialist.pkl",
+                f"models/{symbol}_{exchange}_confidence_calibration.json"
+            ]
+            
+            missing_previous = []
+            for file_path in previous_step_files:
+                if not safe_file_exists(file_path):
+                    missing_previous.append(file_path)
+            
+            if missing_previous:
+                self.logger.warning(f"⚠️ Some previous step outputs missing: {missing_previous}")
+                print("⚠️ Some previous step outputs are missing - optimisation will use defaults")
+            
+            self.logger.info("✅ Optimisation prerequisites validation completed")
+            print("✅ Optimisation prerequisites validation completed")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Prerequisites validation failed: {e}")
+            print(f"❌ Prerequisites validation failed: {e}")
             return False
 
     @handle_errors(

@@ -14,7 +14,7 @@ except Exception:
     nx = None  # type: ignore
     HAS_NETWORKX = False
 
-from ..core.config import CodeQualityConfig
+from core.config import CodeQualityConfig
 
 try:
     import matplotlib.pyplot as plt  # type: ignore

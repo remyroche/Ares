@@ -9,14 +9,13 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, AsyncMock
 
 from src.training.steps.model_training.step10_unified_regime_intelligence import (
-from copy import copy
-import asyncio
-
     UnifiedRegimeIntelligenceStep,
     RegimeIntelligenceAnalyzer,
     RegimeMetricsCalculator,
     RegimeTransitionAnalyzer
 )
+from copy import copy
+import asyncio
 
 
 class TestRegimeIntelligenceAnalyzer:

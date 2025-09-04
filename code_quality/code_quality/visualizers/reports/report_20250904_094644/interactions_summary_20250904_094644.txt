@@ -1,0 +1,76 @@
+CODE INTERACTION MAPPING SUMMARY
+================================================================================
+
+MODULE DEPENDENCIES
+----------------------------------------
+
+
+FUNCTION CALL RELATIONSHIPS
+----------------------------------------
+
+
+ARCHITECTURAL COMPONENTS
+----------------------------------------
+
+
+IMPORT RELATIONSHIPS
+----------------------------------------
+
+
+DEAD CODE ANALYSIS
+----------------------------------------
+Total Dead Code Issues: 138923
+Deprecated Code Issues: 2125
+Potential Lines Removed: 70
+
+High Impact Issues (70):
+  • /workspace/src/interfaces/enhanced_event_bus.py:22 - Syntax error: unexpected indent (<unknown>, line 22)
+  • /workspace/src/supervisor/exchange_volume_adapter.py:23 - Syntax error: unexpected indent (<unknown>, line 23)
+  • /workspace/src/pipelines/live_trading_pipeline.py:13 - Syntax error: unexpected indent (<unknown>, line 13)
+  • /workspace/src/pipelines/components/monitoring_manager.py:14 - Syntax error: unexpected indent (<unknown>, line 14)
+  • /workspace/src/training/simplified_training_manager.py:14 - Syntax error: invalid syntax (<unknown>, line 14)
+  • /workspace/src/training/regularization.py:14 - Syntax error: invalid syntax (<unknown>, line 14)
+  • /workspace/src/training/feature_engineering.py:6 - Syntax error: invalid syntax (<unknown>, line 6)
+  • /workspace/src/training/enhanced_matrix_operations.py:4 - Syntax error: invalid syntax (<unknown>, line 4)
+  • /workspace/src/training/enhanced_lm_optimizer.py:29 - Syntax error: invalid syntax (<unknown>, line 29)
+  • /workspace/src/training/step_orchestrator.py:17 - Syntax error: invalid syntax (<unknown>, line 17)
+
+Deprecated Code (2125):
+  • /workspace/step_formatter.py:85 - Function 'replace_step' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/comprehensive_analysis_demo.py:529 - Function 'BasicStyleAnalyzer' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:82 - Function 'test_data_validation' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:106 - Function 'test_data_formatting' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:134 - Function 'test_data_cleaning' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:164 - Function 'test_data_profiling' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:193 - Function 'test_quality_scoring' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:224 - Function 'test_format_validation' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:255 - Function 'test_timestamp_normalization' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/test_data_quality_and_formatting.py:281 - Function 'test_missing_value_handling' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+
+Removal Plan:
+  Estimated Time Savings: 7.0 hours
+  Removal Phases: 3
+  Risk Assessment:
+    High Risk: 436
+    Medium Risk: 0
+    Recommended Approach: incremental

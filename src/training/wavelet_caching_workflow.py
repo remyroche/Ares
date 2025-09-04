@@ -17,10 +17,9 @@ import pandas as pd
 import yaml
 
 from src.training.steps.backtesting_with_cached_features import (
-from copy import copy
-
     BacktestingWithCachedFeatures,
 )
+from copy import copy
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
 

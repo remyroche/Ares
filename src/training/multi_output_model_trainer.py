@@ -6,13 +6,12 @@ price direction and expected profit using the triple barrier method and
 profit-based feature engineering.
 """
 from src.core.decorators import (
-from copy import copy
-
     cached,
     handles_errors,
     log_execution_time,
-    validate_dataframe
+    validate_dataframe,
 )
+from copy import copy
 
 from src.core.domain import (
     comprehensive_validation,

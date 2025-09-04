@@ -12,13 +12,12 @@ from functools import wraps
 from typing import TypeVar
 
 from src.custom_types import (
-from copy import copy
-
     OrderRequest,
     PositionInfo,
     TradeDecision,
     TradingSignal,
 )
+from copy import copy
 from src.custom_types.validation import (
     RuntimeTypeError,
     TypeValidator,

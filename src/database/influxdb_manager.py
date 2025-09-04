@@ -6,13 +6,12 @@ import pandas as pd
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from src.config import (
-from copy import copy
-
     INFLUXDB_BUCKET,
     INFLUXDB_ORG,
     INFLUXDB_TOKEN,
     INFLUXDB_URL,
 )
+from copy import copy
 from src.utils.logger import logger
 
 # src/database/influxdb_manager.py

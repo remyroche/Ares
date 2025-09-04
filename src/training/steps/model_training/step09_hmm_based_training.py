@@ -15,11 +15,10 @@ from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.model_training.hmm_training_components import (
-import asyncio
-
     HMMModelTrainer, RegimeSpecificTrainer, MultiOutputTrainer, 
     ModelEvaluator, HyperparameterOptimizer
 )
+import asyncio
 
 
 class HmmBasedTrainingStep(BaseStep):

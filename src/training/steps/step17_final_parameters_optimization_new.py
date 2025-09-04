@@ -9,13 +9,12 @@ from typing import Any
 import optuna
 
 from src.config.config_manager import (
-import asyncio
-
     get_config_manager,
     get_optimizable_parameters,
     get_search_space,
     update_optimizable_config,
 )
+import asyncio
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 

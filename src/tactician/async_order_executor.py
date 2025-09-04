@@ -17,11 +17,9 @@ from uuid import uuid4
 import optuna
 
 from src.supervisor.performance_reporter import (
-from copy import copy
-
     PerformanceReporter,
-    setup_performance_reporter,
 )
+from copy import copy
 from src.tactician.enhanced_order_manager import (
     EnhancedOrderManager,
     OrderRequest,

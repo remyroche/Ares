@@ -89,3 +89,7 @@ htmlcov/
 .env.development
 .env.test
 .env.production
+
+# Large report files
+code_quality/code_quality/visualizers/reports/**/*.json
+*.json

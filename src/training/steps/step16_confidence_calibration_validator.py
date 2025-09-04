@@ -8,10 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.warning_symbols import (
-import asyncio
-
     missing,
 )
+import asyncio
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent

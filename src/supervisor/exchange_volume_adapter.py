@@ -13,13 +13,15 @@ from typing import Any
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-import asyncio
-
     error,
+    failed,
     execution_error,
     initialization_error,
+    invalid,
+    missing,
     warning,
 )
+import asyncio
 
 
 class ExchangeVolumeAdapter:

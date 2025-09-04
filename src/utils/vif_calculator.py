@@ -15,13 +15,12 @@ from sklearn.preprocessing import StandardScaler
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.core.decorators import (
-from copy import copy
-
     validates as comprehensive_vif_validation,
     handles_errors as safe_vif_calculation,
     validates as validate_vif_inputs,
     validates as validate_vif_outputs,
 )
+from copy import copy
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:

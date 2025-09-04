@@ -60,8 +60,8 @@ except Exception:
             # Return items() like networkx.degree()
             return list(degree_map.items())
 
-from ..core.config import CodeQualityConfig, get_default_config
-from ..utils.file_utils import find_python_files, get_file_dependencies
+from core.config import CodeQualityConfig, get_default_config
+from utils.file_utils import find_python_files, get_file_dependencies
 
 
 class CallNode:
@@ -629,7 +629,7 @@ def main():
 
     # Load configuration
     if args.config:
-        from ..core.config import load_config
+        from core.config import load_config
         config = load_config(args.config)
     else:
         config = get_default_config()

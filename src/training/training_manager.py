@@ -24,11 +24,10 @@ class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training manager with enhanced type safety."""
+        """Initialize training manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TrainingManager")
@@ -292,7 +291,7 @@ class TrainingManager:
         context="training execution",
     )
     async def execute_training(self, training_input: dict[str, Any]) -> bool:
-        """Execute training operations."
+        """Execute training operations."""
 
         Args:
             training_input: Training input dictionary

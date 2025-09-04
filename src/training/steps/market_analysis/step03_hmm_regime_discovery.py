@@ -15,10 +15,9 @@ from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.market_analysis.hmm_components import (
-import asyncio
-
     HMMRegimeAnalyzer, FeatureEngineer, RegimeCharacterizer
 )
+import asyncio
 
 
 class HMMRegimeDiscoveryStep(BaseStep):

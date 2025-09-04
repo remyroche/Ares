@@ -329,7 +329,7 @@ class ComprehensiveGapFillerV2:
             pass
             pass
             pass
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
             # Detect gaps in this file
             gaps = self.detect_gaps_in_file(file_path)
             total_files_processed += 1
@@ -340,7 +340,7 @@ class ComprehensiveGapFillerV2:
 
                 # Fill each gap with multiple API calls
                 for _i, gap in enumerate(gaps):
-    pass  # TODO: Add proper implementation
+                    # TODO: Add proper implementation
                     result=await self.fill_gap_with_multiple_calls(gap, symbol)
 
                     total_api_calls += result.get("api_calls_made", 0)

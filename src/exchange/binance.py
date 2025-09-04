@@ -526,6 +526,7 @@ class BinanceExchange:
             method="GET",
             path="/api/v3/openOrders",
             params=params,
+        )
         return result if isinstance(result, list) else None
 
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
@@ -582,6 +583,7 @@ class BinanceExchange:
             method="GET",
             path="/api/v3/order",
             params={"symbol": symbol, "orderId": order_id},
+        )
 
     @retry(
         max_retries=3,

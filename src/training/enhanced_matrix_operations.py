@@ -1,15 +1,14 @@
 # src/training/enhanced_matrix_operations.py
 
 from src.core.decorators import (
-from copy import copy
-
     cached,
     circuit_breaker,
     handles_errors,
     log_call,
     log_execution_time,
-    validates
+    validates,
 )
+from copy import copy
 
 from src.core.domain import (
     prevent_data_leakage,

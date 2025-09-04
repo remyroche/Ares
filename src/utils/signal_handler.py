@@ -36,7 +36,6 @@ class SignalHandler:
         """
         self.logger.info(str(message))
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid signal handler configuration'), AttributeError: (False, 'Missing required signal parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='signal handler initialization')
     async def initialize(self) -> bool:
         """
         Initialize signal handler with enhanced error handling.

@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Step 1: Data Collection Pipeline.
+"""
+Standalone Data Collection Pipeline Main
 
-This module provides the main interface for data collection with:
-1. Raw data collection from exchanges
-2. Data quality validation
-3. Unified data loading
-4. Data conversion and preprocessing
+This module provides a standalone main function for the enhanced data collection pipeline
+that doesn't depend on complex existing infrastructure.
 """
 
 import asyncio
@@ -18,12 +16,12 @@ import json
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import the standalone enhanced pipeline
+# Import the standalone enhanced pipeline directly
 from src.training.steps.data_collection.standalone_enhanced_pipeline import run_standalone_enhanced_data_collection_pipeline
 
 async def main():
     """Main function to run data collection pipeline."""
-    print("🚀 Step 1: Data Collection Pipeline")
+    print("🚀 Step 1: Enhanced Data Collection Pipeline")
     print("=" * 80)
     
     # Configuration
@@ -65,14 +63,23 @@ async def main():
         total_time = time.time() - start_time
         
         if success:
-            print("\n🎉 DATA COLLECTION COMPLETED SUCCESSFULLY!")
+            print("\n🎉 ENHANCED DATA COLLECTION COMPLETED SUCCESSFULLY!")
             print("=" * 80)
             print("✅ All data collection steps completed:")
             print("   ✅ Raw data collection from exchange")
             print("   ✅ Data quality validation")
-            print("   ✅ Unified data loading")
-            print("   ✅ Data conversion and preprocessing")
+            print("   ✅ Data formatting and preprocessing")
             print(f"⏱️ Total execution time: {total_time:.2f} seconds")
+            print(f"📊 Pipeline ID: {result.get('pipeline_id', 'N/A')}")
+            print(f"📈 Steps completed: {result.get('steps_completed', 0)}/{result.get('total_steps', 0)}")
+            print(f"⚠️ Warnings: {len(result.get('warnings', []))}")
+            print(f"❌ Errors: {len(result.get('errors', []))}")
+            
+            if result.get('warnings'):
+                print("\n⚠️ Warnings:")
+                for warning in result['warnings']:
+                    print(f"   • {warning}")
+            
             print("=" * 80)
             
             # Save configuration for future reference
@@ -84,21 +91,28 @@ async def main():
                     'timeframe': timeframe,
                     'config': config,
                     'execution_time': total_time,
-                    'success': True
-                }, f, indent=2)
+                    'success': True,
+                    'pipeline_result': result
+                }, f, indent=2, default=str)
             
             print(f"💾 Configuration saved to: {config_file}")
             
         else:
-            print("\n❌ DATA COLLECTION FAILED!")
+            print("\n❌ ENHANCED DATA COLLECTION FAILED!")
             print("=" * 80)
             print("❌ Please check the logs for error details")
             print(f"⏱️ Total execution time: {total_time:.2f} seconds")
+            
+            if result.get('errors'):
+                print("\n❌ Errors:")
+                for error in result['errors']:
+                    print(f"   • {error}")
+            
             print("=" * 80)
             
     except Exception as e:
         total_time = time.time() - start_time
-        print(f"\n💥 DATA COLLECTION FAILED WITH EXCEPTION: {e}")
+        print(f"\n💥 ENHANCED DATA COLLECTION FAILED WITH EXCEPTION: {e}")
         print("=" * 80)
         print(f"⏱️ Total execution time: {total_time:.2f} seconds")
         print("=" * 80)

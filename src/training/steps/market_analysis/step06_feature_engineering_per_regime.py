@@ -192,62 +192,9 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             
             # Optimize lookback periods for this regime if adaptive
             if self.adaptive_lookback:
-                self.logger.info(f"🔍 Optimizing lookback periods for regime {regime_id}")
-                
-                # Only use non-context rows for optimization
-                optimization_data = regime_labeled[~context_mask]
-                
-                if len(optimization_data) > 100:  # Need sufficient data
-                    target = optimization_data['label']
-                    
-                    # Create regime-specific series for optimization
-                    regime_series = pd.Series(regime_id, index=optimization_data.index)
-                    
-                    # Perform regime-specific optimization
-                    optimization_results = await self.optimize_lookback_periods(
-                        optimization_data,
-                        target,
-                        regimes=regime_series
-                    )
-                    
-                    # Validate and process optimization results
-                    if optimization_results.get('status') == 'optimized':
-                        self.logger.info(f"✅ Regime {regime_id} optimization successful")
-                        
-                        # Extract regime-specific periods if available
-                        regime_specific_periods = optimization_results.get('optimization_results', {}).get('regime_specific_periods', {})
-                        regime_key = f'regime_{regime_id}'
-                        
-                        if regime_key in regime_specific_periods:
-                            regime_periods = regime_specific_periods[regime_key]
-                            regime_config['optimized_periods'] = regime_periods
-                            self.logger.info(f"📊 Regime {regime_id} specific periods: {list(regime_periods.keys())}")
-                        else:
-                            # Fall back to global optimized periods
-                            global_periods = optimization_results.get('periods', {})
-                            regime_config['optimized_periods'] = global_periods
-                            self.logger.info(f"📊 Using global optimized periods for regime {regime_id}")
-                        
-                        # Update interaction patterns with regime-specific periods
-                        self._update_regime_interaction_patterns(regime_config, regime_id)
-                        
-                        # Validate the optimization results
-                        validation_passed = self._validate_regime_optimization(
-                            regime_id, optimization_results, regime_config
-                        )
-                        
-                        if not validation_passed:
-                            self.logger.warning(f"⚠️ Regime {regime_id} optimization validation failed, but continuing")
-                        
-                    elif optimization_results.get('status') == 'fallback':
-                        self.logger.warning(f"⚠️ Regime {regime_id} using fallback periods")
-                        regime_config['optimized_periods'] = optimization_results.get('periods', {})
-                    else:
-                        self.logger.error(f"❌ Regime {regime_id} optimization failed")
-                        regime_config['optimized_periods'] = {}
-                else:
-                    self.logger.warning(f"⚠️ Insufficient data for regime {regime_id} optimization ({len(optimization_data)} rows)")
-                    regime_config['optimized_periods'] = {}
+                await self._optimize_regime_lookback_periods(
+                    regime_id, regime_labeled, context_mask, regime_config
+                )
             
             # Apply feature engineering
             features_df = await self._apply_feature_engineering(regime_labeled, regime_config)
@@ -747,6 +694,90 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         except Exception as e:
             self.logger.error(f"❌ Error logging feature statistics: {e}")
 
+    async def _optimize_regime_lookback_periods(
+        self, 
+        regime_id: int, 
+        regime_labeled: pd.DataFrame, 
+        context_mask: pd.Series, 
+        regime_config: Dict[str, Any]
+    ) -> None:
+        """Optimize lookback periods for a specific regime.
+        
+        Args:
+            regime_id: Regime ID
+            regime_labeled: Labeled regime data
+            context_mask: Context mask for filtering data
+            regime_config: Regime configuration to update
+        """
+        self.logger.info(f"🔍 Optimizing lookback periods for regime {regime_id}")
+        
+        # Only use non-context rows for optimization
+        optimization_data = regime_labeled[~context_mask]
+        
+        if len(optimization_data) <= 100:
+            self.logger.warning(f"⚠️ Insufficient data for regime {regime_id} optimization ({len(optimization_data)} rows)")
+            regime_config['optimized_periods'] = {}
+            return
+        
+        target = optimization_data['label']
+        regime_series = pd.Series(regime_id, index=optimization_data.index)
+        
+        # Perform regime-specific optimization
+        optimization_results = await self.optimize_lookback_periods(
+            optimization_data, target, regimes=regime_series
+        )
+        
+        # Process optimization results
+        status = optimization_results.get('status')
+        if status == 'optimized':
+            self._process_optimized_results(regime_id, optimization_results, regime_config)
+        elif status == 'fallback':
+            self.logger.warning(f"⚠️ Regime {regime_id} using fallback periods")
+            regime_config['optimized_periods'] = optimization_results.get('periods', {})
+        else:
+            self.logger.error(f"❌ Regime {regime_id} optimization failed")
+            regime_config['optimized_periods'] = {}
+
+    def _process_optimized_results(
+        self, 
+        regime_id: int, 
+        optimization_results: Dict[str, Any], 
+        regime_config: Dict[str, Any]
+    ) -> None:
+        """Process successful optimization results.
+        
+        Args:
+            regime_id: Regime ID
+            optimization_results: Optimization results
+            regime_config: Regime configuration to update
+        """
+        self.logger.info(f"✅ Regime {regime_id} optimization successful")
+        
+        # Extract regime-specific periods if available
+        regime_specific_periods = optimization_results.get('optimization_results', {}).get('regime_specific_periods', {})
+        regime_key = f'regime_{regime_id}'
+        
+        if regime_key in regime_specific_periods:
+            regime_periods = regime_specific_periods[regime_key]
+            regime_config['optimized_periods'] = regime_periods
+            self.logger.info(f"📊 Regime {regime_id} specific periods: {list(regime_periods.keys())}")
+        else:
+            # Fall back to global optimized periods
+            global_periods = optimization_results.get('periods', {})
+            regime_config['optimized_periods'] = global_periods
+            self.logger.info(f"📊 Using global optimized periods for regime {regime_id}")
+        
+        # Update interaction patterns with regime-specific periods
+        self._update_regime_interaction_patterns(regime_config, regime_id)
+        
+        # Validate the optimization results
+        validation_passed = self._validate_regime_optimization(
+            regime_id, optimization_results, regime_config
+        )
+        
+        if not validation_passed:
+            self.logger.warning(f"⚠️ Regime {regime_id} optimization validation failed, but continuing")
+
 
 @traced(span_name='run_per_regime_feature_engineering_step')
 @validates()
@@ -782,7 +813,6 @@ async def run_per_regime_step(
         config_path = Path(__file__).parent / 'step06_per_regime_config.json'
         if config_path.exists():
             import json
-from src.core.decorators.errors import handles_errors
             with open(config_path, 'r') as f:
                 default_config = json.load(f)
                 # Merge with user config, user config takes precedence

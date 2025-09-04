@@ -53,21 +53,47 @@ class LabelingStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        if 'unified_data' not in pipeline_state:
-            if not all((f'{split}_data' in pipeline_state for split in ['train', 'val', 'test'])):
-                errors.append('No unified data or split data from step 4')
-        if self.labeling_config.get('regime_aware', True):
-            if 'regime_labels' not in pipeline_state and 'regime_characteristics' not in pipeline_state:
-                self.logger.warning('Regime information not available, will use standard labeling')
-        barrier_config = self.labeling_config.get('barrier_config', {})
-        if barrier_config.get('profit_taking', 0) <= 0:
-            errors.append('Invalid profit_taking threshold (must be > 0)')
-        if barrier_config.get('stop_loss', 0) <= 0:
-            errors.append('Invalid stop_loss threshold (must be > 0)')
-        return (len(errors) == 0, errors)
+        
+        # Check for required data
+        if "unified_data" not in pipeline_state:
+            # Check for individual splits
+            if not all(f"{split}_data" in pipeline_state for split in ["train", "val", "test"]):
+                errors.append("No unified data or split data from step 4")
+        
+        # Check for regime information if regime-aware labeling is enabled
+        if self.labeling_config.get("regime_aware", True):
+            if "regime_labels" not in pipeline_state and "regime_characteristics" not in pipeline_state:
+                self.logger.warning("Regime information not available, will use standard labeling")
+        
+        # Validate barrier configuration
+        barrier_config = self.labeling_config.get("barrier_config", {})
+        if barrier_config.get("profit_taking", 0) <= 0:
+            errors.append("Invalid profit_taking threshold (must be > 0)")
+        if barrier_config.get("stop_loss", 0) <= 0:
+            errors.append("Invalid stop_loss threshold (must be > 0)")
 
-    @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='labeling execution')
-    async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        # Basic schema checks on input data
+        df = pipeline_state.get("unified_data") or pipeline_state.get("train_data") or pipeline_state.get("dataframe")
+        if isinstance(df, pd.DataFrame):
+            for col in ["open", "high", "low", "close"]:
+                if col not in df.columns:
+                    self.logger.warning(f"Missing expected price column: {col}")
+            if not isinstance(df.index, pd.DatetimeIndex):
+                self.logger.warning("Input index is not DatetimeIndex")
+        
+        return len(errors) == 0, errors
+    
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={"success": False},
+        context="labeling execution"
+    )
+    async def execute_logic(
+        self,
+        training_input: Dict[str, Any],
+        pipeline_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
         """Execute labeling logic.
         
         Args:
@@ -112,11 +138,24 @@ class LabelingStep(BaseStep):
         labeled_data = pipeline_state['labeled_data']
         label_columns = [col for col in labeled_data.columns if 'label' in col.lower()]
         if len(label_columns) == 0:
-            errors.append('No label columns found in labeled data')
-        if 'label_statistics' in pipeline_state:
-            stats = pipeline_state['label_statistics']
-            if 'class_distribution' in stats:
-                for label_col, dist in stats['class_distribution'].items():
+            errors.append("No label columns found in labeled data")
+        else:
+            # Sanity checks on labels
+            try:
+                for col in label_columns:
+                    if labeled_data[col].isna().any():
+                        errors.append(f"NaN values found in {col}")
+            except Exception:
+                pass
+        
+        # Check label statistics
+        if "label_statistics" in pipeline_state:
+            stats = pipeline_state["label_statistics"]
+            
+            # Check class balance
+            if "class_distribution" in stats:
+                for label_col, dist in stats["class_distribution"].items():
+
                     if isinstance(dist, dict):
                         values = list(dist.values())
                         if values and max(values) / min(values) > 10:

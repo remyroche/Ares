@@ -1688,9 +1688,9 @@ class SROptimizationStep:
     context="step02_5_sr_optimization"
 )
 @secure_step_execution
-    async def _log_to_mlflow(self, optimization_result: Any, 
-                            sr_analysis_reports: Dict[str, Any],
-                            detailed_reports: Dict[str, Any]) -> None:
+async def _log_to_mlflow(self, optimization_result: Any, 
+                        sr_analysis_reports: Dict[str, Any],
+                        detailed_reports: Dict[str, Any]) -> None:
         """Log S/R optimization results to MLflow."""
         try:
             import mlflow

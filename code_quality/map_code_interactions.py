@@ -211,6 +211,11 @@ class CodeInteractionMapper:
                         if issue.alternative:
                             f.write(f"    Alternative: {issue.alternative}\n")
                 
+                # Per-file analysis
+                f.write(f"\n\nPER-FILE DEAD CODE ANALYSIS\n")
+                f.write("-" * 40 + "\n")
+                self._write_per_file_analysis(f, dead_code)
+                
                 # Removal plan summary
                 if dead_code.impact_analysis and "removal_plan" in dead_code.impact_analysis:
                     removal_plan = dead_code.impact_analysis["removal_plan"]
@@ -386,6 +391,115 @@ class CodeInteractionMapper:
         print(f"  - Generated interactive dashboard: {Path(dashboard_file).name}")
         
         return generated_files
+
+    def _write_per_file_analysis(self, f, dead_code):
+        """Write detailed per-file dead code analysis to the report."""
+        if not dead_code or not dead_code.issues_by_file:
+            f.write("No per-file analysis available.\n")
+            return
+        
+        # Group issues by file
+        file_stats = {}
+        for file_path, issues in dead_code.issues_by_file.items():
+            if not issues:
+                continue
+                
+            # Count issues by type and severity
+            stats = {
+                'total_issues': len(issues),
+                'by_type': {},
+                'by_severity': {},
+                'high_impact': [],
+                'deprecated': []
+            }
+            
+            for issue in issues:
+                # Count by type
+                issue_type = issue.issue_type
+                stats['by_type'][issue_type] = stats['by_type'].get(issue_type, 0) + 1
+                
+                # Count by severity
+                severity = issue.severity
+                stats['by_severity'][severity] = stats['by_severity'].get(severity, 0) + 1
+                
+                # Track high impact issues
+                if severity == 'high':
+                    stats['high_impact'].append(issue)
+            
+            file_stats[file_path] = stats
+        
+        # Add deprecated issues to file stats
+        if dead_code.deprecated_issues:
+            for issue in dead_code.deprecated_issues:
+                file_path = issue.file_path
+                if file_path not in file_stats:
+                    file_stats[file_path] = {
+                        'total_issues': 0,
+                        'by_type': {},
+                        'by_severity': {},
+                        'high_impact': [],
+                        'deprecated': []
+                    }
+                file_stats[file_path]['deprecated'].append(issue)
+                file_stats[file_path]['total_issues'] += 1
+        
+        # Sort files by total issues (descending)
+        sorted_files = sorted(file_stats.items(), key=lambda x: x[1]['total_issues'], reverse=True)
+        
+        # Write summary statistics
+        f.write(f"Files with issues: {len(sorted_files)}\n")
+        f.write(f"Files with high impact issues: {sum(1 for _, stats in sorted_files if stats['high_impact'])}\n")
+        f.write(f"Files with deprecated code: {sum(1 for _, stats in sorted_files if stats['deprecated'])}\n\n")
+        
+        # Write detailed per-file analysis (top 20 files)
+        f.write("TOP FILES BY ISSUE COUNT:\n")
+        f.write("-" * 30 + "\n")
+        
+        for file_path, stats in sorted_files[:20]:
+            f.write(f"\n📁 {file_path}\n")
+            f.write(f"   Total Issues: {stats['total_issues']}\n")
+            
+            # Issue breakdown by type
+            if stats['by_type']:
+                f.write(f"   By Type: {', '.join(f'{k}({v})' for k, v in stats['by_type'].items())}\n")
+            
+            # Issue breakdown by severity
+            if stats['by_severity']:
+                f.write(f"   By Severity: {', '.join(f'{k}({v})' for k, v in stats['by_severity'].items())}\n")
+            
+            # High impact issues
+            if stats['high_impact']:
+                f.write(f"   High Impact Issues ({len(stats['high_impact'])}):\n")
+                for issue in stats['high_impact'][:3]:  # Show top 3
+                    f.write(f"     • Line {issue.line_number}: {issue.description}\n")
+                if len(stats['high_impact']) > 3:
+                    f.write(f"     ... and {len(stats['high_impact']) - 3} more\n")
+            
+            # Deprecated code
+            if stats['deprecated']:
+                f.write(f"   Deprecated Code ({len(stats['deprecated'])}):\n")
+                for issue in stats['deprecated'][:3]:  # Show top 3
+                    f.write(f"     • Line {issue.line_number}: {issue.description}\n")
+                if len(stats['deprecated']) > 3:
+                    f.write(f"     ... and {len(stats['deprecated']) - 3} more\n")
+        
+        if len(sorted_files) > 20:
+            f.write(f"\n... and {len(sorted_files) - 20} more files with issues\n")
+        
+        # Write file type analysis
+        f.write(f"\n\nFILE TYPE ANALYSIS:\n")
+        f.write("-" * 30 + "\n")
+        
+        file_types = {}
+        for file_path, stats in sorted_files:
+            file_ext = Path(file_path).suffix or 'no_extension'
+            if file_ext not in file_types:
+                file_types[file_ext] = {'files': 0, 'issues': 0}
+            file_types[file_ext]['files'] += 1
+            file_types[file_ext]['issues'] += stats['total_issues']
+        
+        for file_type, data in sorted(file_types.items(), key=lambda x: x[1]['issues'], reverse=True):
+            f.write(f"{file_type}: {data['files']} files, {data['issues']} issues\n")
 
     def _generate_enhanced_html_report(self):
         """Generate an enhanced HTML report with dead code analysis."""
@@ -583,6 +697,8 @@ class CodeInteractionMapper:
         
         {self._generate_dead_code_section()}
         
+        {self._generate_per_file_analysis_section()}
+        
         {self._generate_deprecated_code_section()}
         
         {self._generate_impact_analysis_section()}
@@ -727,6 +843,155 @@ class CodeInteractionMapper:
             <h2>⚠️ Deprecated Code Analysis</h2>
             <p>Found {len(dead_code.deprecated_issues)} deprecated code items that should be updated or removed.</p>
             {deprecated_html}
+        </div>
+        """
+
+    def _generate_per_file_analysis_section(self):
+        """Generate the per-file analysis section."""
+        dead_code = self.results.get('dead_code')
+        if not dead_code or not dead_code.issues_by_file:
+            return ""
+        
+        # Group issues by file
+        file_stats = {}
+        for file_path, issues in dead_code.issues_by_file.items():
+            if not issues:
+                continue
+                
+            # Count issues by type and severity
+            stats = {
+                'total_issues': len(issues),
+                'by_type': {},
+                'by_severity': {},
+                'high_impact': [],
+                'deprecated': []
+            }
+            
+            for issue in issues:
+                # Count by type
+                issue_type = issue.issue_type
+                stats['by_type'][issue_type] = stats['by_type'].get(issue_type, 0) + 1
+                
+                # Count by severity
+                severity = issue.severity
+                stats['by_severity'][severity] = stats['by_severity'].get(severity, 0) + 1
+                
+                # Track high impact issues
+                if severity == 'high':
+                    stats['high_impact'].append(issue)
+            
+            file_stats[file_path] = stats
+        
+        # Add deprecated issues to file stats
+        if dead_code.deprecated_issues:
+            for issue in dead_code.deprecated_issues:
+                file_path = issue.file_path
+                if file_path not in file_stats:
+                    file_stats[file_path] = {
+                        'total_issues': 0,
+                        'by_type': {},
+                        'by_severity': {},
+                        'high_impact': [],
+                        'deprecated': []
+                    }
+                file_stats[file_path]['deprecated'].append(issue)
+                file_stats[file_path]['total_issues'] += 1
+        
+        # Sort files by total issues (descending)
+        sorted_files = sorted(file_stats.items(), key=lambda x: x[1]['total_issues'], reverse=True)
+        
+        # Generate summary statistics
+        files_with_issues = len(sorted_files)
+        files_with_high_impact = sum(1 for _, stats in sorted_files if stats['high_impact'])
+        files_with_deprecated = sum(1 for _, stats in sorted_files if stats['deprecated'])
+        
+        # Generate file type analysis
+        file_types = {}
+        for file_path, stats in sorted_files:
+            file_ext = Path(file_path).suffix or 'no_extension'
+            if file_ext not in file_types:
+                file_types[file_ext] = {'files': 0, 'issues': 0}
+            file_types[file_ext]['files'] += 1
+            file_types[file_ext]['issues'] += stats['total_issues']
+        
+        # Generate HTML for top files
+        top_files_html = ""
+        for file_path, stats in sorted_files[:15]:  # Top 15 files
+            file_name = Path(file_path).name
+            issue_breakdown = []
+            
+            if stats['by_type']:
+                issue_breakdown.append(f"Types: {', '.join(f'{k}({v})' for k, v in stats['by_type'].items())}")
+            if stats['by_severity']:
+                issue_breakdown.append(f"Severity: {', '.join(f'{k}({v})' for k, v in stats['by_severity'].items())}")
+            
+            high_impact_html = ""
+            if stats['high_impact']:
+                high_impact_html = f"<div style='margin-top: 10px;'><strong>High Impact Issues ({len(stats['high_impact'])}):</strong><ul>"
+                for issue in stats['high_impact'][:3]:  # Show top 3
+                    high_impact_html += f"<li>Line {issue.line_number}: {issue.description}</li>"
+                if len(stats['high_impact']) > 3:
+                    high_impact_html += f"<li>... and {len(stats['high_impact']) - 3} more</li>"
+                high_impact_html += "</ul></div>"
+            
+            deprecated_html = ""
+            if stats['deprecated']:
+                deprecated_html = f"<div style='margin-top: 10px;'><strong>Deprecated Code ({len(stats['deprecated'])}):</strong><ul>"
+                for issue in stats['deprecated'][:3]:  # Show top 3
+                    deprecated_html += f"<li>Line {issue.line_number}: {issue.description}</li>"
+                if len(stats['deprecated']) > 3:
+                    deprecated_html += f"<li>... and {len(stats['deprecated']) - 3} more</li>"
+                deprecated_html += "</ul></div>"
+            
+            top_files_html += f"""
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 {file_name}</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> {file_path}<br>
+                    <strong>Total Issues:</strong> {stats['total_issues']}<br>
+                    {'<br>'.join(issue_breakdown)}
+                    {high_impact_html}
+                    {deprecated_html}
+                </div>
+            </div>
+            """
+        
+        # Generate file type analysis HTML
+        file_types_html = ""
+        for file_type, data in sorted(file_types.items(), key=lambda x: x[1]['issues'], reverse=True):
+            file_types_html += f"<li><strong>{file_type}:</strong> {data['files']} files, {data['issues']} issues</li>"
+        
+        return f"""
+        <div class="dead-code-section">
+            <h2>📁 Per-File Analysis</h2>
+            
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Files with Issues</h3>
+                    <div class="number">{files_with_issues}</div>
+                    <p>Total files containing dead code</p>
+                </div>
+                <div class="summary-card">
+                    <h3>High Impact Files</h3>
+                    <div class="number">{files_with_high_impact}</div>
+                    <p>Files with high impact issues</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Deprecated Files</h3>
+                    <div class="number">{files_with_deprecated}</div>
+                    <p>Files with deprecated code</p>
+                </div>
+            </div>
+            
+            <h3>🔝 Top Files by Issue Count</h3>
+            {top_files_html}
+            
+            {f'<p><em>... and {len(sorted_files) - 15} more files with issues</em></p>' if len(sorted_files) > 15 else ''}
+            
+            <h3>📊 File Type Analysis</h3>
+            <ul>
+                {file_types_html}
+            </ul>
         </div>
         """
 

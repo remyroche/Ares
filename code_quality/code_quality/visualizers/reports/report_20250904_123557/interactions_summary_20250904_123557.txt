@@ -1,0 +1,258 @@
+CODE INTERACTION MAPPING SUMMARY
+================================================================================
+
+MODULE DEPENDENCIES
+----------------------------------------
+
+
+FUNCTION CALL RELATIONSHIPS
+----------------------------------------
+
+
+ARCHITECTURAL COMPONENTS
+----------------------------------------
+
+
+IMPORT RELATIONSHIPS
+----------------------------------------
+
+
+DEAD CODE ANALYSIS
+----------------------------------------
+Total Dead Code Issues: 5106
+Deprecated Code Issues: 1075
+Potential Lines Removed: 2
+
+High Impact Issues (2):
+  • /workspace/src/exchange/binance.py:899 - Syntax error: unexpected indent (<unknown>, line 899)
+  • /workspace/src/utils/model_manager.py:588 - Syntax error: '(' was never closed (<unknown>, line 588)
+
+Deprecated Code (1075):
+  • /workspace/step_formatter.py:85 - Function 'replace_step' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/analyst_scanner.py:69 - Function 'visit_ClassDef' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/analyst_scanner.py:88 - Function 'visit_ExceptHandler' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/analyst_scanner.py:102 - Function 'visit_Name' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/optimize_hmm_regime_parameters_enhanced.py:208 - Function 'objective' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/run_sequential_fixer_simple.py:16 - Function 'MockProgress' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/run_sequential_fixer_simple.py:35 - Function 'MockConsole' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/run_sequential_fixer_simple.py:42 - Function 'MockLive' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/scripts/diagnose_feature_quality.py:35 - Function 'wrapper' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+  • /workspace/scripts/post_steps_cleaner.py:19 - Function 'repl' is defined but never called
+    Reason: Function is defined but never called anywhere in the codebase
+    Alternative: Consider removing if truly unused, or add usage if needed
+
+
+PER-FILE DEAD CODE ANALYSIS
+----------------------------------------
+Files with issues: 430
+Files with high impact issues: 2
+Files with deprecated code: 320
+
+TOP FILES BY ISSUE COUNT:
+------------------------------
+
+📁 /workspace/src/training/probabilistic_bayesian_optimizer.py
+   Total Issues: 149
+   By Type: unreachable_code(145)
+   By Severity: low(145)
+   Deprecated Code (4):
+     • Line 263: Function 'create_tactician_model' is defined but never called
+     • Line 268: Function 'create_analyst_model' is defined but never called
+     • Line 203: Function 'get_recommended_hyperparameters' is defined but never called
+     ... and 1 more
+
+📁 /workspace/src/training/steps/step03_hmm_regime_discovery.py
+   Total Issues: 116
+   By Type: unreachable_code(116)
+   By Severity: low(116)
+
+📁 /workspace/src/utils/data_quality_framework.py
+   Total Issues: 116
+   By Type: unreachable_code(114)
+   By Severity: low(114)
+   Deprecated Code (2):
+     • Line 12: Function 'DataQualityLevel' is defined but never called
+     • Line 410: Function 'format_data' is defined but never called
+
+📁 /workspace/src/analyst/predictive_ensembles/ensemble_orchestrator.py
+   Total Issues: 90
+   By Type: unreachable_code(85)
+   By Severity: low(85)
+   Deprecated Code (5):
+     • Line 43: Function 'train_all_models' is defined but never called
+     • Line 110: Function 'get_all_predictions' is defined but never called
+     • Line 278: Function 'get_current_regime' is defined but never called
+     ... and 2 more
+
+📁 /workspace/src/training/steps/cross_timeframe_interaction_features.py
+   Total Issues: 89
+   By Type: unreachable_code(84)
+   By Severity: low(84)
+   Deprecated Code (5):
+     • Line 10: Function 'TimeframeType' is defined but never called
+     • Line 66: Function 'CrossTimeframeFeatureGenerator' is defined but never called
+     • Line 376: Function 'InteractionFeatureGenerator' is defined but never called
+     ... and 2 more
+
+📁 /workspace/src/supervisor/pnl_loss_functions_backup.py
+   Total Issues: 87
+   By Type: unreachable_code(80)
+   By Severity: low(80)
+   Deprecated Code (7):
+     • Line 11: Function 'create_pnl_aware_loss' is defined but never called
+     • Line 593: Function 'setup_pnl_loss_functions' is defined but never called
+     • Line 19: Function 'pnl_aware_loss' is defined but never called
+     ... and 4 more
+
+📁 /workspace/src/tracking/trade_tracker.py
+   Total Issues: 86
+   By Type: unreachable_code(73)
+   By Severity: low(73)
+   Deprecated Code (13):
+     • Line 25: Function 'ModelType' is defined but never called
+     • Line 35: Function 'FeatureImportance' is defined but never called
+     • Line 46: Function 'ModelPrediction' is defined but never called
+     ... and 10 more
+
+📁 /workspace/src/strategist/utils.py
+   Total Issues: 81
+   By Type: unreachable_code(79)
+   By Severity: low(79)
+   Deprecated Code (2):
+     • Line 18: Function 'StrategistError' is defined but never called
+     • Line 196: Function 'wrapper' is defined but never called
+
+📁 /workspace/code_quality/analyzers/architecture_analyzer.py
+   Total Issues: 78
+   By Type: unreachable_code(76)
+   By Severity: low(76)
+   Deprecated Code (2):
+     • Line 15: Function 'ArchitectureIssue' is defined but never called
+     • Line 37: Function 'ArchitectureMetrics' is defined but never called
+
+📁 /workspace/src/analyst/ml_confidence_predictor.py
+   Total Issues: 78
+   By Type: unreachable_code(65)
+   By Severity: low(65)
+   Deprecated Code (13):
+     • Line 3266: Function 'setup_ml_confidence_predictor' is defined but never called
+     • Line 1624: Function 'predict_ensemble_confidence' is defined but never called
+     • Line 1827: Function 'predict_directional_with_adversarial_analysis' is defined but never called
+     ... and 10 more
+
+📁 /workspace/src/utils/intelligent_feature_cache.py
+   Total Issues: 73
+   By Type: unreachable_code(68)
+   By Severity: low(68)
+   Deprecated Code (5):
+     • Line 306: Function 'cache_feature_engineering' is defined but never called
+     • Line 355: Function 'clear_feature_cache' is defined but never called
+     • Line 360: Function 'log_feature_cache_stats' is defined but never called
+     ... and 2 more
+
+📁 /workspace/standalone_analyzers.py
+   Total Issues: 65
+   By Type: unreachable_code(65)
+   By Severity: low(65)
+
+📁 /workspace/src/utils/parallel_processing_optimizer.py
+   Total Issues: 63
+   By Type: unreachable_code(58)
+   By Severity: low(58)
+   Deprecated Code (5):
+     • Line 246: Function 'optimize_for_m1_mac' is defined but never called
+     • Line 163: Function 'parallel_rolling_operations' is defined but never called
+     • Line 168: Function 'rolling_operation' is defined but never called
+     ... and 2 more
+
+📁 /workspace/code_quality/analyzers/advanced_ast_analyzer.py
+   Total Issues: 59
+   By Type: unreachable_code(59)
+   By Severity: low(59)
+
+📁 /workspace/src/transition/seq2seq_trainer.py
+   Total Issues: 55
+   By Type: unreachable_code(50)
+   By Severity: low(50)
+   Deprecated Code (5):
+     • Line 222: Function 'train_seq2seq' is defined but never called
+     • Line 165: Function 'forward' is defined but never called
+     • Line 99: Function 'training_step' is defined but never called
+     ... and 2 more
+
+📁 /workspace/src/training/steps/data_preparation_components/aggtrades_data_formatting.py
+   Total Issues: 54
+   By Type: unreachable_code(51)
+   By Severity: low(51)
+   Deprecated Code (3):
+     • Line 204: Function 'create_dummy_files' is defined but never called
+     • Line 226: Function 'CSVNormalizer' is defined but never called
+     • Line 236: Function 'normalize_trade_csvs' is defined but never called
+
+📁 /workspace/code_quality/core/plugins.py
+   Total Issues: 52
+   By Type: unreachable_code(44)
+   By Severity: low(44)
+   Deprecated Code (8):
+     • Line 16: Function 'CodeFixer' is defined but never called
+     • Line 56: Function 'BasePlugin' is defined but never called
+     • Line 84: Function 'BaseCodeFixer' is defined but never called
+     ... and 5 more
+
+📁 /workspace/src/utils/logger.py
+   Total Issues: 52
+   By Type: unreachable_code(46)
+   By Severity: low(46)
+   Deprecated Code (6):
+     • Line 21: Function 'create_fallback_correlation_filter' is defined but never called
+     • Line 29: Function 'create_fallback_json_formatter' is defined but never called
+     • Line 31: Function 'formatter' is defined but never called
+     ... and 3 more
+
+📁 /workspace/src/training/hmm_regime_barrier_optimizer.py
+   Total Issues: 51
+   By Type: unreachable_code(46)
+   By Severity: low(46)
+   Deprecated Code (5):
+     • Line 25: Function 'HMMRegimeBarrierOptimizer' is defined but never called
+     • Line 123: Function 'export_barrier_map' is defined but never called
+     • Line 144: Function 'get_barrier_map' is defined but never called
+     ... and 2 more
+
+📁 /workspace/code_quality/analyzers/code_duplication_analyzer.py
+   Total Issues: 48
+   By Type: unreachable_code(48)
+   By Severity: low(48)
+
+... and 410 more files with issues
+
+
+FILE TYPE ANALYSIS:
+------------------------------
+.py: 430 files, 6181 issues
+
+Removal Plan:
+  Estimated Time Savings: 0.2 hours
+  Removal Phases: 3
+  Risk Assessment:
+    High Risk: 5
+    Medium Risk: 0
+    Recommended Approach: aggressive

@@ -48,7 +48,7 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
     Price direction predictions (BUY/SELL/HOLD) are made in:
     - src/interfaces/base_interfaces.py (AnalysisResult.signal)
     - src/analyst/predictive_ensembles/ensemble_orchestrator.py (global meta-learner)
-    - src/training/steps/step4_analyst_labeling_feature_engineering_components/ (triple barrier labeling)
+    - src/training/steps/step06_labeling_components/ (triple barrier labeling)
 
     Returns:
         dict: Configuration dictionary

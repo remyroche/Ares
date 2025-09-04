@@ -21,7 +21,7 @@ FeatureEngineeringStep = None
 
 # Temporarily comment out all step imports to avoid syntax errors
 # try:
-#     from .step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
+#     from .step03_hmm_clustering import HMMRegimeDiscoveryStep
 # except ImportError:
 #     HMMRegimeDiscoveryStep, None
 

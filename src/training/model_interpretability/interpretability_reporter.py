@@ -37,41 +37,64 @@ class InterpretabilityReporter:
     async def generate_report(
         self,
         results: Dict[str, Any],
-        output_dir: str
+        output_dir: str = None,
+        model_type: str = "general",
+        symbol: str = "UNKNOWN",
+        exchange: str = "UNKNOWN"
     ) -> str:
-        """Generate comprehensive interpretability report."""
+        """Generate comprehensive interpretability report using the report manager."""
         self.logger.info("📄 Generating comprehensive interpretability report...")
         print("📄 Generating comprehensive interpretability report...")
         
         try:
-            # Ensure output directory exists
-            ensure_directory(output_dir)
+            # Use report manager for standardized report organization
+            from src.utils.report_manager import get_report_manager
+            report_manager = get_report_manager()
             
-            # Generate different report formats
+            # Generate different report formats using report manager
             reports_created = []
             
-            # 1. JSON Report
-            json_report_path = await self._generate_json_report(results, output_dir)
-            if json_report_path:
-                reports_created.append(json_report_path)
+            # 1. Human-readable TXT Report
+            txt_report_path = report_manager.save_ml_interpretability_report(
+                model_type=model_type,
+                symbol=symbol,
+                exchange=exchange,
+                report_data=results,
+                file_extension="txt"
+            )
+            reports_created.append(str(txt_report_path))
             
-            # 2. Markdown Report
-            markdown_report_path = await self._generate_markdown_report(results, output_dir)
-            if markdown_report_path:
-                reports_created.append(markdown_report_path)
-            
-            # 3. HTML Report
-            html_report_path = await self._generate_html_report(results, output_dir)
-            if html_report_path:
-                reports_created.append(html_report_path)
+            # 3. HTML Report (if HTML generation is available)
+            try:
+                html_report_path = await self._generate_html_report(results, str(report_manager.get_run_directory()))
+                if html_report_path:
+                    # Copy to report manager directory with standardized naming
+                    target_html_path = report_manager.create_ml_interpretability_report_path(
+                        model_type, symbol, exchange, "html"
+                    )
+                    import shutil
+                    shutil.copy2(html_report_path, target_html_path)
+                    reports_created.append(str(target_html_path))
+            except Exception as html_error:
+                self.logger.warning(f"⚠️ HTML report generation failed: {html_error}")
             
             # 4. Summary Report
-            summary_report_path = await self._generate_summary_report(results, output_dir)
-            if summary_report_path:
-                reports_created.append(summary_report_path)
+            try:
+                summary_report_path = await self._generate_summary_report(results, str(report_manager.get_run_directory()))
+                if summary_report_path:
+                    # Copy to report manager directory with standardized naming
+                    target_summary_path = report_manager.create_ml_interpretability_report_path(
+                        model_type, symbol, exchange, "summary.json"
+                    )
+                    import shutil
+                    shutil.copy2(summary_report_path, target_summary_path)
+                    reports_created.append(str(target_summary_path))
+            except Exception as summary_error:
+                self.logger.warning(f"⚠️ Summary report generation failed: {summary_error}")
             
             print(f"✅ Generated {len(reports_created)} interpretability reports")
             self.logger.info(f"✅ Generated {len(reports_created)} interpretability reports")
+            print(f"📁 Reports saved in: {report_manager.get_run_directory()}")
             
             return reports_created[0] if reports_created else None
             

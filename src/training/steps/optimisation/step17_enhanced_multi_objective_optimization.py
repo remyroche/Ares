@@ -31,21 +31,23 @@ from src.utils.logger import system_logger
 class OptimizationBlock(Enum):
     """Logical blocks for parameter optimization to avoid curse of dimensionality."""
     
-    # Core decision-making parameters (highest impact)
-    CORE_CONFIDENCE = "core_confidence"
+    # Block 1: Market analysis (regime transitions only - S/R and technical indicators removed)
+    MARKET_ANALYSIS = "market_analysis"
+    
+    # Block 2: Core intensity parameters
     CORE_INTENSITY = "core_intensity"
     
-    # Position and risk management (depends on core)
-    POSITION_MANAGEMENT = "position_management"
-    RISK_MANAGEMENT = "risk_management"
-    
-    # Market analysis and signals (depends on core)
-    MARKET_ANALYSIS = "market_analysis"
+    # Block 3: Signal processing
     SIGNAL_PROCESSING = "signal_processing"
     
-    # System optimization (depends on above)
-    SYSTEM_OPTIMIZATION = "system_optimization"
-    PERFORMANCE_TUNING = "performance_tuning"
+    # Block 4: Core confidence parameters
+    CORE_CONFIDENCE = "core_confidence"
+    
+    # Block 5: Position management
+    POSITION_MANAGEMENT = "position_management"
+    
+    # Block 6: Risk management
+    RISK_MANAGEMENT = "risk_management"
 
 
 @dataclass
@@ -141,7 +143,62 @@ class EnhancedStep17Optimizer:
         """Setup logical optimization blocks to avoid curse of dimensionality."""
         
         return {
-            # Block 1: Core confidence parameters (highest impact, independent)
+            # Block 1: Market analysis (regime transitions only - S/R and technical indicators removed)
+            OptimizationBlock.MARKET_ANALYSIS: {
+                "categories": ["regime_transitions"],
+                "parameters": [
+                    # Regime transitions parameters only
+                    "transition_intensity_threshold", "min_combined_intensity", "max_regimes_to_consider",
+                    "transition_confidence_threshold", "step9_5_weight", "step10_weight", "regime_expert_weight",
+                    "transition_lookback_periods", "transition_risk_multiplier"
+                ],
+                "n_trials": 60,
+                "timeout": 480,  # 8 minutes
+                "sampler": "tpe",
+                "pruner": "median",
+                "description": "Regime transitions optimization (S/R and technical indicators removed - optimized in step2_5)"
+            },
+            
+            # Block 2: Core intensity parameters
+            OptimizationBlock.CORE_INTENSITY: {
+                "categories": ["intensity"],
+                "parameters": [
+                    "transition_intensity_threshold", "min_combined_intensity", "signal_intensity_threshold",
+                    "intensity_reliability_weight", "intensity_decay_rate", "intensity_boost_factor",
+                    "regime_transition_intensity", "regime_stability_threshold", "regime_change_boost",
+                    "breakout_intensity_threshold", "volume_intensity_threshold", "momentum_intensity_threshold",
+                    "intensity_position_multiplier", "high_intensity_boost", "low_intensity_reduction",
+                    "intensity_nms_threshold", "intensity_overlap_threshold", "intensity_time_decay",
+                    "intensity_persistence"
+                ],
+                "n_trials": 80,
+                "timeout": 480,  # 8 minutes
+                "sampler": "tpe",
+                "pruner": "median",
+                "description": "Intensity thresholds and weighting parameters"
+            },
+            
+            # Block 3: Signal processing
+            OptimizationBlock.SIGNAL_PROCESSING: {
+                "categories": ["ensemble", "signal_aggregation"],
+                "parameters": [
+                    # Ensemble parameters
+                    "ensemble_method", "base_models", "meta_model", "weights", "cross_validation_folds",
+                    "sharpe_ratio", "max_drawdown", "win_rate", "profit_factor", "total_return",
+                    "barrier_hit_rate", "online_learning", "regime_awareness", "uncertainty_weighting",
+                    "learning_rate", "performance_window", "weight_combination",
+                    # Signal aggregation parameters
+                    "analyst_weight", "tactician_weight", "scenario_weight", "sr_breakout_weight",
+                    "use_multiplicative", "conflict_penalty", "signal_quality_threshold"
+                ],
+                "n_trials": 100,
+                "timeout": 600,  # 10 minutes
+                "sampler": "tpe",
+                "pruner": "median",
+                "description": "Ensemble and signal aggregation optimization"
+            },
+            
+            # Block 4: Core confidence parameters
             OptimizationBlock.CORE_CONFIDENCE: {
                 "categories": ["confidence"],
                 "parameters": [
@@ -162,26 +219,7 @@ class EnhancedStep17Optimizer:
                 "description": "Core confidence thresholds and linear scaling parameters"
             },
             
-            # Block 2: Core intensity parameters (high impact, depends on confidence)
-            OptimizationBlock.CORE_INTENSITY: {
-                "categories": ["intensity"],
-                "parameters": [
-                    "transition_intensity_threshold", "min_combined_intensity", "signal_intensity_threshold",
-                    "intensity_reliability_weight", "intensity_decay_rate", "intensity_boost_factor",
-                    "regime_transition_intensity", "regime_stability_threshold", "regime_change_boost",
-                    "breakout_intensity_threshold", "volume_intensity_threshold", "momentum_intensity_threshold",
-                    "intensity_position_multiplier", "high_intensity_boost", "low_intensity_reduction",
-                    "intensity_nms_threshold", "intensity_overlap_threshold", "intensity_time_decay",
-                    "intensity_persistence"
-                ],
-                "n_trials": 80,
-                "timeout": 480,  # 8 minutes
-                "sampler": "tpe",
-                "pruner": "median",
-                "description": "Intensity thresholds and weighting parameters"
-            },
-            
-            # Block 3: Position management (depends on core parameters)
+            # Block 5: Position management
             OptimizationBlock.POSITION_MANAGEMENT: {
                 "categories": ["position_sizing", "leverage"],
                 "parameters": [
@@ -201,7 +239,7 @@ class EnhancedStep17Optimizer:
                 "description": "Position sizing and leverage optimization"
             },
             
-            # Block 4: Risk management (depends on position management)
+            # Block 6: Risk management
             OptimizationBlock.RISK_MANAGEMENT: {
                 "categories": ["tpsl"],
                 "parameters": [
@@ -217,88 +255,6 @@ class EnhancedStep17Optimizer:
                 "sampler": "tpe",
                 "pruner": "median",
                 "description": "Take profit and stop loss optimization"
-            },
-            
-            # Block 5: Market analysis (depends on core parameters)
-            OptimizationBlock.MARKET_ANALYSIS: {
-                "categories": ["sr", "technical_indicators", "regime_transitions"],
-                "parameters": [
-                    # Support/Resistance parameters
-                    "breakout_threshold", "confirmation_period", "volume_threshold", "price_threshold",
-                    "min_touch_count", "min_level_age_hours", "price_tolerance_pct", "volume_threshold",
-                    "strength_threshold", "volume_confirmation", "momentum_threshold", "false_breakout_filter",
-                    "support_zone_multiplier", "resistance_zone_multiplier", "sr_zone_threshold",
-                    "zone_expansion_factor", "zone_contraction_factor",
-                    # Technical indicators parameters
-                    "rsi_period", "macd_fast", "macd_slow", "macd_signal", "bollinger_period", "bollinger_std",
-                    "bb_width_volatility_threshold", "transition_intensity_threshold", "min_combined_intensity",
-                    "max_regimes_to_consider",
-                    # Regime transitions parameters
-                    "transition_confidence_threshold", "step9_5_weight", "step10_weight", "regime_expert_weight",
-                    "transition_lookback_periods", "transition_risk_multiplier"
-                ],
-                "n_trials": 150,
-                "timeout": 1200,  # 20 minutes
-                "sampler": "nsga2",
-                "pruner": "successive_halving",
-                "description": "Support/resistance, technical analysis, and regime transitions optimization"
-            },
-            
-            # Block 6: Signal processing (depends on market analysis)
-            OptimizationBlock.SIGNAL_PROCESSING: {
-                "categories": ["ensemble", "signal_aggregation"],
-                "parameters": [
-                    # Ensemble parameters
-                    "ensemble_method", "base_models", "meta_model", "weights", "cross_validation_folds",
-                    "sharpe_ratio", "max_drawdown", "win_rate", "profit_factor", "total_return",
-                    "barrier_hit_rate", "online_learning", "regime_awareness", "uncertainty_weighting",
-                    "learning_rate", "performance_window", "weight_combination",
-                    # Signal aggregation parameters
-                    "analyst_weight", "tactician_weight", "scenario_weight", "sr_breakout_weight",
-                    "use_multiplicative", "conflict_penalty", "signal_quality_threshold"
-                ],
-                "n_trials": 100,
-                "timeout": 600,  # 10 minutes
-                "sampler": "tpe",
-                "pruner": "median",
-                "description": "Ensemble and signal aggregation optimization"
-            },
-            
-            # Block 7: System optimization (depends on all above)
-            OptimizationBlock.SYSTEM_OPTIMIZATION: {
-                "categories": ["two_tier", "system_monitoring"],
-                "parameters": [
-                    # Two-tier system parameters
-                    "tier1_threshold", "tier2_threshold", "tier1_multiplier", "tier2_multiplier",
-                    "tier1_confidence_boost", "tier2_confidence_boost", "tier_selection_criteria",
-                    # System monitoring parameters
-                    "health_check_interval", "performance_threshold", "alert_threshold",
-                    "monitoring_interval", "max_history", "enable_real_time_tracking",
-                    "performance_window", "retraining_threshold", "drift_detection",
-                    "detection_window", "drift_threshold", "accuracy_threshold", "f1_threshold",
-                    "recent_accuracy_weight", "overall_accuracy_weight", "f1_score_weight"
-                ],
-                "n_trials": 80,
-                "timeout": 480,  # 8 minutes
-                "sampler": "tpe",
-                "pruner": "median",
-                "description": "System-level optimization and monitoring"
-            },
-            
-            # Block 8: Performance tuning (final fine-tuning)
-            OptimizationBlock.PERFORMANCE_TUNING: {
-                "categories": ["training_optimization"],
-                "parameters": [
-                    "batch_size", "learning_rate", "epochs", "validation_split", "model_type",
-                    "n_estimators", "max_depth", "subsample", "colsample_bytree", "reg_alpha",
-                    "reg_lambda", "ensemble_size", "stacking_enabled", "meta_learner",
-                    "primary_method", "estimation_method", "confidence_level", "calibration_cv_folds"
-                ],
-                "n_trials": 60,
-                "timeout": 360,  # 6 minutes
-                "sampler": "tpe",
-                "pruner": "median",
-                "description": "Final performance tuning and training optimization"
             }
         }
     

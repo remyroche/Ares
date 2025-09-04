@@ -13,7 +13,7 @@ Price direction predictions (BUY/SELL/HOLD) are made in:
     pass
 - src/interfaces/base_interfaces.py (AnalysisResult.signal)
 - src/analyst/predictive_ensembles/ensemble_orchestrator.py (global meta-learner)
-- src/training/steps/step4_analyst_labeling_feature_engineering_components/ (triple barrier labeling)
+- src/training/steps/step06_labeling_components/ (triple barrier labeling)
 
 The hazard models in this system predict whether a regime will transition to a different
 regime in the next period, not the direction of price movement.

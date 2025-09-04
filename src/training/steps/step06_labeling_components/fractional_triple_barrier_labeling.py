@@ -1,4 +1,4 @@
-# src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py
+# src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py
 
 """Fractional Triple Barrier Labeling for enhanced model training.
 

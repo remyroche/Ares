@@ -130,7 +130,7 @@ class RegimeParameterOptimizer:
     def _run_strategy_with_params(self, data: pd.DataFrame, params: RegimeParameters) -> Optional[pd.DataFrame]:
         """Run trading strategy with given parameters."""
         try:
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
             labeler = OptimizedTripleBarrierLabeling()
             labeler.profit_target = params.profit_target
             labeler.stop_loss = params.stop_loss

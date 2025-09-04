@@ -284,31 +284,61 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         """Populate the trade decisions tree and update visualization."""
         super()._populate_trade_tree()
         
-        # Update visualization with trade data
-        if self.visualization and self.trade_data is not None:
-            self.visualization.set_trade_data(self.trade_data)
-            # Auto-plot trade performance
-            self.visualization.plot_trade_performance()
+        # Update visualization with trade data for current mode
+        if self.visualization:
+            # Get data for current mode
+            if self.current_mode == "all":
+                # Combine all modes
+                all_data = []
+                for mode, df in self.trade_data.items():
+                    all_data.append(df)
+                if all_data:
+                    df = pd.concat(all_data, ignore_index=True)
+                    self.visualization.set_trade_data(df)
+                    self.visualization.plot_trade_performance()
+            elif self.current_mode in self.trade_data:
+                self.visualization.set_trade_data(self.trade_data[self.current_mode])
+                self.visualization.plot_trade_performance()
     
     def _populate_summary_tree(self):
         """Populate the daily summary tree and update visualization."""
         super()._populate_summary_tree()
         
-        # Update visualization with summary data
-        if hasattr(self, 'summary_visualization') and self.daily_summary_data is not None:
-            self.summary_visualization.set_daily_summary_data(self.daily_summary_data)
-            # Auto-plot daily summary
-            self.summary_visualization.plot_daily_summary()
+        # Update visualization with summary data for current mode
+        if hasattr(self, 'summary_visualization'):
+            # Get data for current mode
+            if self.current_mode == "all":
+                # Combine all modes
+                all_data = []
+                for mode, df in self.daily_summary_data.items():
+                    all_data.append(df)
+                if all_data:
+                    df = pd.concat(all_data, ignore_index=True)
+                    self.summary_visualization.set_daily_summary_data(df)
+                    self.summary_visualization.plot_daily_summary()
+            elif self.current_mode in self.daily_summary_data:
+                self.summary_visualization.set_daily_summary_data(self.daily_summary_data[self.current_mode])
+                self.summary_visualization.plot_daily_summary()
     
     def _populate_regime_tree(self):
         """Populate the regime analysis tree and update visualization."""
         super()._populate_regime_tree()
         
-        # Update visualization with regime data
-        if hasattr(self, 'regime_visualization') and self.trade_data is not None:
-            self.regime_visualization.set_trade_data(self.trade_data)
-            # Auto-plot regime analysis
-            self.regime_visualization.plot_regime_analysis()
+        # Update visualization with regime data for current mode
+        if hasattr(self, 'regime_visualization'):
+            # Get data for current mode
+            if self.current_mode == "all":
+                # Combine all modes
+                all_data = []
+                for mode, df in self.trade_data.items():
+                    all_data.append(df)
+                if all_data:
+                    df = pd.concat(all_data, ignore_index=True)
+                    self.regime_visualization.set_trade_data(df)
+                    self.regime_visualization.plot_regime_analysis()
+            elif self.current_mode in self.trade_data:
+                self.regime_visualization.set_trade_data(self.trade_data[self.current_mode])
+                self.regime_visualization.plot_regime_analysis()
     
     def _update_statistics(self):
         """Update the statistics display and visualization."""
@@ -316,15 +346,34 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         
         # Update statistics visualization
         if hasattr(self, 'stats_visualization'):
-            if self.trade_data is not None:
-                self.stats_visualization.set_trade_data(self.trade_data)
-            if self.daily_summary_data is not None:
-                self.stats_visualization.set_daily_summary_data(self.daily_summary_data)
+            # Get data for current mode
+            if self.current_mode == "all":
+                # Combine all modes for trade data
+                all_trade_data = []
+                for mode, df in self.trade_data.items():
+                    all_trade_data.append(df)
+                if all_trade_data:
+                    df = pd.concat(all_trade_data, ignore_index=True)
+                    self.stats_visualization.set_trade_data(df)
+                
+                # Combine all modes for summary data
+                all_summary_data = []
+                for mode, df in self.daily_summary_data.items():
+                    all_summary_data.append(df)
+                if all_summary_data:
+                    df = pd.concat(all_summary_data, ignore_index=True)
+                    self.stats_visualization.set_daily_summary_data(df)
+            else:
+                # Use specific mode data
+                if self.current_mode in self.trade_data:
+                    self.stats_visualization.set_trade_data(self.trade_data[self.current_mode])
+                if self.current_mode in self.daily_summary_data:
+                    self.stats_visualization.set_daily_summary_data(self.daily_summary_data[self.current_mode])
             
             # Auto-plot cumulative performance
-            if self.daily_summary_data is not None:
+            if self.current_mode in self.daily_summary_data or self.current_mode == "all":
                 self.stats_visualization.plot_cumulative_performance()
-            elif self.trade_data is not None:
+            elif self.current_mode in self.trade_data or self.current_mode == "all":
                 self.stats_visualization.plot_trade_performance()
     
     def _load_data_from_file(self, file_path: str):

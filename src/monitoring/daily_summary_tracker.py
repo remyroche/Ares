@@ -33,6 +33,7 @@ from src.utils.logger import system_logger
 class DailyTradeSummary:
     """Daily summary of trading activity."""
     date: date
+    trading_mode: str  # "backtest", "paper", "live", or "all"
     total_trades: int
     long_trades: int
     short_trades: int
@@ -110,8 +111,8 @@ class DailySummaryTracker:
         self.summary_retention_days = self.tracker_config.get("summary_retention_days", 365)
         self.export_directory = self.tracker_config.get("export_directory", "daily_summaries")
         
-        # Storage
-        self.daily_summaries: Dict[date, DailyTradeSummary] = {}
+        # Storage - separate by trading mode
+        self.daily_summaries: Dict[Tuple[date, str], DailyTradeSummary] = {}  # (date, mode) -> summary
         self.regime_performances: Dict[str, List[RegimePerformance]] = defaultdict(list)
         self.trade_buffer: List[Any] = []  # Buffer for current day's trades
         
@@ -119,9 +120,9 @@ class DailySummaryTracker:
         self.export_dir = Path(self.export_directory)
         self.export_dir.mkdir(exist_ok=True)
         
-        # Current day tracking
+        # Current day tracking - separate by mode
         self.current_date = date.today()
-        self.current_day_trades: List[Any] = []
+        self.current_day_trades: Dict[str, List[Any]] = defaultdict(list)  # mode -> trades
         
         self.logger.info("Daily Summary Tracker initialized")
     
@@ -130,6 +131,7 @@ class DailySummaryTracker:
         """Add a trade decision to the current day's tracking."""
         try:
             trade_date = trade_decision.timestamp.date()
+            trading_mode = trade_decision.trading_mode.value
             
             # Check if we need to process previous day
             if trade_date != self.current_date:
@@ -137,14 +139,14 @@ class DailySummaryTracker:
                 self.current_date = trade_date
                 self.current_day_trades.clear()
             
-            # Add trade to current day
-            self.current_day_trades.append(trade_decision)
+            # Add trade to current day for this mode
+            self.current_day_trades[trading_mode].append(trade_decision)
             
             # Update real-time if enabled
             if self.enable_real_time_updates:
                 await self._update_current_day_summary()
             
-            self.logger.debug(f"Added trade to daily tracking: {trade_decision.decision_id}")
+            self.logger.debug(f"Added {trading_mode} trade to daily tracking: {trade_decision.decision_id}")
             
         except Exception as e:
             self.logger.error(f"Error adding trade to daily tracking: {e}")
@@ -155,19 +157,24 @@ class DailySummaryTracker:
             if not self.current_day_trades:
                 return
             
-            # Generate summary for previous day
-            summary = await self._generate_daily_summary(self.current_date, self.current_day_trades)
-            
-            # Store summary
-            self.daily_summaries[self.current_date] = summary
-            
-            # Update regime performances
-            await self._update_regime_performances(summary)
-            
-            # Export daily summary
-            await self._export_daily_summary(summary)
-            
-            self.logger.info(f"Processed {len(self.current_day_trades)} trades for {self.current_date}")
+            # Generate summaries for each trading mode
+            for trading_mode, trades in self.current_day_trades.items():
+                if not trades:
+                    continue
+                
+                # Generate summary for this mode
+                summary = await self._generate_daily_summary(self.current_date, trades, trading_mode)
+                
+                # Store summary with mode key
+                self.daily_summaries[(self.current_date, trading_mode)] = summary
+                
+                # Update regime performances
+                await self._update_regime_performances(summary, trades)
+                
+                # Export daily summary
+                await self._export_daily_summary(summary)
+                
+                self.logger.info(f"Processed {len(trades)} {trading_mode} trades for {self.current_date}")
             
         except Exception as e:
             self.logger.error(f"Error processing previous day: {e}")
@@ -178,16 +185,21 @@ class DailySummaryTracker:
             if not self.current_day_trades:
                 return
             
-            # Generate current summary
-            summary = await self._generate_daily_summary(self.current_date, self.current_day_trades)
-            
-            # Update stored summary
-            self.daily_summaries[self.current_date] = summary
+            # Update summaries for each trading mode
+            for trading_mode, trades in self.current_day_trades.items():
+                if not trades:
+                    continue
+                
+                # Generate current summary for this mode
+                summary = await self._generate_daily_summary(self.current_date, trades, trading_mode)
+                
+                # Update stored summary
+                self.daily_summaries[(self.current_date, trading_mode)] = summary
             
         except Exception as e:
             self.logger.error(f"Error updating current day summary: {e}")
     
-    async def _generate_daily_summary(self, trade_date: date, trades: List[Any]) -> DailyTradeSummary:
+    async def _generate_daily_summary(self, trade_date: date, trades: List[Any], trading_mode: str = "all") -> DailyTradeSummary:
         """Generate comprehensive daily summary from trades."""
         try:
             if not trades:
@@ -298,6 +310,7 @@ class DailySummaryTracker:
             
             return DailyTradeSummary(
                 date=trade_date,
+                trading_mode=trading_mode,
                 total_trades=total_trades,
                 long_trades=long_trades,
                 short_trades=short_trades,
@@ -332,12 +345,13 @@ class DailySummaryTracker:
             
         except Exception as e:
             self.logger.error(f"Error generating daily summary: {e}")
-            return self._create_empty_summary(trade_date)
+            return self._create_empty_summary(trade_date, trading_mode)
     
-    def _create_empty_summary(self, trade_date: date) -> DailyTradeSummary:
+    def _create_empty_summary(self, trade_date: date, trading_mode: str = "all") -> DailyTradeSummary:
         """Create an empty summary for a day with no trades."""
         return DailyTradeSummary(
             date=trade_date,
+            trading_mode=trading_mode,
             total_trades=0,
             long_trades=0,
             short_trades=0,
@@ -437,8 +451,8 @@ class DailySummaryTracker:
             
             df = pd.DataFrame([summary_data])
             
-            # Export to CSV
-            filename = f"daily_summary_{summary.date.strftime('%Y%m%d')}.csv"
+            # Export to CSV with trading mode in filename
+            filename = f"daily_summary_{summary.trading_mode}_{summary.date.strftime('%Y%m%d')}.csv"
             filepath = self.export_dir / filename
             df.to_csv(filepath, index=False)
             

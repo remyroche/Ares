@@ -326,6 +326,7 @@ class DataQualityFramework:
             null_percentages = null_counts / len(data) * 100
             return {'total_null_values': null_counts.sum(), 'columns_with_nulls': null_counts[null_counts > 0].to_dict(), 'null_percentages': null_percentages[null_percentages > 0].to_dict(), 'worst_column': null_counts.idxmax() if null_counts.max() > 0 else None, 'worst_percentage': max(0, null_percentages.max())}
         except Exception as e:
+            self.logger.exception(f'Error analyzing nulls: {e}')
             return {'error': str(e)}
 
     def _analyze_duplicates(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -335,6 +336,7 @@ class DataQualityFramework:
             duplicate_percentage = duplicate_rows / len(data) * 100
             return {'duplicate_rows': duplicate_rows, 'duplicate_percentage': duplicate_percentage, 'has_duplicates': duplicate_rows > 0}
         except Exception as e:
+            self.logger.exception(f'Error analyzing duplicates: {e}')
             return {'error': str(e)}
 
     def _analyze_outliers(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -355,6 +357,7 @@ class DataQualityFramework:
                 column_counts[column]['total_values'] += len(outlier.indices)
             return {'total_outlier_groups': len(outliers), 'severity_distribution': severity_counts, 'column_distribution': column_counts, 'worst_column': max(column_counts.items(), key=lambda x: x[1]['total_values'])[0] if column_counts else None}
         except Exception as e:
+            self.logger.exception(f'Error analyzing outliers: {e}')
             return {'error': str(e)}
 
     def _calculate_quality_score(self, data: pd.DataFrame) -> float:

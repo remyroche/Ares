@@ -16,13 +16,8 @@ try:
 except ImportError:
     ASTROID_AVAILABLE = False
 
-try:
-    import rope
-    from rope.base.project import Project
-    from rope.base.libutils import path_to_resource
-    ROPE_AVAILABLE = True
-except ImportError:
-    ROPE_AVAILABLE = False
+# Rope integration removed as requested
+ROPE_AVAILABLE = False
 
 try:
     import jedi
@@ -35,21 +30,13 @@ class ASTAnalysisAnalyzer:
     """
     Advanced AST-based analysis using multiple tools:
     - Astroid: Advanced AST parsing and analysis
-    - Rope: Refactoring and code analysis
     - Jedi: Code completion and static analysis
+    - Custom AST Analysis: Cyclomatic complexity, nesting levels, unused variables
     """
 
     def __init__(self, config: CodeQualityConfig):
         self.config = config
         self.results = {}
-        self.rope_project = None
-        
-        # Initialize Rope project if available
-        if ROPE_AVAILABLE:
-            try:
-                self.rope_project = Project(Path.cwd())
-            except Exception:
-                self.rope_project = None
 
     def analyze_file(self, file_path: str) -> Dict[str, Any]:
         """Analyze a single Python file with all AST analysis tools."""
@@ -75,15 +62,7 @@ class ASTAnalysisAnalyzer:
             except Exception as e:
                 results["tools"]["astroid"] = {"status": "error", "error": str(e)}
 
-        # Run Rope analysis
-        if ROPE_AVAILABLE and self.rope_project:
-            try:
-                rope_result = self._run_rope_analysis(file_path)
-                results["tools"]["rope"] = rope_result
-                results["summary"]["refactoring_opportunities"] += len(rope_result.get("refactoring_opportunities", []))
-                results["summary"]["total_issues"] += len(rope_result.get("refactoring_opportunities", []))
-            except Exception as e:
-                results["tools"]["rope"] = {"status": "error", "error": str(e)}
+        # Rope analysis removed as requested
 
         # Run Jedi analysis
         if JEDI_AVAILABLE:
@@ -123,7 +102,6 @@ class ASTAnalysisAnalyzer:
                 "ast_analysis_issues": 0,
                 "tools_availability": {
                     "astroid": ASTROID_AVAILABLE,
-                    "rope": ROPE_AVAILABLE,
                     "jedi": JEDI_AVAILABLE
                 }
             }
@@ -209,62 +187,6 @@ class ASTAnalysisAnalyzer:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    def _run_rope_analysis(self, file_path: str) -> Dict[str, Any]:
-        """Run Rope analysis on a file."""
-        try:
-            if not self.rope_project:
-                return {"status": "error", "error": "Rope project not initialized"}
-            
-            resource = path_to_resource(self.rope_project, file_path)
-            if not resource:
-                return {"status": "error", "error": f"Could not find resource for {file_path}"}
-            
-            refactoring_opportunities = []
-            
-            # Analyze for refactoring opportunities
-            try:
-                # Check for duplicate code
-                duplicates = self.rope_project.find_duplicates()
-                for duplicate in duplicates:
-                    if str(duplicate.get_location()) == file_path:
-                        refactoring_opportunities.append({
-                            "line": duplicate.get_location().lineno,
-                            "column": 0,
-                            "message": f"Duplicate code detected: {duplicate.get_description()}",
-                            "severity": "warning",
-                            "category": "refactoring",
-                            "code": "duplicate_code"
-                        })
-            except Exception:
-                pass  # Rope's duplicate detection might not work in all cases
-            
-            # Check for unused imports
-            try:
-                unused_imports = self.rope_project.find_unused_imports()
-                for unused in unused_imports:
-                    if str(unused.get_location()) == file_path:
-                        refactoring_opportunities.append({
-                            "line": unused.get_location().lineno,
-                            "column": 0,
-                            "message": f"Unused import: {unused.get_description()}",
-                            "severity": "info",
-                            "category": "refactoring",
-                            "code": "unused_import"
-                        })
-            except Exception:
-                pass
-            
-            return {
-                "status": "success",
-                "refactoring_opportunities": refactoring_opportunities,
-                "rope_info": {
-                    "project_root": str(self.rope_project.root),
-                    "resource_found": resource is not None
-                }
-            }
-            
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
 
     def _run_jedi_analysis(self, file_path: str) -> Dict[str, Any]:
         """Run Jedi analysis on a file."""
@@ -436,10 +358,9 @@ class ASTAnalysisAnalyzer:
         """Generate a comprehensive AST analysis report."""
         return {
             "analyzer": "ASTAnalysisAnalyzer",
-            "tools_used": ["astroid", "rope", "jedi", "custom_ast"],
+            "tools_used": ["astroid", "jedi", "custom_ast"],
             "tools_available": {
                 "astroid": ASTROID_AVAILABLE,
-                "rope": ROPE_AVAILABLE,
                 "jedi": JEDI_AVAILABLE
             },
             "results": self.results,

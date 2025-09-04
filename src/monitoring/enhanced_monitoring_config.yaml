@@ -1,0 +1,87 @@
+# Enhanced ML Monitoring Configuration
+# Comprehensive monitoring for ML models and ensembles with SHAP/LIME explanations
+
+enhanced_monitoring:
+  # Core monitoring settings
+  enable_monitoring: true
+  enable_explanations: true
+  enable_ensemble_monitoring: true
+  enable_csv_export: true
+  
+  # Performance settings
+  max_memory_decisions: 10000
+  export_interval_days: 30
+  real_time_export: false
+  
+  # SHAP/LIME settings
+  enable_shap: true
+  enable_lime: true
+  max_features_explained: 20
+  explanation_cache_size: 1000
+  
+  # Ensemble settings
+  weight_update_frequency_hours: 24
+  performance_window_days: 30
+  min_weight_threshold: 0.01
+  max_weight_threshold: 0.8
+  
+  # Export settings
+  export_directory: "monitoring_exports"
+  include_summary_stats: true
+  compression: "none"
+  decimal_precision: 6
+  
+  # Trading integration settings
+  enable_backtesting_integration: true
+  enable_paper_trading_integration: true
+  enable_live_trading_integration: true
+
+# Enhanced ML Monitor specific configuration
+enhanced_ml_monitoring:
+  enable_shap: true
+  enable_lime: true
+  csv_export_interval_days: 30
+  max_decisions_in_memory: 10000
+  export_directory: "monitoring_exports"
+
+# Explainability Integration configuration
+explainability_integration:
+  enable_shap: true
+  enable_lime: true
+  max_features_explained: 20
+  explanation_cache_size: 1000
+
+# Ensemble Monitor configuration
+ensemble_monitoring:
+  weight_update_frequency_hours: 24
+  performance_window_days: 30
+  min_weight_threshold: 0.01
+  max_weight_threshold: 0.8
+  rebalance_threshold: 0.1
+
+# CSV Export Manager configuration
+csv_export:
+  export_directory: "monitoring_exports"
+  include_raw_data: true
+  include_summary_stats: true
+  include_visualizations: false
+  compression: "none"
+  max_rows_per_file: 100000
+  date_format: "%Y-%m-%d %H:%M:%S"
+  decimal_precision: 6
+
+# Trading Integration configuration
+trading_integration:
+  enable_monitoring: true
+  capture_explanations: true
+  capture_performance_metrics: true
+  real_time_export: false
+  export_interval_minutes: 60
+  max_memory_decisions: 10000
+
+# ML Monitor configuration (existing)
+ml_monitor:
+  enable_online_learning: true
+  drift_detection_enabled: true
+  feature_importance_tracking: true
+  auto_retraining_enabled: true

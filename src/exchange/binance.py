@@ -14,6 +14,7 @@ import aiohttp
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from src.core.decorators.errors import handles_errors
     connection_error,
     error,
     failed,

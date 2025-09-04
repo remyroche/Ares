@@ -18,6 +18,7 @@ from src.training.steps.model_training.matrix_components import (
     MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer
 )
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class EnhancedMatrixOperationsStep(BaseStep):

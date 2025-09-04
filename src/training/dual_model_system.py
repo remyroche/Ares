@@ -437,6 +437,7 @@ class DualModelSystem:
 
             if os.path.exists(tactician_model_path):
                 import pickle
+from src.core.decorators.errors import handles_errors
 
                 with open(tactician_model_path, "rb") as f:
                     self.tactician_model = pickle.load(f)

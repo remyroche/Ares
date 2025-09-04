@@ -545,6 +545,7 @@ class UnifiedRegimeIntelligenceValidator:
 			# Check if SRBreakoutPredictor is available
 			try:
 				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
+from src.core.decorators.errors import handles_errors
 				validation_results["sr_predictor_initialization"] = True
 			except ImportError:
 				self.logger.warning("SRBreakoutPredictor not available")

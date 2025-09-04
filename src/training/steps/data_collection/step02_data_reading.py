@@ -188,6 +188,7 @@ class DataReadingStep:
         self.logger.info('💾 Saving validation report...')
         try:
             from datetime import datetime
+from src.core.decorators.errors import handles_errors
             reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'data_quality')
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             report_filename = f'data_reading_validation_{exchange}_{symbol}_{timestamp}.json'

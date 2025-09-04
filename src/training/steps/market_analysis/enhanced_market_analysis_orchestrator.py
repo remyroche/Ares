@@ -786,6 +786,7 @@ class MarketAnalysisPipelineOrchestrator:
                         import pandas as pd
                         import numpy as np
                         from pathlib import Path
+from src.core.decorators.errors import handles_errors
                         
                         matrix_path = Path(data_dir) / f"matrix_operations_{exchange}_{symbol}_{timeframe}.parquet"
                         if matrix_path.exists():

@@ -343,6 +343,7 @@ class SystemCoordinator:
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
             import copy
             import numpy as np
+from src.core.decorators.errors import handles_errors
             enhanced_manager = EnhancedExecutionManager(self.config)
             analyst_decision = analyst_signals.get('analyst_decision', {})
             if not analyst_decision.get('should_enter_position', False):

@@ -125,6 +125,7 @@ class CalibrationManager:
         try:
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+from src.core.decorators.errors import handles_errors
             self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             await self.ml_confidence_predictor.initialize()
         except Exception as e:

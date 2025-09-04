@@ -415,7 +415,6 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             from sklearn.cluster import KMeans, DBSCAN
             from sklearn.mixture import GaussianMixture
             from sklearn.preprocessing import StandardScaler
-from src.core.decorators.errors import handles_errors
             
             results = {}
             
@@ -426,34 +425,11 @@ from src.core.decorators.errors import handles_errors
             for method in methods:
                 try:
                     if method == 'kmeans':
-                        # K-means clustering
-                        kmeans = KMeans(n_clusters=min(5, len(feature_matrix) // 10), random_state=42)
-                        clusters = kmeans.fit_predict(scaled_matrix)
-                        results['kmeans'] = {
-                            'clusters': clusters.tolist(),
-                            'n_clusters': len(np.unique(clusters)),
-                            'inertia': float(kmeans.inertia_)
-                        }
-                    
+                        results['kmeans'] = self._apply_kmeans_clustering(scaled_matrix, feature_matrix)
                     elif method == 'dbscan':
-                        # DBSCAN clustering
-                        dbscan = DBSCAN(eps=0.5, min_samples=5)
-                        clusters = dbscan.fit_predict(scaled_matrix)
-                        results['dbscan'] = {
-                            'clusters': clusters.tolist(),
-                            'n_clusters': len(np.unique(clusters)),
-                            'n_noise': int(np.sum(clusters == -1))
-                        }
-                    
+                        results['dbscan'] = self._apply_dbscan_clustering(scaled_matrix)
                     elif method == 'gaussian_mixture':
-                        # Gaussian Mixture clustering
-                        gmm = GaussianMixture(n_components=min(3, len(feature_matrix) // 20), random_state=42)
-                        clusters = gmm.fit_predict(scaled_matrix)
-                        results['gaussian_mixture'] = {
-                            'clusters': clusters.tolist(),
-                            'n_components': gmm.n_components,
-                            'converged': gmm.converged_
-                        }
+                        results['gaussian_mixture'] = self._apply_gaussian_mixture_clustering(scaled_matrix, feature_matrix)
                 
                 except Exception as e:
                     self.logger.warning(f"⚠️ Error applying {method} clustering: {e}")
@@ -567,6 +543,68 @@ from src.core.decorators.errors import handles_errors
         except Exception as e:
             self.logger.error(f"❌ Error saving matrix results for regime {regime_id}: {e}")
             return False
+
+    def _apply_kmeans_clustering(self, scaled_matrix: np.ndarray, feature_matrix: np.ndarray) -> Dict[str, Any]:
+        """Apply K-means clustering.
+        
+        Args:
+            scaled_matrix: Standardized feature matrix
+            feature_matrix: Original feature matrix
+            
+        Returns:
+            K-means clustering results
+        """
+        from sklearn.cluster import KMeans
+        
+        kmeans = KMeans(n_clusters=min(5, len(feature_matrix) // 10), random_state=42)
+        clusters = kmeans.fit_predict(scaled_matrix)
+        
+        return {
+            'clusters': clusters.tolist(),
+            'n_clusters': len(np.unique(clusters)),
+            'inertia': float(kmeans.inertia_)
+        }
+
+    def _apply_dbscan_clustering(self, scaled_matrix: np.ndarray) -> Dict[str, Any]:
+        """Apply DBSCAN clustering.
+        
+        Args:
+            scaled_matrix: Standardized feature matrix
+            
+        Returns:
+            DBSCAN clustering results
+        """
+        from sklearn.cluster import DBSCAN
+        
+        dbscan = DBSCAN(eps=0.5, min_samples=5)
+        clusters = dbscan.fit_predict(scaled_matrix)
+        
+        return {
+            'clusters': clusters.tolist(),
+            'n_clusters': len(np.unique(clusters)),
+            'n_noise': int(np.sum(clusters == -1))
+        }
+
+    def _apply_gaussian_mixture_clustering(self, scaled_matrix: np.ndarray, feature_matrix: np.ndarray) -> Dict[str, Any]:
+        """Apply Gaussian Mixture clustering.
+        
+        Args:
+            scaled_matrix: Standardized feature matrix
+            feature_matrix: Original feature matrix
+            
+        Returns:
+            Gaussian Mixture clustering results
+        """
+        from sklearn.mixture import GaussianMixture
+        
+        gmm = GaussianMixture(n_components=min(3, len(feature_matrix) // 20), random_state=42)
+        clusters = gmm.fit_predict(scaled_matrix)
+        
+        return {
+            'clusters': clusters.tolist(),
+            'n_components': gmm.n_components,
+            'converged': gmm.converged_
+        }
 
 
 @traced(span_name='run_per_regime_matrix_operations_step')

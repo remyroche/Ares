@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Integration script for Enhanced Step 3: HMM Regime Discovery.
+"""Step 3: Enhanced HMM Regime Discovery with All Improvements.
 
-This script demonstrates how to run the enhanced step 3 with all improvements:
+This module provides the main interface for enhanced HMM regime discovery with:
 1. Bayesian parameter optimization
 2. Enhanced regime discovery features
 3. Economic significance validation
@@ -19,7 +19,7 @@ import json
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.step03_enhanced_hmm_regime_discovery import run_enhanced_step
+from src.training.steps.hmm_clustering import run_enhanced_step
 
 async def main():
     """Main function to run enhanced step 3."""

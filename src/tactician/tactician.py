@@ -44,6 +44,12 @@ class Tactician:
         self.tactics_interval: int = self.tactician_config.get("tactics_interval", 30)
         self.max_history: int = self.tactician_config.get("max_history", 100)
 
+        # Triple Barrier Configuration (inherited from Analyst)
+        self.triple_barrier_config: dict[str, Any] = self.tactician_config.get("triple_barrier", {})
+        self.profit_take_multiplier: float = self.triple_barrier_config.get("profit_take_multiplier", 0.002)  # 0.2%
+        self.stop_loss_multiplier: float = self.triple_barrier_config.get("stop_loss_multiplier", 0.001)  # 0.1%
+        self.confidence_threshold: float = self.triple_barrier_config.get("confidence_threshold", 0.6)  # 60% threshold for green light
+
         # Component managers (will be initialized)
         self.tactics_orchestrator = None
         self.position_sizer = None
@@ -474,6 +480,204 @@ class Tactician:
             dict: Tactics results
         """
         return self.tactics_results.copy()
+
+    def _normalize_tactician_probabilities(
+        self,
+        upside_probabilities: dict[str, float],
+        downside_probabilities: dict[str, float]
+    ) -> dict[str, dict[str, float]]:
+        """
+        Normalize probabilities to ensure they sum to 1 across both directions.
+        Same logic as Analyst for consistency.
+        
+        Args:
+            upside_probabilities: Upside price target confidences
+            downside_probabilities: Downside risk confidences
+            
+        Returns:
+            dict: Normalized probabilities for upside and downside
+        """
+        try:
+            # Combine all probabilities
+            all_probabilities = {}
+            all_probabilities.update(upside_probabilities)
+            all_probabilities.update(downside_probabilities)
+            
+            if not all_probabilities:
+                return {"upside": {}, "downside": {}}
+            
+            # Calculate total probability
+            total_prob = sum(all_probabilities.values())
+            
+            if total_prob <= 0:
+                # If no probabilities, distribute equally
+                n_targets = len(upside_probabilities)
+                n_risks = len(downside_probabilities)
+                total_items = n_targets + n_risks
+                
+                if total_items > 0:
+                    equal_prob = 1.0 / total_items
+                    normalized_upside = {k: equal_prob for k in upside_probabilities.keys()}
+                    normalized_downside = {k: equal_prob for k in downside_probabilities.keys()}
+                else:
+                    normalized_upside = {}
+                    normalized_downside = {}
+            else:
+                # Normalize to sum to 1
+                normalized_upside = {k: v / total_prob for k, v in upside_probabilities.items()}
+                normalized_downside = {k: v / total_prob for k, v in downside_probabilities.items()}
+            
+            return {
+                "upside": normalized_upside,
+                "downside": normalized_downside
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error normalizing tactician probabilities: {e}")
+            return {"upside": {}, "downside": {}}
+
+    def _calculate_tactician_triple_barrier_analysis(
+        self,
+        upside_probabilities: dict[str, float],
+        downside_probabilities: dict[str, float]
+    ) -> dict[str, Any]:
+        """
+        Calculate triple barrier analysis for tactician green light decision.
+        Uses the same logic as Analyst for consistency.
+        
+        Args:
+            upside_probabilities: Normalized upside probabilities
+            downside_probabilities: Normalized downside probabilities
+            
+        Returns:
+            dict: Triple barrier analysis results
+        """
+        try:
+            # Convert upper barrier to percentage string for comparison
+            upper_barrier_pct = f"{self.profit_take_multiplier * 100:.1f}%"
+            lower_barrier_pct = f"{self.stop_loss_multiplier * 100:.1f}%"
+            
+            # Calculate cumulative confidence for upper barrier and above
+            cumulative_upper_confidence = 0.0
+            upper_barrier_targets = []
+            
+            for target, prob in upside_probabilities.items():
+                # Convert target string to float for comparison
+                target_value = float(target.replace("%", ""))
+                upper_barrier_value = self.profit_take_multiplier * 100
+                
+                if target_value >= upper_barrier_value:
+                    cumulative_upper_confidence += prob
+                    upper_barrier_targets.append({
+                        "target": target,
+                        "probability": prob,
+                        "contribution": prob
+                    })
+            
+            # Calculate cumulative confidence for lower barrier and below (adversarial)
+            cumulative_lower_confidence = 0.0
+            lower_barrier_targets = []
+            
+            for target, prob in downside_probabilities.items():
+                # Convert target string to float for comparison
+                target_value = float(target.replace("%", ""))
+                lower_barrier_value = self.stop_loss_multiplier * 100
+                
+                if target_value >= lower_barrier_value:
+                    cumulative_lower_confidence += prob
+                    lower_barrier_targets.append({
+                        "target": target,
+                        "probability": prob,
+                        "contribution": prob
+                    })
+            
+            # Determine if confidence threshold is met
+            threshold_met = cumulative_upper_confidence >= self.confidence_threshold
+            
+            # Green light decision logic (same as Analyst)
+            green_light = (
+                threshold_met and 
+                cumulative_upper_confidence > cumulative_lower_confidence and
+                cumulative_upper_confidence > 0.5  # At least 50% confidence
+            )
+            
+            # Calculate risk-reward ratio
+            risk_reward_ratio = (
+                cumulative_upper_confidence / cumulative_lower_confidence 
+                if cumulative_lower_confidence > 0 else float('inf')
+            )
+            
+            return {
+                "upper_barrier_threshold": upper_barrier_pct,
+                "lower_barrier_threshold": lower_barrier_pct,
+                "confidence_threshold": self.confidence_threshold,
+                "cumulative_upper_confidence": float(cumulative_upper_confidence),
+                "cumulative_lower_confidence": float(cumulative_lower_confidence),
+                "threshold_met": threshold_met,
+                "green_light": green_light,
+                "risk_reward_ratio": float(risk_reward_ratio),
+                "upper_barrier_targets": upper_barrier_targets,
+                "lower_barrier_targets": lower_barrier_targets,
+                "decision_reasoning": self._get_tactician_decision_reasoning(
+                    cumulative_upper_confidence,
+                    cumulative_lower_confidence,
+                    threshold_met,
+                    green_light
+                )
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating tactician triple barrier analysis: {e}")
+            return {
+                "upper_barrier_threshold": f"{self.profit_take_multiplier * 100:.1f}%",
+                "lower_barrier_threshold": f"{self.stop_loss_multiplier * 100:.1f}%",
+                "confidence_threshold": self.confidence_threshold,
+                "cumulative_upper_confidence": 0.0,
+                "cumulative_lower_confidence": 0.0,
+                "threshold_met": False,
+                "green_light": False,
+                "risk_reward_ratio": 0.0,
+                "upper_barrier_targets": [],
+                "lower_barrier_targets": [],
+                "decision_reasoning": f"Error in calculation: {str(e)}"
+            }
+
+    def _get_tactician_decision_reasoning(
+        self,
+        cumulative_upper_confidence: float,
+        cumulative_lower_confidence: float,
+        threshold_met: bool,
+        green_light: bool
+    ) -> str:
+        """
+        Generate human-readable decision reasoning for tactician.
+        
+        Args:
+            cumulative_upper_confidence: Cumulative confidence for upper barrier
+            cumulative_lower_confidence: Cumulative confidence for lower barrier
+            threshold_met: Whether confidence threshold is met
+            green_light: Whether green light decision is made
+            
+        Returns:
+            str: Decision reasoning
+        """
+        if green_light:
+            return (
+                f"TACTICIAN GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
+                f"exceeds threshold ({self.confidence_threshold:.1%}) and is higher than "
+                f"lower barrier confidence ({cumulative_lower_confidence:.1%})"
+            )
+        elif threshold_met:
+            return (
+                f"TACTICIAN THRESHOLD MET but NO GREEN LIGHT: Upper barrier confidence "
+                f"({cumulative_upper_confidence:.1%}) meets threshold but lower barrier "
+                f"confidence ({cumulative_lower_confidence:.1%}) is too high"
+            )
+        else:
+            return (
+                f"TACTICIAN NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
+                f"below threshold ({self.confidence_threshold:.1%})"
+            )
 
     def get_tactics_modules(self) -> dict[str, Any]:
         """

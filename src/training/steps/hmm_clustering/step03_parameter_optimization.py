@@ -35,7 +35,7 @@ from src.core.domain import (
     with_tracing_span,
     validate_pipeline_step
 )
-from src.core.decorators import validates
+from src.core.decorators import validates, handles_errors, traced
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3ParameterOptimization")

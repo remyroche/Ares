@@ -32,9 +32,9 @@ from src.core.domain import (
     secure_step_execution,
     validate_data_structure,
     with_tracing_span,
-    validate_pipeline_step
+    validate_pipeline_step,
 )
-from src.core.decorators import validates
+from src.core.decorators import validates, handles_errors, traced
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3BayesianParameterOptimization")

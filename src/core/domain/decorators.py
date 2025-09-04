@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from enum import Enum
 from functools import wraps
-from typing import Callable, List, Optional, TypeVar
+from typing import Callable, List, Optional, TypeVar, Any
 import numpy as np
 import pandas as pd
 from src.core.decorators import cached, compose, handles_errors, log_call, log_execution_time, timeout, traced, validates
@@ -119,12 +119,37 @@ def validate_feature_engineering_with_lookahead_bias_detection(lag_periods: int=
         return wrapper
     return decorator
 
-def monitor_step_execution(step_name: str, performance_level: PerformanceLevel=PerformanceLevel.MEDIUM, log_memory: bool=True, log_inputs: bool=False, log_outputs: bool=False) -> Callable[[F], F]:
-    """Monitor step execution with performance tracking."""
+def monitor_step_execution(
+    _func: F | None = None,
+    *,
+    step_name: Optional[str] = None,
+    performance_level: PerformanceLevel = PerformanceLevel.MEDIUM,
+    log_memory: bool = True,
+    log_inputs: bool = False,
+    log_outputs: bool = False,
+    **_: Any,
+) -> Callable[[F], F] | F:
+    """Monitor step execution with performance tracking.
+
+    Can be used as either:
+      - @monitor_step_execution
+      - @monitor_step_execution()
+      - @monitor_step_execution(step_name="my_step", log_inputs=True, log_outputs=True)
+    """
 
     def decorator(func: F) -> F:
-        return compose(log_execution_time, log_call(include_args=log_inputs, include_result=log_outputs, max_length=100), traced(name=f'step.{step_name}'))(func)
-    return decorator
+        name = step_name or getattr(func, "__name__", "step")
+        # performance_level and log_memory are accepted for compatibility; detailed
+        # handling can be implemented by upstream observers if needed.
+        return compose(
+            log_execution_time,
+            log_call(include_args=log_inputs, include_result=log_outputs, max_length=100),
+            traced(span_name=f"step.{name}")
+        )(func)
+
+    if _func is None:
+        return decorator
+    return decorator(_func)
 
 def quality_gate(min_score: float=0.8, metrics: Optional[List[str]]=None, fail_on_breach: bool=True) -> Callable[[F], F]:
     """Quality gate decorator to ensure minimum performance standards."""
@@ -180,12 +205,28 @@ def prevent_data_leakage(temporal_column: str='timestamp', lookback_only: bool=T
         return wrapper
     return decorator
 
-def ensure_data_integrity(check_before: bool=True, check_after: bool=True, integrity_checks: Optional[List[str]]=None) -> Callable[[F], F]:
-    """Ensure data integrity before and after operations."""
+def ensure_data_integrity(
+    _func: F | None = None,
+    *_,
+    **__: Any,
+) -> Callable[[F], F] | F:
+    """Ensure data integrity before and after operations.
+
+    Backward-compatible decorator that can be used with or without parameters,
+    and accepts additional keyword arguments which are currently ignored.
+    """
 
     def decorator(func: F) -> F:
-        return compose(validates, handles_errors(fallback=None, log_errors=True, raise_errors=True))(func)
-    return decorator
+        # Compose basic validation and error handling. Additional integrity checks
+        # can be layered here in the future without breaking call sites.
+        return compose(
+            validates,
+            handles_errors(fallback=None)
+        )(func)
+
+    if _func is None:
+        return decorator
+    return decorator(_func)
 
 def validate_pipeline_step(prerequisites: Optional[List[str]]=None, outputs: Optional[List[str]]=None, stage: Optional[str]=None) -> Callable[[F], F]:
     """Validate pipeline step prerequisites and outputs."""

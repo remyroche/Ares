@@ -43,41 +43,25 @@ from .regime_handler import RegimeHandler
 from .regime_processing_decorator import RegimeProcessingDecorator
 from .integrate_regime_processing import IntegrateRegimeProcessing
 
-# Main pipeline function
+# Import enhanced orchestrator
+from .enhanced_market_analysis_orchestrator import (
+    MarketAnalysisPipelineOrchestrator,
+    run_enhanced_market_analysis_pipeline,
+)
+
+# Main pipeline function - now uses enhanced orchestrator
 async def run_market_analysis_pipeline(symbol, exchange, timeframe, data_dir, **config):
-    """Run the complete market analysis pipeline."""
+    """Run the complete market analysis pipeline with enhanced validation and error handling."""
     try:
-        # Step 1: HMM Clustering (if enabled)
-        if config.get('hmm_clustering', True):
-            await run_enhanced_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=config.get('force_rerun', True)
-            )
-        
-        # Step 2: Regime Data Splitting (if enabled)
-        if config.get('regime_splitting', True):
-            regime_splitter = RegimeDataSplittingStep()
-            await regime_splitter.split_regime_data(symbol, exchange, timeframe, data_dir)
-        
-        # Step 3: Feature Engineering (if enabled)
-        if config.get('feature_engineering', True):
-            feature_engineer = FeatureEngineeringStep()
-            await feature_engineer.engineer_features(symbol, exchange, timeframe, data_dir)
-        
-        # Step 4: Matrix Operations (if enabled)
-        if config.get('matrix_operations', True):
-            matrix_ops = EnhancedMatrixOperationsStep()
-            await matrix_ops.perform_matrix_operations(symbol, exchange, timeframe, data_dir)
-        
-        # Step 5: Feature Selection (if enabled)
-        if config.get('feature_selection', True):
-            feature_selector = AdvancedFeatureSelectionStep()
-            await feature_selector.select_features(symbol, exchange, timeframe, data_dir)
-        
-        return True
+        # Use the enhanced orchestrator for comprehensive pipeline execution
+        orchestrator = MarketAnalysisPipelineOrchestrator(config)
+        return await orchestrator.execute_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            data_dir=data_dir,
+            **config
+        )
         
     except Exception as e:
         print(f"Market analysis pipeline failed: {e}")
@@ -111,5 +95,7 @@ __all__ = [
     'RegimeHandler',
     'RegimeProcessingDecorator',
     'IntegrateRegimeProcessing',
+    'MarketAnalysisPipelineOrchestrator',
+    'run_enhanced_market_analysis_pipeline',
     'run_market_analysis_pipeline'
 ]

@@ -130,8 +130,10 @@ def simulate_merging_with_parameters(
 
     return {
         "total_regimes": len(merged_regimes),
-        "top_20_concentration": concentration, "merged_regimes": merged_regimes[:10],  # Show top 10 for brevity
-        "total_samples": total_samples=}
+        "top_20_concentration": concentration, 
+        "merged_regimes": merged_regimes[:10],  # Show top 10 for brevity
+        "total_samples": total_samples
+    }
 
 
 def run_parameter_sweep():

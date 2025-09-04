@@ -69,8 +69,10 @@ class ComprehensiveGapFiller:
                     gap_duration = (gap_end - gap_start).total_seconds()
                     
                     gaps.append({
-                        'file': file_path.name='gap_start': gap_start,
-                        'gap_end': gap_end='gap_duration_seconds': gap_duration
+                        'file': file_path.name,
+                        'gap_start': gap_start,
+                        'gap_end': gap_end,
+                        'gap_duration_seconds': gap_duration
                     })
             
             return gaps

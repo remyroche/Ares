@@ -17,7 +17,7 @@ def load_regime_data():
 
 def simulate_regime_merging(
     regime_data, min_frequency,
-    similarity_threshold=max_regimes, None=None):
+    similarity_threshold, max_regimes):
     """Simulate regime merging with given parameters"""
 
     # Get regime counts and centroids

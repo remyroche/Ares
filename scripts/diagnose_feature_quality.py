@@ -26,23 +26,23 @@ from src.utils.logger import system_logger  # noqa: E402
 
 if TYPE_CHECKING:
     def _handle_errors(default: Any | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator to log exceptions and optionally return a default value.
+        """Decorator to log exceptions and optionally return a default value.
 
-    This keeps the script robust for long-running diagnostics.
-    """
+        This keeps the script robust for long-running diagnostics.
+        """
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            logger=system_logger.getChild(func.__name__)
-            try:
-                return func(*args, **kwargs)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
-                return default
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                logger=system_logger.getChild(func.__name__)
+                try:
+                    return func(*args, **kwargs)
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
+                    return default
 
-        return wrapper
+            return wrapper
 
-    return decorator
+        return decorator
 
 
 def _require_dataframe(func: Callable[..., Any]) -> Callable[..., Any]:

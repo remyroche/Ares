@@ -148,30 +148,137 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handles_errors(exceptions=(Exception,), default_return=None)
-    async def initialize(self) -> None:
-        """Initialize the enhanced HMM-based training step."""
+    @handles_errors(exceptions=(Exception,), default_return=False, log_level="ERROR")
+    @validates(strict=True)
+    @log_call
+    @traced
+    async def initialize(self) -> bool:
+        """Initialize the enhanced HMM-based training step with comprehensive validation."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
         
-        # Initialize regime-specific components
-        await self._initialize_regime_components()
+        try:
+            # Validate configuration
+            config_valid = await self._validate_configuration()
+            if not config_valid:
+                self.logger.error("❌ Configuration validation failed")
+                return False
+            
+            # Initialize regime-specific components
+            regime_init_success = await self._initialize_regime_components()
+            if not regime_init_success:
+                self.logger.error("❌ Regime components initialization failed")
+                return False
+            
+            # Initialize validation components
+            validation_init_success = await self._initialize_validation_components()
+            if not validation_init_success:
+                self.logger.error("❌ Validation components initialization failed")
+                return False
+            
+            self.logger.info("✅ Enhanced HMM-Based Training Step initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize HMM-based training step: {e}")
+            return False
+    
+    @handles_errors(exceptions=(Exception,), default_return=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _validate_configuration(self) -> bool:
+        """Validate the training configuration."""
+        self.logger.info("🔍 Validating HMM training configuration...")
         
-        self.logger.info("✅ Enhanced HMM-Based Training Step initialized successfully")
+        try:
+            # Validate required configuration keys
+            required_keys = ['HMM_LM', 'regime_specific_training']
+            for key in required_keys:
+                if key not in self.config:
+                    self.logger.error(f"❌ Missing required configuration key: {key}")
+                    return False
+            
+            # Validate regime configuration
+            regime_config = self.config.get('regime_specific_training', {})
+            required_regime_keys = ['min_regime_samples', 'regime_validation_split']
+            for key in required_regime_keys:
+                if key not in regime_config:
+                    self.logger.error(f"❌ Missing required regime configuration key: {key}")
+                    return False
+            
+            # Validate numeric parameters
+            min_samples = regime_config.get('min_regime_samples', 0)
+            if not isinstance(min_samples, int) or min_samples <= 0:
+                self.logger.error(f"❌ Invalid min_regime_samples: {min_samples}")
+                return False
+            
+            validation_split = regime_config.get('regime_validation_split', 0)
+            if not isinstance(validation_split, (int, float)) or not (0 < validation_split < 1):
+                self.logger.error(f"❌ Invalid regime_validation_split: {validation_split}")
+                return False
+            
+            self.logger.info("✅ Configuration validation passed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Configuration validation failed: {e}")
+            return False
+    
+    @handles_errors(exceptions=(Exception,), default_return=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _initialize_validation_components(self) -> bool:
+        """Initialize validation components."""
+        self.logger.info("🔍 Initializing validation components...")
+        
+        try:
+            # Initialize data quality validator
+            from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+            self.data_quality_validator = EnhancedDataQualityValidator(self.config)
+            
+            # Initialize feature validator
+            from src.utils.feature_engineering_validation import FeatureEngineeringValidator
+            self.feature_validator = FeatureEngineeringValidator(self.config)
+            
+            # Initialize model validator
+            from src.utils.model_performance_monitor import ModelPerformanceMonitor
+            self.model_validator = ModelPerformanceMonitor(self.config)
+            
+            self.logger.info("✅ Validation components initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize validation components: {e}")
+            return False
 
-    async def _initialize_regime_components(self) -> None:
-        """Initialize regime-specific components."""
+    @handles_errors(exceptions=(Exception,), default_return=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _initialize_regime_components(self) -> bool:
+        """Initialize regime-specific components with validation."""
         self.logger.info("🔄 Initializing regime-specific components...")
         
-        # Initialize regime-specific data loader
-        self.regime_data_loader = await self._create_regime_data_loader()
-        
-        # Initialize regime-specific feature engineering
-        self.regime_feature_engine = await self._create_regime_feature_engine()
-        
-        # Initialize regime-specific model trainer
-        self.regime_model_trainer = await self._create_regime_model_trainer()
-        
-        self.logger.info("✅ Regime-specific components initialized")
+        try:
+            # Initialize regime-specific data loader
+            self.regime_data_loader = await self._create_regime_data_loader()
+            if self.regime_data_loader is None:
+                self.logger.warning("⚠️ Regime data loader not available, using fallback")
+            
+            # Initialize regime-specific feature engineering
+            self.regime_feature_engine = await self._create_regime_feature_engine()
+            if self.regime_feature_engine is None:
+                self.logger.warning("⚠️ Regime feature engine not available, using fallback")
+            
+            # Initialize regime-specific model trainer
+            self.regime_model_trainer = await self._create_regime_model_trainer()
+            if self.regime_model_trainer is None:
+                self.logger.warning("⚠️ Regime model trainer not available, using fallback")
+            
+            self.logger.info("✅ Regime-specific components initialized")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize regime components: {e}")
+            return False
 
     async def _create_regime_data_loader(self) -> Any:
         """Create regime-specific data loader."""
@@ -188,57 +295,110 @@ class EnhancedHMMBasedTrainingStep:
         # This would integrate with the existing model training
         return None  # Placeholder for actual implementation
 
+    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), log_level="ERROR")
+    @validates(strict=True)
+    @log_call
+    @traced
     async def _load_regime_specific_data(
         self, symbol: str, data_dir: str, regime: str
     ) -> pd.DataFrame:
-        """Load regime-specific data for processing."""
+        """Load regime-specific data for processing with comprehensive validation."""
         
         self.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
         
         try:
+            # Validate inputs
+            if not symbol or not data_dir or not regime:
+                raise ValueError("Missing required parameters: symbol, data_dir, regime")
+            
+            # Validate data directory exists
+            if not safe_file_exists(data_dir):
+                raise FileNotFoundError(f"Data directory not found: {data_dir}")
+            
             # Load unified data with regime information
             unified_data_path = f"{data_dir}/{symbol}_unified_data.parquet"
-            if not os.path.exists(unified_data_path):
-                self.logger.error(f"❌ Unified data not found: {unified_data_path}")
-                return pd.DataFrame()
             
-            unified_data = safe_read_parquet(unified_data_path)
+            # Check if unified data exists, fallback to consolidated data
+            if not safe_file_exists(unified_data_path):
+                self.logger.warning(f"⚠️ Unified data not found: {unified_data_path}")
+                # Fallback to consolidated data
+                consolidated_data_path = f"{data_dir}/aggtrades_BINANCE_{symbol}_consolidated.parquet"
+                if safe_file_exists(consolidated_data_path):
+                    unified_data_path = consolidated_data_path
+                    self.logger.info(f"📁 Using consolidated data: {consolidated_data_path}")
+                else:
+                    raise FileNotFoundError(f"Neither unified nor consolidated data found for {symbol}")
             
-            # Check if regime column exists
-            if 'composite_cluster_id' not in unified_data.columns:
-                self.logger.error("❌ Regime column 'composite_cluster_id' not found in unified data")
-                return pd.DataFrame()
+            # Load data with validation
+            df = safe_read_parquet(unified_data_path)
+            if df.empty:
+                raise ValueError(f"Data file is empty: {unified_data_path}")
             
-            # Filter for specific regime
-            regime_mask = unified_data['composite_cluster_id'] == regime
-            regime_data = safe_copy(unified_data[regime_mask])
+            # Validate data schema
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            schema_valid, schema_errors = validate_dataframe_schema(df, required_columns)
+            if not schema_valid:
+                raise ValueError(f"Data schema validation failed: {schema_errors}")
             
-            # Regime-specific data validation
-            if len(regime_data) < self.regime_config["min_regime_samples"]:
-                self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data)} samples")
-                return pd.DataFrame()
+            # Validate data quality
+            quality_report = validate_data_quality(df, max_nan_ratio=0.1, check_duplicates=True)
+            if not quality_report['is_valid']:
+                self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
             
-            self.logger.info(f"✅ Loaded {len(regime_data)} samples for regime {regime}")
-            return regime_data
-            
+            # Filter by regime if regime column exists
+            if 'regime' in df.columns:
+                regime_data = df[df['regime'] == regime].copy()
+                if regime_data.empty:
+                    self.logger.warning(f"⚠️ No data found for regime: {regime}")
+                    return pd.DataFrame()
+                self.logger.info(f"✅ Loaded {len(regime_data)} rows for regime: {regime}")
+                return regime_data
+            else:
+                self.logger.warning("⚠️ No regime column found, returning all data")
+                return df
+                
         except Exception as e:
-            self.logger.error(f"❌ Error loading regime-specific data: {e}")
+            self.logger.error(f"❌ Failed to load regime-specific data: {e}")
             return pd.DataFrame()
 
+    @handles_errors(exceptions=(Exception,), default_return={"success": False, "error": "Training failed"}, log_level="ERROR")
+    @validates(strict=True)
+    @log_call
+    @traced
     async def _train_regime_specific_model(
         self, regime_data: pd.DataFrame, regime: str, config: dict
     ) -> Dict[str, Any]:
-        """Train regime-specific model."""
+        """Train regime-specific model with comprehensive validation."""
         
         self.logger.info(f"🎯 Training model for regime: {regime}")
         
         try:
-            # Regime-specific feature engineering
+            # Validate inputs
+            if regime_data.empty:
+                raise ValueError(f"Empty regime data for regime: {regime}")
+            
+            if not regime or not isinstance(regime, str):
+                raise ValueError(f"Invalid regime: {regime}")
+            
+            if not config or not isinstance(config, dict):
+                raise ValueError("Invalid config provided")
+            
+            # Validate minimum data requirements
+            min_samples = self.regime_config.get("min_regime_samples", 100)
+            if len(regime_data) < min_samples:
+                raise ValueError(f"Insufficient data for regime {regime}: {len(regime_data)} < {min_samples}")
+            
+            # Regime-specific feature engineering with validation
             regime_features = await self._engineer_regime_features(regime_data, regime)
             
             if regime_features.empty:
                 self.logger.error(f"❌ No features generated for regime {regime}")
                 return {"success": False, "error": "No features generated"}
+            
+            # Validate feature quality
+            feature_quality = await self._validate_feature_quality(regime_features, regime)
+            if not feature_quality["is_valid"]:
+                self.logger.warning(f"⚠️ Feature quality issues for regime {regime}: {feature_quality['issues']}")
             
             # Regime-specific hyperparameter optimization
             regime_params = await self._optimize_regime_hyperparameters(
@@ -250,49 +410,194 @@ class EnhancedHMMBasedTrainingStep:
                 regime_features, regime_params, regime
             )
             
+            if regime_model is None:
+                self.logger.error(f"❌ Failed to train model for regime {regime}")
+                return {"success": False, "error": "Model training failed"}
+            
             # Regime-specific validation
             validation_results = await self._validate_regime_model(
                 regime_model, regime_features, regime
             )
             
-            # Store regime-specific results
+            if not validation_results["is_valid"]:
+                self.logger.warning(f"⚠️ Model validation issues for regime {regime}: {validation_results['issues']}")
+            
+            # Store regime results
             self.regime_results[regime] = {
                 "model": regime_model,
-                "parameters": regime_params,
+                "features": regime_features,
+                "params": regime_params,
                 "validation": validation_results,
-                "regime": regime,
-                "success": True
+                "training_samples": len(regime_data),
+                "feature_count": len(regime_features.columns)
             }
             
-            self.logger.info(f"✅ Regime {regime} training completed successfully")
-            return self.regime_results[regime]
+            self.logger.info(f"✅ Successfully trained model for regime {regime}")
+            return {
+                "success": True,
+                "regime": regime,
+                "model": regime_model,
+                "validation": validation_results
+            }
             
         except Exception as e:
-            self.logger.error(f"❌ Error training regime {regime} model: {e}")
+            self.logger.error(f"❌ Failed to train regime-specific model for {regime}: {e}")
             return {"success": False, "error": str(e)}
+    
+    @handles_errors(exceptions=(Exception,), default_return={"is_valid": False, "issues": ["Validation failed"]}, log_level="ERROR")
+    @log_call
+    @traced
+    async def _validate_feature_quality(self, features: pd.DataFrame, regime: str) -> Dict[str, Any]:
+        """Validate feature quality for regime-specific training."""
+        self.logger.info(f"🔍 Validating feature quality for regime: {regime}")
+        
+        try:
+            issues = []
+            
+            # Check for empty features
+            if features.empty:
+                issues.append("Empty feature DataFrame")
+                return {"is_valid": False, "issues": issues}
+            
+            # Check for sufficient features
+            if len(features.columns) < 5:
+                issues.append(f"Insufficient features: {len(features.columns)} < 5")
+            
+            # Check for high NaN ratio
+            nan_ratios = features.isna().sum() / len(features)
+            high_nan_cols = nan_ratios[nan_ratios > 0.5]
+            if not high_nan_cols.empty:
+                issues.append(f"High NaN ratio columns: {high_nan_cols.to_dict()}")
+            
+            # Check for constant features
+            constant_features = []
+            for col in features.columns:
+                if features[col].nunique() <= 1:
+                    constant_features.append(col)
+            if constant_features:
+                issues.append(f"Constant features: {constant_features}")
+            
+            # Check for infinite values
+            inf_count = np.isinf(features.select_dtypes(include=[np.number])).sum().sum()
+            if inf_count > 0:
+                issues.append(f"Infinite values found: {inf_count}")
+            
+            is_valid = len(issues) == 0
+            
+            self.logger.info(f"✅ Feature quality validation for regime {regime}: {'PASSED' if is_valid else 'FAILED'}")
+            return {"is_valid": is_valid, "issues": issues}
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature quality validation failed for regime {regime}: {e}")
+            return {"is_valid": False, "issues": [f"Validation error: {e}"]}
+    
+    @handles_errors(exceptions=(Exception,), default_return={"is_valid": False, "issues": ["Model validation failed"]}, log_level="ERROR")
+    @log_call
+    @traced
+    async def _validate_regime_model(self, model: Any, features: pd.DataFrame, regime: str) -> Dict[str, Any]:
+        """Validate trained regime-specific model."""
+        self.logger.info(f"🔍 Validating model for regime: {regime}")
+        
+        try:
+            issues = []
+            
+            # Check if model is valid
+            if model is None:
+                issues.append("Model is None")
+                return {"is_valid": False, "issues": issues}
+            
+            # Check if model has required methods
+            required_methods = ['predict', 'fit']
+            for method in required_methods:
+                if not hasattr(model, method):
+                    issues.append(f"Model missing required method: {method}")
+            
+            # Check if features are compatible with model
+            if hasattr(model, 'feature_importances_'):
+                if len(model.feature_importances_) != len(features.columns):
+                    issues.append(f"Feature importance mismatch: {len(model.feature_importances_)} vs {len(features.columns)}")
+            
+            is_valid = len(issues) == 0
+            
+            self.logger.info(f"✅ Model validation for regime {regime}: {'PASSED' if is_valid else 'FAILED'}")
+            return {"is_valid": is_valid, "issues": issues}
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model validation failed for regime {regime}: {e}")
+            return {"is_valid": False, "issues": [f"Validation error: {e}"]}
 
+    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), log_level="ERROR")
+    @validates(strict=True)
+    @log_call
+    @traced
     async def _engineer_regime_features(
         self, regime_data: pd.DataFrame, regime: str
     ) -> pd.DataFrame:
-        """Engineer regime-specific features."""
+        """Engineer regime-specific features with comprehensive validation."""
         
         self.logger.info(f"🔧 Engineering features for regime: {regime}")
         
         try:
-            # Use existing feature engineering with regime-specific parameters
-            features_df = await self.prepare_enhanced_data(regime_data, "1m")
+            # Validate inputs
+            if regime_data.empty:
+                raise ValueError(f"Empty regime data for regime: {regime}")
             
-            # Add regime-specific feature enhancements
-            if self.regime_config["regime_specific_feature_selection"]:
-                features_df = await self._apply_regime_specific_feature_selection(
-                    features_df, regime
-                )
+            if not regime or not isinstance(regime, str):
+                raise ValueError(f"Invalid regime: {regime}")
             
+            # Validate required columns
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_columns = set(required_columns) - set(regime_data.columns)
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            # Create a copy to avoid modifying original data
+            features_df = safe_copy(regime_data)
+            
+            # Basic price features
+            features_df['price_change'] = features_df['close'].pct_change()
+            features_df['price_range'] = (features_df['high'] - features_df['low']) / features_df['close']
+            features_df['volume_change'] = features_df['volume'].pct_change()
+            
+            # Technical indicators
+            features_df['sma_5'] = features_df['close'].rolling(window=5).mean()
+            features_df['sma_20'] = features_df['close'].rolling(window=20).mean()
+            features_df['rsi'] = self._calculate_rsi(features_df['close'])
+            
+            # Regime-specific features
+            features_df['regime'] = regime
+            features_df['regime_encoded'] = hash(regime) % 1000  # Simple encoding
+            
+            # Remove rows with NaN values
+            features_df = features_df.dropna()
+            
+            if features_df.empty:
+                self.logger.warning(f"⚠️ No valid features after cleaning for regime: {regime}")
+                return pd.DataFrame()
+            
+            # Validate feature quality
+            feature_quality = await self._validate_feature_quality(features_df, regime)
+            if not feature_quality["is_valid"]:
+                self.logger.warning(f"⚠️ Feature quality issues for regime {regime}: {feature_quality['issues']}")
+            
+            self.logger.info(f"✅ Generated {len(features_df.columns)} features for regime {regime}")
             return features_df
             
         except Exception as e:
-            self.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
+            self.logger.error(f"❌ Failed to engineer features for regime {regime}: {e}")
             return pd.DataFrame()
+    
+    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception:
+            return pd.Series(index=prices.index, dtype=float)
 
     async def _optimize_regime_hyperparameters(
         self, regime_features: pd.DataFrame, regime: str

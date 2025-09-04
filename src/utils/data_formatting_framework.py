@@ -17,9 +17,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, validates, log_call, traced
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+from .common_operations import (
+    safe_copy, validate_dataframe_schema, validate_data_quality,
+    safe_file_exists, safe_json_dump, safe_json_load
+)
 from copy import copy
 
 class DataFormat(Enum):
@@ -49,9 +53,12 @@ class DataFormattingFramework:
         self.formatting_policies = {'column_naming_convention': ColumnNamingConvention.SNAKE_CASE, 'timestamp_format': 'unix_seconds', 'numeric_precision': 8, 'auto_rename_columns': True, 'strict_formatting': True, 'preserve_original': True}
         self.standard_formats = {DataFormat.KLINES: {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'}, 'column_order': ['timestamp', 'open', 'high', 'low', 'close', 'volume']}, DataFormat.FEATURES: {'required_columns': ['timestamp'], 'optional_columns': [], 'data_types': {'timestamp': 'int64'}, 'column_order': ['timestamp']}, DataFormat.LABELS: {'required_columns': ['timestamp', 'label'], 'optional_columns': ['label_probability', 'label_confidence'], 'data_types': {'timestamp': 'int64', 'label': 'int64', 'label_probability': 'float64', 'label_confidence': 'float64'}, 'column_order': ['timestamp', 'label']}, DataFormat.PREDICTIONS: {'required_columns': ['timestamp', 'prediction'], 'optional_columns': ['prediction_probability', 'prediction_confidence'], 'data_types': {'timestamp': 'int64', 'prediction': 'float64', 'prediction_probability': 'float64', 'prediction_confidence': 'float64'}, 'column_order': ['timestamp', 'prediction']}}
 
-    @handles_errors(Exception, fallback=None)
+    @handles_errors(Exception, fallback=pd.DataFrame(), log_level="ERROR")
+    @validates(strict=True)
+    @log_call
+    @traced
     def standardize_format(self, data: pd.DataFrame, target_format: DataFormat, preserve_original: bool=None) -> pd.DataFrame:
-        """Standardize data to a specific format."
+        """Standardize data to a specific format with comprehensive validation.
 
         Args:
             data: Data to standardize
@@ -61,24 +68,60 @@ class DataFormattingFramework:
         Returns:
             Standardized data
         """
-        if preserve_original is None:
-            preserve_original = self.formatting_policies['preserve_original']
-        if preserve_original:
-            standardized_data = data.copy()
-        else:
-            standardized_data = data
-        if target_format not in self.standard_formats:
-            raise ValueError(f'Unknown target format: {target_format}')
-        format_spec = self.standard_formats[target_format]
-        if self.formatting_policies['auto_rename_columns']:
-            standardized_data = self._standardize_column_names(standardized_data)
-        standardized_data = self._standardize_data_types(standardized_data, format_spec['data_types'])
-        standardized_data = self._ensure_required_columns(standardized_data, format_spec['required_columns'])
-        standardized_data = self._reorder_columns(standardized_data, format_spec['column_order'])
-        if self.formatting_policies['strict_formatting']:
-            self._validate_format(standardized_data, target_format)
-        self._log_formatting_operation(data, standardized_data, target_format)
-        return standardized_data
+        self.logger.info(f"🔄 Standardizing data to format: {target_format.value}")
+        
+        try:
+            # Validate inputs
+            if data is None or data.empty:
+                raise ValueError("Input data is None or empty")
+            
+            if not isinstance(target_format, DataFormat):
+                raise ValueError(f"Invalid target format: {target_format}")
+            
+            # Validate data quality before formatting
+            quality_report = validate_data_quality(data, max_nan_ratio=0.5, check_duplicates=True)
+            if not quality_report['is_valid']:
+                self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
+            
+            # Set preserve_original default
+            if preserve_original is None:
+                preserve_original = self.formatting_policies['preserve_original']
+            
+            # Create working copy
+            if preserve_original:
+                standardized_data = safe_copy(data, deep=True)
+            else:
+                standardized_data = data
+            
+            # Validate target format exists
+            if target_format not in self.standard_formats:
+                raise ValueError(f'Unknown target format: {target_format}')
+            
+            format_spec = self.standard_formats[target_format]
+            
+            # Apply formatting steps with validation
+            if self.formatting_policies['auto_rename_columns']:
+                standardized_data = self._standardize_column_names(standardized_data)
+            
+            standardized_data = self._standardize_data_types(standardized_data, format_spec['data_types'])
+            standardized_data = self._ensure_required_columns(standardized_data, format_spec['required_columns'])
+            standardized_data = self._reorder_columns(standardized_data, format_spec['column_order'])
+            
+            # Validate final format
+            if self.formatting_policies['strict_formatting']:
+                validation_result = self._validate_format(standardized_data, target_format)
+                if not validation_result['is_valid']:
+                    raise ValueError(f"Format validation failed: {validation_result['errors']}")
+            
+            # Log formatting operation
+            self._log_formatting_operation(data, standardized_data, target_format)
+            
+            self.logger.info(f"✅ Successfully standardized data to {target_format.value}")
+            return standardized_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to standardize data format: {e}")
+            return pd.DataFrame()
 
     def _standardize_column_names(self, data: pd.DataFrame) -> pd.DataFrame:
         """Standardize column names according to naming convention."""
@@ -154,17 +197,75 @@ class DataFormattingFramework:
         final_column_order = existing_ordered_columns + remaining_columns
         return data[final_column_order]
 
-    def _validate_format(self, data: pd.DataFrame, target_format: DataFormat) -> None:
-        """Validate that data conforms to the target format."""
-        format_spec = self.standard_formats[target_format]
-        missing_columns = set(format_spec['required_columns']) - set(data.columns)
-        if missing_columns:
-            raise ValueError(f'Missing required columns for format {target_format}: {missing_columns}')
-        for column, expected_type in format_spec['data_types'].items():
-            if column in data.columns:
-                actual_type = str(data[column].dtype)
-                if actual_type != expected_type:
-                    self.logger.warning(f"Column '{column}' has type {actual_type}, expected {expected_type}")
+    @handles_errors(Exception, fallback={"is_valid": False, "errors": ["Validation failed"]}, log_level="ERROR")
+    @log_call
+    @traced
+    def _validate_format(self, data: pd.DataFrame, target_format: DataFormat) -> Dict[str, Any]:
+        """Validate that data conforms to the target format with comprehensive error handling."""
+        self.logger.info(f"🔍 Validating data format: {target_format.value}")
+        
+        try:
+            errors = []
+            warnings = []
+            
+            # Validate input
+            if data is None or data.empty:
+                errors.append("Data is None or empty")
+                return {"is_valid": False, "errors": errors, "warnings": warnings}
+            
+            # Get format specification
+            if target_format not in self.standard_formats:
+                errors.append(f"Unknown target format: {target_format}")
+                return {"is_valid": False, "errors": errors, "warnings": warnings}
+            
+            format_spec = self.standard_formats[target_format]
+            
+            # Check required columns
+            missing_columns = set(format_spec['required_columns']) - set(data.columns)
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data types
+            for column, expected_type in format_spec['data_types'].items():
+                if column in data.columns:
+                    actual_type = str(data[column].dtype)
+                    if actual_type != expected_type:
+                        warnings.append(f"Column '{column}' has type {actual_type}, expected {expected_type}")
+            
+            # Check for required data quality
+            quality_report = validate_data_quality(data, max_nan_ratio=0.1, check_duplicates=True)
+            if not quality_report['is_valid']:
+                for issue in quality_report['issues']:
+                    if issue['type'] == 'high_nan_ratio':
+                        warnings.append(f"High NaN ratio in columns: {issue['columns']}")
+                    elif issue['type'] == 'duplicates':
+                        warnings.append(f"Found {issue['count']} duplicate rows")
+            
+            # Check column order (optional)
+            if 'column_order' in format_spec:
+                expected_order = format_spec['column_order']
+                actual_order = list(data.columns)
+                if actual_order != expected_order:
+                    warnings.append(f"Column order differs from expected: {actual_order} vs {expected_order}")
+            
+            is_valid = len(errors) == 0
+            
+            self.logger.info(f"✅ Format validation for {target_format.value}: {'PASSED' if is_valid else 'FAILED'}")
+            if warnings:
+                self.logger.warning(f"⚠️ Format validation warnings: {warnings}")
+            
+            return {
+                "is_valid": is_valid,
+                "errors": errors,
+                "warnings": warnings,
+                "format": target_format.value,
+                "data_shape": data.shape,
+                "columns": list(data.columns)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Format validation failed: {e}")
+            return {"is_valid": False, "errors": [f"Validation error: {e}"], "warnings": []}
 
     def _log_formatting_operation(self, original_data: pd.DataFrame, formatted_data: pd.DataFrame, target_format: DataFormat) -> None:
         """Log formatting operation."""

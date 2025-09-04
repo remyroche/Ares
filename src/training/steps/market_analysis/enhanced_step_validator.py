@@ -323,7 +323,6 @@ class EnhancedStepValidator:
         
         try:
             import pandas as pd
-from src.core.decorators.errors import handles_errors
             
             # Read the file
             if file_path.endswith('.parquet'):
@@ -396,60 +395,88 @@ from src.core.decorators.errors import handles_errors
     ) -> None:
         """Perform step-specific quality validations."""
         try:
-            if step_name == 'hmm_clustering':
-                # Validate HMM clustering results
-                if 'regime' in df.columns:
-                    unique_regimes = df['regime'].nunique()
-                    min_regimes = quality_thresholds.get('min_regimes', 2)
-                    if unique_regimes < min_regimes:
-                        quality_result['warnings'].append(
-                            f"Low number of regimes: {unique_regimes} < {min_regimes}"
-                        )
+            # Use strategy pattern to reduce nesting
+            validation_strategies = {
+                'hmm_clustering': self._validate_hmm_clustering_quality,
+                'labeling': self._validate_labeling_quality,
+                'feature_engineering': self._validate_feature_engineering_quality,
+                'matrix_operations': self._validate_matrix_operations_quality,
+                'feature_selection': self._validate_feature_selection_quality,
+            }
             
-            elif step_name == 'labeling':
-                # Validate labeling results
-                if 'label' in df.columns:
-                    label_counts = df['label'].value_counts()
-                    min_labels_per_regime = quality_thresholds.get('min_labels_per_regime', 100)
-                    
-                    for regime, count in label_counts.items():
-                        if count < min_labels_per_regime:
-                            quality_result['warnings'].append(
-                                f"Low label count for regime {regime}: {count} < {min_labels_per_regime}"
-                            )
-            
-            elif step_name == 'feature_engineering':
-                # Validate feature engineering results
-                feature_columns = [col for col in df.columns if col not in ['regime', 'label', 'open', 'high', 'low', 'close', 'volume']]
-                min_features = quality_thresholds.get('min_features', 50)
-                
-                if len(feature_columns) < min_features:
-                    quality_result['warnings'].append(
-                        f"Low number of features: {len(feature_columns)} < {min_features}"
-                    )
-            
-            elif step_name == 'matrix_operations':
-                # Validate matrix operations results
-                matrix_columns = [col for col in df.columns if col not in ['regime', 'label']]
-                min_matrix_features = quality_thresholds.get('min_matrix_features', 20)
-                
-                if len(matrix_columns) < min_matrix_features:
-                    quality_result['warnings'].append(
-                        f"Low number of matrix features: {len(matrix_columns)} < {min_matrix_features}"
-                    )
-            
-            elif step_name == 'feature_selection':
-                # Validate feature selection results
-                selected_columns = [col for col in df.columns if col not in ['regime', 'label']]
-                min_selected_features = quality_thresholds.get('min_selected_features', 10)
-                
-                if len(selected_columns) < min_selected_features:
-                    quality_result['warnings'].append(
-                        f"Low number of selected features: {len(selected_columns)} < {min_selected_features}"
-                    )
+            validator = validation_strategies.get(step_name)
+            if validator:
+                await validator(df, quality_result, quality_thresholds)
         
         except Exception as e:
             self.logger.warning(f"⚠️ Step-specific validation failed for {step_name}: {e}")
+
+    async def _validate_hmm_clustering_quality(
+        self, df: 'pd.DataFrame', quality_result: Dict[str, Any], quality_thresholds: Dict[str, Any]
+    ) -> None:
+        """Validate HMM clustering results."""
+        if 'regime' not in df.columns:
+            return
+            
+        unique_regimes = df['regime'].nunique()
+        min_regimes = quality_thresholds.get('min_regimes', 2)
+        if unique_regimes < min_regimes:
+            quality_result['warnings'].append(
+                f"Low number of regimes: {unique_regimes} < {min_regimes}"
+            )
+
+    async def _validate_labeling_quality(
+        self, df: 'pd.DataFrame', quality_result: Dict[str, Any], quality_thresholds: Dict[str, Any]
+    ) -> None:
+        """Validate labeling results."""
+        if 'label' not in df.columns:
+            return
+            
+        label_counts = df['label'].value_counts()
+        min_labels_per_regime = quality_thresholds.get('min_labels_per_regime', 100)
+        
+        for regime, count in label_counts.items():
+            if count < min_labels_per_regime:
+                quality_result['warnings'].append(
+                    f"Low label count for regime {regime}: {count} < {min_labels_per_regime}"
+                )
+
+    async def _validate_feature_engineering_quality(
+        self, df: 'pd.DataFrame', quality_result: Dict[str, Any], quality_thresholds: Dict[str, Any]
+    ) -> None:
+        """Validate feature engineering results."""
+        feature_columns = [col for col in df.columns 
+                          if col not in ['regime', 'label', 'open', 'high', 'low', 'close', 'volume']]
+        min_features = quality_thresholds.get('min_features', 50)
+        
+        if len(feature_columns) < min_features:
+            quality_result['warnings'].append(
+                f"Low number of features: {len(feature_columns)} < {min_features}"
+            )
+
+    async def _validate_matrix_operations_quality(
+        self, df: 'pd.DataFrame', quality_result: Dict[str, Any], quality_thresholds: Dict[str, Any]
+    ) -> None:
+        """Validate matrix operations results."""
+        matrix_columns = [col for col in df.columns if col not in ['regime', 'label']]
+        min_matrix_features = quality_thresholds.get('min_matrix_features', 20)
+        
+        if len(matrix_columns) < min_matrix_features:
+            quality_result['warnings'].append(
+                f"Low number of matrix features: {len(matrix_columns)} < {min_matrix_features}"
+            )
+
+    async def _validate_feature_selection_quality(
+        self, df: 'pd.DataFrame', quality_result: Dict[str, Any], quality_thresholds: Dict[str, Any]
+    ) -> None:
+        """Validate feature selection results."""
+        selected_columns = [col for col in df.columns if col not in ['regime', 'label']]
+        min_selected_features = quality_thresholds.get('min_selected_features', 10)
+        
+        if len(selected_columns) < min_selected_features:
+            quality_result['warnings'].append(
+                f"Low number of selected features: {len(selected_columns)} < {min_selected_features}"
+            )
 
     @handles_errors(Exception, fallback=False)
     @traced(operation_name="validate_step_transition")

@@ -5,11 +5,8 @@ This module validates the labeling step outputs.
 """
 
 import pandas as pd
-from src.core.decorators import (
-    validates,
-    smart_validation_cache,
-    validate_step5_comprehensive
-)
+from src.core.decorators import validates
+from src.core.domain import smart_validation_cache, validate_step5_comprehensive
 
 import json
 import os

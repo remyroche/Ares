@@ -1,11 +1,8 @@
 # src/training/steps/step7_feature_engineering_validator.py
 
 
-from src.core.decorators import (
-    validates,
-    smart_validation_cache,
-    validate_step6_comprehensive
-)
+from src.core.decorators import validates
+from src.core.domain import smart_validation_cache, validate_step6_comprehensive
 import pandas as pd
 
 import json

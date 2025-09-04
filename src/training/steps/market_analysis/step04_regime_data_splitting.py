@@ -10,8 +10,9 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time, monitor_feature_engineering
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time
+from src.core.domain import monitor_feature_engineering
 import numpy as np
 import pandas as pd
 project_root = Path(__file__).parent.parent.parent
@@ -21,7 +22,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
-system_logger = PipelineStandards.safe_import('src.utils.logger', None)
+from src.utils.logger import system_logger
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 pandas = PipelineStandards.safe_import('pandas', None)
 numpy = PipelineStandards.safe_import('numpy', None)
@@ -33,37 +34,22 @@ def create_fallback_logger() -> Any:
 
 def create_fallback_decorator() -> Any:
 
-    def decorator(func: Callable) -> None:
-        return func
+    def decorator(func: Callable) -> Callable:
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
     return decorator
 if system_logger is None:
     system_logger = create_fallback_logger()
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
-    handle_errors = create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
-    resource_monitor = create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
-    validate_data_structure = create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
-    validates = create_fallback_decorator()
-    cached = create_fallback_decorator()
-    log_execution_time = create_fallback_decorator()
-else:
-    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
-    handle_errors = centralized_decorators.handle_errors
-    memory_efficient = centralized_decorators.memory_efficient
-    resource_monitor = centralized_decorators.resource_monitor
-    secure_data_processing = centralized_decorators.secure_data_processing
-    validate_data_structure = centralized_decorators.validate_data_structure
-    with_tracing_span = centralized_decorators.with_tracing_span
-    quality_gate = centralized_decorators.quality_gate
-    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
-    validates = centralized_decorators.validates
-    cached = centralized_decorators.cached
-    log_execution_time = centralized_decorators.log_execution_time
+# Use the real decorators that are already imported
+comprehensive_data_validation = validates
+handle_errors = handles_errors
+memory_efficient = cached
+resource_monitor = log_execution_time
+secure_data_processing = handles_errors
+validate_data_structure = validates
+with_tracing_span = traced
+quality_gate = validates
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report = lambda *args, **kwargs: 'fallback_report'
@@ -118,8 +104,8 @@ class RegimeDataSplittingStep:
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
     @traced(span_name='split_data_by_regimes')
-    @validates(min_quality_score=0.8, max_correlation=0.95, required_grade='B')
-    @cached
+    @validates()
+    @cached()
     async def split_data_by_regimes(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Create unified dataset with regime labels for regime-aware processing."""
         step_start = time.time()
@@ -239,10 +225,10 @@ class RegimeDataSplittingStep:
 
 @traced(span_name='execute_regime_data_splitting')
 @validates()
-@handles_errors
-@cached
-@log_execution_time
-@monitor_feature_engineering
+@handles_errors()
+@cached()
+@log_execution_time()
+@monitor_feature_engineering()
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: dict[str, Any]=None) -> bool:
     """Run Step 4: Regime Data Splitting with standardized data quality management."
     

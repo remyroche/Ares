@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
+from src.core.decorators import handles_errors
 from copy import copy
 
 # src/interfaces/event_bus.py
@@ -68,13 +69,11 @@ class EventBus:
         self.event_history: list[dict[str, Any]] = []
 
     @handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid event bus configuration"),
-            AttributeError: (False, "Missing required event bus parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="event bus initialization",
+        ValueError,
+        AttributeError,
+        KeyError,
+        fallback=False,
+        log_level="ERROR",
     )
     async def initialize(self) -> bool:
         try:
@@ -129,11 +128,9 @@ class EventBus:
             )
 
     @handles_errors(
-        error_handlers={
-            Exception: (False, "Event bus run failed"),
-        },
-        default_return=False,
-        context="event bus run",
+        Exception,
+        fallback=False,
+        log_level="ERROR",
     )
     async def run(self) -> bool:
         try:

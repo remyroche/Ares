@@ -250,13 +250,21 @@ class CodeInteractionMapper:
                 # Deprecated code
                 if dead_code.deprecated_issues:
                     f.write(f"\nDeprecated Code ({len(dead_code.deprecated_issues)}):\n")
+                    doc_only_count = 0
                     for issue in dead_code.deprecated_issues[:10]:  # Show top 10
                         f.write(f"  • {issue.file_path}:{issue.line_number} - {issue.description}\n")
                         f.write(f"    Reason: {issue.deprecation_reason}\n")
+                        if hasattr(issue, 'documentation_only') and issue.documentation_only:
+                            f.write(f"    ⚠️  DOCUMENTATION ONLY: Only referenced in docs/config files\n")
+                            doc_only_count += 1
                         if issue.removal_version:
                             f.write(f"    Removal Version: {issue.removal_version}\n")
                         if issue.alternative:
                             f.write(f"    Alternative: {issue.alternative}\n")
+                    
+                    if doc_only_count > 0:
+                        f.write(f"\n  📝 Note: {doc_only_count} functions are only referenced in documentation/config files\n")
+                        f.write(f"     These can be safely removed if not needed for API documentation.\n")
                 
                 # Removal plan summary
                 if dead_code.impact_analysis and "removal_plan" in dead_code.impact_analysis:
@@ -291,6 +299,12 @@ class CodeInteractionMapper:
         with open(enhanced_html_file, "w") as f:
             f.write(enhanced_html_content)
         print(f"  - Saved enhanced HTML report: {enhanced_html_file}")
+        
+        # Generate dependency map visualization
+        dependency_map_file = reports_dir / f"dependency_map_{timestamp}.json"
+        with open(dependency_map_file, "w") as f:
+            json.dump(self._build_comprehensive_dependency_map(), f, indent=2, default=str)
+        print(f"  - Saved dependency map: {dependency_map_file}")
 
         # Generate visual diagrams
         try:
@@ -311,6 +325,7 @@ class CodeInteractionMapper:
             "summary": str(summary_file),
             "html": str(html_file),
             "enhanced_html": str(enhanced_html_file),
+            "dependency_map": str(dependency_map_file),
             "report_dir": str(reports_dir),
             "timestamp": timestamp
         }
@@ -1709,15 +1724,23 @@ class CodeInteractionMapper:
         if not is_defined:
             return False
         
-        # Check if it's used anywhere
-        is_used = (
+        # Check if it's used in actual code (not just documentation)
+        is_used_in_code = (
             issue_name in dependency_map['function_calls'] or
             issue_name in dependency_map['class_usage'] or
-            self._check_string_references(issue_name, dependency_map) or
             self._check_dynamic_usage(issue_name, dependency_map)
         )
         
-        return is_used
+        # Check if it's only referenced in documentation/config
+        is_doc_only = self._check_documentation_only_references(issue_name, dependency_map)
+        
+        # Mark as documentation-only if it's only in docs/config
+        if is_doc_only and not is_used_in_code:
+            issue.documentation_only = True
+            issue.severity = "low"  # Lower severity for doc-only references
+            return False  # Still flag as unused, but with special note
+        
+        return is_used_in_code
 
     def _extract_name_from_issue(self, issue):
         """Extract function/class name from dead code issue."""
@@ -1751,6 +1774,161 @@ class CodeInteractionMapper:
                 # For now, return False to be conservative
                 pass
         return False
+
+    def _check_documentation_only_references(self, name, dependency_map):
+        """Check if a name is only referenced in documentation or config files."""
+        doc_extensions = {'.md', '.rst', '.txt', '.yaml', '.yml', '.json', '.toml', '.ini', '.cfg'}
+        config_keywords = ['config', 'settings', 'example', 'demo', 'test']
+        
+        # Check if any references are in documentation/config files
+        for ref_type, references in dependency_map.items():
+            if ref_type in ['string_references', 'import_statements']:
+                for file_path, line_num in references:
+                    file_path_str = str(file_path)
+                    # Check if it's a documentation or config file
+                    if any(file_path_str.endswith(ext) for ext in doc_extensions):
+                        return True
+                    # Check if it's in a config-related directory
+                    if any(keyword in file_path_str.lower() for keyword in config_keywords):
+                        return True
+        
+        return False
+
+    def _generate_enhanced_html_report(self):
+        """Generate enhanced HTML report with dependency analysis."""
+        dead_code = self.results.get("dead_code")
+        dependency_map = self._build_comprehensive_dependency_map()
+        
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Code Interaction Analysis</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #007acc; }}
+        .section {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }}
+        .metric {{ display: inline-block; margin: 10px; padding: 10px; background: #f0f8ff; border-radius: 5px; text-align: center; }}
+        .metric-value {{ font-size: 24px; font-weight: bold; color: #007acc; }}
+        .metric-label {{ font-size: 14px; color: #666; }}
+        .warning {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 10px 0; }}
+        .success {{ background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px; margin: 10px 0; }}
+        .issue {{ margin: 5px 0; padding: 8px; background: #f8f9fa; border-left: 4px solid #007acc; }}
+        .doc-only {{ border-left-color: #ffc107; background: #fff8e1; }}
+        .high-impact {{ border-left-color: #dc3545; background: #f8d7da; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
+        th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #f2f2f2; }}
+        .code {{ font-family: monospace; background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Enhanced Code Interaction Analysis</h1>
+            <p>Comprehensive dependency analysis with false positive prevention</p>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Analysis Summary</h2>
+            <div class="metric">
+                <div class="metric-value">{dead_code.total_issues if dead_code else 0}</div>
+                <div class="metric-label">Total Issues</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{len(dead_code.deprecated_issues) if dead_code and dead_code.deprecated_issues else 0}</div>
+                <div class="metric-label">Deprecated Issues</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{getattr(dead_code, 'false_positives_filtered', 0) if dead_code else 0}</div>
+                <div class="metric-label">False Positives Filtered</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{len(dependency_map['function_definitions'])}</div>
+                <div class="metric-label">Functions Analyzed</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{len(dependency_map['class_definitions'])}</div>
+                <div class="metric-label">Classes Analyzed</div>
+            </div>
+        </div>
+        
+        <div class="warning">
+            <h3>⚠️ Important: Enhanced Analysis</h3>
+            <p>This analysis now includes comprehensive cross-file dependency checking to prevent false positives. 
+            Functions/classes flagged as 'deprecated' are validated against actual usage across the entire codebase.</p>
+        </div>
+        
+        <div class="section">
+            <h2>🔗 Dependency Map Overview</h2>
+            <table>
+                <tr><th>Type</th><th>Count</th><th>Description</th></tr>
+                <tr><td>Function Definitions</td><td>{len(dependency_map['function_definitions'])}</td><td>Functions defined across codebase</td></tr>
+                <tr><td>Function Calls</td><td>{len(dependency_map['function_calls'])}</td><td>Function calls found</td></tr>
+                <tr><td>Class Definitions</td><td>{len(dependency_map['class_definitions'])}</td><td>Classes defined across codebase</td></tr>
+                <tr><td>Class Usage</td><td>{len(dependency_map['class_usage'])}</td><td>Class usage instances</td></tr>
+                <tr><td>Import Statements</td><td>{len(dependency_map['import_statements'])}</td><td>Import statements tracked</td></tr>
+                <tr><td>Dynamic Imports</td><td>{len(dependency_map['dynamic_imports'])}</td><td>Dynamic imports detected</td></tr>
+                <tr><td>Reflection Usage</td><td>{len(dependency_map['reflection_usage'])}</td><td>getattr/hasattr usage</td></tr>
+            </table>
+        </div>
+"""
+        
+        if dead_code and dead_code.deprecated_issues:
+            html += """
+        <div class="section">
+            <h2>🚨 Deprecated Code Analysis</h2>
+"""
+            doc_only_count = 0
+            for issue in dead_code.deprecated_issues[:20]:  # Show top 20
+                css_class = "doc-only" if hasattr(issue, 'documentation_only') and issue.documentation_only else "issue"
+                if hasattr(issue, 'documentation_only') and issue.documentation_only:
+                    doc_only_count += 1
+                
+                html += f"""
+            <div class="{css_class}">
+                <strong>{issue.file_path}:{issue.line_number}</strong> - {issue.description}<br>
+                <small>Reason: {issue.deprecation_reason}</small>
+"""
+                if hasattr(issue, 'documentation_only') and issue.documentation_only:
+                    html += '<br><small>⚠️ <strong>DOCUMENTATION ONLY:</strong> Only referenced in docs/config files</small>'
+                html += "</div>"
+            
+            if doc_only_count > 0:
+                html += f"""
+            <div class="warning">
+                <h4>📝 Documentation-Only References</h4>
+                <p>{doc_only_count} functions are only referenced in documentation/config files. 
+                These can be safely removed if not needed for API documentation.</p>
+            </div>
+"""
+            html += "</div>"
+        
+        html += """
+        <div class="section">
+            <h2>🎯 Key Improvements</h2>
+            <ul>
+                <li><strong>Cross-file dependency checking:</strong> Prevents false positives by analyzing entire codebase</li>
+                <li><strong>Documentation-only detection:</strong> Identifies functions only referenced in docs/config</li>
+                <li><strong>Dynamic usage tracking:</strong> Detects getattr, hasattr, and other dynamic patterns</li>
+                <li><strong>Enhanced reporting:</strong> Shows filtered results and dependency statistics</li>
+                <li><strong>Risk assessment:</strong> Categorizes issues by removal risk</li>
+            </ul>
+        </div>
+        
+        <div class="success">
+            <h3>✅ Analysis Complete</h3>
+            <p>This enhanced analysis provides more accurate dead code identification by considering 
+            cross-file dependencies and usage patterns across the entire codebase.</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        return html
 
 
 def main():

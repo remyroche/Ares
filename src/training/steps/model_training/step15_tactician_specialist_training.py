@@ -1054,7 +1054,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.metrics import accuracy_score
-from src.core.decorators.errors import handles_errors
 
             model = RandomForestClassifier(
                 n_estimators=200,

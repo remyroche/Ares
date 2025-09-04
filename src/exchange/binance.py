@@ -622,7 +622,8 @@ class BinanceExchange:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info(
-                        f"Klines retrieved successfully: {len(data)} records",
+                        f"Klines retrieved successfully: {len(data)} records"
+                    )
                     return data
                 self.print(failed("Failed to get klines: {response.status}"))
                 return None
@@ -748,7 +749,8 @@ class BinanceExchange:
                 if response.status == 200:
                     return await response.json()
                 self.logger.error(
-                    f"Failed to get aggregate trades: {response.status}",
+                    f"Failed to get aggregate trades: {response.status}"
+                )
                 return None
 
         except Exception:

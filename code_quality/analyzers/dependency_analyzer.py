@@ -10,7 +10,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import pkg_resources
+try:
+    import pkg_resources
+    PKG_RESOURCES_AVAILABLE = True
+except ImportError:
+    PKG_RESOURCES_AVAILABLE = False
 
 from core.config import CodeQualityConfig, get_default_config
 from utils.file_utils import find_python_files
@@ -350,6 +354,10 @@ class DependencyAnalyzer:
 
     def _check_installed_packages(self) -> None:
         """Check which packages are actually installed."""
+        if not PKG_RESOURCES_AVAILABLE:
+            # Skip checking if pkg_resources is not available
+            return
+            
         try:
             # Get installed packages
             installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}

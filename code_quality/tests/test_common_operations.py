@@ -22,7 +22,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
-from src.utils.common_operations import * as *_src_utils_common_operations
+from src.utils.common_operations import *
 
 
 class TestDateTimeOperations(unittest.TestCase):

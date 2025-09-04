@@ -42,6 +42,7 @@ from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 from src.tactician.sr_levels_manager import create_sr_levels_manager
+from src.tactician.sr_levels.sr_comprehensive_integration import create_sr_comprehensive_integration
 
 # Note: Enhanced S/R components will be implemented as improvements to existing components
 from src.utils.enhanced_mlflow_integration import (
@@ -66,6 +67,7 @@ class SROptimizationStep:
         self.sr_predictor = None
         self.sr_data_integration = None
         self.sr_levels_manager = None
+        self.sr_comprehensive_integration = None  # New comprehensive integration
         # Removed enhanced_optimizer - will improve existing components instead
         self._initialize_components()
 
@@ -128,6 +130,17 @@ class SROptimizationStep:
             if hasattr(self.sr_data_integration, 'initialize'):
                 await self.sr_data_integration.initialize()
                 self.logger.info("✅ SR Data Integration initialized successfully")
+            
+            # Initialize comprehensive S/R integration
+            try:
+                self.sr_comprehensive_integration = await create_sr_comprehensive_integration(self.config)
+                self.logger.info("✅ Comprehensive S/R integration initialized successfully")
+                # Log component status
+                component_status = self.sr_comprehensive_integration.get_component_status()
+                self.logger.info(f"S/R component status: {component_status}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Comprehensive S/R integration initialization failed: {e}")
+                # Continue without it - existing components can still work
             
             self.logger.info("✅ S/R optimization step initialized successfully")
             return True
@@ -200,6 +213,9 @@ class SROptimizationStep:
             await self._generate_final_comprehensive_report(
                 optimization_result, sr_analysis_reports, sr_integration_analysis, detailed_reports
             )
+            
+            # Step 8: Log results to MLflow
+            await self._log_to_mlflow(optimization_result, sr_analysis_reports, detailed_reports)
             
             execution_time = time.time() - self.start_time
             self.logger.info(f"✅ S/R optimization completed successfully in {execution_time:.2f}s")
@@ -456,6 +472,29 @@ class SROptimizationStep:
                 self.logger.error("No market data available for enhanced optimization")
                 return None
             
+            # First, try comprehensive integration if available
+            comprehensive_result = None
+            if self.sr_comprehensive_integration:
+                try:
+                    self.logger.info("🔍 Using comprehensive S/R integration for detection...")
+                    
+                    # Detect S/R levels using all components
+                    comprehensive_result = await self.sr_comprehensive_integration.detect_sr_levels(
+                        market_data=market_data,
+                        timeframe="1m",
+                        use_ensemble=True
+                    )
+                    
+                    # Optimize parameters
+                    optimization_params = await self.sr_comprehensive_integration.optimize_parameters(
+                        market_data=market_data
+                    )
+                    
+                    self.logger.info(f"✅ Comprehensive S/R detection found {len(comprehensive_result.get('support_levels', []))} support and {len(comprehensive_result.get('resistance_levels', []))} resistance levels")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Comprehensive integration failed: {e}")
+            
             # Use enhanced optimization method
             if hasattr(self.optimizer, 'optimize_sr_detection_enhanced'):
                 optimization_result = await self.optimizer.optimize_sr_detection_enhanced(
@@ -469,6 +508,10 @@ class SROptimizationStep:
                     market_data=market_data,
                     target_timeframe="15m"
                 )
+            
+            # Merge comprehensive results if available
+            if comprehensive_result and optimization_result:
+                optimization_result.advanced_params['comprehensive_sr_analysis'] = comprehensive_result
             
             if optimization_result:
                 self.logger.info(f"✅ Enhanced S/R optimization completed. Score: {optimization_result.optimization_score:.4f}")
@@ -1645,6 +1688,57 @@ class SROptimizationStep:
     context="step02_5_sr_optimization"
 )
 @secure_step_execution
+    async def _log_to_mlflow(self, optimization_result: Any, 
+                            sr_analysis_reports: Dict[str, Any],
+                            detailed_reports: Dict[str, Any]) -> None:
+        """Log S/R optimization results to MLflow."""
+        try:
+            import mlflow
+            
+            # Log optimization metrics
+            if optimization_result:
+                mlflow.log_metric("sr_optimization_score", optimization_result.optimization_score)
+                mlflow.log_metric("sr_cv_score_mean", optimization_result.cv_scores['mean'])
+                mlflow.log_metric("sr_cv_score_std", optimization_result.cv_scores['std'])
+                
+                # Log best parameters
+                for param_name, param_value in optimization_result.best_params.items():
+                    mlflow.log_param(f"sr_{param_name}", param_value)
+                
+                # Log performance metrics
+                for metric_name, metric_value in optimization_result.performance_metrics.items():
+                    if isinstance(metric_value, (int, float)):
+                        mlflow.log_metric(f"sr_{metric_name}", metric_value)
+            
+            # Log S/R detection results
+            if sr_analysis_reports:
+                mlflow.log_metric("sr_support_levels_count", 
+                                len(sr_analysis_reports.get('support_levels', [])))
+                mlflow.log_metric("sr_resistance_levels_count", 
+                                len(sr_analysis_reports.get('resistance_levels', [])))
+                mlflow.log_metric("sr_confluence_zones_count", 
+                                len(sr_analysis_reports.get('confluence_zones', [])))
+            
+            # Log comprehensive integration results
+            if hasattr(self, 'sr_comprehensive_integration') and self.sr_comprehensive_integration:
+                component_status = self.sr_comprehensive_integration.get_component_status()
+                active_components = sum(1 for status in component_status.values() if status)
+                mlflow.log_metric("sr_active_components", active_components)
+                mlflow.log_metric("sr_total_components", len(component_status))
+            
+            # Log reports as artifacts
+            if detailed_reports and 'report_paths' in detailed_reports:
+                for report_name, report_path in detailed_reports['report_paths'].items():
+                    if Path(report_path).exists():
+                        mlflow.log_artifact(report_path, f"sr_reports/{report_name}")
+            
+            self.logger.info("✅ S/R optimization results logged to MLflow")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to log S/R results to MLflow: {e}")
+            # Don't fail the step if MLflow logging fails
+
+
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the S/R optimization step."""
     try:

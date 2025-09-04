@@ -4,7 +4,6 @@ Cryptocurrency Price Movement Analyzer
 Analyzes OHLCV data to calculate potential profits from different triple barrier methods
 """
 
-import logging
 import warnings
 from pathlib import Path
 
@@ -13,18 +12,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from centralized_logging import get_logger
+
 warnings.filterwarnings("ignore")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("analysis.log"),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class CryptoPriceAnalyzer:
     def __init__(self, data_file):

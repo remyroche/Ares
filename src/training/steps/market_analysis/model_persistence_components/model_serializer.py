@@ -189,25 +189,44 @@ class ModelSerializer:
         if not path.exists():
             self.logger.error(f'Model file not found: {file_path}')
             return None
+        
+        # Auto-detect format if not specified
         if format_name is None:
-            if path.suffix == '.pkl':
-                format_name = 'pickle'
-            elif path.suffix == '.joblib':
-                format_name = 'joblib'
-            elif path.suffix == '.onnx':
-                format_name = 'onnx'
-            else:
-                self.logger.error(f'Unknown file format: {path.suffix}')
+            format_name = self._detect_format(path)
+            if format_name is None:
                 return None
-        if format_name == 'pickle':
-            return await self._load_pickle(path)
-        elif format_name == 'joblib':
-            return await self._load_joblib(path)
-        elif format_name == 'onnx':
-            return await self._load_onnx(path)
-        else:
+        
+        # Load model using appropriate loader
+        return await self._load_model_by_format(path, format_name)
+
+    def _detect_format(self, path: Path) -> Optional[str]:
+        """Detect file format from extension."""
+        format_mapping = {
+            '.pkl': 'pickle',
+            '.joblib': 'joblib',
+            '.onnx': 'onnx'
+        }
+        
+        format_name = format_mapping.get(path.suffix)
+        if format_name is None:
+            self.logger.error(f'Unknown file format: {path.suffix}')
+        
+        return format_name
+
+    async def _load_model_by_format(self, path: Path, format_name: str) -> Optional[Any]:
+        """Load model using the specified format."""
+        loaders = {
+            'pickle': self._load_pickle,
+            'joblib': self._load_joblib,
+            'onnx': self._load_onnx
+        }
+        
+        loader = loaders.get(format_name)
+        if loader is None:
             self.logger.error(f'Unsupported format: {format_name}')
             return None
+        
+        return await loader(path)
 
     async def _load_pickle(self, file_path: Path) -> Optional[Any]:
         """Load model from pickle file."""

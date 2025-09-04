@@ -136,16 +136,49 @@ class HMMRegimeDiscovery1H:
 
     async def _calculate_regime_statistics(self, data: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, Any]:
         """Calculate statistics for each regime."""
+        data_with_regimes = self._prepare_data_with_regimes(data, regime_labels)
+        stats = {}
+        
+        for regime_num, regime_name in self.regime_names.items():
+            regime_stats = await self._calculate_single_regime_stats(
+                data_with_regimes, regime_num, regime_name
+            )
+            if regime_stats:
+                stats[regime_name] = regime_stats
+        
+        return stats
+
+    def _prepare_data_with_regimes(self, data: pd.DataFrame, regime_labels: np.ndarray) -> pd.DataFrame:
+        """Prepare data with regime labels and returns."""
         data_with_regimes = data.copy()
         data_with_regimes['regime'] = regime_labels[:len(data)]
         data_with_regimes['returns'] = data_with_regimes['close'].pct_change()
-        stats = {}
-        for regime_num, regime_name in self.regime_names.items():
-            regime_data = data_with_regimes[data_with_regimes['regime'] == regime_num]
-            if len(regime_data) == 0:
-                continue
-            stats[regime_name] = {'count': len(regime_data), 'percentage': len(regime_data) / len(data_with_regimes) * 100, 'avg_return': regime_data['returns'].mean(), 'volatility': regime_data['returns'].std(), 'sharpe': regime_data['returns'].mean() / regime_data['returns'].std() * np.sqrt(252 * 24), 'avg_volume': regime_data['volume'].mean(), 'duration_stats': self._calculate_duration_stats(data_with_regimes, regime_num)}
-        return stats
+        return data_with_regimes
+
+    async def _calculate_single_regime_stats(
+        self, data_with_regimes: pd.DataFrame, regime_num: int, regime_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Calculate statistics for a single regime."""
+        regime_data = data_with_regimes[data_with_regimes['regime'] == regime_num]
+        
+        if len(regime_data) == 0:
+            return None
+        
+        return {
+            'count': len(regime_data),
+            'percentage': len(regime_data) / len(data_with_regimes) * 100,
+            'avg_return': regime_data['returns'].mean(),
+            'volatility': regime_data['returns'].std(),
+            'sharpe': self._calculate_sharpe_ratio(regime_data['returns']),
+            'avg_volume': regime_data['volume'].mean(),
+            'duration_stats': self._calculate_duration_stats(data_with_regimes, regime_num)
+        }
+
+    def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
+        """Calculate Sharpe ratio for returns."""
+        if returns.std() == 0:
+            return 0.0
+        return returns.mean() / returns.std() * np.sqrt(252 * 24)
 
     def _calculate_duration_stats(self, data: pd.DataFrame, regime: int) -> Dict[str, float]:
         """Calculate duration statistics for a regime."""

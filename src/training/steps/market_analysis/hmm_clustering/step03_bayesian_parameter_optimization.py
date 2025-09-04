@@ -191,73 +191,22 @@ class BayesianParameterOptimizationStep:
     def _optimization_objective(self, trial, data: pd.DataFrame, features: pd.DataFrame) -> float:
         """Define the optimization objective for Optuna."""
         try:
-            # Suggest HMM parameters
-            n_components = trial.suggest_int("n_components", 2, 8)
-            covariance_type = trial.suggest_categorical("covariance_type", ["full", "tied", "diag", "spherical"])
-            n_iter = trial.suggest_int("n_iter", 50, 200)
-            tol = trial.suggest_float("tol", 1e-6, 1e-2, log=True)
-            reg_covar = trial.suggest_float("reg_covar", 1e-7, 1e-2, log=True)
+            # Get trial parameters
+            trial_params = self._get_trial_parameters(trial, features)
             
-            # Suggest clustering parameters
-            n_clusters = trial.suggest_int("n_clusters", 10, 30)
-            clustering_method = trial.suggest_categorical("clustering_method", ["kmeans", "gaussian_mixture", "spectral"])
-            
-            # Suggest feature selection parameters
-            feature_selection_method = trial.suggest_categorical("feature_selection_method", ["variance", "correlation", "mutual_info"])
-            max_features = trial.suggest_int("max_features", 20, min(100, features.shape[1]))
-            
-            # Prepare features
-            features_processed = self._process_features_for_trial(features, feature_selection_method, max_features)
-            
-            # Scale features
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features_processed)
-            
-            # Train HMM
-            hmm_model = hmm.GaussianHMM(
-                n_components=n_components,
-                covariance_type=covariance_type,
-                n_iter=n_iter,
-                tol=tol,
-                reg_covar=reg_covar,
-                random_state=42
-            )
-            
-            # Use subset for faster training
-            max_samples = min(50000, features_scaled.shape[0])
-            if features_scaled.shape[0] > max_samples:
-                indices = np.random.choice(features_scaled.shape[0], max_samples, replace=False)
-                features_subset = features_scaled[indices]
-            else:
-                features_subset = features_scaled
-            
-            hmm_model.fit(features_subset)
-            
-            # Get HMM states
-            hmm_states = hmm_model.predict(features_scaled)
-            hmm_probs = hmm_model.predict_proba(features_scaled)
-            
-            # Create composite features
-            composite_features = self._create_composite_features(features_processed, hmm_states, hmm_probs)
-            composite_scaled = scaler.fit_transform(composite_features)
-            
-            # Perform clustering
-            if clustering_method == "kmeans":
-                clusterer = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            elif clustering_method == "gaussian_mixture":
-                clusterer = GaussianMixture(n_components=n_clusters, random_state=42)
-            else:  # spectral
-                clusterer = SpectralClustering(n_clusters=n_clusters, random_state=42)
-            
-            cluster_labels = clusterer.fit_predict(composite_scaled)
+            # Process features and train models
+            model_results = self._train_models_for_trial(trial_params, features)
             
             # Calculate objective score
-            score = self._calculate_objective_score(features_scaled, hmm_states, cluster_labels, hmm_model)
+            score = self._calculate_objective_score(
+                model_results['features_scaled'], 
+                model_results['hmm_states'], 
+                model_results['cluster_labels'], 
+                model_results['hmm_model']
+            )
             
-            # Report intermediate value for pruning
+            # Handle pruning
             trial.report(score, 0)
-            
-            # Check if trial should be pruned
             if trial.should_prune():
                 raise optuna.TrialPruned()
             
@@ -266,6 +215,101 @@ class BayesianParameterOptimizationStep:
         except Exception as e:
             self.logger.warning(f"Trial failed: {e}")
             return -float('inf')
+
+    def _get_trial_parameters(self, trial, features: pd.DataFrame) -> Dict[str, Any]:
+        """Get parameters for a trial."""
+        return {
+            'n_components': trial.suggest_int("n_components", 2, 8),
+            'covariance_type': trial.suggest_categorical("covariance_type", ["full", "tied", "diag", "spherical"]),
+            'n_iter': trial.suggest_int("n_iter", 50, 200),
+            'tol': trial.suggest_float("tol", 1e-6, 1e-2, log=True),
+            'reg_covar': trial.suggest_float("reg_covar", 1e-7, 1e-2, log=True),
+            'n_clusters': trial.suggest_int("n_clusters", 10, 30),
+            'clustering_method': trial.suggest_categorical("clustering_method", ["kmeans", "gaussian_mixture", "spectral"]),
+            'feature_selection_method': trial.suggest_categorical("feature_selection_method", ["variance", "correlation", "mutual_info"]),
+            'max_features': trial.suggest_int("max_features", 20, min(100, features.shape[1]))
+        }
+
+    def _train_models_for_trial(self, trial_params: Dict[str, Any], features: pd.DataFrame) -> Dict[str, Any]:
+        """Train HMM and clustering models for a trial."""
+        # Process features
+        features_processed = self._process_features_for_trial(
+            features, 
+            trial_params['feature_selection_method'], 
+            trial_params['max_features']
+        )
+        
+        # Scale features
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features_processed)
+        
+        # Train HMM
+        hmm_model = self._create_and_train_hmm(trial_params, features_scaled)
+        
+        # Get HMM states
+        hmm_states = hmm_model.predict(features_scaled)
+        hmm_probs = hmm_model.predict_proba(features_scaled)
+        
+        # Create composite features and perform clustering
+        cluster_labels = self._perform_clustering(
+            features_processed, hmm_states, hmm_probs, trial_params, scaler
+        )
+        
+        return {
+            'features_scaled': features_scaled,
+            'hmm_states': hmm_states,
+            'cluster_labels': cluster_labels,
+            'hmm_model': hmm_model
+        }
+
+    def _create_and_train_hmm(self, trial_params: Dict[str, Any], features_scaled: np.ndarray) -> Any:
+        """Create and train HMM model."""
+        hmm_model = hmm.GaussianHMM(
+            n_components=trial_params['n_components'],
+            covariance_type=trial_params['covariance_type'],
+            n_iter=trial_params['n_iter'],
+            tol=trial_params['tol'],
+            reg_covar=trial_params['reg_covar'],
+            random_state=42
+        )
+        
+        # Use subset for faster training
+        max_samples = min(50000, features_scaled.shape[0])
+        if features_scaled.shape[0] > max_samples:
+            indices = np.random.choice(features_scaled.shape[0], max_samples, replace=False)
+            features_subset = features_scaled[indices]
+        else:
+            features_subset = features_scaled
+        
+        hmm_model.fit(features_subset)
+        return hmm_model
+
+    def _perform_clustering(
+        self, features_processed: pd.DataFrame, hmm_states: np.ndarray, 
+        hmm_probs: np.ndarray, trial_params: Dict[str, Any], scaler: StandardScaler
+    ) -> np.ndarray:
+        """Perform clustering on composite features."""
+        # Create composite features
+        composite_features = self._create_composite_features(features_processed, hmm_states, hmm_probs)
+        composite_scaled = scaler.fit_transform(composite_features)
+        
+        # Create and fit clusterer
+        clusterer = self._create_clusterer(trial_params)
+        cluster_labels = clusterer.fit_predict(composite_scaled)
+        
+        return cluster_labels
+
+    def _create_clusterer(self, trial_params: Dict[str, Any]) -> Any:
+        """Create clustering model based on trial parameters."""
+        clustering_method = trial_params['clustering_method']
+        n_clusters = trial_params['n_clusters']
+        
+        if clustering_method == "kmeans":
+            return KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        elif clustering_method == "gaussian_mixture":
+            return GaussianMixture(n_components=n_clusters, random_state=42)
+        else:  # spectral
+            return SpectralClustering(n_clusters=n_clusters, random_state=42)
 
     def _process_features_for_trial(self, features: pd.DataFrame, method: str, max_features: int) -> pd.DataFrame:
         """Process features for a specific trial."""

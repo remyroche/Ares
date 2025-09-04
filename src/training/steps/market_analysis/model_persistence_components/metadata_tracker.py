@@ -131,20 +131,41 @@ class MetadataTracker:
         """Track environment information."""
         import platform
         import sys
-        environment = {'python_version': sys.version, 'platform': platform.platform(), 'machine': platform.machine(), 'processor': platform.processor()}
+        
+        environment = {
+            'python_version': sys.version,
+            'platform': platform.platform(),
+            'machine': platform.machine(),
+            'processor': platform.processor()
+        }
+        
+        # Track package versions
+        environment['packages'] = self._get_package_versions()
+        
+        return environment
+
+    def _get_package_versions(self) -> Dict[str, str]:
+        """Get versions of key packages."""
         try:
             import pkg_resources
             key_packages = ['numpy', 'pandas', 'scikit-learn', 'lightgbm', 'xgboost', 'torch']
-            environment['packages'] = {}
+            packages = {}
+            
             for package in key_packages:
-                try:
-                    version = pkg_resources.get_distribution(package).version
-                    environment['packages'][package] = version
-                except:
-                    pass
-        except:
-            pass
-        return environment
+                version = self._get_package_version(pkg_resources, package)
+                if version:
+                    packages[package] = version
+            
+            return packages
+        except ImportError:
+            return {}
+
+    def _get_package_version(self, pkg_resources, package: str) -> Optional[str]:
+        """Get version of a specific package."""
+        try:
+            return pkg_resources.get_distribution(package).version
+        except Exception:
+            return None
 
     async def _track_pipeline_execution(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Track pipeline execution details."""

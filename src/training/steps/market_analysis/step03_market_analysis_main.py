@@ -18,7 +18,11 @@ import json
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.market_analysis import run_market_analysis_pipeline
+from src.training.steps.market_analysis import (
+    run_market_analysis_pipeline,
+    run_enhanced_market_analysis_pipeline,
+    MarketAnalysisPipelineOrchestrator,
+)
 
 async def main():
     """Main function to run market analysis pipeline."""
@@ -56,7 +60,8 @@ async def main():
     start_time = time.time()
     
     try:
-        success = await run_market_analysis_pipeline(
+        # Use enhanced market analysis pipeline with comprehensive validation
+        success = await run_enhanced_market_analysis_pipeline(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,

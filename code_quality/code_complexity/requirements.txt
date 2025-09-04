@@ -1,0 +1,30 @@
+# Code Complexity Analysis Pipeline Requirements
+
+# Core dependencies
+pyyaml>=6.0
+pathlib2>=2.3.0
+
+# Industry-standard complexity analysis tools
+# Install with: pip install <tool_name>
+# pyexamine>=0.1.0      # Advanced code examination
+# radon>=5.1.0          # Industry-standard complexity metrics (CC, MI, Halstead)
+# xenon>=0.7.0          # Continuous complexity monitoring
+# wily>=2.0.0           # Historical complexity tracking
+
+# Data analysis and visualization
+pandas>=1.5.0          # Metrics data analysis and visualization
+numpy>=1.21.0          # Numerical computing support
+matplotlib>=3.5.0      # Plotting and visualization
+seaborn>=0.11.0        # Statistical data visualization
+plotly>=5.0.0          # Interactive visualizations
+
+# Optional dependencies for enhanced functionality
+openpyxl>=3.0.0        # Excel export support
+xlsxwriter>=3.0.0      # Advanced Excel formatting
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=22.0.0
+flake8>=5.0.0
+mypy>=0.991

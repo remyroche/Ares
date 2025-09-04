@@ -53,6 +53,9 @@ from reporters.html_reporter import HTMLReporter
 
 from core.config import get_default_config
 
+# Note: Enhanced complexity analysis is available as a separate pipeline
+# Use: python code_complexity/cli.py for comprehensive complexity analysis
+
 
 class CodeInteractionMapper:
     """Maps all interactions within a codebase."""
@@ -116,6 +119,9 @@ class CodeInteractionMapper:
         comp = self.results["complexity"]
         print(f"  - Average cyclomatic complexity: {comp.get('average_complexity', 0):.2f}")
         print(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
+        
+        # Note about enhanced complexity analysis
+        print("  - Note: For comprehensive complexity analysis, use: python code_complexity/cli.py")
 
     def analyze_dead_code(self):
         """Analyze dead code with enhanced cross-file dependency checking."""
@@ -1837,8 +1843,16 @@ class CodeInteractionMapper:
         for report_type, file_path in report_files.items():
             if report_type not in ['report_dir', 'timestamp']:
                 print(f"  - {report_type.upper()}: {Path(file_path).name}")
+                
+        print("\n" + "=" * 50)
+        print("NEXT STEPS")
+        print("=" * 50)
+        print("For comprehensive complexity analysis, run:")
+        print("  python code_complexity/cli.py analyze /path/to/your/project")
+        print("=" * 50)
 
         return report_files
+
 
     def _build_comprehensive_dependency_map(self):
         """Build a comprehensive map of all dependencies across the codebase."""
@@ -2290,8 +2304,26 @@ class CodeInteractionMapper:
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Map code interactions within a Python project")
+    """Main entry point for code interaction mapping."""
+    parser = argparse.ArgumentParser(
+        description="Code Interaction Mapping - Dead Code Analysis and Dependency Mapping",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Analyze current workspace
+  python map_code_interactions.py
+  
+  # Analyze specific project
+  python map_code_interactions.py --project-root /path/to/project
+  
+  # Exclude specific directories
+  python map_code_interactions.py --exclude venv __pycache__ .git
+
+For comprehensive complexity analysis, use the separate complexity pipeline:
+  python code_complexity/cli.py analyze /path/to/project
+        """
+    )
+    
     parser.add_argument("--project-root", default="/workspace",
                        help="Root directory of the project to analyze")
     parser.add_argument("--exclude", nargs="*", default=["venv", "__pycache__", ".git"],

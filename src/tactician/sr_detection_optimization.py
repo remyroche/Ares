@@ -23,10 +23,10 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     print('Warning: sklearn not available, clustering optimization disabled')
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.tactician.sr_regime_optimizer import SRRegimeOptimizer
-from src.tactician.sr_ml_enhancer import SRMLEnhancer
-from src.tactician.sr_computational_optimizer import SRComputationalOptimizer
-from src.tactician.sr_breakout_predictor_enhanced import EnhancedSRBreakoutPredictor
+from src.tactician.sr_levels.sr_regime_optimizer import SRRegimeOptimizer
+from src.tactician.sr_levels.sr_ml_enhancer import SRMLEnhancer
+from src.tactician.sr_levels.sr_computational_optimizer import SRComputationalOptimizer
+from src.tactician.sr_levels.sr_breakout_predictor_enhanced import EnhancedSRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.config.sr_config_loader import get_sr_config, SROptimizationConfig
 from src.core.sr_error_handlers import (

@@ -2363,14 +2363,23 @@ class AresLauncher:
         """Run all pipelines in sequence with organized report management."""
         self.logger.info(f"📊 Running all pipelines for {symbol} on {exchange}")
 
-        # Initialize report manager for this run
+        # Initialize report manager and collector for this run
         try:
             from src.utils.report_manager import initialize_report_manager
+            from src.utils.report_collector import initialize_report_collector
+            
             report_manager = initialize_report_manager()
+            report_collector = initialize_report_collector()
+            
+            # Set up comprehensive report collection
+            report_collector.setup_pipeline_interception(symbol, exchange)
+            
             self.logger.info(f"📁 Report directory initialized: {report_manager.get_run_directory()}")
+            self.logger.info(f"📁 Report collector initialized: {report_collector.get_run_directory()}")
             print(f"📁 Report directory: {report_manager.get_run_directory()}")
+            print(f"📁 Report collector: {report_collector.get_run_directory()}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to initialize report manager: {e}")
+            self.logger.warning(f"⚠️ Failed to initialize report manager/collector: {e}")
 
         if with_gui and not self.launch_gui("all-pipelines", symbol, exchange):
             return False

@@ -603,9 +603,22 @@ class EnhancedPipelineOrchestrator:
                 exchange=self.config.exchange
             )
             
+            # Generate comprehensive report collection summary
+            try:
+                from src.utils.report_collector import get_report_collector
+                report_collector = get_report_collector()
+                collection_summary_file = report_collector.generate_collection_summary(
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange
+                )
+                self.logger.info(f"📊 Report collection summary generated: {collection_summary_file}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to generate collection summary: {e}")
+            
             self.logger.info(f"💾 Enhanced results saved to: {results_file}")
             self.logger.info(f"📊 Run summary generated: {run_summary_file}")
             print(f"📁 All reports organized in: {report_manager.get_run_directory()}")
+            print(f"📁 All reports collected in: {report_collector.get_run_directory()}")
             
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save results using report manager: {e}")

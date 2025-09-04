@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TypeVar, Any, Callable
 
 import asyncio
 

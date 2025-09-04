@@ -38,7 +38,7 @@ from src.core.domain import (
     with_tracing_span,
     validate_pipeline_step
 )
-from src.core.decorators import validates
+from src.core.decorators import validates, handles_errors, traced
 from src.utils.logger import system_logger
 
 # Import our new modules
@@ -385,7 +385,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             })
             
             # Run optimization
-            optimization_results = await self.bayesian_optimizer.optimize_parameters(data_loaded['data'], data_loaded['features'])
+            optimization_results = await self.bayesian_optimizer.optimize_parameters(data, features)
             success = optimization_results.get('success', False)
             
             if success:

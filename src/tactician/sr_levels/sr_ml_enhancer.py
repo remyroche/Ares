@@ -162,17 +162,22 @@ class SRMLEnhancer:
         sr_levels: List[Dict[str, Any]],
         historical_performance: Optional[Dict[str, Any]]
     ) -> Optional[MLFeatureSet]:
-        """Prepare training data for ML models."""
+        """Prepare training data for ML models with step06 feature integration."""
         try:
             features = []
             targets = []
-            feature_names = []
+            
+            # Extract step06 features once for all levels
+            step06_features = await self._extract_step06_features(market_data)
             
             # Extract features for each S/R level
             for level in sr_levels:
-                level_features = await self._extract_level_features(market_data, level)
-                if level_features:
-                    features.append(level_features)
+                # Extract S/R specific features
+                sr_features = await self._extract_level_features(market_data, level)
+                if sr_features:
+                    # Combine S/R features with step06 features
+                    combined_features = sr_features + step06_features
+                    features.append(combined_features)
                     
                     # Create target based on historical performance or level quality
                     target = await self._create_target_for_level(level, historical_performance)
@@ -185,8 +190,12 @@ class SRMLEnhancer:
             features_array = np.array(features)
             targets_array = np.array(targets)
             
-            # Get feature names
-            feature_names = await self._get_feature_names()
+            # Get combined feature names
+            feature_names = await self._get_combined_feature_names()
+            
+            self.logger.info(f"📊 Training data prepared: {len(features)} samples, {len(feature_names)} features")
+            self.logger.info(f"   - S/R specific features: {len(await self._get_feature_names())}")
+            self.logger.info(f"   - Step06 features: {len(step06_features)}")
             
             return MLFeatureSet(
                 features=features_array,
@@ -195,6 +204,8 @@ class SRMLEnhancer:
                 metadata={
                     "n_samples": len(features),
                     "n_features": len(feature_names),
+                    "sr_features": len(await self._get_feature_names()),
+                    "step06_features": len(step06_features),
                     "target_distribution": np.bincount(targets_array.astype(int)) if len(targets_array) > 0 else []
                 }
             )
@@ -202,6 +213,134 @@ class SRMLEnhancer:
         except Exception as e:
             self.logger.error(f"Training data preparation failed: {e}")
             return None
+    
+    async def _extract_step06_features(self, market_data: pd.DataFrame) -> List[float]:
+        """Extract step06 features (200+ features)."""
+        try:
+            # Import step06 feature engineering
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import (
+                    VectorizedAdvancedFeatureEngineeringRefactored
+                )
+                step06_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
+                
+                # Engineer features using step06
+                step06_result = await step06_engineer.engineer_features(market_data)
+                
+                # Extract all features from step06
+                all_features = []
+                
+                # Price features
+                price_features = step06_result.get('price_features', {})
+                for feature_name, feature_values in price_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))  # Use latest value
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Volume features
+                volume_features = step06_result.get('volume_features', {})
+                for feature_name, feature_values in volume_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Microstructure features
+                microstructure_features = step06_result.get('microstructure_features', {})
+                for feature_name, feature_values in microstructure_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Technical features
+                technical_features = step06_result.get('technical_features', {})
+                for feature_name, feature_values in technical_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Regime features
+                regime_features = step06_result.get('regime_features', {})
+                for feature_name, feature_values in regime_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Wavelet features
+                wavelet_features = step06_result.get('wavelet_features', {})
+                for feature_name, feature_values in wavelet_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Cross-timeframe features
+                cross_timeframe_features = step06_result.get('cross_timeframe_features', {})
+                for feature_name, feature_values in cross_timeframe_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                # Interaction features
+                interaction_features = step06_result.get('interaction_features', {})
+                for feature_name, feature_values in interaction_features.items():
+                    if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                        all_features.append(float(feature_values[-1]))
+                    elif isinstance(feature_values, (int, float)):
+                        all_features.append(float(feature_values))
+                
+                self.logger.info(f"✅ Step06 features extracted: {len(all_features)} features")
+                return all_features
+                
+            except ImportError as e:
+                self.logger.warning(f"Step06 feature engineering not available: {e}")
+                return []
+            except Exception as e:
+                self.logger.warning(f"Step06 feature extraction failed: {e}")
+                return []
+            
+        except Exception as e:
+            self.logger.error(f"Step06 feature extraction failed: {e}")
+            return []
+    
+    async def _get_combined_feature_names(self) -> List[str]:
+        """Get combined feature names (S/R + step06)."""
+        try:
+            # Get S/R specific feature names
+            sr_feature_names = await self._get_feature_names()
+            
+            # Get step06 feature names (simplified)
+            step06_feature_names = []
+            
+            # Add step06 feature categories
+            step06_categories = [
+                'price_features', 'volume_features', 'microstructure_features',
+                'technical_features', 'regime_features', 'wavelet_features',
+                'cross_timeframe_features', 'interaction_features'
+            ]
+            
+            for category in step06_categories:
+                # Add generic feature names for each category
+                for i in range(25):  # Assume 25 features per category
+                    step06_feature_names.append(f"{category}_{i}")
+            
+            # Combine feature names
+            combined_names = sr_feature_names + step06_feature_names
+            
+            self.logger.info(f"📊 Combined feature names: {len(combined_names)} total")
+            self.logger.info(f"   - S/R features: {len(sr_feature_names)}")
+            self.logger.info(f"   - Step06 features: {len(step06_feature_names)}")
+            
+            return combined_names
+            
+        except Exception as e:
+            self.logger.error(f"Combined feature names failed: {e}")
+            return await self._get_feature_names()  # Fallback to S/R features only
     
     async def _extract_level_features(
         self,
@@ -432,23 +571,33 @@ class SRMLEnhancer:
         return basic_features + technical_features + advanced_features
     
     async def _train_sr_quality_model(self, training_data: MLFeatureSet) -> None:
-        """Train S/R quality prediction model."""
+        """Train S/R quality prediction model with proper regularization."""
         try:
             model_config = self.ml_config.get("models", {}).get("sr_quality_model", {})
             
-            # Create model
+            # Create model with proper regularization
             if model_config.get("type") == "gradient_boosting":
                 self.sr_quality_model = GradientBoostingRegressor(
-                    n_estimators=model_config.get("parameters", {}).get("n_estimators", 100),
-                    max_depth=model_config.get("parameters", {}).get("max_depth", 6),
-                    learning_rate=model_config.get("parameters", {}).get("learning_rate", 0.1),
-                    subsample=model_config.get("parameters", {}).get("subsample", 0.8)
+                    n_estimators=model_config.get("parameters", {}).get("n_estimators", 200),
+                    max_depth=model_config.get("parameters", {}).get("max_depth", 4),  # Reduced for regularization
+                    learning_rate=model_config.get("parameters", {}).get("learning_rate", 0.05),  # Lower for regularization
+                    subsample=model_config.get("parameters", {}).get("subsample", 0.8),
+                    max_features='sqrt',  # Feature subsampling for regularization
+                    min_samples_split=10,  # Prevent overfitting
+                    min_samples_leaf=5,    # Prevent overfitting
+                    validation_fraction=0.2,  # Early stopping
+                    n_iter_no_change=10,   # Early stopping patience
+                    random_state=42
                 )
             else:
-                # Default to Random Forest
-                self.sr_quality_model = RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=6,
+                # Default to Random Forest with regularization
+                self.sr_quality_model = RandomForestRegressor(
+                    n_estimators=200,
+                    max_depth=8,
+                    min_samples_split=10,
+                    min_samples_leaf=5,
+                    max_features='sqrt',
+                    bootstrap=True,
                     random_state=42
                 )
             
@@ -456,27 +605,50 @@ class SRMLEnhancer:
             X = training_data.features
             y = training_data.target
             
-            # Feature selection with importance analysis
-            if len(X) > 20:  # Only if we have enough samples
-                # Use SelectKBest for initial feature selection
-                k_features = min(15, X.shape[1])  # Select top 15 features
-                self.feature_selector = SelectKBest(f_classif, k=k_features)
-                X_selected = self.feature_selector.fit_transform(X, y)
-                
-                # Get feature importance scores
-                feature_scores = self.feature_selector.scores_
+            # Advanced feature selection with Random Forest, SHAP, and correlation analysis
+            if len(X) > 50:  # Need more samples for robust feature selection
                 feature_names = await self._get_feature_names()
                 
-                # Store feature importance for analysis
-                self.feature_importance = dict(zip(feature_names, feature_scores))
+                # Step 1: Random Forest feature importance
+                rf_selector = RandomForestRegressor(n_estimators=100, random_state=42)
+                rf_selector.fit(X, y)
+                rf_importance = rf_selector.feature_importances_
                 
-                # Log top features
-                sorted_features = sorted(self.feature_importance.items(), key=lambda x: x[1], reverse=True)
-                self.logger.info(f"Top 10 most important features:")
-                for i, (feature, score) in enumerate(sorted_features[:10]):
-                    self.logger.info(f"  {i+1}. {feature}: {score:.4f}")
+                # Step 2: Permutation importance
+                from sklearn.inspection import permutation_importance
+                perm_importance = permutation_importance(rf_selector, X, y, n_repeats=10, random_state=42)
+                perm_scores = perm_importance.importances_mean
                 
-                X = X_selected
+                # Step 3: Correlation analysis
+                correlation_scores = self._calculate_feature_correlations(X, y)
+                
+                # Step 4: SHAP analysis (if available)
+                shap_scores = await self._calculate_shap_importance(rf_selector, X, feature_names)
+                
+                # Step 5: Combined feature scoring
+                combined_scores = self._combine_feature_scores(
+                    rf_importance, perm_scores, correlation_scores, shap_scores
+                )
+                
+                # Step 6: Select top features based on combined scores
+                top_features = self._select_top_features(combined_scores, feature_names, top_k=20)
+                
+                # Store comprehensive feature importance
+                self.feature_importance = {
+                    'rf_importance': dict(zip(feature_names, rf_importance)),
+                    'permutation_importance': dict(zip(feature_names, perm_scores)),
+                    'correlation_scores': dict(zip(feature_names, correlation_scores)),
+                    'shap_scores': shap_scores,
+                    'combined_scores': dict(zip(feature_names, combined_scores)),
+                    'selected_features': top_features
+                }
+                
+                # Log comprehensive feature analysis
+                self._log_feature_analysis()
+                
+                # Select features for training
+                feature_indices = [i for i, name in enumerate(feature_names) if name in top_features]
+                X = X[:, feature_indices]
             
             # Scale features
             X_scaled = self.feature_scaler.fit_transform(X)
@@ -526,14 +698,24 @@ class SRMLEnhancer:
             self.logger.error(f"Breakout prediction model training failed: {e}")
     
     async def _train_regime_classification_model(self, market_data: pd.DataFrame) -> None:
-        """Train market regime classification model using existing regime detection."""
+        """Use step03 regime detection with LGBM model instead of training new model."""
         try:
-            # Use existing regime detection from step03 instead of heavy SVM
-            # This is more efficient and leverages existing infrastructure
-            self.logger.info("Using existing regime detection from step03 instead of training new model")
+            # Use existing regime detection from step03 which has its own LGBM model
+            self.logger.info("Using step03 regime detection with LGBM model")
             
-            # Simple rule-based regime classification (much faster than SVM)
-            self.regime_classification_model = None  # Use rule-based approach
+            # Import step03 regime detection
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import (
+                    VectorizedAdvancedFeatureEngineeringRefactored
+                )
+                self.step03_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
+                self.logger.info("✅ Step03 regime detection loaded successfully")
+            except ImportError as e:
+                self.logger.warning(f"Step03 regime detection not available: {e}")
+                self.step03_engineer = None
+            
+            # Set regime classification model to None (use step03)
+            self.regime_classification_model = None
             
             # Extract regime features for validation
             regime_features = await self._extract_regime_features(market_data)
@@ -543,6 +725,21 @@ class SRMLEnhancer:
                 # Validate regime detection accuracy
                 accuracy = self._validate_regime_detection(regime_features, regime_targets)
                 self.logger.info(f"✅ Regime detection validation completed. Accuracy: {accuracy:.4f}")
+                
+                # Test step03 regime detection if available
+                if self.step03_engineer:
+                    try:
+                        # Test step03 regime detection
+                        step03_features = await self.step03_engineer.engineer_features(market_data)
+                        regime_features_step03 = step03_features.get('regime_features', [])
+                        
+                        if len(regime_features_step03) > 0:
+                            self.logger.info(f"✅ Step03 regime features extracted: {len(regime_features_step03)} features")
+                        else:
+                            self.logger.warning("Step03 regime features not found")
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Step03 regime detection test failed: {e}")
             else:
                 self.logger.warning("Insufficient data for regime validation")
             
@@ -947,6 +1144,123 @@ class SRMLEnhancer:
             return float(volatility * 100) if not np.isnan(volatility) else 0.0
         except Exception:
             return 0.0
+    
+    def _calculate_feature_correlations(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Calculate correlation between features and target."""
+        try:
+            correlations = []
+            for i in range(X.shape[1]):
+                corr = np.corrcoef(X[:, i], y)[0, 1]
+                correlations.append(abs(corr) if not np.isnan(corr) else 0.0)
+            return np.array(correlations)
+        except Exception:
+            return np.zeros(X.shape[1])
+    
+    async def _calculate_shap_importance(self, model, X: np.ndarray, feature_names: List[str]) -> Dict[str, float]:
+        """Calculate SHAP importance scores."""
+        try:
+            # Try to import SHAP
+            try:
+                import shap
+                SHAP_AVAILABLE = True
+            except ImportError:
+                SHAP_AVAILABLE = False
+                self.logger.warning("SHAP not available, skipping SHAP analysis")
+                return {name: 0.0 for name in feature_names}
+            
+            if not SHAP_AVAILABLE or len(X) < 100:
+                return {name: 0.0 for name in feature_names}
+            
+            # Use TreeExplainer for tree-based models
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X[:100])  # Use subset for performance
+            
+            # Calculate mean absolute SHAP values
+            mean_shap_values = np.mean(np.abs(shap_values), axis=0)
+            
+            return dict(zip(feature_names, mean_shap_values))
+            
+        except Exception as e:
+            self.logger.warning(f"SHAP calculation failed: {e}")
+            return {name: 0.0 for name in feature_names}
+    
+    def _combine_feature_scores(
+        self, 
+        rf_importance: np.ndarray, 
+        perm_scores: np.ndarray, 
+        correlation_scores: np.ndarray, 
+        shap_scores: Dict[str, float]
+    ) -> np.ndarray:
+        """Combine different feature importance scores."""
+        try:
+            # Normalize scores to [0, 1]
+            rf_norm = rf_importance / (np.max(rf_importance) + 1e-8)
+            perm_norm = perm_scores / (np.max(perm_scores) + 1e-8)
+            corr_norm = correlation_scores / (np.max(correlation_scores) + 1e-8)
+            
+            # Get SHAP scores as array
+            shap_array = np.array([shap_scores.get(f"feature_{i}", 0.0) for i in range(len(rf_importance))])
+            shap_norm = shap_array / (np.max(shap_array) + 1e-8)
+            
+            # Weighted combination
+            combined = (
+                rf_norm * 0.3 +      # Random Forest importance
+                perm_norm * 0.3 +    # Permutation importance
+                corr_norm * 0.2 +    # Correlation with target
+                shap_norm * 0.2      # SHAP importance
+            )
+            
+            return combined
+            
+        except Exception as e:
+            self.logger.error(f"Feature score combination failed: {e}")
+            return rf_importance  # Fallback to RF importance
+    
+    def _select_top_features(self, scores: np.ndarray, feature_names: List[str], top_k: int = 20) -> List[str]:
+        """Select top K features based on combined scores."""
+        try:
+            # Get indices of top features
+            top_indices = np.argsort(scores)[-top_k:]
+            
+            # Return feature names
+            return [feature_names[i] for i in top_indices]
+            
+        except Exception as e:
+            self.logger.error(f"Top feature selection failed: {e}")
+            return feature_names[:top_k]  # Fallback to first K features
+    
+    def _log_feature_analysis(self) -> None:
+        """Log comprehensive feature analysis results."""
+        try:
+            if not hasattr(self, 'feature_importance') or not self.feature_importance:
+                return
+            
+            combined_scores = self.feature_importance.get('combined_scores', {})
+            selected_features = self.feature_importance.get('selected_features', [])
+            
+            # Log top 15 selected features
+            sorted_features = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+            
+            self.logger.info("🔍 Comprehensive Feature Analysis Results:")
+            self.logger.info(f"📊 Total features analyzed: {len(combined_scores)}")
+            self.logger.info(f"🎯 Selected features: {len(selected_features)}")
+            
+            self.logger.info("🏆 Top 15 Most Important Features:")
+            for i, (feature, score) in enumerate(sorted_features[:15]):
+                status = "✅ SELECTED" if feature in selected_features else "❌ NOT SELECTED"
+                self.logger.info(f"  {i+1:2d}. {feature:<25} {score:.4f} {status}")
+            
+            # Log feature selection statistics
+            rf_importance = self.feature_importance.get('rf_importance', {})
+            perm_importance = self.feature_importance.get('permutation_importance', {})
+            
+            if rf_importance and perm_importance:
+                self.logger.info("📈 Feature Selection Statistics:")
+                self.logger.info(f"   - Random Forest top feature: {max(rf_importance.items(), key=lambda x: x[1])}")
+                self.logger.info(f"   - Permutation top feature: {max(perm_importance.items(), key=lambda x: x[1])}")
+            
+        except Exception as e:
+            self.logger.error(f"Feature analysis logging failed: {e}")
     
     def save_models(self, model_dir: str) -> bool:
         """Save trained models to disk."""

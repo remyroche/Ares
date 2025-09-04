@@ -174,26 +174,73 @@ class RegimeDataSplittingStep:
             self.logger.exception(f'❌ Error loading regime data: {e}')
             return None
 
-    async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
-        """Create unified dataset with regime labels."""
+    def _save_unified_dataset(self, data: pd.DataFrame, training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:
+        """Save the unified regime dataset to parquet file."""
         try:
-            data = data.sort_values('timestamp').reset_index(drop=True)
-            training_dir = ensure_directory(Path(data_dir) / 'training')
             unified_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
             data.to_parquet(unified_file, index=False)
             self.logger.info(f'✅ Saved unified regime dataset: {len(data)} rows -> {unified_file}')
+            return True
+        except Exception as e:
+            self.logger.error(f'❌ Error saving unified dataset: {e}')
+            return False
+
+    def _save_regime_statistics(self, data: pd.DataFrame, regime_ids: List[int], training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:
+        """Save regime statistics to JSON file."""
+        try:
             regime_stats = self._calculate_regime_statistics(data, regime_ids)
             stats_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_statistics.json'
             import json
-from src.core.decorators.errors import handles_errors
             with open(stats_file, 'w') as f:
                 json.dump(regime_stats, f, indent=2)
             self.logger.info(f'✅ Saved regime statistics: {stats_file}')
-            regime_labels = {'regime_column': 'composite_cluster_id', 'regime_ids': sorted(regime_ids), 'total_regimes': len(regime_ids), 'data_shape': data.shape, 'timestamp_range': {'start': data['timestamp'].min().isoformat(), 'end': data['timestamp'].max().isoformat()}}
+            return True
+        except Exception as e:
+            self.logger.error(f'❌ Error saving regime statistics: {e}')
+            return False
+
+    def _save_regime_labels(self, data: pd.DataFrame, regime_ids: List[int], training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:
+        """Save regime labels mapping to JSON file."""
+        try:
+            regime_labels = {
+                'regime_column': 'composite_cluster_id',
+                'regime_ids': sorted(regime_ids),
+                'total_regimes': len(regime_ids),
+                'data_shape': data.shape,
+                'timestamp_range': {
+                    'start': data['timestamp'].min().isoformat(),
+                    'end': data['timestamp'].max().isoformat()
+                }
+            }
             labels_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_labels.json'
             safe_json_dump(regime_labels, labels_file, indent=2)
             self.logger.info(f'✅ Saved regime labels mapping: {labels_file}')
             return True
+        except Exception as e:
+            self.logger.error(f'❌ Error saving regime labels: {e}')
+            return False
+
+    async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
+        """Create unified dataset with regime labels."""
+        try:
+            # Prepare data
+            data = data.sort_values('timestamp').reset_index(drop=True)
+            training_dir = ensure_directory(Path(data_dir) / 'training')
+            
+            # Save unified dataset
+            if not self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe):
+                return False
+            
+            # Save regime statistics
+            if not self._save_regime_statistics(data, regime_ids, training_dir, exchange, symbol, timeframe):
+                return False
+            
+            # Save regime labels
+            if not self._save_regime_labels(data, regime_ids, training_dir, exchange, symbol, timeframe):
+                return False
+            
+            return True
+            
         except Exception as e:
             self.logger.exception(f'❌ Error creating unified regime dataset: {e}')
             return False

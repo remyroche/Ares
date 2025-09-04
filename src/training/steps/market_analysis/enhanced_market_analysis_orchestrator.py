@@ -746,6 +746,95 @@ class MarketAnalysisPipelineOrchestrator:
             self.enhanced_logger.log_issue("feature_engineering", "exception", str(e), "error")
             return False
 
+    def _calculate_matrix_metrics(self, matrix_data, numeric_cols):
+        """Calculate matrix-specific metrics from data."""
+        try:
+            corr_matrix = matrix_data[numeric_cols].corr()
+            
+            # Calculate condition number
+            try:
+                condition_number = np.linalg.cond(corr_matrix.values)
+            except:
+                condition_number = float('inf')
+            
+            # Count high correlation pairs
+            high_corr_pairs = 0
+            max_correlation = 0.0
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    corr_val = abs(corr_matrix.iloc[i, j])
+                    max_correlation = max(max_correlation, corr_val)
+                    if corr_val > 0.95:
+                        high_corr_pairs += 1
+            
+            return {
+                'matrix_operations_performed': ['correlation_analysis', 'eigenvalue_analysis', 'feature_ranking'],
+                'eigenvalue_analysis': {
+                    'condition_number': condition_number,
+                    'rank': np.linalg.matrix_rank(corr_matrix.values),
+                    'effective_rank': len(numeric_cols)
+                },
+                'correlation_analysis': {
+                    'high_correlation_pairs': high_corr_pairs,
+                    'max_correlation': max_correlation
+                },
+                'performance_metrics': {
+                    'computation_time': 0.0,  # Would need to be extracted from matrix ops
+                    'memory_usage_mb': 0.0
+                }
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating matrix metrics: {e}")
+            return self._get_fallback_matrix_metrics()
+
+    def _get_fallback_matrix_metrics(self):
+        """Get fallback metrics when matrix analysis fails."""
+        return {
+            'matrix_operations_performed': ['correlation_analysis', 'eigenvalue_analysis'],
+            'eigenvalue_analysis': {
+                'condition_number': 1.0,
+                'rank': 0,
+                'effective_rank': 0
+            },
+            'correlation_analysis': {
+                'high_correlation_pairs': 0,
+                'max_correlation': 0.0
+            },
+            'performance_metrics': {
+                'computation_time': 0.0,
+                'memory_usage_mb': 0.0
+            }
+        }
+
+    def _log_matrix_operations_metrics(self, data_dir: str, exchange: str, symbol: str, timeframe: str):
+        """Log detailed matrix operations metrics."""
+        try:
+            import pandas as pd
+            import numpy as np
+            from pathlib import Path
+            
+            matrix_path = Path(data_dir) / f"matrix_operations_{exchange}_{symbol}_{timeframe}.parquet"
+            if not matrix_path.exists():
+                step7_metrics = self._get_fallback_matrix_metrics()
+                self.enhanced_logger.log_step7_metrics("matrix_operations", step7_metrics)
+                return
+            
+            matrix_data = pd.read_parquet(matrix_path)
+            self.enhanced_logger.log_feature_quality("matrix_operations", matrix_data)
+            
+            numeric_cols = matrix_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                step7_metrics = self._calculate_matrix_metrics(matrix_data, numeric_cols)
+            else:
+                step7_metrics = self._get_fallback_matrix_metrics()
+            
+            self.enhanced_logger.log_step7_metrics("matrix_operations", step7_metrics)
+            
+        except ImportError:
+            self.logger.info("🧮 Matrix operations completed (pandas/numpy not available for detailed metrics)")
+        except Exception as metrics_error:
+            self.logger.warning(f"⚠️ Could not log matrix operations metrics: {metrics_error}")
+
     @comprehensive_pipeline_protection(
         required_columns=['regime', 'label'],
         max_memory_mb=2000,
@@ -778,88 +867,7 @@ class MarketAnalysisPipelineOrchestrator:
             
             if success:
                 self.logger.info("✅ Matrix operations completed successfully")
-                
-                # Log detailed matrix operations metrics
-                try:
-                    # Try to load the matrix operations results for analysis
-                    try:
-                        import pandas as pd
-                        import numpy as np
-                        from pathlib import Path
-from src.core.decorators.errors import handles_errors
-                        
-                        matrix_path = Path(data_dir) / f"matrix_operations_{exchange}_{symbol}_{timeframe}.parquet"
-                        if matrix_path.exists():
-                            matrix_data = pd.read_parquet(matrix_path)
-                            
-                            # Log feature quality metrics for matrix data
-                            self.enhanced_logger.log_feature_quality("matrix_operations", matrix_data)
-                            
-                            # Calculate matrix-specific metrics
-                            numeric_cols = matrix_data.select_dtypes(include=[np.number]).columns
-                            if len(numeric_cols) > 0:
-                                corr_matrix = matrix_data[numeric_cols].corr()
-                                
-                                # Calculate condition number
-                                try:
-                                    condition_number = np.linalg.cond(corr_matrix.values)
-                                except:
-                                    condition_number = float('inf')
-                                
-                                # Count high correlation pairs
-                                high_corr_pairs = 0
-                                max_correlation = 0.0
-                                for i in range(len(corr_matrix.columns)):
-                                    for j in range(i+1, len(corr_matrix.columns)):
-                                        corr_val = abs(corr_matrix.iloc[i, j])
-                                        max_correlation = max(max_correlation, corr_val)
-                                        if corr_val > 0.95:
-                                            high_corr_pairs += 1
-                                
-                                # Log step7 specific metrics
-                                step7_metrics = {
-                                    'matrix_operations_performed': ['correlation_analysis', 'eigenvalue_analysis', 'feature_ranking'],
-                                    'eigenvalue_analysis': {
-                                        'condition_number': condition_number,
-                                        'rank': np.linalg.matrix_rank(corr_matrix.values),
-                                        'effective_rank': len(numeric_cols)
-                                    },
-                                    'correlation_analysis': {
-                                        'high_correlation_pairs': high_corr_pairs,
-                                        'max_correlation': max_correlation
-                                    },
-                                    'performance_metrics': {
-                                        'computation_time': 0.0,  # Would need to be extracted from matrix ops
-                                        'memory_usage_mb': 0.0
-                                    }
-                                }
-                                self.enhanced_logger.log_step7_metrics("matrix_operations", step7_metrics)
-                        else:
-                            # Fallback metrics when file doesn't exist
-                            step7_metrics = {
-                                'matrix_operations_performed': ['correlation_analysis', 'eigenvalue_analysis'],
-                                'eigenvalue_analysis': {
-                                    'condition_number': 1.0,
-                                    'rank': 0,
-                                    'effective_rank': 0
-                                },
-                                'correlation_analysis': {
-                                    'high_correlation_pairs': 0,
-                                    'max_correlation': 0.0
-                                },
-                                'performance_metrics': {
-                                    'computation_time': 0.0,
-                                    'memory_usage_mb': 0.0
-                                }
-                            }
-                            self.enhanced_logger.log_step7_metrics("matrix_operations", step7_metrics)
-                    except ImportError:
-                        # Fallback when pandas/numpy not available
-                        self.logger.info("🧮 Matrix operations completed (pandas/numpy not available for detailed metrics)")
-                        
-                except Exception as metrics_error:
-                    self.logger.warning(f"⚠️ Could not log matrix operations metrics: {metrics_error}")
-                
+                self._log_matrix_operations_metrics(data_dir, exchange, symbol, timeframe)
             else:
                 self.logger.error("❌ Matrix operations failed")
                 self.enhanced_logger.log_issue("matrix_operations", "execution", "Matrix operations step failed", "error")

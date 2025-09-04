@@ -54,25 +54,15 @@ class InterpretabilityReporter:
             # Generate different report formats using report manager
             reports_created = []
             
-            # 1. JSON Report
-            json_report_path = report_manager.save_ml_interpretability_report(
+            # 1. Human-readable TXT Report
+            txt_report_path = report_manager.save_ml_interpretability_report(
                 model_type=model_type,
                 symbol=symbol,
                 exchange=exchange,
                 report_data=results,
-                file_extension="json"
+                file_extension="txt"
             )
-            reports_created.append(str(json_report_path))
-            
-            # 2. Markdown Report
-            markdown_report_path = report_manager.save_ml_interpretability_report(
-                model_type=model_type,
-                symbol=symbol,
-                exchange=exchange,
-                report_data=results,
-                file_extension="md"
-            )
-            reports_created.append(str(markdown_report_path))
+            reports_created.append(str(txt_report_path))
             
             # 3. HTML Report (if HTML generation is available)
             try:

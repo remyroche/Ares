@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation provides a comprehensive report management system for the Ares trading system that organizes all reports in a structured `reports/run_DATETIME/` folder with standardized naming conventions.
+This implementation provides a comprehensive report management system for the Ares trading system that organizes all reports in a structured `reports/run_DATETIME/` folder with standardized naming conventions. **All reports are generated in human-readable TXT format** for easy reading and analysis.
 
 ## Key Features
 
@@ -14,42 +14,42 @@ This implementation provides a comprehensive report management system for the Ar
 ### 2. Report Types and Naming Conventions
 
 #### Step Reports
-- **Pattern**: `step_report_{step_name}_{symbol}_{exchange}.{extension}`
+- **Pattern**: `step_report_{step_name}_{symbol}_{exchange}.txt`
 - **Examples**:
-  - `step_report_step1_data_collection_ETHUSDT_BINANCE.json`
-  - `step_report_step2_processing_labeling_feature_engineering_ETHUSDT_BINANCE.json`
-  - `step_report_step3_market_analysis_ETHUSDT_BINANCE.json`
+  - `step_report_step1_data_collection_ETHUSDT_BINANCE.txt`
+  - `step_report_step2_processing_labeling_feature_engineering_ETHUSDT_BINANCE.txt`
+  - `step_report_step3_market_analysis_ETHUSDT_BINANCE.txt`
 
 #### ML Interpretability Reports
-- **Pattern**: `ml_interpretability_{model_type}_{symbol}_{exchange}.{extension}`
+- **Pattern**: `ml_interpretability_{model_type}_{symbol}_{exchange}.txt`
 - **Examples**:
-  - `ml_interpretability_hmm_ETHUSDT_BINANCE.json`
-  - `ml_interpretability_tactician_ETHUSDT_BINANCE.json`
-  - `ml_interpretability_analyst_ETHUSDT_BINANCE.json`
+  - `ml_interpretability_hmm_ETHUSDT_BINANCE.txt`
+  - `ml_interpretability_tactician_ETHUSDT_BINANCE.txt`
+  - `ml_interpretability_analyst_ETHUSDT_BINANCE.txt`
 
 #### General Reports
-- **Pattern**: `{report_type}_{symbol}_{exchange}.{extension}`
+- **Pattern**: `{report_type}_{symbol}_{exchange}.txt`
 - **Examples**:
-  - `pipeline_summary_ETHUSDT_BINANCE.json`
-  - `run_summary_ETHUSDT_BINANCE.json`
-  - `validation_ETHUSDT_BINANCE.json`
+  - `pipeline_summary_ETHUSDT_BINANCE.txt`
+  - `run_summary_ETHUSDT_BINANCE.txt`
+  - `validation_ETHUSDT_BINANCE.txt`
 
 ### 3. Directory Structure
 
 ```
 reports/
-└── run_20250904_153815/
-    ├── step_report_step1_data_collection_ETHUSDT_BINANCE.json
-    ├── step_report_step2_processing_labeling_feature_engineering_ETHUSDT_BINANCE.json
-    ├── step_report_step3_market_analysis_ETHUSDT_BINANCE.json
-    ├── step_report_step4_model_training_ETHUSDT_BINANCE.json
-    ├── step_report_step5_optimisation_ETHUSDT_BINANCE.json
-    ├── step_report_step6_backtesting_ETHUSDT_BINANCE.json
-    ├── ml_interpretability_hmm_ETHUSDT_BINANCE.json
-    ├── ml_interpretability_tactician_ETHUSDT_BINANCE.json
-    ├── ml_interpretability_analyst_ETHUSDT_BINANCE.json
-    ├── pipeline_summary_ETHUSDT_BINANCE.json
-    └── run_summary_ETHUSDT_BINANCE.json
+└── run_20250904_154321/
+    ├── step_report_step1_data_collection_ETHUSDT_BINANCE.txt
+    ├── step_report_step2_processing_labeling_feature_engineering_ETHUSDT_BINANCE.txt
+    ├── step_report_step3_market_analysis_ETHUSDT_BINANCE.txt
+    ├── step_report_step4_model_training_ETHUSDT_BINANCE.txt
+    ├── step_report_step5_optimisation_ETHUSDT_BINANCE.txt
+    ├── step_report_step6_backtesting_ETHUSDT_BINANCE.txt
+    ├── ml_interpretability_hmm_ETHUSDT_BINANCE.txt
+    ├── ml_interpretability_tactician_ETHUSDT_BINANCE.txt
+    ├── ml_interpretability_analyst_ETHUSDT_BINANCE.txt
+    ├── pipeline_summary_ETHUSDT_BINANCE.txt
+    └── run_summary_ETHUSDT_BINANCE.txt
 ```
 
 ## Implementation Details
@@ -86,25 +86,80 @@ The `ReportManager` class provides the following key methods:
 - Initializes report manager at the start of `all-pipelines` execution
 - Passes environment variables for report organization
 
-### 3. Report Metadata Structure
+### 3. Human-Readable Report Format
 
-All reports include comprehensive metadata:
+All reports are generated in human-readable TXT format with clear sections and formatting:
 
-```json
-{
-  "report_metadata": {
-    "report_type": "step_report",
-    "step_name": "step1_data_collection",
-    "symbol": "ETHUSDT",
-    "exchange": "BINANCE",
-    "generated_at": "2025-09-04T15:38:15.230275",
-    "run_timestamp": "20250904_153815",
-    "report_manager_version": "1.0"
-  },
-  "report_content": {
-    // Actual report data
-  }
-}
+#### Step Report Example:
+```
+================================================================================
+STEP REPORT: STEP1_DATA_COLLECTION
+================================================================================
+
+📊 EXECUTION INFORMATION
+----------------------------------------
+Step Name:        step1_data_collection
+Symbol:           ETHUSDT
+Exchange:         BINANCE
+Generated:        2025-09-04T15:43:21.224233
+Run Timestamp:    20250904_154321
+
+📈 STEP PERFORMANCE
+----------------------------------------
+Status:           COMPLETED
+Execution Time:   120.5 seconds
+Data Quality:     0.98
+
+📊 METRICS
+----------------------------------------
+Accuracy: 0.95
+Precision: 0.92
+Recall: 0.88
+
+📁 ARTIFACTS GENERATED
+----------------------------------------
+1. aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2. features_BINANCE_ETHUSDT_consolidated.parquet
+
+================================================================================
+Report generated by Ares Trading System v1.0
+================================================================================
+```
+
+#### ML Interpretability Report Example:
+```
+================================================================================
+ML INTERPRETABILITY REPORT: HMM
+================================================================================
+
+🤖 MODEL INFORMATION
+----------------------------------------
+Model Type:       hmm
+Symbol:           ETHUSDT
+Exchange:         BINANCE
+Generated:        2025-09-04T15:43:21.224369
+Run Timestamp:    20250904_154321
+
+📊 SHAP ANALYSIS
+----------------------------------------
+Feature Importance:
+  1. 0.3000
+  2. 0.2500
+  3. 0.2000
+  4. 0.1500
+  5. 0.1000
+
+🔍 LIME ANALYSIS
+----------------------------------------
+Local Explanations: Regime classification based on volatility patterns
+
+📈 INTERPRETABILITY METRICS
+----------------------------------------
+Interpretability Score: 0.870
+
+================================================================================
+Report generated by Ares Trading System v1.0
+================================================================================
 ```
 
 ## Usage
@@ -135,10 +190,12 @@ All reports are organized in the timestamp-based directory:
 
 1. **Organization**: All reports are organized by run timestamp for easy access
 2. **Consistency**: Standardized naming conventions across all report types
-3. **Traceability**: Each report includes metadata for full traceability
-4. **Accessibility**: Reports are easily accessible in a single directory per run
-5. **Completeness**: All report types (step reports, ML interpretability, etc.) are included
-6. **Automation**: Automatic report organization without manual intervention
+3. **Human-Readable**: All reports are in TXT format with clear formatting and emojis for easy reading
+4. **Traceability**: Each report includes metadata for full traceability
+5. **Accessibility**: Reports are easily accessible in a single directory per run
+6. **Completeness**: All report types (step reports, ML interpretability, etc.) are included
+7. **Automation**: Automatic report organization without manual intervention
+8. **Professional Formatting**: Clean, structured layout with sections and visual separators
 
 ## Testing
 
@@ -165,4 +222,6 @@ This implementation successfully addresses the user's requirements:
 - ✅ Step reports use `step_report_{step_name}_{symbol}_{exchange}` naming
 - ✅ ML interpretability reports are included and properly named
 - ✅ All reports are accessible and organized by run timestamp
+- ✅ **All reports are generated in human-readable TXT format**
+- ✅ Reports include clear formatting, emojis, and professional structure
 - ✅ The system is integrated with the existing pipeline infrastructure

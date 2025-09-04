@@ -572,6 +572,7 @@ class ModelManager:
         exceptions=(Exception,),
         default_return=None,
         context="model manager cleanup",
+    )
     async def stop(self) -> None:
         """Stop the model manager."""
         self.logger.info("🛑 Stopping Model Manager...")
@@ -588,6 +589,7 @@ model_manager: ModelManager | None = None
     exceptions=(Exception,),
     default_return=None,
     context="model manager setup",
+)
 async def setup_model_manager(
     config: dict[str, Any] | None = None,
 ) -> ModelManager | None:

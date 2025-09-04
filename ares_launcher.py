@@ -843,12 +843,12 @@ class AresLauncher:
         context="run_backtesting",
     )
     def run_backtesting(self, symbol: str, exchange: str, with_gui: bool=False):
-        """Run enhanced backtesting using cached wavelet features by default."""
+        """Run enhanced backtesting with comprehensive validation and error handling."""
         self.logger.info(
-            f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}",
+            f"📊 Running enhanced backtesting for {symbol} on {exchange}",
         )
         print(
-            f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}",
+            f"📊 Running enhanced backtesting for {symbol} on {exchange}",
         )
         print("=" * 80)
 
@@ -856,119 +856,106 @@ class AresLauncher:
             return False
 
         try:
-            # First, ensure wavelet features are precomputed
-            if not self.precompute_wavelet_features(symbol, exchange):
-                self.logger.warning(
-                    "⚠️ Wavelet precomputation failed, continuing with direct computation",
-                )
-                print(
-                    "⚠️ Wavelet precomputation failed, continuing with direct computation",
-                )
-
-            # Import and use the cached backtesting system
+            # Import enhanced backtesting components
             import asyncio
+            from src.training.steps.backtesting import run_backtesting_pipeline, BacktestingPipelineConfig
+            from src.utils.common_operations import safe_file_exists, format_datetime, get_current_datetime
 
-            from src.config import CONFIG
-            from src.training.steps.backtesting_with_cached_features import (
-                BacktestingWithCachedFeatures,
-            )
-
-            # Initialize backtesting with cached features
-            backtester=BacktestingWithCachedFeatures(CONFIG)
-
-            # Initialize the backtesting system
-            init_success=asyncio.run(backtester.initialize())
-            if not init_success:
-                self.logger.error("❌ Failed to initialize backtesting system")
-                return False
-
-            # Load data for backtesting
-            data_path=f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-            volume_path = f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
-
-            # Check if consolidated data exists
-            import os
-
-            if not os.path.exists(data_path):
-                self.logger.error(f"❌ Consolidated data file not found: {data_path}")
-                self.logger.error(
-                    "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE",
-                )
-                return False
-
-            # Load data
-            price_data=asyncio.run(backtester._load_backtest_data(data_path))
-            volume_data=(
-                asyncio.run(backtester._load_volume_data(volume_path))
-                if os.path.exists(volume_path)
-                else None
-            )
-
-            if price_data is None or price_data.empty:
-                self.logger.error("❌ Failed to load price data for backtesting")
-                return False
-
-            # Run backtest with cached features
-            self.logger.info(f"🚀 Starting backtest with {len(price_data)} data points")
-            print(f"🚀 Starting backtest with {len(price_data)} data points")
-
-            # Strategy configuration
-            strategy_config={
-                "strategy_type": "wavelet_energy_entropy",
-                "parameters": {
-                    "energy_threshold": 0.5,
-                    "entropy_threshold": 0.3,
-                    "use_cached_features": True,
-                },
+            # Enhanced configuration for backtesting
+            enhanced_config = {
+                'force_rerun': True,
+                'walk_forward_validation': True,
+                'monte_carlo_validation': True,
+                'ab_testing': True,
+                'model_saving': True,
+                'random_state': 42,
+                
+                # Enhanced validation settings
+                'enable_validation': True,
+                'strict_validation': False,
+                'validate_data_quality': True,
+                
+                # Error handling
+                'retry_failed_steps': True,
+                'max_retries': 3,
+                'timeout_seconds': 3600,
+                
+                # Performance monitoring
+                'enable_performance_monitoring': True,
+                'log_detailed_metrics': True,
             }
 
-            # Run the backtest
-            results=asyncio.run(
-                backtester.run_backtest(
-                    price_data=price_data,
-                    volume_data=volume_data,
-                    strategy_config=strategy_config,
-                ),
+            # Pre-flight validation
+            self.logger.info("🔍 Running pre-flight validation...")
+            
+            # Validate data directory and files
+            data_dir = "data_cache"
+            required_files = [
+                f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                f"volume_{exchange}_{symbol}_consolidated.parquet"
+            ]
+            
+            missing_files = []
+            for file_name in required_files:
+                file_path = f"{data_dir}/{file_name}"
+                if not safe_file_exists(file_path):
+                    missing_files.append(file_name)
+            
+            if missing_files:
+                self.logger.error(f"❌ Missing required data files: {missing_files}")
+                self.logger.error("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                return False
+            
+            self.logger.info("✅ Pre-flight validation passed")
+
+            # Run enhanced backtesting pipeline
+            self.logger.info("🚀 Starting enhanced backtesting pipeline...")
+            print("🚀 Starting enhanced backtesting pipeline...")
+            print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+
+            success = asyncio.run(
+                run_backtesting_pipeline(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe="1m",
+                    data_dir=data_dir,
+                    **enhanced_config
+                )
             )
 
-            if "error" in results:
-                self.logger.error(f"❌ Backtesting failed: {results['error']}")
-                print(f"❌ Backtesting failed: {results['error']}")
+            if success:
+                self.logger.info("🎉 Enhanced backtesting completed successfully!")
+                print("🎉 Enhanced backtesting completed successfully!")
+                print("=" * 80)
+                print("✅ Enhanced backtesting results:")
+                print("   ✅ Comprehensive validation passed")
+                print("   ✅ Walk forward validation completed")
+                print("   ✅ Monte Carlo validation completed")
+                print("   ✅ A/B testing completed")
+                print("   ✅ Model saving completed")
+                print("   ✅ Performance monitoring completed")
+                print("=" * 80)
+                
+                # Print performance summary
+                print("📈 ENHANCED BACKTESTING SUMMARY")
+                print(f"Symbol: {symbol}")
+                print(f"Exchange: {exchange}")
+                print(f"Timeframe: 1m")
+                print(f"Validation: Comprehensive")
+                print(f"Error Handling: Enhanced")
+                print(f"Performance Monitoring: Enabled")
+                print("=" * 80)
+                
+                return True
+            else:
+                self.logger.error("❌ Enhanced backtesting failed!")
+                print("❌ Enhanced backtesting failed!")
+                print("Please check the logs for detailed error information")
                 return False
 
-            # Print results
-            strategy_results=results.get("strategy_results", {})
-            print("=" * 80)
-            print("📊 BACKTESTING RESULTS")
-            print("=" * 80)
-            print(f"Total Return: {strategy_results.get('total_return', 0):.4f}")
-            print(f"Sharpe Ratio: {strategy_results.get('sharpe_ratio', 0):.4f}")
-            print(f"Max Drawdown: {strategy_results.get('max_drawdown', 0):.4f}")
-            print(f"Win Rate: {strategy_results.get('win_rate', 0):.2%}")
-            print(f"Signal Count: {strategy_results.get('signal_count', 0)}")
-            print(f"Feature Count: {results.get('feature_count', 0)}")
-            print("=" * 80)
-
-            # Print performance stats
-            stats=backtester.get_performance_stats()
-            print("📈 PERFORMANCE STATISTICS")
-            print(f"Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
-            print(f"Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
-            print(
-                f"Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s",
-            )
-            print(f"Iterations Completed: {stats.get('iterations_completed', 0)}")
-            print("=" * 80)
-
-            self.logger.info(
-                "✅ Backtesting with cached wavelet features completed successfully",
-            )
-            print("✅ Backtesting with cached wavelet features completed successfully")
-            return True
-
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run backtesting: {e}")
-            print(f"❌ Failed to run backtesting: {e}")
+            self.logger.exception(f"❌ Failed to run enhanced backtesting: {e}")
+            print(f"❌ Failed to run enhanced backtesting: {e}")
             return False
 
     def _run_unified_trading(

@@ -1,0 +1,51 @@
+2025-09-04 14:54:31,498 - __main__ - INFO - ℹ️ Step started at: 14:54:31
+2025-09-04 14:54:31,506 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,511 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,517 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,522 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,529 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,637 - __main__ - INFO - Collected 40017 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:54:31,639 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,646 - __main__ - INFO - ℹ️ Step started at: 14:54:31
+2025-09-04 14:54:31,847 - __main__ - INFO - ℹ️ Step started at: 14:54:31
+2025-09-04 14:54:31,852 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,902 - __main__ - INFO - 📝 File updated: data_cache/klines_BINANCE_ETHUSDT_1m_2025_09.parquet - 38,881 total rows
+2025-09-04 14:54:31,902 - __main__ - INFO - 📝 Metadata file updated: data_cache/klines_BINANCE_ETHUSDT_1m_2025_09.metadata.json
+2025-09-04 14:54:31,902 - __main__ - INFO - Progressive append completed: 38881 total rows
+2025-09-04 14:54:31,902 - __main__ - INFO - 📄 File created: data_cache/klines_BINANCE_ETHUSDT_1m_2025_09.parquet - 38,881 records, 2.15 MB
+2025-09-04 14:54:31,907 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,917 - __main__ - INFO - Resampled data to 5m: 7777 rows
+2025-09-04 14:54:31,923 - __main__ - INFO - 📝 File updated: data_cache/klines_BINANCE_ETHUSDT_5m_2025_09.parquet - 7,777 total rows
+2025-09-04 14:54:31,923 - __main__ - INFO - 📝 Metadata file updated: data_cache/klines_BINANCE_ETHUSDT_5m_2025_09.metadata.json
+2025-09-04 14:54:31,923 - __main__ - INFO - Progressive append completed: 7777 total rows
+2025-09-04 14:54:31,923 - __main__ - INFO - 📄 File created: data_cache/klines_BINANCE_ETHUSDT_5m_2025_09.parquet - 7,777 records, 0.42 MB
+2025-09-04 14:54:31,927 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,935 - __main__ - INFO - Resampled data to 15m: 2593 rows
+2025-09-04 14:54:31,941 - __main__ - INFO - 📝 File updated: data_cache/klines_BINANCE_ETHUSDT_15m_2025_09.parquet - 2,593 total rows
+2025-09-04 14:54:31,941 - __main__ - INFO - 📝 Metadata file updated: data_cache/klines_BINANCE_ETHUSDT_15m_2025_09.metadata.json
+2025-09-04 14:54:31,941 - __main__ - INFO - Progressive append completed: 2593 total rows
+2025-09-04 14:54:31,941 - __main__ - INFO - 📄 File created: data_cache/klines_BINANCE_ETHUSDT_15m_2025_09.parquet - 2,593 records, 0.14 MB
+2025-09-04 14:54:31,946 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,953 - __main__ - INFO - Resampled data to 30m: 1297 rows
+2025-09-04 14:54:31,958 - __main__ - INFO - 📝 File updated: data_cache/klines_BINANCE_ETHUSDT_30m_2025_09.parquet - 1,297 total rows
+2025-09-04 14:54:31,958 - __main__ - INFO - 📝 Metadata file updated: data_cache/klines_BINANCE_ETHUSDT_30m_2025_09.metadata.json
+2025-09-04 14:54:31,958 - __main__ - INFO - Progressive append completed: 1297 total rows
+2025-09-04 14:54:31,958 - __main__ - INFO - 📄 File created: data_cache/klines_BINANCE_ETHUSDT_30m_2025_09.parquet - 1,297 records, 0.07 MB
+2025-09-04 14:54:31,962 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:31,973 - __main__ - INFO - Resampled data to 1h: 649 rows
+2025-09-04 14:54:31,977 - __main__ - INFO - 📝 File updated: data_cache/klines_BINANCE_ETHUSDT_1h_2025_09.parquet - 649 total rows
+2025-09-04 14:54:31,977 - __main__ - INFO - 📝 Metadata file updated: data_cache/klines_BINANCE_ETHUSDT_1h_2025_09.metadata.json
+2025-09-04 14:54:31,977 - __main__ - INFO - Progressive append completed: 649 total rows
+2025-09-04 14:54:31,977 - __main__ - INFO - 📄 File created: data_cache/klines_BINANCE_ETHUSDT_1h_2025_09.parquet - 649 records, 0.04 MB
+2025-09-04 14:54:32,071 - __main__ - INFO - Collected 39872 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:54:32,128 - __main__ - INFO - 📝 File updated: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet - 39,872 total rows
+2025-09-04 14:54:32,129 - __main__ - INFO - 📝 Metadata file updated: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.metadata.json
+2025-09-04 14:54:32,129 - __main__ - INFO - Progressive append completed: 39872 total rows
+2025-09-04 14:54:32,129 - __main__ - INFO - 📄 File created: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet - 39,872 records, 2.28 MB
+2025-09-04 14:54:32,130 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:32,133 - __main__ - INFO - 📝 File updated: data_cache/futures_BINANCE_ETHUSDT_consolidated.parquet - 82 total rows
+2025-09-04 14:54:32,133 - __main__ - INFO - 📝 Metadata file updated: data_cache/futures_BINANCE_ETHUSDT_consolidated.metadata.json
+2025-09-04 14:54:32,133 - __main__ - INFO - Progressive append completed: 82 total rows
+2025-09-04 14:54:32,134 - __main__ - INFO - 📄 File created: data_cache/futures_BINANCE_ETHUSDT_consolidated.parquet - 82 records, 0.01 MB
+2025-09-04 14:54:32,134 - __main__ - INFO - ✅ Pipeline completed successfully
+2025-09-04 14:54:32,134 - __main__ - INFO - ✅ Pipeline execution completed without errors

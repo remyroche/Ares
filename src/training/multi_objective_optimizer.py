@@ -62,6 +62,7 @@ class MultiObjectiveOptimizer:
         self.optimized_backtester = None
         if "market_data" in config:
             from src.training.optimized_backtester import OptimizedBacktester
+from src.core.decorators.errors import handles_errors
 
             self.optimized_backtester = OptimizedBacktester(
                 config["market_data"],

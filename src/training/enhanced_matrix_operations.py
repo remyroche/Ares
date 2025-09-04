@@ -1523,6 +1523,7 @@ class EnhancedMatrixOperations:
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+from src.core.decorators.errors import handles_errors
         except Exception as e:
             pass  # TODO: Handle exception properly
             

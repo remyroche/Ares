@@ -1774,6 +1774,7 @@ if __name__ == "__main__":
     # Test the step
     import asyncio
     import copy
+from src.core.decorators.errors import handles_errors
     
     # Load test configuration
     test_config = {

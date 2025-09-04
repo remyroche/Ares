@@ -18,6 +18,7 @@ from .comprehensive_enhanced_scenario_predictor import (
 )
 import asyncio
 import numpy as np
+from src.core.decorators.errors import handles_errors
 
 # Simple logger setup
 logger = logging.getLogger(__name__)

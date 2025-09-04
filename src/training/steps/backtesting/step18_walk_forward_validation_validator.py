@@ -422,6 +422,7 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
+from src.core.decorators.errors import handles_errors
 
     # Example usage
     async def test_validator() -> None:

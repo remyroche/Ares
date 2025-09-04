@@ -7,6 +7,7 @@ import pandas as pd
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
 from .standardized_error_handler import standardized_error_handler
+from src.core.decorators.errors import handles_errors
 
 class StepContract:
     """Defines the input/output contract for each step."""

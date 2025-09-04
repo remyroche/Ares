@@ -93,6 +93,7 @@ class PaperTradingIntegration:
             if self.enable_detailed_reporting:
                 try:
                     from src.reports.paper_trading_reporter import (
+from src.core.decorators.errors import handles_errors
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 

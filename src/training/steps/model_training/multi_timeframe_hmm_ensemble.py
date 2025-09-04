@@ -38,6 +38,7 @@ from copy import copy
 if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
 import os.path
+from src.core.decorators.errors import handles_errors
 
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")

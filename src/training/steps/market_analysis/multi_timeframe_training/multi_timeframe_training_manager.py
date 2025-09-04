@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
 )
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 # src/training/multi_timeframe_training_manager.py
 

@@ -15,6 +15,7 @@ except Exception:
 from src.training.simplified_training_manager import SimplifiedTrainingManager
 from src.utils.logger import system_logger
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 class TrainingManager:
     """Main training manager for the ML pipeline.

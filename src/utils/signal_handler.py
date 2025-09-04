@@ -342,6 +342,7 @@ def setup_signal_handlers() -> SignalHandler:
     config = {'signal_handler': {'enable_signal_handling': True, 'graceful_shutdown_timeout': 30, 'handle_sigterm': True, 'handle_sigint': True, 'handle_sighup': False}}
     signal_handler = SignalHandler(config)
     import asyncio
+from src.core.decorators.errors import handles_errors
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

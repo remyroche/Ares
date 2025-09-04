@@ -31,6 +31,7 @@ from src.utils.data_quality_framework import DataQualityFramework
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, validates, traced, log_execution_time
 from src.training.steps.optimisation import run_optimisation_pipeline
+from src.core.decorators.errors import handles_errors
 
 # Initialize logger
 logger = system_logger.getChild('OptimisationMain')

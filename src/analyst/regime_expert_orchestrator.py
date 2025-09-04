@@ -9,6 +9,7 @@ from src.utils.logger import system_logger
 from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
 from src.analyst.regime_runtime import get_current_regime_info
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.decorators.errors import handles_errors
 
 class RegimeExpertOrchestrator:
     """Manages and integrates regime experts for trading decisions."""

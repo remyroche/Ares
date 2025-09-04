@@ -16,6 +16,7 @@ from src.utils.logger import getChild as get_logger
 from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 from src.utils.pipeline_standards import pipeline_standards
 from src.core.decorators import traced, cached, validates, handles_errors, log_execution_time
+from src.core.decorators.errors import handles_errors
 
 
 logger = get_logger('RegimeHandler')

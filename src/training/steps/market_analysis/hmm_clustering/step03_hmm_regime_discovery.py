@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
@@ -21,6 +21,9 @@ sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout
 psutil = PipelineStandards.safe_import('psutil', None)
 numpy = PipelineStandards.safe_import('numpy', None)
 pandas = PipelineStandards.safe_import('pandas', None)
+
+# Define PSUTIL_AVAILABLE for memory monitoring
+PSUTIL_AVAILABLE = psutil is not None
 
 def create_fallback_logger() -> Any:
     import logging

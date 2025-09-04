@@ -7,6 +7,7 @@ This pipeline handles:
 2. Type hint additions and enhancements
 """
 
+import ast
 import json
 import sys
 from datetime import datetime

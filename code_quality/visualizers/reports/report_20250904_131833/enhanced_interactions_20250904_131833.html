@@ -1,0 +1,179 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Code Interaction Analysis</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #007acc; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .metric { display: inline-block; margin: 10px; padding: 10px; background: #f0f8ff; border-radius: 5px; text-align: center; }
+        .metric-value { font-size: 24px; font-weight: bold; color: #007acc; }
+        .metric-label { font-size: 14px; color: #666; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .issue { margin: 5px 0; padding: 8px; background: #f8f9fa; border-left: 4px solid #007acc; }
+        .doc-only { border-left-color: #ffc107; background: #fff8e1; }
+        .high-impact { border-left-color: #dc3545; background: #f8d7da; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+        .code { font-family: monospace; background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Enhanced Code Interaction Analysis</h1>
+            <p>Comprehensive dependency analysis with false positive prevention</p>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Analysis Summary</h2>
+            <div class="metric">
+                <div class="metric-value">5110</div>
+                <div class="metric-label">Total Issues</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">1081</div>
+                <div class="metric-label">Deprecated Issues</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div class="metric-label">False Positives Filtered</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div class="metric-label">Functions Analyzed</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div class="metric-label">Classes Analyzed</div>
+            </div>
+        </div>
+        
+        <div class="warning">
+            <h3>⚠️ Important: Enhanced Analysis</h3>
+            <p>This analysis now includes comprehensive cross-file dependency checking to prevent false positives. 
+            Functions/classes flagged as 'deprecated' are validated against actual usage across the entire codebase.</p>
+        </div>
+        
+        <div class="section">
+            <h2>🔗 Dependency Map Overview</h2>
+            <table>
+                <tr><th>Type</th><th>Count</th><th>Description</th></tr>
+                <tr><td>Function Definitions</td><td>0</td><td>Functions defined across codebase</td></tr>
+                <tr><td>Function Calls</td><td>0</td><td>Function calls found</td></tr>
+                <tr><td>Class Definitions</td><td>0</td><td>Classes defined across codebase</td></tr>
+                <tr><td>Class Usage</td><td>0</td><td>Class usage instances</td></tr>
+                <tr><td>Import Statements</td><td>0</td><td>Import statements tracked</td></tr>
+                <tr><td>Dynamic Imports</td><td>0</td><td>Dynamic imports detected</td></tr>
+                <tr><td>Reflection Usage</td><td>0</td><td>getattr/hasattr usage</td></tr>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>🚨 Deprecated Code Analysis</h2>
+
+            <div class="issue">
+                <strong>/workspace/step_formatter.py:85</strong> - Function 'replace_step' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/analyst_scanner.py:69</strong> - Function 'visit_ClassDef' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/analyst_scanner.py:88</strong> - Function 'visit_ExceptHandler' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/analyst_scanner.py:102</strong> - Function 'visit_Name' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/optimize_hmm_regime_parameters_enhanced.py:208</strong> - Function 'objective' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/run_sequential_fixer_simple.py:16</strong> - Function 'MockProgress' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/run_sequential_fixer_simple.py:35</strong> - Function 'MockConsole' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/run_sequential_fixer_simple.py:42</strong> - Function 'MockLive' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/diagnose_feature_quality.py:35</strong> - Function 'wrapper' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/post_steps_cleaner.py:19</strong> - Function 'repl' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/assess_data_quality.py:401</strong> - Function 'convert_numpy_types' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/fix_multicollinearity_issue.py:29</strong> - Function 'wrapper' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/update_logging_warnings.py:88</strong> - Function 'replace_logger' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/update_logging_warnings.py:104</strong> - Function 'replace_print' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/run_scans.py:26</strong> - Function 'ScanType' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/run_scans.py:213</strong> - Function 'get_feature_info' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/fix_corrupted_data.py:34</strong> - Function 'wrapper' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/advanced_syntax_repair.py:61</strong> - Function 'repl' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/optimize_partitions.py:224</strong> - Function 'suggest_partition_strategy' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div>
+            <div class="issue">
+                <strong>/workspace/scripts/migrate_parquet_datasets.py:55</strong> - Function 'wrapper' is defined but never called<br>
+                <small>Reason: Function is defined but never called anywhere in the codebase</small>
+</div></div>
+        <div class="section">
+            <h2>🎯 Key Improvements</h2>
+            <ul>
+                <li><strong>Cross-file dependency checking:</strong> Prevents false positives by analyzing entire codebase</li>
+                <li><strong>Documentation-only detection:</strong> Identifies functions only referenced in docs/config</li>
+                <li><strong>Dynamic usage tracking:</strong> Detects getattr, hasattr, and other dynamic patterns</li>
+                <li><strong>Enhanced reporting:</strong> Shows filtered results and dependency statistics</li>
+                <li><strong>Risk assessment:</strong> Categorizes issues by removal risk</li>
+            </ul>
+        </div>
+        
+        <div class="success">
+            <h3>✅ Analysis Complete</h3>
+            <p>This enhanced analysis provides more accurate dead code identification by considering 
+            cross-file dependencies and usage patterns across the entire codebase.</p>
+        </div>
+    </div>
+</body>
+</html>

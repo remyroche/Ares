@@ -8,11 +8,9 @@ This module provides comprehensive logging functionality with enhanced features.
 import logging
 import os
 import sys
-from datetime import datetime
+import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
-
-from src.utils.common_operations import format_datetime, get_current_datetime
 
 
 class ComprehensiveLogger:
@@ -50,7 +48,8 @@ class ComprehensiveLogger:
         console_handler.setLevel(logging.INFO)
         
         # File handler
-        log_file = self.log_dir / f"ares_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.log"
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = self.log_dir / f"ares_{timestamp}.log"
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.DEBUG)
         

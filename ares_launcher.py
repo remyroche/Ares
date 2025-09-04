@@ -1583,7 +1583,16 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run enhanced optimisation pipeline with comprehensive validation and protection."""
+        """Run enhanced optimisation pipeline with comprehensive validation and protection.
+        
+        Features:
+        - 🎯 Comprehensive logging with emojis for easy troubleshooting
+        - 📊 Real-time progress tracking and monitoring
+        - 🔍 Detailed error reporting and quality issue flagging
+        - ✅ Step-by-step validation with detailed reporting
+        - 📈 Performance metrics tracking
+        - 🛡️ Data quality monitoring throughout the process
+        """
         self.logger.info(f"📊 Running enhanced optimisation pipeline for {symbol} on {exchange}")
         print("=" * 80)
         print("🚀 ENHANCED OPTIMISATION PIPELINE")
@@ -1593,6 +1602,12 @@ class AresLauncher:
         print(f"🖥️ GUI Mode: {with_gui}")
         print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
         print("=" * 80)
+        
+        # Initialize monitoring variables
+        pipeline_start_time = time.time()
+        error_count = 0
+        warning_count = 0
+        progress_updates = 0
 
         # Pre-flight validation
         validation_success = self._validate_optimisation_prerequisites(symbol, exchange)
@@ -1633,8 +1648,49 @@ class AresLauncher:
 
             # Read output in real-time with enhanced monitoring
             line_count = 0
-            error_count = 0
-            warning_count = 0
+            process_error_count = 0
+            process_warning_count = 0
+            quality_issues = []
+            step_progress = {}
+            
+            def log_quality_issue(issue_type: str, description: str, severity: str = "WARNING"):
+                """Log quality issues with detailed reporting."""
+                timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+                issue = {
+                    'timestamp': timestamp,
+                    'type': issue_type,
+                    'description': description,
+                    'severity': severity
+                }
+                quality_issues.append(issue)
+                
+                if severity == "ERROR":
+                    self.logger.error(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                    print(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                elif severity == "WARNING":
+                    self.logger.warning(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                    print(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                else:
+                    self.logger.info(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+                    print(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+            
+            def update_step_progress(step_name: str, status: str):
+                """Update step progress tracking."""
+                if step_name not in step_progress:
+                    step_progress[step_name] = {'start_time': time.time(), 'status': 'STARTING'}
+                
+                step_progress[step_name]['status'] = status
+                step_progress[step_name]['last_update'] = time.time()
+                
+                if status == "COMPLETED":
+                    duration = time.time() - step_progress[step_name]['start_time']
+                    self.logger.info(f"✅ [{step_name}] Completed in {duration:.2f}s")
+                    print(f"✅ [{step_name}] Completed in {duration:.2f}s")
+                elif status == "FAILED":
+                    duration = time.time() - step_progress[step_name]['start_time']
+                    self.logger.error(f"❌ [{step_name}] Failed after {duration:.2f}s")
+                    print(f"❌ [{step_name}] Failed after {duration:.2f}s")
+                    log_quality_issue("STEP_FAILURE", f"{step_name} failed", "ERROR")
             
             while True:
                 output=process.stdout.readline()
@@ -1646,47 +1702,177 @@ class AresLauncher:
                     
                     # Monitor for errors and warnings
                     if "ERROR" in output_stripped or "❌" in output_stripped:
-                        error_count += 1
+                        process_error_count += 1
+                        log_quality_issue("PROCESS_ERROR", output_stripped, "ERROR")
                     elif "WARNING" in output_stripped or "⚠️" in output_stripped:
-                        warning_count += 1
+                        process_warning_count += 1
+                        log_quality_issue("PROCESS_WARNING", output_stripped, "WARNING")
+                    
+                    # Track step progress
+                    if "STEP" in output_stripped and "STARTING" in output_stripped:
+                        # Extract step name from output
+                        if "Confidence Calibration" in output_stripped:
+                            update_step_progress("Confidence Calibration", "STARTING")
+                        elif "Final Parameters Optimization" in output_stripped:
+                            update_step_progress("Final Parameters Optimization", "STARTING")
+                    elif "STEP" in output_stripped and "COMPLETED" in output_stripped:
+                        if "Confidence Calibration" in output_stripped:
+                            update_step_progress("Confidence Calibration", "COMPLETED")
+                        elif "Final Parameters Optimization" in output_stripped:
+                            update_step_progress("Final Parameters Optimization", "COMPLETED")
+                    elif "STEP" in output_stripped and "FAILED" in output_stripped:
+                        if "Confidence Calibration" in output_stripped:
+                            update_step_progress("Confidence Calibration", "FAILED")
+                        elif "Final Parameters Optimization" in output_stripped:
+                            update_step_progress("Final Parameters Optimization", "FAILED")
                     
                     print(output_stripped)  # Print to terminal in real-time
                     self.logger.info(output_stripped)  # Also log it
                     
-                    # Progress indicator every 50 lines
-                    if line_count % 50 == 0:
-                        print(f"📊 Progress: {line_count} lines processed, {error_count} errors, {warning_count} warnings")
+                    # Enhanced progress indicator every 25 lines
+                    if line_count % 25 == 0:
+                        progress_updates += 1
+                        elapsed_time = time.time() - pipeline_start_time
+                        print(f"📊 Progress Update #{progress_updates}: {line_count} lines processed, {process_error_count} errors, {process_warning_count} warnings, {elapsed_time:.1f}s elapsed")
+                        self.logger.info(f"📊 Progress Update #{progress_updates}: {line_count} lines, {process_error_count} errors, {process_warning_count} warnings")
 
             # Get the final return code
             return_code=process.poll()
+            total_pipeline_time = time.time() - pipeline_start_time
             
             # Enhanced result reporting
+            print("\n" + "=" * 80)
+            print("📊 ENHANCED OPTIMISATION PIPELINE RESULTS")
             print("=" * 80)
-            print("📊 OPTIMISATION PIPELINE RESULTS")
-            print("=" * 80)
+            print(f"🎯 Symbol: {symbol}")
+            print(f"🏢 Exchange: {exchange}")
+            print(f"⏱️ Total Duration: {total_pipeline_time:.2f} seconds")
             print(f"📈 Total lines processed: {line_count}")
-            print(f"❌ Total errors: {error_count}")
-            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"📊 Progress updates: {progress_updates}")
+            print(f"❌ Total errors: {process_error_count}")
+            print(f"⚠️ Total warnings: {process_warning_count}")
+            print(f"🔍 Quality issues: {len(quality_issues)}")
             print(f"🔢 Return code: {return_code}")
+            
+            # Step progress summary
+            if step_progress:
+                print("\n📋 STEP PROGRESS SUMMARY:")
+                for step_name, progress in step_progress.items():
+                    status_emoji = "✅" if progress['status'] == "COMPLETED" else "❌" if progress['status'] == "FAILED" else "🔄"
+                    duration = time.time() - progress['start_time']
+                    print(f"   {status_emoji} {step_name}: {progress['status']} ({duration:.2f}s)")
+            
+            # Quality issues summary
+            if quality_issues:
+                print("\n🔍 QUALITY ISSUES SUMMARY:")
+                for issue in quality_issues:
+                    severity_emoji = "🔴" if issue['severity'] == "ERROR" else "🟡" if issue['severity'] == "WARNING" else "🔵"
+                    print(f"   {severity_emoji} [{issue['timestamp']}] {issue['type']}: {issue['description']}")
+            
             print("=" * 80)
 
             if return_code== 0:
                 self.logger.info("✅ Enhanced optimisation pipeline completed successfully")
                 print("✅ Enhanced optimisation pipeline completed successfully")
                 print("🎉 All optimisation steps completed with validation!")
+                
+                # Save success summary
+                try:
+                    success_summary_file = f"data_cache/optimisation_success_summary_{symbol}_{exchange}.json"
+                    success_data = {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'execution_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                        'total_duration_seconds': total_pipeline_time,
+                        'lines_processed': line_count,
+                        'progress_updates': progress_updates,
+                        'error_count': process_error_count,
+                        'warning_count': process_warning_count,
+                        'quality_issues': quality_issues,
+                        'step_progress': step_progress,
+                        'return_code': return_code,
+                        'success': True
+                    }
+                    
+                    import json
+                    with open(success_summary_file, 'w') as f:
+                        json.dump(success_data, f, indent=2, default=str)
+                    
+                    self.logger.info(f"💾 Success summary saved to: {success_summary_file}")
+                    print(f"💾 Success summary saved to: {success_summary_file}")
+                except Exception as save_error:
+                    self.logger.warning(f"⚠️ Could not save success summary: {save_error}")
+                
                 return True
             else:
                 self.logger.error(
                     f"❌ Enhanced optimisation pipeline failed with return code: {return_code}",
                 )
                 print(f"❌ Enhanced optimisation pipeline failed with return code: {return_code}")
-                if error_count > 0:
-                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                if process_error_count > 0:
+                    print(f"💥 Pipeline encountered {process_error_count} errors during execution")
+                
+                # Save failure summary
+                try:
+                    failure_summary_file = f"data_cache/optimisation_failure_summary_{symbol}_{exchange}.json"
+                    failure_data = {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'execution_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                        'total_duration_seconds': total_pipeline_time,
+                        'lines_processed': line_count,
+                        'progress_updates': progress_updates,
+                        'error_count': process_error_count,
+                        'warning_count': process_warning_count,
+                        'quality_issues': quality_issues,
+                        'step_progress': step_progress,
+                        'return_code': return_code,
+                        'success': False
+                    }
+                    
+                    import json
+                    with open(failure_summary_file, 'w') as f:
+                        json.dump(failure_data, f, indent=2, default=str)
+                    
+                    self.logger.info(f"💾 Failure summary saved to: {failure_summary_file}")
+                    print(f"💾 Failure summary saved to: {failure_summary_file}")
+                except Exception as save_error:
+                    self.logger.warning(f"⚠️ Could not save failure summary: {save_error}")
+                
                 return False
 
         except Exception as e:
+            total_pipeline_time = time.time() - pipeline_start_time
             self.logger.exception(f"❌ Failed to run enhanced optimisation pipeline: {e}")
-            print(f"❌ Failed to run enhanced optimisation pipeline: {e}")
+            print(f"\n💥 ENHANCED OPTIMISATION PIPELINE FAILED WITH EXCEPTION!")
+            print("=" * 80)
+            print(f"⏱️ Duration before failure: {total_pipeline_time:.2f} seconds")
+            print(f"❌ Error: {str(e)}")
+            print(f"🔍 Error Type: {type(e).__name__}")
+            print("=" * 80)
+            
+            # Save exception summary
+            try:
+                exception_summary_file = f"data_cache/optimisation_exception_summary_{symbol}_{exchange}.json"
+                exception_data = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'execution_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                    'duration_before_failure': total_pipeline_time,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'success': False
+                }
+                
+                import json
+                with open(exception_summary_file, 'w') as f:
+                    json.dump(exception_data, f, indent=2, default=str)
+                
+                self.logger.info(f"💾 Exception summary saved to: {exception_summary_file}")
+                print(f"💾 Exception summary saved to: {exception_summary_file}")
+            except Exception as save_error:
+                self.logger.warning(f"⚠️ Could not save exception summary: {save_error}")
+            
             return False
         finally:
             # Cleanup environment variables
@@ -1694,6 +1880,11 @@ class AresLauncher:
             os.environ.pop("OPTIMISATION_MODE", None)
             os.environ.pop("SYMBOL", None)
             os.environ.pop("EXCHANGE", None)
+            
+            # Final cleanup logging
+            total_time = time.time() - pipeline_start_time
+            self.logger.info(f"🧹 Optimisation pipeline cleanup completed after {total_time:.2f}s")
+            print(f"🧹 Optimisation pipeline cleanup completed after {total_time:.2f}s")
 
     def _validate_optimisation_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for optimisation pipeline execution."""

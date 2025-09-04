@@ -166,8 +166,9 @@ class HMMRegimeABTestingFramework:
                 'confidence_threshold': 0.7,      # 70%
                 'leverage_multiplier': 5.0,       # Lower leverage
                 'timeframe_weights': {
-                    '15m': 0.4,
-                    '30m': 0.4,
+                    '5m': 0.2,
+                    '15m': 0.3,
+                    '30m': 0.3,
                     '1h': 0.2
                 }
             }
@@ -186,9 +187,10 @@ class HMMRegimeABTestingFramework:
                 'confidence_threshold': 0.5,      # 50%
                 'leverage_multiplier': 10.0,      # Higher leverage
                 'timeframe_weights': {
-                    '15m': 0.6,
-                    '30m': 0.3,
-                    '1h': 0.1
+                    '5m': 0.4,
+                    '15m': 0.4,
+                    '30m': 0.15,
+                    '1h': 0.05
                 }
             }
             
@@ -202,6 +204,11 @@ class HMMRegimeABTestingFramework:
             # Adaptive: Barriers change based on timeframe
             configs[regime] = {
                 'timeframe_configs': {
+                    '5m': {
+                        'profit_take_multiplier': 0.0008,
+                        'stop_loss_multiplier': 0.0004,
+                        'confidence_threshold': 0.55
+                    },
                     '15m': {
                         'profit_take_multiplier': 0.001,
                         'stop_loss_multiplier': 0.0005,
@@ -235,9 +242,10 @@ class HMMRegimeABTestingFramework:
                 'confidence_threshold': 0.6,      # 60%
                 'leverage_multiplier': 8.0,
                 'timeframe_weights': {
-                    '15m': 0.5,
-                    '30m': 0.3,
-                    '1h': 0.2
+                    '5m': 0.3,
+                    '15m': 0.4,
+                    '30m': 0.2,
+                    '1h': 0.1
                 }
             }
             

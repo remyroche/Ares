@@ -363,8 +363,10 @@ class MLOptimizedBarriers:
         total_pnl = sum(profits)
         win_rate = sum(1 for p in profits if p > 0) / len(profits)
         
-        # Sharpe ratio calculation
+        # Sharpe ratio calculation (annualized for high-frequency trading)
         if len(profits) > 1 and np.std(profits) > 0:
+            # Annualize based on timeframe frequency (5m = 12 intervals/hour, 15m = 4 intervals/hour, 30m = 2 intervals/hour, 1h = 1 interval/hour)
+            # Use 15m as baseline (4 intervals/hour) for consistency
             sharpe_ratio = np.mean(profits) / np.std(profits) * np.sqrt(252 * 24 * 4)  # Annualized
         else:
             sharpe_ratio = 0

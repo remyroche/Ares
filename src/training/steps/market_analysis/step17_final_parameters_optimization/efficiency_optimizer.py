@@ -1,6 +1,8 @@
-from src.core.decorators import handles_errors
-from typing import Dict, List, Optional, Union, Any, Tuple
-'Efficiency Optimizer for Hyperparameter Optimization.\n\nThis module implements various computational efficiency improvements to speed up\nthe hyperparameter optimization process while maintaining quality.\n'
+"""Efficiency Optimizer for Hyperparameter Optimization.
+
+This module implements various computational efficiency improvements to speed up
+the hyperparameter optimization process while maintaining quality.
+"""
 import asyncio
 import multiprocessing as mp
 import os
@@ -8,8 +10,10 @@ import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, List, Optional, Union, Tuple
 import numpy as np
+
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 @dataclass
@@ -472,19 +476,45 @@ class EfficiencyOptimizer:
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:
     """Create an efficiency optimizer instance."""
     return EfficiencyOptimizer(config)
-if __name__ == '__main__':
-    config = EfficiencyConfig(enable_data_subsampling=True, subsample_fraction=0.3, enable_caching=True, cache_size=1000, enable_parallel_processing=True, max_workers=4, enable_aggressive_pruning=True)
-    optimizer = create_efficiency_optimizer(config)
 
-    def test_objective(params: Dict[str, Any]) -> None:
+def create_test_config() -> EfficiencyConfig:
+    """Create test configuration for efficiency optimizer."""
+    return EfficiencyConfig(
+        enable_data_subsampling=True,
+        subsample_fraction=0.3,
+        enable_caching=True,
+        cache_size=1000,
+        enable_parallel_processing=True,
+        max_workers=4,
+        enable_aggressive_pruning=True
+    )
+
+def create_test_objective() -> callable:
+    """Create test objective function."""
+    def test_objective(params: Dict[str, Any]) -> float:
         time.sleep(0.1)
         return sum(params.values()) + np.random.normal(0, 0.1)
-    search_space = {'param1': {'type': 'float', 'min': 0, 'max': 1, 'step': 0.01}, 'param2': {'type': 'float', 'min': 0, 'max': 1, 'step': 0.01}, 'param3': {'type': 'int', 'min': 1, 'max': 10}, 'param4': {'type': 'categorical', 'choices': ['A', 'B', 'C']}}
-    import asyncio
-    from src.core.decorators.errors import handles_errors
+    return test_objective
 
-    async def test() -> None:
-        await optimizer.initialize()
-        await optimizer.optimize_trial_efficiency(test_objective, search_space, n_trials=50, timeout_seconds=60)
-        await optimizer.cleanup()
-    asyncio.run(test())
+def create_test_search_space() -> Dict[str, Any]:
+    """Create test search space configuration."""
+    return {
+        'param1': {'type': 'float', 'min': 0, 'max': 1, 'step': 0.01},
+        'param2': {'type': 'float', 'min': 0, 'max': 1, 'step': 0.01},
+        'param3': {'type': 'int', 'min': 1, 'max': 10},
+        'param4': {'type': 'categorical', 'choices': ['A', 'B', 'C']}
+    }
+
+async def run_efficiency_test() -> None:
+    """Run efficiency optimizer test."""
+    config = create_test_config()
+    optimizer = create_efficiency_optimizer(config)
+    test_objective = create_test_objective()
+    search_space = create_test_search_space()
+    
+    await optimizer.initialize()
+    await optimizer.optimize_trial_efficiency(test_objective, search_space, n_trials=50, timeout_seconds=60)
+    await optimizer.cleanup()
+
+if __name__ == '__main__':
+    asyncio.run(run_efficiency_test())

@@ -2,19 +2,27 @@
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml
 # Uncomment when TPSL optimization is re-enabled
 
-from src.core.decorators import handles_errors
-from src.core.domain import handle_specific_errors
-from typing import Dict, List, Optional, Union, Any, Tuple
-'Regime-Specific SL/TP Optimizer.\n\nThis module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)\nparameters based on the current market context identified by the meta-labeling system.\n\nThe optimizer uses meta-label intensities and activations to determine optimal SL/TP levels\nfor each label-driven regime, considering success proxies from backtest simulations.\n'
+"""Regime-Specific SL/TP Optimizer.
+
+This module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
+parameters based on the current market context identified by the meta-labeling system.
+
+The optimizer uses meta-label intensities and activations to determine optimal SL/TP levels
+for each label-driven regime, considering success proxies from backtest simulations.
+"""
 import os
 import sys
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Union, Tuple
 import numpy as np
 import optuna
 import pandas as pd
 import asyncio
+
+from src.core.decorators import handles_errors
+from src.core.domain import handle_specific_errors
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 from src.config import CONFIG
@@ -116,8 +124,6 @@ class RegimeSpecificTPSLOptimizer:
         """Save optimization results to disk."""
         try:
             results_file = os.path.join(self.model_dir, 'optimization_results.json')
-            import json
-from src.core.decorators.errors import handles_errors
             with open(results_file, 'w') as f:
                 json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info('✅ Saved optimization results')

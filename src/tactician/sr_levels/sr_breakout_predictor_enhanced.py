@@ -246,32 +246,46 @@ class EnhancedSRBreakoutPredictor:
         level: Dict[str, Any],
         current_price: float
     ) -> Dict[str, float]:
-        """Extract features for breakout prediction."""
+        """Extract features for breakout prediction (12 specific factors)."""
         try:
             features = {}
             
-            # Basic level features
+            # Factor 1: Proximity to Level (0-1, closer = higher breakout probability)
             level_price = level.get('price', 0)
             features['proximity_to_level'] = abs(current_price - level_price) / level_price
-            features['level_strength'] = level.get('strength', 0.5)
-            features['touch_count'] = level.get('touch_count', 0)
-            features['level_age'] = level.get('age_bars', 0)
             
-            # Market context features
+            # Factor 2: Volume Spike (1.0+ = normal, >1.5 = spike)
             features['volume_spike'] = self._calculate_volume_spike(market_data)
+            
+            # Factor 3: Price Momentum (-1 to +1, positive = upward momentum)
             features['momentum'] = self._calculate_momentum(market_data)
+            
+            # Factor 4: Volatility (0-1, higher = more likely to break)
             features['volatility'] = self._calculate_volatility(market_data)
+            
+            # Factor 5: Time at Level (bars, longer = more likely to break)
             features['time_at_level'] = self._calculate_time_at_level(market_data, level_price)
             
-            # Technical indicator features
+            # Factor 6: Level Strength (0-1, weaker = more likely to break)
+            features['level_strength'] = level.get('strength', 0.5)
+            
+            # Factor 7: Touch Count (number of previous touches)
+            features['touch_count'] = level.get('touch_count', 0)
+            
+            # Factor 8: RSI Position (0-100, extremes = more likely to break)
             features['rsi'] = self._calculate_rsi(market_data['close'])
+            
+            # Factor 9: MACD Signal (momentum confirmation)
             features['macd_signal'] = self._calculate_macd_signal(market_data['close'])
+            
+            # Factor 10: Bollinger Band Position (0-1, extremes = more likely to break)
             features['bollinger_position'] = self._calculate_bollinger_position(market_data)
             
-            # Advanced features
+            # Factor 11: Order Flow Imbalance (-1 to +1, imbalance = more likely to break)
             features['order_flow_imbalance'] = self._calculate_order_flow_imbalance(market_data)
+            
+            # Factor 12: Market Sentiment (0-1, extreme sentiment = more likely to break)
             features['market_sentiment'] = self._calculate_market_sentiment(market_data)
-            features['previous_breakout_history'] = self._get_previous_breakout_history(level)
             
             return features
             

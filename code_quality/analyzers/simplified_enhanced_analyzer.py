@@ -160,6 +160,9 @@ class SimplifiedEnhancedDeadCodeAnalyzer:
 
     def _analyze_ast_for_call_graph(self, tree: ast.AST, file_path: Path) -> None:
         """Analyze AST to build call graph."""
+        # Ensure file_path is a Path object
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
         module_name = file_path.stem
         
         for node in ast.walk(tree):
@@ -346,7 +349,9 @@ class SimplifiedEnhancedDeadCodeAnalyzer:
                         return True
         
         # Check if function is in call graph
-        module_name = Path(file_path).stem
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        module_name = file_path.stem
         func_key = f"{module_name}::{func_name}"
         if func_key in self.call_graph_nodes:
             return True
@@ -402,7 +407,8 @@ class SimplifiedEnhancedDeadCodeAnalyzer:
         if issue.issue_type == "dead_code":
             func_name = issue.description.split("'")[1] if "'" in issue.description else ""
             if func_name:
-                module_name = Path(issue.file_path).stem
+                file_path = Path(issue.file_path)
+                module_name = file_path.stem
                 func_key = f"{module_name}::{func_name}"
                 if func_key in self.call_graph_nodes:
                     return False  # Function is in call graph, likely used

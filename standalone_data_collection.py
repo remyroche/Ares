@@ -174,8 +174,8 @@ class PipelineStandards:
 class StandaloneDataCollectionPipeline:
     """Standalone enhanced data collection pipeline with resampling and progressive append."""
     
-    # Supported timeframes for resampling
-    SUPPORTED_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    # Supported timeframes for resampling (essential timeframes only)
+    SUPPORTED_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h"]
     
     # Timeframe mappings for pandas resampling (updated for new pandas format)
     TIMEFRAME_MAPPINGS = {
@@ -184,8 +184,6 @@ class StandaloneDataCollectionPipeline:
         "15m": "15min",
         "30m": "30min",
         "1h": "1h",
-        "4h": "4h",
-        "1d": "1D",
     }
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -450,15 +448,23 @@ class StandaloneDataCollectionPipeline:
     
     async def _collect_klines_data(self) -> pd.DataFrame:
         """Collect klines data from exchange (simulated)."""
-        # Create sample data for demonstration
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='1min')
+        # Dynamic data collection - simulate realistic market hours
+        # Collect data for the last 24 hours (1440 minutes)
+        end_time = datetime.now()
+        start_time = end_time - timedelta(hours=24)
+        dates = pd.date_range(start=start_time, end=end_time, freq='1min')
+        
+        # Generate realistic OHLCV data
+        base_price = 2000.0  # Base price for ETH
+        price_volatility = 0.02  # 2% volatility
+        
         data = {
             'timestamp': dates,
-            'open': np.random.uniform(100, 200, 1000),
-            'high': np.random.uniform(150, 250, 1000),
-            'low': np.random.uniform(50, 150, 1000),
-            'close': np.random.uniform(100, 200, 1000),
-            'volume': np.random.uniform(1000, 10000, 1000)
+            'open': np.random.normal(base_price, base_price * price_volatility, len(dates)),
+            'high': np.random.normal(base_price * 1.01, base_price * price_volatility, len(dates)),
+            'low': np.random.normal(base_price * 0.99, base_price * price_volatility, len(dates)),
+            'close': np.random.normal(base_price, base_price * price_volatility, len(dates)),
+            'volume': np.random.exponential(1000, len(dates))  # Exponential distribution for volume
         }
         
         df = pd.DataFrame(data)
@@ -467,42 +473,103 @@ class StandaloneDataCollectionPipeline:
         df['high'] = np.maximum(df['high'], np.maximum(df['open'], df['close']))
         df['low'] = np.minimum(df['low'], np.minimum(df['open'], df['close']))
         
+        # Ensure positive prices and volumes
+        df['open'] = np.abs(df['open'])
+        df['high'] = np.abs(df['high'])
+        df['low'] = np.abs(df['low'])
+        df['close'] = np.abs(df['close'])
+        df['volume'] = np.abs(df['volume'])
+        
         self.logger.info(f"Collected {len(df)} rows of klines data for {self.symbol} on {self.exchange}")
         return df
     
     async def _collect_aggtrades_data(self) -> pd.DataFrame:
         """Collect aggtrades data from exchange (simulated)."""
-        # Create sample aggtrades data
-        dates = pd.date_range(start='2024-01-01', periods=5000, freq='1s')  # More frequent trades
+        # Dynamic aggtrades collection - simulate realistic trading activity
+        # Collect trades for the last 24 hours with variable frequency
+        end_time = datetime.now()
+        start_time = end_time - timedelta(hours=24)
+        
+        # Simulate realistic trade frequency (varies by time of day)
+        # More trades during active hours, fewer during quiet periods
+        total_seconds = int((end_time - start_time).total_seconds())
+        
+        # Generate trade timestamps with realistic distribution
+        # More trades during peak hours (9-17 UTC), fewer at night
+        trade_timestamps = []
+        for second in range(0, total_seconds, 1):  # Check every second
+            current_time = start_time + timedelta(seconds=second)
+            hour = current_time.hour
+            
+            # Trade probability based on hour (higher during active hours)
+            if 9 <= hour <= 17:  # Peak hours
+                trade_prob = 0.8  # 80% chance of trade per second
+            elif 6 <= hour <= 22:  # Regular hours
+                trade_prob = 0.4  # 40% chance of trade per second
+            else:  # Quiet hours
+                trade_prob = 0.1  # 10% chance of trade per second
+            
+            if np.random.random() < trade_prob:
+                trade_timestamps.append(current_time)
+        
+        # Generate trade data
+        base_price = 2000.0
+        price_volatility = 0.001  # 0.1% volatility for individual trades
+        
         data = {
-            'timestamp': dates,
-            'price': np.random.uniform(100, 200, 5000),
-            'quantity': np.random.uniform(0.1, 10, 5000),
-            'is_buyer_maker': np.random.choice([True, False], 5000),
-            'agg_trade_id': [f"agg_{i}_{int(dates[i].timestamp())}" for i in range(5000)],
-            'first_trade_id': np.random.randint(1000000, 9999999, 5000),
-            'last_trade_id': np.random.randint(1000000, 9999999, 5000),
-            'trade_time': [int(dates[i].timestamp() * 1000) for i in range(5000)]
+            'timestamp': trade_timestamps,
+            'price': np.random.normal(base_price, base_price * price_volatility, len(trade_timestamps)),
+            'quantity': np.random.exponential(0.5, len(trade_timestamps)),  # Exponential distribution for trade sizes
+            'is_buyer_maker': np.random.choice([True, False], len(trade_timestamps)),
+            'agg_trade_id': [f"agg_{i}_{int(ts.timestamp())}" for i, ts in enumerate(trade_timestamps)],
+            'first_trade_id': np.random.randint(1000000, 9999999, len(trade_timestamps)),
+            'last_trade_id': np.random.randint(1000000, 9999999, len(trade_timestamps)),
+            'trade_time': [int(ts.timestamp() * 1000) for ts in trade_timestamps]
         }
         
         df = pd.DataFrame(data)
+        
+        # Ensure positive prices and quantities
+        df['price'] = np.abs(df['price'])
+        df['quantity'] = np.abs(df['quantity'])
+        
         self.logger.info(f"Collected {len(df)} rows of aggtrades data for {self.symbol} on {self.exchange}")
         return df
     
     async def _collect_futures_data(self) -> pd.DataFrame:
         """Collect futures data from exchange (simulated)."""
-        # Create sample futures data
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='8h')  # Funding rate every 8 hours
+        # Dynamic futures data collection - simulate realistic funding rate updates
+        # Funding rates are typically updated every 8 hours
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=30)  # Last 30 days of funding data
+        
+        # Generate funding rate timestamps (every 8 hours)
+        funding_times = []
+        current_time = start_time
+        while current_time <= end_time:
+            funding_times.append(current_time)
+            current_time += timedelta(hours=8)
+        
+        # Generate realistic funding rate data
+        base_price = 2000.0
+        funding_volatility = 0.005  # 0.5% funding rate volatility
+        
         data = {
-            'timestamp': dates,
-            'fundingRate': np.random.uniform(-0.01, 0.01, 1000),  # Funding rate between -1% and 1%
-            'symbol': [f"{self.symbol}PERP" for _ in range(1000)],
-            'mark_price': np.random.uniform(100, 200, 1000),
-            'index_price': np.random.uniform(100, 200, 1000),
-            'next_funding_time': [int((dates[i] + timedelta(hours=8)).timestamp() * 1000) for i in range(1000)]
+            'timestamp': funding_times,
+            'fundingRate': np.random.normal(0.0001, funding_volatility, len(funding_times)),  # Slightly positive bias
+            'symbol': [f"{self.symbol}PERP" for _ in range(len(funding_times))],
+            'mark_price': np.random.normal(base_price, base_price * 0.02, len(funding_times)),
+            'index_price': np.random.normal(base_price, base_price * 0.02, len(funding_times)),
+            'next_funding_time': [int((ts + timedelta(hours=8)).timestamp() * 1000) for ts in funding_times]
         }
         
         df = pd.DataFrame(data)
+        
+        # Ensure positive prices and realistic funding rates
+        df['mark_price'] = np.abs(df['mark_price'])
+        df['index_price'] = np.abs(df['index_price'])
+        df['fundingRate'] = np.clip(df['fundingRate'], -0.01, 0.01)  # Clamp to realistic range
+        
         self.logger.info(f"Collected {len(df)} rows of futures data for {self.symbol} on {self.exchange}")
         return df
     
@@ -758,8 +825,8 @@ async def main():
         'validate_data': True,
         'convert_format': True,
         'random_state': 42,
-        # Multiple timeframes for resampling
-        'timeframes': ['1m', '5m', '15m', '30m', '1h', '4h', '1d'],
+        # Multiple timeframes for resampling (essential timeframes only)
+        'timeframes': ['1m', '5m', '15m', '30m', '1h'],
         # Data collection types
         'collect_klines': True,
         'collect_aggtrades': True,

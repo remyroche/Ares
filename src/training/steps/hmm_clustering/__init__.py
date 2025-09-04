@@ -13,6 +13,7 @@ from .step03_optimized_bayesian_optimization import OptimizedBayesianParameterOp
 from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
 from .step03_economic_significance_validator import EconomicSignificanceValidator
 from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
+from .step03_ml_transition_detector import MLRegimeTransitionDetector
 from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
 from .step03_enhanced_hmm_regime_discovery import EnhancedHMMRegimeDiscoveryStep, run_enhanced_step
 
@@ -21,6 +22,7 @@ __all__ = [
     'RegimeDiscoveryFeatureEngineer', 
     'EconomicSignificanceValidator',
     'EnsembleClusteringRegimeDetector',
+    'MLRegimeTransitionDetector',
     'EnhancedMLRegimeTransitionDetector',
     'EnhancedHMMRegimeDiscoveryStep',
     'run_enhanced_step'

@@ -584,7 +584,11 @@ class HTMLReporter:
 
         if "dead_code" in results:
             dead_code = results["dead_code"]
-            transformed["summary"]["total_issues"] = dead_code.get("total_issues", 0)
+            # Handle DeadCodeReport object (has attributes, not dict methods)
+            if hasattr(dead_code, 'total_issues'):
+                transformed["summary"]["total_issues"] = dead_code.total_issues
+            else:
+                transformed["summary"]["total_issues"] = dead_code.get("total_issues", 0)
 
         # Extract categories
         if "complexity" in results:

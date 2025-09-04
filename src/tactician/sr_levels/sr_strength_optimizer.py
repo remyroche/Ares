@@ -28,7 +28,6 @@ except ImportError:
     
 try:
     from joblib import Parallel, delayed
-from src.core.decorators.errors import handles_errors
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False

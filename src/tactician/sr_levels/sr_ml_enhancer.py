@@ -140,6 +140,9 @@ class SRMLEnhancer:
                 self.logger.warning("No training data available")
                 return False
             
+            # Optimize target weights first
+            await self.optimize_target_weights(market_data, sr_levels, historical_performance)
+            
             # Train S/R quality model
             await self._train_sr_quality_model(training_data)
             
@@ -197,6 +200,8 @@ class SRMLEnhancer:
             self.logger.info(f"   - S/R specific features: {len(await self._get_feature_names())} (45 features)")
             self.logger.info(f"   - Step06 features: {len(step06_features)} (200+ features)")
             self.logger.info(f"   - S/R feature breakdown: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(6)")
+            self.logger.info(f"   - Target calculation: Optimized weights based on trading performance")
+            self.logger.info(f"   - Quality definition: Bounce rate, false breakout rate, volume confirmation, timeframe consistency")
             
             return MLFeatureSet(
                 features=features_array,
@@ -753,82 +758,88 @@ class SRMLEnhancer:
         level: Dict[str, Any],
         historical_performance: Optional[Dict[str, Any]]
     ) -> float:
-        """Create comprehensive target variable for level quality."""
+        """Create optimized target variable for S/R level quality based on trading performance."""
         try:
-            # Use historical performance if available
+            # Use historical performance if available (preferred method)
             if historical_performance and level.get('id') in historical_performance:
                 perf = historical_performance[level['id']]
                 return perf.get('quality_score', 0.5)
             
-            # Create comprehensive target based on multiple aspects
-            target = 0.0
+            # Define what makes a "good S/R level" based on trading performance
+            # A good S/R level should:
+            # 1. Hold when tested (high bounce rate)
+            # 2. Provide clear breakout signals when broken
+            # 3. Have consistent behavior across timeframes
+            # 4. Show volume confirmation
+            # 5. Have low false breakout rate
             
-            # === CORE S/R ASPECTS (50% weight) ===
-            # Strength component (15%)
-            strength = level.get('strength', 0.5)
-            target += strength * 0.15
+            # Get optimized weights from configuration or use defaults
+            weights = self.ml_config.get("target_weights", {})
             
-            # Touch count component (10%)
+            # === CORE PERFORMANCE ASPECTS (60% weight) ===
+            # Bounce rate (most important - 20%)
+            bounce_rate = level.get('bounce_rate', 0.5)
+            bounce_weight = weights.get('bounce_rate', 0.20)
+            target += bounce_rate * bounce_weight
+            
+            # False breakout rate (penalty - 15%)
+            false_breakout_rate = level.get('false_breakout_rate', 0.0)
+            false_breakout_weight = weights.get('false_breakout_rate', 0.15)
+            target -= false_breakout_rate * false_breakout_weight
+            
+            # Volume confirmation (10%)
+            volume_confirmation = level.get('volume_confirmation_score', 0.5)
+            volume_weight = weights.get('volume_confirmation', 0.10)
+            target += volume_confirmation * volume_weight
+            
+            # Timeframe consistency (10%)
+            timeframe_consistency = level.get('timeframe_consistency', 0.5)
+            timeframe_weight = weights.get('timeframe_consistency', 0.10)
+            target += timeframe_consistency * timeframe_weight
+            
+            # Touch count (5%)
             touch_count = level.get('touch_count', 0)
             touch_score = min(touch_count / 10.0, 1.0)
-            target += touch_score * 0.10
+            touch_weight = weights.get('touch_count', 0.05)
+            target += touch_score * touch_weight
             
-            # Bounce quality component (10%)
-            bounce_ratio = level.get('avg_bounce_ratio', 0)
-            bounce_score = min(bounce_ratio / 0.01, 1.0)  # Normalize to 1% bounce
-            target += bounce_score * 0.10
+            # === TECHNICAL STRENGTH ASPECTS (25% weight) ===
+            # Level strength (8%)
+            strength = level.get('strength', 0.5)
+            strength_weight = weights.get('strength', 0.08)
+            target += strength * strength_weight
             
-            # Volume confirmation component (8%)
-            volume_score = level.get('volume_confirmation_score', 0.5)
-            target += volume_score * 0.08
+            # Confluence score (7%)
+            confluence_score = level.get('confluence_score', 0.5)
+            confluence_weight = weights.get('confluence_score', 0.07)
+            target += confluence_score * confluence_weight
             
-            # Consistency component (7%)
-            consistency_score = level.get('consistency_score', 0.5)
-            target += consistency_score * 0.07
-            
-            # === ADVANCED S/R ASPECTS (30% weight) ===
-            # HVN strength (8%)
+            # HVN strength (5%)
             hvn_strength = level.get('hvn_strength', 0.5)
-            target += hvn_strength * 0.08
+            hvn_weight = weights.get('hvn_strength', 0.05)
+            target += hvn_strength * hvn_weight
             
-            # Fibonacci confluence (6%)
+            # Fibonacci confluence (5%)
             fib_confluence = level.get('fib_confluence_count', 0)
-            fib_score = min(fib_confluence / 3.0, 1.0)  # Normalize to 3 fib levels
-            target += fib_score * 0.06
+            fib_score = min(fib_confluence / 3.0, 1.0)
+            fib_weight = weights.get('fib_confluence', 0.05)
+            target += fib_score * fib_weight
             
-            # Psychological level strength (6%)
-            psychological_strength = level.get('psychological_level_type', 0.0)
-            target += psychological_strength * 0.06
-            
-            # Pivot strength (5%)
-            pivot_strength = level.get('pivot_strength', 0.5)
-            target += pivot_strength * 0.05
-            
-            # Trend line strength (5%)
-            trendline_strength = level.get('trendline_strength', 0.5)
-            target += trendline_strength * 0.05
-            
-            # === MARKET STRUCTURE ASPECTS (20% weight) ===
-            # Timeframe confluence (6%)
-            timeframe_confluence = level.get('sr_timeframe_confluence', 0.5)
-            target += timeframe_confluence * 0.06
-            
-            # Retest success rate (5%)
+            # === MARKET STRUCTURE ASPECTS (15% weight) ===
+            # Retest success rate (6%)
             retest_success = level.get('sr_retest_success_rate', 0.5)
-            target += retest_success * 0.05
+            retest_weight = weights.get('retest_success_rate', 0.06)
+            target += retest_success * retest_weight
             
-            # Volume profile strength (4%)
-            volume_profile_strength = level.get('sr_volume_profile_strength', 0.5)
-            target += volume_profile_strength * 0.04
-            
-            # Market structure alignment (3%)
+            # Market structure alignment (5%)
             market_structure_alignment = level.get('sr_market_structure_alignment', 0.5)
-            target += market_structure_alignment * 0.03
+            market_structure_weight = weights.get('market_structure_alignment', 0.05)
+            target += market_structure_alignment * market_structure_weight
             
-            # Failure rate penalty (2%)
-            failure_count = level.get('failure_count', 0)
-            failure_penalty = min(failure_count / 5.0, 1.0)  # Normalize to 5 failures
-            target -= failure_penalty * 0.02
+            # Psychological level strength (4%)
+            psychological_strength = level.get('psychological_level_type', 0.0)
+            psychological_weight = weights.get('psychological_strength', 0.04)
+            target += psychological_strength * psychological_weight
             
             return min(max(target, 0.0), 1.0)  # Clamp to [0, 1]
             
@@ -1596,12 +1607,16 @@ class SRMLEnhancer:
             # Select features with S/R prioritization
             selected_features = []
             
-            # First, select top S/R features (up to 70% of total - more S/R features now)
-            sr_count = min(len(sr_features), int(top_k * 0.7))
+            # Get minimum S/R feature ratio from configuration
+            min_sr_ratio = self.ml_config.get("feature_selection", {}).get("min_sr_ratio", 0.7)
+            min_sr_count = int(top_k * min_sr_ratio)
+            
+            # First, select top S/R features (minimum 70%, no upper limit)
+            sr_count = max(min_sr_count, min(len(sr_features), top_k))
             for i in range(sr_count):
                 selected_features.append(sr_features[i][1])
             
-            # Then, select top non-S/R features (remaining 30%)
+            # Then, select top non-S/R features (remaining slots)
             remaining_count = top_k - len(selected_features)
             for i in range(min(remaining_count, len(non_sr_features))):
                 selected_features.append(non_sr_features[i][1])
@@ -1616,10 +1631,11 @@ class SRMLEnhancer:
                         selected_features.append(feature_name)
             
             self.logger.info(f"🎯 Feature selection with S/R prioritization:")
-            self.logger.info(f"   - S/R features selected: {sr_count} (70% of total)")
-            self.logger.info(f"   - Non-S/R features selected: {len(selected_features) - sr_count} (30% of total)")
+            self.logger.info(f"   - S/R features selected: {sr_count} (minimum {min_sr_ratio*100:.0f}% of total)")
+            self.logger.info(f"   - Non-S/R features selected: {len(selected_features) - sr_count}")
             self.logger.info(f"   - Total features selected: {len(selected_features)}")
             self.logger.info(f"   - S/R feature categories: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(6)")
+            self.logger.info(f"   - Selection strategy: Minimum {min_sr_ratio*100:.0f}% S/R features, no upper limit")
             
             return selected_features
             
@@ -1719,3 +1735,134 @@ class SRMLEnhancer:
     def get_model_performance(self) -> Dict[str, Dict[str, Any]]:
         """Get current model performance metrics."""
         return self.model_performance.copy()
+    
+    async def optimize_target_weights(
+        self,
+        market_data: pd.DataFrame,
+        sr_levels: List[Dict[str, Any]],
+        historical_performance: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, float]:
+        """Optimize target weights through backtesting and performance analysis."""
+        try:
+            self.logger.info("🔧 Optimizing target weights through backtesting...")
+            
+            # Define weight optimization ranges
+            weight_ranges = {
+                'bounce_rate': (0.15, 0.25),           # Most important
+                'false_breakout_rate': (0.10, 0.20),    # Penalty weight
+                'volume_confirmation': (0.08, 0.15),    # Volume importance
+                'timeframe_consistency': (0.08, 0.15),  # Consistency importance
+                'touch_count': (0.03, 0.08),            # Touch count importance
+                'strength': (0.05, 0.12),               # Level strength
+                'confluence_score': (0.05, 0.10),       # Confluence importance
+                'hvn_strength': (0.03, 0.08),           # HVN importance
+                'fib_confluence': (0.03, 0.08),         # Fibonacci importance
+                'retest_success_rate': (0.04, 0.08),    # Retest importance
+                'market_structure_alignment': (0.03, 0.07),  # Market structure
+                'psychological_strength': (0.02, 0.06)  # Psychological levels
+            }
+            
+            # Current best weights (start with defaults)
+            best_weights = {
+                'bounce_rate': 0.20,
+                'false_breakout_rate': 0.15,
+                'volume_confirmation': 0.10,
+                'timeframe_consistency': 0.10,
+                'touch_count': 0.05,
+                'strength': 0.08,
+                'confluence_score': 0.07,
+                'hvn_strength': 0.05,
+                'fib_confluence': 0.05,
+                'retest_success_rate': 0.06,
+                'market_structure_alignment': 0.05,
+                'psychological_strength': 0.04
+            }
+            
+            best_score = 0.0
+            
+            # Simple grid search optimization (can be enhanced with more sophisticated methods)
+            for iteration in range(10):  # 10 optimization iterations
+                # Generate candidate weights
+                candidate_weights = {}
+                for param, (min_val, max_val) in weight_ranges.items():
+                    # Add some randomness around current best
+                    current_val = best_weights[param]
+                    noise = (max_val - min_val) * 0.1  # 10% noise
+                    candidate_weights[param] = max(min_val, min(max_val, 
+                        current_val + np.random.normal(0, noise)))
+                
+                # Normalize weights to sum to 1.0
+                total_weight = sum(candidate_weights.values())
+                candidate_weights = {k: v/total_weight for k, v in candidate_weights.items()}
+                
+                # Test candidate weights
+                score = await self._evaluate_target_weights(
+                    candidate_weights, market_data, sr_levels, historical_performance
+                )
+                
+                if score > best_score:
+                    best_score = score
+                    best_weights = candidate_weights.copy()
+                    self.logger.info(f"   Iteration {iteration+1}: New best score {score:.4f}")
+            
+            self.logger.info(f"✅ Target weight optimization completed. Best score: {best_score:.4f}")
+            self.logger.info(f"   Optimized weights: {best_weights}")
+            
+            # Update configuration with optimized weights
+            if "target_weights" not in self.ml_config:
+                self.ml_config["target_weights"] = {}
+            self.ml_config["target_weights"].update(best_weights)
+            
+            return best_weights
+            
+        except Exception as e:
+            self.logger.error(f"Target weight optimization failed: {e}")
+            return self.ml_config.get("target_weights", {})
+    
+    async def _evaluate_target_weights(
+        self,
+        weights: Dict[str, float],
+        market_data: pd.DataFrame,
+        sr_levels: List[Dict[str, Any]],
+        historical_performance: Optional[Dict[str, Any]]
+    ) -> float:
+        """Evaluate target weights by measuring correlation with actual trading performance."""
+        try:
+            # Temporarily set weights
+            original_weights = self.ml_config.get("target_weights", {})
+            self.ml_config["target_weights"] = weights
+            
+            # Calculate targets with new weights
+            targets = []
+            actual_performance = []
+            
+            for level in sr_levels:
+                # Calculate target with new weights
+                target = await self._create_target_for_level(level, historical_performance)
+                targets.append(target)
+                
+                # Get actual performance if available
+                if historical_performance and level.get('id') in historical_performance:
+                    perf = historical_performance[level['id']]
+                    actual_perf = perf.get('actual_bounce_rate', 0.5)  # Use actual bounce rate as ground truth
+                    actual_performance.append(actual_perf)
+                else:
+                    # Use level characteristics as proxy for actual performance
+                    actual_perf = level.get('bounce_rate', 0.5)
+                    actual_performance.append(actual_perf)
+            
+            # Restore original weights
+            self.ml_config["target_weights"] = original_weights
+            
+            if len(targets) < 5:  # Need minimum samples
+                return 0.0
+            
+            # Calculate correlation between predicted and actual performance
+            correlation = np.corrcoef(targets, actual_performance)[0, 1]
+            
+            # Return correlation as score (higher is better)
+            return correlation if not np.isnan(correlation) else 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Target weight evaluation failed: {e}")
+            return 0.0
